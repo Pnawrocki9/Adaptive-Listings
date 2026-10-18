@@ -2,7 +2,7 @@
 # check-cron-heartbeat.sh — absence-of-signal detector for scheduled jobs (FOLLOW-893).
 #
 # WHY THIS EXISTS
-#   `apps/data-quality/src/crons/schema_validation.py` runs on `modal.Cron("0 2 * * *")`.
+#   The schema-validation cron (`apps/data-quality`, deleted by FOLLOW-1324) ran on `modal.Cron("0 2 * * *")`.
 #   A FAILED run is visible only to whoever opens the Modal dashboard. A run that NEVER
 #   STARTS — the highest-prior failure mode for a first-ever schedule — emitted nothing,
 #   anywhere. Drift EVENTS already have a channel (Sentry, schema_validation.py:510); the

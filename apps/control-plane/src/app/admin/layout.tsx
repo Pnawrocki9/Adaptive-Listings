@@ -38,7 +38,6 @@ const TRACER_NAV_LINKS = [
  */
 const TENANTS_NAV_LINKS = [
   { href: '/admin/tenants', label: 'Tenants' },
-  { href: '/admin/registrations', label: 'Registrations' },
   { href: '/admin/demo-sessions', label: 'Demo Sessions' },
 ];
 

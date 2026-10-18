@@ -1,9 +1,9 @@
 [
   {
     "canonical": "apps/intent-engine/src/observability.py",
-    "mirror": "apps/data-quality/src/crons/observability.py",
+    "mirror": "apps/intent-engine/src/observability.py",
     "strip_comments": true,
-    "note": "FOLLOW-738 hardened Sentry initialiser — byte-identical (Python has no /* */ or // comment syntax the strip pass would treat differently, so this is effectively a raw diff). No local imports inside this module, so it is safe to place at a different relative path per app.",
+    "note": "FOLLOW-1324: the Rule J mirror in apps/data-quality was deleted with that app (ESC-085). The canonical stays REGISTERED (as a degenerate self-pair, byte-identity trivially true) because scripts/check-sentry-init-singleton.sh only permits sentry_sdk.init( at registered paths, and basename_discovery below keeps flagging any new unregistered copy of observability.py. A future mirror: add a real pair and a baseline row.",
     "basename_discovery": true
   }
 ]

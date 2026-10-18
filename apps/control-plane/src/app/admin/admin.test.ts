@@ -1,28 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { MOCK_REGISTRATIONS } from './registrations/mock-data';
 import { MOCK_TENANTS } from './tenants/mock-data';
 import { MOCK_DEMO_SESSIONS } from './demo-sessions/mock-data';
-
-describe('Admin mock data — registrations', () => {
-  it('has at least one registration', () => {
-    expect(MOCK_REGISTRATIONS.length).toBeGreaterThan(0);
-  });
-
-  it('each registration has required shape', () => {
-    for (const reg of MOCK_REGISTRATIONS) {
-      expect(reg).toHaveProperty('id');
-      expect(reg).toHaveProperty('agency_name');
-      expect(reg).toHaveProperty('contact_email');
-      expect(reg).toHaveProperty('status');
-      expect(['pending', 'approved', 'rejected']).toContain(reg.status);
-    }
-  });
-
-  it('all mock registrations are pending', () => {
-    expect(MOCK_REGISTRATIONS.every((r) => r.status === 'pending')).toBe(true);
-  });
-});
 
 describe('Admin mock data — tenants', () => {
   it('has at least one tenant', () => {

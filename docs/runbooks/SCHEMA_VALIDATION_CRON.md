@@ -1,8 +1,9 @@
 # Runbook — `validate_schemas` daily cron (§B.6 continuous schema validation)
 
-> **PARKED (2026-10-05, FOLLOW-1298; CEO decision D7).** The deploy job and the daily
-> `Assert validate_schemas ran in the last 26h (prod)` probe are removed from CI. This runbook is
-> retained for un-parking only.
+> **REMOVED (2026-10-18, FOLLOW-1324; ESC-085).** `apps/data-quality` was parked 2026-10-05
+> (FOLLOW-1298; CEO decision D7) and is now deleted from the repo; the file paths below no longer
+> exist. This runbook is a historical record only. The one live step is the CTO's
+> `modal app stop estalara-schema-validation` (`docs/handover/CTO_HANDOVER.md` §4).
 
 **Owner of the first-run verification: Piotr Nawrocki (CEO).** **Verification date: 2026-08-08,
 after the 05:00 UTC `Cron Heartbeat (FOLLOW-893)` run.**

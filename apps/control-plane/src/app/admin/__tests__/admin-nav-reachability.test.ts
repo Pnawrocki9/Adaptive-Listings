@@ -146,9 +146,9 @@ const hops = computeHops();
 describe('FOLLOW-1343 N2 — /admin navigation reachability (built from source)', () => {
   it('parser sanity: the sidebar manifests and the landing redirect are found', () => {
     const root = layoutEdges.find((l) => l.dir === ADMIN_DIR);
-    // layout.tsx: 3 tracer + 3 tenants + 2 platform. A parser that silently finds nothing would
+    // layout.tsx: 3 tracer + 2 tenants + 2 platform. A parser that silently finds nothing would
     // make every assertion below vacuous.
-    expect(root?.hrefs).toHaveLength(8);
+    expect(root?.hrefs).toHaveLength(7);
     expect(pageEdges.get('/admin')?.redirects).toEqual(['/admin/tenants/[id]/tracer']);
     expect(hops.get('/admin/tenants/[id]/tracer')?.hops).toBe(0);
     expect(inventory.size).toBeGreaterThanOrEqual(20);

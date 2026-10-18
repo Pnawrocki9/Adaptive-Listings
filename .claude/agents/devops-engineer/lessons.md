@@ -706,3 +706,11 @@ rest.
 FOLLOW-1263 and assumed to equal the rollup; the rollup also holds unregistered SKIPPED jobs and
 Vercel's two external checks. Count targets should name their unit (unique names vs check-runs vs
 register rows).
+
+- **2026-10-18 / FOLLOW-1324** · Removed `apps/data-quality` + CI matrix/register/Modal/mirror
+  wiring. · A green mirror gate over an EMPTY manifest would have hidden that
+  `check-sentry-init-singleton.sh` reads the SAME manifest as its allowlist of legitimate
+  `sentry_sdk.init(` sites: dropping the only pair made the singleton gate red (and registered
+  mirror-less would also have dropped the canonical from its exclusion baseline). Ran both gates,
+  not just the one named in the brief. · Guardrail: when deleting a registered pair, grep every
+  consumer of `scripts/mirror-files.json`, not only `check-mirror-files.sh`.

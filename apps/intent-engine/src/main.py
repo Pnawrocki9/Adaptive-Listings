@@ -53,7 +53,7 @@ image = modal.Image.debian_slim(python_version="3.12").pip_install(
     "sentry-sdk>=2.0",
 )
 # FOLLOW-900 (AC(6) audit of the other Modal apps — this app had the SAME latent defect as
-# apps/data-quality, one step further from view). `process_chat_message` imports `nlp` and
+# the since-deleted apps/data-quality, one step further from view). `process_chat_message` imports `nlp` and
 # `redis_writer` INSIDE its body, and `nlp`/`redis_writer` pull `observability` and
 # `schemas`. All four are LOCAL modules. `modal deploy apps/intent-engine/src/main.py`
 # imports this file by path, so modal 1.4.2 takes the FILE branch of its implicit

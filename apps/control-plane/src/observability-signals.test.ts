@@ -157,6 +157,9 @@
  *
  * FOLLOW-1220 added a fourth site to `app/api/admin/analytics/rollup/data.ts` (the
  * `reorderWithheld` leg failing, degrading independently). It is now **109 in 62**.
+ *
+ * FOLLOW-1325 removed `app/admin/registrations/data.ts` (1 site; single tenant, no registrations).
+ * It is now **108 in 61**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -170,7 +173,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 109;
+const TOTAL_SITES = 108;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -199,12 +202,6 @@ const REGISTER: CaptureSiteGroup[] = [
     file: 'app/admin/demo-sessions/data.ts',
     sites: 1,
     meaning: 'The admin demo-session list query failed; the page renders a degraded empty state.',
-    consumer: NO_CHANNEL,
-  },
-  {
-    file: 'app/admin/registrations/data.ts',
-    sites: 1,
-    meaning: 'The admin registrations list query failed; the page renders a degraded empty state.',
     consumer: NO_CHANNEL,
   },
   {

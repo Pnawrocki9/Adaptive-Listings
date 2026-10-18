@@ -56228,11 +56228,11 @@ depends_on: [FOLLOW-1332] blocks: [] promoted_to_queue: true
 change to the consent/DSR data scope for the Estalara tenant and no DPIA/ROPA update owed, but three
 documents still describe the removed external-brand gates: (1)
 `docs/compliance/EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md` — add a superseded-by-ESC-085 banner (§2,
-§4 and PROPOSED STUB A describe removed gates, incl. the retired `422 consent_text_hash_fabricated`);
-(2) `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §6.1 notes on white-label wording — append a
-revision note (that folder is append-only; the canonical block and the sync gate are unaffected);
-(3) optional invariant line in `docs/handover/CTO_HANDOVER.md` §2: the consent endpoint accepts only
-`ESTALARA_TENANT_ID`.
+§4 and PROPOSED STUB A describe removed gates, incl. the retired
+`422 consent_text_hash_fabricated`); (2) `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §6.1 notes on
+white-label wording — append a revision note (that folder is append-only; the canonical block and
+the sync gate are unaffected); (3) optional invariant line in `docs/handover/CTO_HANDOVER.md` §2:
+the consent endpoint accepts only `ESTALARA_TENANT_ID`.
 
 AC:
 

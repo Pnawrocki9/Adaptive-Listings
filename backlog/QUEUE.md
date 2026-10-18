@@ -34,8 +34,8 @@ Phase and checkpoint per the approved plan; one heavy item at a time (RAM).
   route; `getTenantById` split commit first). K2a.
 - **FOLLOW-1330** — status: BACKLOG # Phase 2 R8 (cross-brand analytics page; rollup route stays).
   K2c.
-- **FOLLOW-1331** — status: IN_PROGRESS # PR #1028 (backend-engineer, Sonnet). Phase 2 R9 (Stripe).
-  Series at K2b (merged ahead of R8/R10/R11).
+- **FOLLOW-1331** — status: DONE # #1028 `bed16746`, 2026-10-18. Phase 2 R9 (Stripe; `tenants.plan`
+  stays; Stripe-off = handover row 9). Merged ahead of R8/R10/R11; series at K2b.
 - **FOLLOW-1332** — status: IN_PROGRESS # backend-engineer (Opus), worktree `follow-1332`. Phase 2
   R10 (`brand-identity` to constants). K2c.
 - **FOLLOW-1333** — status: BACKLOG # Phase 2 R11 (static origin list; series 3x). K2c.

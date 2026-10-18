@@ -6,7 +6,7 @@
  * the FOLLOW-332 "absent" assertions below. This suite now verifies:
  *   AC1-a: Exactly 7 nav links are rendered (3 tracer + 2 tenants hub + 2 platform).
  *   AC1-b: "Live Monitor" and "Session History" hrefs contain ESTALARA_TENANT_ID.
- *   AC1-c: The Tenants hub links (Tenants, Registrations) ARE present.
+ *   AC1-c: The Tenants hub link (Tenant [FOLLOW-1329: direct to the hub]) IS present.
  *
  * The `href` values asserted are NOT hand-authored in this test.  They are built
  * from `ESTALARA_TENANT_ID` imported from the REAL `@/lib/estalara-tenant` module —
@@ -146,17 +146,19 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
     expect(nav?.textContent).not.toContain('Registrations');
   });
 
-  it('AC1-c (FOLLOW-593): nav contains "Tenants" link to /admin/tenants', () => {
+  it('AC1-c (FOLLOW-1329): nav contains a "Tenant" link straight to the Estalara tenant hub', () => {
     renderLayout();
 
     const nav = document.querySelector('nav');
     expect(nav).not.toBeNull();
-    // A link whose label is exactly "Tenants" must now be present.
-    const tenantLabelLink = Array.from(nav!.querySelectorAll('a')).find(
-      (a) => a.textContent.trim() === 'Tenants',
+    const tenantLink = Array.from(nav!.querySelectorAll('a')).find(
+      (a) => a.textContent.trim() === 'Tenant',
     );
-    expect(tenantLabelLink).toBeDefined();
-    expect(tenantLabelLink?.getAttribute('href')).toBe('/admin/tenants');
+    expect(tenantLink).toBeDefined();
+    expect(tenantLink?.getAttribute('href')).toBe(`/admin/tenants/${ESTALARA_TENANT_ID}`);
+    // The fleet list is gone: no sidebar link may point at /admin/tenants itself.
+    const hrefs = Array.from(nav!.querySelectorAll('a')).map((a) => a.getAttribute('href'));
+    expect(hrefs).not.toContain('/admin/tenants');
   });
 
   it('renders children in the main content area', () => {

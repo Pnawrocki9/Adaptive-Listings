@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import { ESTALARA_TENANT_ID } from '@/lib/estalara-tenant';
-import { getTenantById } from './tenants/data';
+import { getTenantById } from './tenants/[id]/data';
 
 /**
  * /admin landing — resolves the Estalara tenant and redirects to its Tracer live monitor.

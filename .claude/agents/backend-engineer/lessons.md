@@ -2660,3 +2660,13 @@ The premise was wrong here and would have produced a probe that cannot fail.
   exemption (FOLLOW-598) was closed because the write could not be attributed. · Guardrail: _an auth
   gate shared by read and write routes must return the caller's rank, not a boolean_ — a gate that
   only says "staff" makes every consumer a full-write surface by default.
+
+- **2026-10-18 / FOLLOW-1329** · Moved `getTenantById` next to the tenant hub, then removed the
+  fleet list and the first-party diagnostics route; sidebar now links straight to the hub, and
+  `/admin/tenants` is a 307 route handler. · Risks weighed: a `page.tsx` redirect at the old path
+  would have kept N1's `paths_present` from reaching zero (REMOVED*PATHS names it) — used a
+  `route.ts` instead; the Sentry register tracks capture sites per FILE, so a moved function needs a
+  row move, not just a deletion; MP-002 in MEASURED_PREMISES named the deleted route as its
+  instrument and failed the premises gate until its `measure_with` was rewritten. · Guardrail: \_a
+  removal ticket should grep `docs/ops/MEASURED_PREMISES.md` and `scripts/check-single-tenant.sh`
+  REMOVED_PATHS for the path before choosing the replacement shape*.

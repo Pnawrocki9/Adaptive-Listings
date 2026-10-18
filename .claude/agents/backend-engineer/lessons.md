@@ -2683,3 +2683,16 @@ The premise was wrong here and would have produced a probe that cannot fail.
   instrument and failed the premises gate until its `measure_with` was rewritten. · Guardrail: \_a
   removal ticket should grep `docs/ops/MEASURED_PREMISES.md` and `scripts/check-single-tenant.sh`
   REMOVED_PATHS for the path before choosing the replacement shape*.
+- **2026-10-18 / FOLLOW-1330** · Contract test pinning every rollup key the FOLLOW-819 harness reads
+  for AC(5) (landed green on main first, mutation-checked); rollup scoped to one tenant (no
+  `tenant_id` → `ESTALARA_TENANT_ID`, other → 400 `unknown_tenant`), roster/per-brand rows removed,
+  every CH leg bound to `{tenant_id:String}`; scoring-path + reorder-withheld panels moved to
+  `/admin/tenants/[id]/analytics`. · Risks: `localhost-up.sh` warms the route WITH
+  `?tenant_id=$OPS_TENANT_ID`, so a rule rejecting every explicit `tenant_id` would have killed the
+  stack bring-up — the explicit Estalara id must stay accepted; the parity test's CH stand-in keyed
+  on `GROUP BY ad.tenant_id`, so it now honours the fence only when the SQL carries it verbatim
+  (dropping the fence reds 8); the deleted page was the ONLY entry in the FOLLOW-1001
+  `force-dynamic` guard, which would have gone vacuous/red — re-pointed to the `/admin` landing (an
+  env-reading server page that was not force-dynamic). · Guardrail: "before deleting a page, grep
+  the lexical guards (`readFileSync(join(__dirname, …page.tsx))`) as well as the importers" — a
+  file-read test is an importer Rule I cannot see.

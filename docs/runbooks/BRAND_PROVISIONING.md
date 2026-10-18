@@ -849,7 +849,9 @@ credentials) and could not be executed as part of authoring this document — th
    (FOLLOW-638, PR #617, `apps/control-plane/src/app/admin/analytics/page.tsx`) shows the brand as a
    row in the per-brand breakdown table alongside the platform-wide rollup. Both render a
    `data_source` badge (`clickhouse`/`live` = real, `mock`/`error` = FAIL, per Rule K.2) — a green
-   page with a `mock`/`error` badge is **not** a pass.
+   page with a `mock`/`error` badge is **not** a pass. _(2026-10-18, FOLLOW-1330: `/admin/analytics`
+   is removed — single tenant, ESC-085; use `/admin/tenants/[id]/analytics`, which also carries the
+   scoring-path and reorder-withheld panels.)_
 6. **AL on/off flip has runtime effect.** [OPERATOR-GATED for the live-traffic assertion; the code
    path is verified by reading, not by a live call] `PUT /api/admin/tenants/al-state` with
    `al_enabled: false` must make the next `POST /api/adapt` for that tenant return the neutral

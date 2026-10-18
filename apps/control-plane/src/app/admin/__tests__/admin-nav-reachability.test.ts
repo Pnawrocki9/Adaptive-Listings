@@ -141,6 +141,10 @@ describe('FOLLOW-1343 N2 — /admin navigation reachability (built from source)'
     // Floor lowered 20 → 15 on 2026-10-18: Phase 2 removals (FOLLOW-1325/1326/1329/1330) shrank the
     // admin inventory to 18 by design; the floor only has to catch a parser that finds nothing.
     expect(inventory.size).toBeGreaterThanOrEqual(15);
+    // FOLLOW-1330: the scoring-path and reorder-withheld panels moved to the hub's Analytics page,
+    // which must stay within two clicks (sidebar "Tenant" → hub "Analytics").
+    expect(hops.get('/admin/tenants/[id]/analytics')?.hops).toBeLessThanOrEqual(MAX_HOPS);
+    expect(inventory.has('/admin/analytics')).toBe(false);
   });
 
   it(`(a) every admin page is within ${MAX_HOPS_LABEL} clicks of /admin or HIDDEN_BY_DESIGN`, () => {

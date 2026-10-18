@@ -610,9 +610,10 @@ WHERE ts > now() - INTERVAL 1 HOUR GROUP BY scoring_path ORDER BY count() DESC;
 Expect `djb2_guard`/`djb2_fallback` to dominate until `archetype_embeddings` is seeded in prod
 (FOLLOW-392) — that is the finding this column exists to make visible, not a failure of the apply.
 
-The same split is rendered for operators on `/admin/analytics` (Scoring Path panel). It reads the
-identical flag, so before step 4 that panel says why it has no numbers rather than showing zeros;
-after step 4 it is the quickest confirmation that rows are carrying the new value.
+The same split is rendered for operators on `/admin/tenants/[id]/analytics` (Scoring Path panel,
+"Decision telemetry"; it lived on `/admin/analytics` until FOLLOW-1330 removed that page). It reads
+the identical flag, so before step 4 that panel says why it has no numbers rather than showing
+zeros; after step 4 it is the quickest confirmation that rows are carrying the new value.
 
 **`<<< OPERATOR MUST RUN AND PASTE >>>`** — real prod output goes here, with date, operator, and
 verdict, matching the 0019/0020 attestation format above.

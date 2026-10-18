@@ -100,9 +100,11 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   has worked here.
 - **measure_with:** `SELECT id, name, allowed_origins FROM tenants;` and
   `SELECT tenant_id, allowed_origins FROM api_keys WHERE revoked_at IS NULL;` against production
-- **relied_on_by:** `apps/control-plane/src/lib/origin-policy.ts` (the fail-open unconfigured
-  branch, and the FOLLOW-946 first-party clause being latent rather than live);
-  `docs/runbooks/BRAND_PROVISIONING.md` §Step 6
+- **relied_on_by:** `docs/runbooks/BRAND_PROVISIONING.md` §Step 6 (superseded). **(FOLLOW-1333,
+  2026-10-18)** No code relies on this any more: the control plane's origin policy (formerly the
+  fail-open unconfigured branch and the FOLLOW-946 first-party clause) and the ingest Worker's gate
+  both read one constant origin list (the shared browser-origins module of `@estalara/shared`), and
+  neither origin column is read. Retire this entry with the runbook.
 - **falsified_means:** the FOLLOW-946 first-party clause is REACHABLE on live traffic, so
   `FIRST_PARTY_TENANT_ID` being wrong stops being latent and becomes a first-party lockout — the
   outage FOLLOW-951 made fail-closed against.
@@ -136,6 +138,8 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   more: the brand-identity module was deleted and the origin policy takes `isEstalaraTenant` from
   the `ESTALARA_TENANT_ID` constant, so the `'unverified'` branch this entry guarded no longer
   exists. The Vercel variable is now unread; retire this entry with the runbook (plan R11).
+  **(FOLLOW-1333, 2026-10-18)** The ingest Worker no longer reads its secret of the same name
+  either.
 - **falsified_means:** first-party requests are refused `first_party_unverified` the moment MP-001
   stops holding, and four of six callers collapse that into a 401 on a correct API key (FOLLOW-943).
 

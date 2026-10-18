@@ -71,6 +71,7 @@ REMOVED_PATHS=(
   "apps/data-quality"
   ".github/workflows/demo-integration.yml"
   "tests/e2e/sprint-9-5-demo.spec.ts"
+  "apps/control-plane/scripts/project-allowed-origins.mts"
 )
 
 # name|extended-regex ; scanned in non-test .ts/.tsx under apps/*/src packages/*/src
@@ -84,7 +85,8 @@ IDENTIFIERS=(
   "PILOT_TENANT_ID|PILOT_TENANT_ID"
   "FIRST_PARTY_TENANT_ID|FIRST_PARTY_TENANT_ID"
 )
-# allowed_origins is scoped to the two services that read it
+# allowed_origins is scoped to the two services that used to read it (0 since FOLLOW-1333; the
+# DB schema keeps the unread columns and is outside this scan)
 ORIGINS_DIRS=("$CP" "apps/ingest/src")
 
 declare -a names=() values=()

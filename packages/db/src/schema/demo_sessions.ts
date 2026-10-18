@@ -1,4 +1,11 @@
 /**
+ * DEPRECATION NOTE (not tagged `@deprecated` — `lib/demo-session-revocation.ts` still reads it, and the tag is a lint error at every reader): No writer since FOLLOW-1326 (2026-10-18): `api/demo/sessions*` and
+ * `admin/demo-sessions` are deleted. The ONLY remaining reader is the runtime-revocation lookup in
+ * `apps/control-plane/src/lib/demo-session-revocation.ts` (called by `/api/adapt` for a demo JWT
+ * that carries `session_id`). DROP is owed to the CTO handover (`docs/handover/CTO_HANDOVER.md`
+ * §4 step 13). NEVER delete this file: drizzle would emit a production DROP on the next
+ * `db-migrate.yml` run.
+ *
  * demo_sessions — tracks active and historical Demo Mode sessions per tenant.
  *
  * Created when an agency activates Demo Mode from their back office. Revoked

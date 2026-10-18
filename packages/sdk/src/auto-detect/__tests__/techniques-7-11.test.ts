@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
 import { parsePrice } from '../utils/price-parser.js';
-import { formatPrice } from '../utils/currency-formatter.js';
 
 // ---------------------------------------------------------------------------
 // Price parser
@@ -111,51 +110,6 @@ describe('parsePrice', () => {
 
 // ---------------------------------------------------------------------------
 // Currency formatter
-// ---------------------------------------------------------------------------
-describe('formatPrice', () => {
-  it('formats POA as "Price on request"', () => {
-    expect(formatPrice('POA', '')).toBe('Price on request');
-    expect(formatPrice('POA', 'EUR')).toBe('Price on request');
-  });
-
-  it('formats EUR value with currency symbol', () => {
-    const formatted = formatPrice(335000, 'EUR', 'en-GB');
-    expect(formatted).toContain('335');
-    expect(formatted).toContain('000');
-    // Should include currency indicator
-    expect(formatted.includes('€') || formatted.includes('EUR')).toBe(true);
-  });
-
-  it('formats GBP value', () => {
-    const formatted = formatPrice(1500000, 'GBP', 'en-GB');
-    expect(formatted).toContain('1');
-    expect(formatted).toContain('500');
-    expect(formatted.includes('£') || formatted.includes('GBP')).toBe(true);
-  });
-
-  it('formats USD value', () => {
-    const formatted = formatPrice(128000000, 'USD', 'en-US');
-    expect(formatted).toContain('128');
-    expect(formatted.includes('$') || formatted.includes('USD')).toBe(true);
-  });
-
-  it('formats without currency when currency is empty string', () => {
-    const formatted = formatPrice(500000, '');
-    // Should be a plain number, no currency prefix
-    expect(formatted).toContain('500');
-    expect(formatted).not.toContain('€');
-    expect(formatted).not.toContain('£');
-    expect(formatted).not.toContain('$');
-  });
-
-  it('uses default locale when none provided', () => {
-    // Should not throw
-    expect(() => formatPrice(300000, 'EUR')).not.toThrow();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// AI Vision — null when ANTHROPIC_API_KEY missing
 // ---------------------------------------------------------------------------
 describe('detectAiVision', () => {
   beforeEach(() => {

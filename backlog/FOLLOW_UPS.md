@@ -56275,3 +56275,23 @@ AC:
       change.
 
 cross_ref: [FOLLOW-1328, K2b ledger findings 2–3, Rule X, Rule L]
+
+## FOLLOW-1350 — ROPA row for tenant accounts still describes billing and registration data
+
+source_retro: — (K2c ledger, 2026-10-18; flagged by the FOLLOW-1348 review) source_ticket:
+FOLLOW-1331 recommended_agent: compliance-engineer (Sonnet) priority: P3 estimated_hours: 1 tag:
+docs depends_on: [FOLLOW-1331, FOLLOW-1325] blocks: [] promoted_to_queue: true
+
+**What.** `docs/compliance/ropa.md:256` (the tenant-accounts processing activity) still lists
+"billing linkage" with Stripe customer/subscription ids and `registration_id` / `approver_id`. The
+Stripe code left with FOLLOW-1331 (#1028) and registrations with FOLLOW-1325 (#1025); `tenants.plan`
+stays. Re-state the activity's data categories to what the single-tenant code processes, note the
+retired categories with the removal date, and keep the row's lawful basis and retention unchanged
+unless the removal changes them (say so either way).
+
+AC:
+
+- [ ] Row 256 lists only categories a reader can find in `packages/db/src/schema/tenants.ts`;
+      `node scripts/check-measured-premises.mjs` and the consent-sync gates unaffected.
+
+cross_ref: [FOLLOW-1331, FOLLOW-1325, FOLLOW-1348, K2c ledger finding 1]

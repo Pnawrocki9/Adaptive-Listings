@@ -1,8 +1,9 @@
 /**
  * URL construction for all SDK→control-plane fetch calls.
  *
- * The install snippet emits (the in-repo generator, `buildSnippet` in the onboarding wizard's
- * DetectionPreview.tsx, was removed by FOLLOW-1328 / ESC-085; the host now writes the snippet):
+ * The install snippet emits (the in-repo generator, the onboarding wizard's snippet builder, was
+ * removed by FOLLOW-1328 / ESC-085; the host now writes the snippet, recipe:
+ * docs/runbooks/SDK_PRODUCTION_INTEGRATION.md §10):
  *
  *   data-decision-url="${CONTROL_PLANE_URL}/api"
  *   // e.g. "https://admin.estalara.com/api"
@@ -40,7 +41,7 @@
  *
  * `decisionApiUrl` is expected to be `https://admin.estalara.com/api` (host + `/api`,
  * no trailing slash) — the value the install snippet carries (formerly emitted verbatim by
- * the onboarding wizard's `buildSnippet()`, removed by FOLLOW-1328).
+ * the onboarding wizard's snippet builder, removed by FOLLOW-1328).
  *
  * The helper strips a trailing slash from `decisionApiUrl` (defensive normalisation)
  * and concatenates `path` directly. `path` MUST start with `/`.

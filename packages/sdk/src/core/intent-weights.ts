@@ -8,7 +8,8 @@
  *
  * URL convention (FOLLOW-305 fix):
  *   `decisionApiUrl` = `https://admin.estalara.com/api` (host + `/api`),
- *   as emitted by `buildSnippet()` in DetectionPreview.tsx:153.
+ *   as carried by the host snippet (recipe: docs/runbooks/SDK_PRODUCTION_INTEGRATION.md §10;
+ *   the repo no longer generates the snippet, FOLLOW-1328).
  *   The fetch target is `buildEndpoint(decisionApiUrl, '/intent/config')` =
  *   `https://admin.estalara.com/api/intent/config`.
  *   DO NOT prepend `/api` here — it is already in `decisionApiUrl`.
@@ -62,8 +63,9 @@ import { buildEndpoint } from './endpoint.js';
  * The tenant_id is resolved server-side from the bearer key; it is NOT passed as a
  * query parameter (ADR-0012 §1 auth model).
  *
- * @param decisionApiUrl - Base URL from SdkConfig. Production value (emitted by
- *   `buildSnippet()` in DetectionPreview.tsx): `"https://admin.estalara.com/api"`
+ * @param decisionApiUrl - Base URL from SdkConfig. Production value (carried by the
+ *   host snippet, docs/runbooks/SDK_PRODUCTION_INTEGRATION.md §10; the repo no longer generates
+ *   it, FOLLOW-1328): `"https://admin.estalara.com/api"`
  *   (host + `/api`, NO trailing slash). Route path `/intent/config` is appended by
  *   `buildEndpoint` — DO NOT pass the bare host here (RETRO-074 CB-1 / FOLLOW-305).
  * @param apiKey         - Tenant API key sent as Bearer token.

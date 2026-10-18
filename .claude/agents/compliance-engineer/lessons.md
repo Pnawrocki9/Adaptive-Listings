@@ -204,3 +204,13 @@ being written to Redis without any disclosure review. The schema contract should
   I'd add:** when an ADR justifies new processing by citing an existing practice, verify the
   practice is _recorded_ in the DPIA/ROPA, not merely _existing_ — "already deployed" and "already
   assessed" diverge silently, and the sub-processor row's data-category column is where to check.
+
+- **2026-10-18 / FOLLOW-1348 + FOLLOW-1349** · Superseded-by-ESC-085 banner on the external-brand
+  go-live check, append-only revision row 1.11 on the privacy notice template, one CTO-handover
+  invariant bullet, and repointed the stale install-snippet comments plus the Rule L note in the SDK
+  integration runbook. **Drift risk:** the banner and the handover bullet ("GET 409, POST 400")
+  describe the post-FOLLOW-1332 endpoint, but #1030 was not on main when written; on main the route
+  still gates on brand_config and the 422 path. I grep-verified the claim on the #1030 branch
+  (`isEstalaraTenant` at both gates) and made the merge order explicit. **Guardrail I'd add:** a
+  docs ticket whose `depends_on` is an unmerged PR must name the merge order in the commit body and
+  verify each behavioural sentence against that PR's head, not against main.

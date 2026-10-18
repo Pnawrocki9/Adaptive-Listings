@@ -186,6 +186,14 @@ Conditions:
 C1/C2 are CEO actions before the PR leaves draft; C3 is applied in the PR; C4 is a P3 docs follow-up
 (stub at the next bookkeeping PR).
 
+**C1/C2 closed 2026-10-18 (CEO authorised the PM to run the read-only checks; results):** C1a — one
+active tenant (`cbc51cfa-…`), `brand_config.brand_name` and `legal_entity` both NULL. C1b —
+`consent_records` holds 0 rows on production, so no stored hash can diverge. C1c — the single
+`tenant_config.update` audit row (2026-08-16) changed only `white_label` true → false; both identity
+keys NULL before and after. C2 — `NEXT_PUBLIC_ESTALARA_TENANT_ID` and `NEXT_PUBLIC_PILOT_TENANT_ID`
+are absent from Vercel Production; the baked fallback in `lib/estalara-tenant.ts` equals the only
+active tenant id. No `tos_version` bump needed; conditions met; #1030 merged as `3f02e2fa`.
+
 ## RESOLVED — ESC-084: FOLLOW-1203's three open forks — `chat.contact_initiated`, browser-emitted conversions, and who emits the signed conversion [FOLLOW-1203]
 
 **Filed by:** pm-orchestrator **Date:** 2026-10-13 **Affects:** FOLLOW-1203 (server-confirmed

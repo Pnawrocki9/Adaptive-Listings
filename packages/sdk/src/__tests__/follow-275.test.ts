@@ -45,7 +45,8 @@ import type { QuizPublicConfigResponse } from '@estalara/shared';
 // ---------------------------------------------------------------------------
 
 const SESSION_ID = 'f'.repeat(64);
-// FOLLOW-305: canonical form = host + /api, matching buildSnippet() in DetectionPreview.tsx:153.
+// FOLLOW-305: canonical form = host + /api, matching the host snippet recipe in
+// docs/runbooks/SDK_PRODUCTION_INTEGRATION.md §10 (the repo no longer generates it, FOLLOW-1328).
 const DECISION_API_URL = 'https://admin.estalara.com/api';
 
 /** Pre-seed a session so getOrCreateSession() skips SHA-256 fingerprint generation. */
@@ -651,7 +652,8 @@ describe('AC5 — Rule R: rehydrate path skips fetch and re-uses sessionStorage 
 describe('FOLLOW-305 — fetchQuizConfig production URL-form regression guard (TG-1)', () => {
   it('fetchQuizConfig calls the CORRECT single-/api URL with production decisionApiUrl form', async () => {
     // The real install snippet value: `${CONTROL_PLANE_URL}/api` = host + /api.
-    // Verified in apps/control-plane/src/components/onboarding/DetectionPreview.tsx:153.
+    // Recipe: docs/runbooks/SDK_PRODUCTION_INTEGRATION.md §10 (the repo no longer generates the
+    // snippet, FOLLOW-1328).
     const PROD_DECISION_API_URL = 'https://admin.estalara.com/api';
     const EXPECTED_URL = 'https://admin.estalara.com/api/quiz/public-config';
 

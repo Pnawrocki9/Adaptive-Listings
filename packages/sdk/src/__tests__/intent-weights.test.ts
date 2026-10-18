@@ -40,7 +40,8 @@ import type { IntentWeights } from '@estalara/shared';
 // ---------------------------------------------------------------------------
 
 const SESSION_ID = 'e'.repeat(64);
-// FOLLOW-305: canonical form = host + /api, matching buildSnippet() in DetectionPreview.tsx:153.
+// FOLLOW-305: canonical form = host + /api, matching the host snippet recipe in
+// docs/runbooks/SDK_PRODUCTION_INTEGRATION.md §10 (the repo no longer generates it, FOLLOW-1328).
 const DECISION_API_URL = 'https://admin.estalara.com/api';
 
 function seedSession(): void {
@@ -719,7 +720,8 @@ describe('Rule L — init() calls fetchIntentWeights and applies live weights', 
 // → "https://admin.estalara.com/api/api/intent/config" (404 in prod).
 //
 // This test drives `fetchIntentWeights` with the EXACT production decisionApiUrl value
-// ("host + /api", as emitted by buildSnippet() in DetectionPreview.tsx:153) and
+// ("host + /api", as carried by the host snippet, docs/runbooks/SDK_PRODUCTION_INTEGRATION.md §10;
+// the repo no longer generates it, FOLLOW-1328) and
 // asserts the mock is called with the CORRECT single-/api URL.
 // It MUST FAIL on main without the FOLLOW-305 fix.
 // ---------------------------------------------------------------------------
@@ -727,7 +729,8 @@ describe('Rule L — init() calls fetchIntentWeights and applies live weights', 
 describe('FOLLOW-305 — production URL-form regression guard (TG-1)', () => {
   it('fetchIntentWeights calls the CORRECT single-/api URL with production decisionApiUrl form', async () => {
     // The real install snippet value: `${CONTROL_PLANE_URL}/api` = host + /api.
-    // Verified in apps/control-plane/src/components/onboarding/DetectionPreview.tsx:153.
+    // Recipe: docs/runbooks/SDK_PRODUCTION_INTEGRATION.md §10 (the repo no longer generates the
+    // snippet, FOLLOW-1328).
     const PROD_DECISION_API_URL = 'https://admin.estalara.com/api';
     const EXPECTED_URL = 'https://admin.estalara.com/api/intent/config';
 

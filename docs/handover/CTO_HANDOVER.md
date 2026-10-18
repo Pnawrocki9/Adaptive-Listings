@@ -68,6 +68,8 @@ diagram of MASTER_DESIGN is the source).
 - **The harness contract that must survive every deletion:** `GET /api/admin/analytics/rollup`
   (Bearer `ADMIN_API_SECRET`, no `tenant_id` ⇒ the Estalara tenant) keeps answering `data_source`,
   `rollup.ctaLift`, `conversion_source` — FOLLOW-819 AC(5) reads them.
+- The consent endpoint `/api/v1/consent/platform-registration` accepts only `ESTALARA_TENANT_ID`
+  (any other `tenant_id`: GET 409, POST 400, nothing written) — FOLLOW-1332.
 
 ## 3. Secrets inventory — BY NAME ONLY
 

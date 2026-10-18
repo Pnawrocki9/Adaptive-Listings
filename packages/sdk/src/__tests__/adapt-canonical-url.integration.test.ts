@@ -14,15 +14,15 @@ import type { SessionState } from '../core/session.js';
  *
  *   wizard activation → snippet generation → simulated SDK init → adapt request
  *
- * The snippet is built in the SAME format as
- * `apps/control-plane/src/components/onboarding/DetectionPreview.buildSnippet`
- * (`data-decision-url="${CONTROL_PLANE_URL}/api"`), parsed into a real <script>
+ * The snippet is built in the SAME format as the host snippet recipe in
+ * docs/runbooks/SDK_PRODUCTION_INTEGRATION.md §10 (the repo no longer generates the snippet,
+ * FOLLOW-1328) (`data-decision-url="${CONTROL_PLANE_URL}/api"`), parsed into a real <script>
  * element, run through the production `readConfig()`, then `fetchDirectives()`.
  * The test asserts the mocked fetch target is exactly
  * `https://admin.estalara.com/api/adapt` — the canonical control-plane endpoint
  * (ADR-0006 §Decision 2).
  *
- * Guard: if buildSnippet ever drifts from `${host}/api`, OR if readConfig/adapt
+ * Guard: if the host snippet ever drifts from `${host}/api`, OR if readConfig/adapt
  * stop appending `/adapt`, this test breaks — surfacing the [BLOCKER] from the
  * 1a audit (§A / §F.1) at CI time.
  */
@@ -46,11 +46,11 @@ const VALID_RESPONSE = {
 };
 
 /**
- * Mirror of control-plane buildSnippet(). Kept here (not imported) because the
- * SDK package cannot resolve apps/control-plane at test time; the format must be
+ * Mirror of the host snippet. Kept here (not imported) because the
+ * SDK package has no in-repo snippet generator to import; the format must be
  * identical, which is exactly what this test guards.
  */
-function buildSnippet(tenantId: string, apiKey: string): string {
+function hostSnippet(tenantId: string, apiKey: string): string {
   return `<script\n  src="https://cdn.estalara.com/sdk.js"\n  data-tenant-id="${tenantId}"\n  data-api-key="${apiKey}"\n  data-decision-url="${CONTROL_PLANE_URL}/api"\n></script>`;
 }
 
@@ -78,7 +78,7 @@ describe('FOLLOW-105 — snippet → SDK init → canonical /api/adapt request',
     const apiKey = 'est_pub_integration';
 
     // 1. Wizard activation → snippet generation.
-    const snippet = buildSnippet(tenantId, apiKey);
+    const snippet = hostSnippet(tenantId, apiKey);
 
     // 2. Simulated SDK init — parse the snippet's data-* attributes via readConfig.
     const scriptEl = snippetToScriptEl(snippet);

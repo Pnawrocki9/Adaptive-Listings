@@ -2,7 +2,7 @@
 
 Operator procedure for minting, rotating, revoking and listing the tenant's API keys with
 `apps/control-plane/scripts/issue-tenant-api-key.mts`. It replaces the key part of
-`POST /api/schema/activate`, which plan Phase 2 R6 (FOLLOW-1328) deletes. For the single tenant
+`POST /api/schema/activate`, which FOLLOW-1328 deleted (plan Phase 2 R6). For the single tenant
 (ESC-085) it also supersedes `docs/runbooks/BRAND_PROVISIONING.md` §Step 2 (the key half) and the
 key-capture prerequisite of its §Step 6.
 

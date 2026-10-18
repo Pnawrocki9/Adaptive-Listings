@@ -199,9 +199,6 @@ const NO_CHANNEL = null;
 
 const REGISTER: CaptureSiteGroup[] = [
   {
-    consumer: NO_CHANNEL,
-  },
-  {
     file: 'app/admin/tenants/data.ts',
     sites: 2,
     meaning: 'The admin tenant list / detail query failed against Postgres.',

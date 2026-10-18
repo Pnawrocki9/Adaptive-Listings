@@ -1,8 +1,8 @@
 # Checkpoint K2a — Phase 2 first batch (R1–R4, R7; R5 and R9 merged before the series) (2026-10-18)
 
-**Plan:** `docs/PLAN-LOCALHOST-COMPLETION-2026-10-17.md`. **Verdict: **VERDICT**.** **SHA of
-record:** `main` `bed16746` (#1028; every PR below is merged). **Rollback target before K2a:** tag
-`k1-green` (`40405410`). **Tag:** `k2a-green` on the merge commit of this ledger.
+**Plan:** `docs/PLAN-LOCALHOST-COMPLETION-2026-10-17.md`. **Verdict: GREEN.** **SHA of record:**
+`main` `bed16746` (#1028; every PR below is merged). **Rollback target before K2a:** tag `k1-green`
+(`40405410`). **Tag:** `k2a-green` on the merge commit of this ledger.
 
 The plan defines K2a as "after R1–R4, R7". R5 (#1027, a script + runbook, no runtime path) and R9
 (#1028, Stripe removal under `apps/control-plane/src`) were also merged before the series, so the
@@ -26,7 +26,7 @@ stays a K2b gate.
 
 | #   | Control                      | Instrument                                                        | Result                                                                                                                                                                                                                                                                                             |
 | --- | ---------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| I1  | Differentiator works         | FOLLOW-819 series, README §5.27                                   | **I1**                                                                                                                                                                                                                                                                                             |
+| I1  | Differentiator works         | FOLLOW-819 series, README §5.27                                   | **GREEN** — runs 1, 2, 4 `7/7 run=GREEN` `[FRESH]` at `bed16746`; run 3 `UNMEASURED` (chat session drew holdout, AC(8) neutral per §P.0, same draw as K0 run 3)                                                                                                                                    |
 | I2  | Multi-tenant surface shrinks | `scripts/check-single-tenant.sh --ratchet` on `main` `bed16746`   | **PASS, total 204 (K1) → 173**; `paths_present` 11 → 9, `routes_inventory` 95 → 94, `id_getTenantsList` 0; every removed path of this batch = 0 (see the STOP-rule check)                                                                                                                          |
 | I3  | Real app end to end          | not required at K2a by the plan (next: K2c N3-lite)               | K0 record stands; this batch touched no buyer-path code (the `/api/adapt` demo path lost only the demo-session revocation writers, the reader is unchanged)                                                                                                                                        |
 | I4  | Backoffice usable            | N2 `admin-nav-reachability.test.ts` (CI) on every PR of the batch | **GREEN** — `admin-nav-reachability.test.ts` green in CI on all seven PRs (sidebar sanity, inventory floor 15 after R7, `HIDDEN_BY_DESIGN` empty) and in the local subset run; `/admin/tenants` 307 → hub covered by `admin/tenants/route` tests; Playwright smoke re-run at K2b with the stack up |

@@ -55624,3 +55624,568 @@ AC:
 - [ ] `ai_cached` responses and the SDK paint path unchanged.
 
 cross_ref: [FOLLOW-1315, ESC-076]
+
+## FOLLOW-1320 — single-tenant bookkeeping and the N1 gate `scripts/check-single-tenant.sh` (plan Phase 0.3 + 0.5)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: pm-orchestrator
+(Sonnet, bookkeeping) + devops-engineer (Sonnet, gate) priority: P1 estimated_hours: 6 tag: gate
+depends_on: [FOLLOW-1319] blocks: [FOLLOW-1321, FOLLOW-1322, FOLLOW-1323] promoted_to_queue: true
+
+**What.** (a) Docs-only PR: stubs and QUEUE rows for FOLLOW-1320..1346, session-179 banner,
+single-tenant `CLAUDE.md`. (b) Gate PR: `scripts/check-single-tenant.sh` with `--report` (K0),
+`--ratchet` (K2a) and `--final` (K2c); `scripts/baselines/single-tenant.baseline`;
+`single-tenant-routes.allowlist`; wired into `ci.yml` as "Single-tenant surface" and into
+`.github/required-checks.txt` in the same PR. Fails on any removable path that exists, on
+`agency_role`/`AgencyRole`/`allowed_origins` reads/`getTenantsList`/`brand-identity` outside tests,
+and on any `app/**/{page,route}.tsx?` absent from the allowlist. Exit codes per
+`check-gate-exit-codes.sh`.
+
+AC:
+
+- [ ] Negative control: a fixture containing `agency_role` makes the gate fail.
+- [ ] `--report` output stored as the K0 baseline; register and gate-exit-code checks green.
+- [ ] `check-ticket-status-vocabulary.mjs` passes; prettier clean on the edited files.
+
+Do not: edit `docs/MASTER_DESIGN.md`, ESCALATIONS or ADRs here (FOLLOW-1319); run builds during a
+measurement series. cross_ref: [plan §Faza 0, §N1]
+
+## FOLLOW-1321 — C1: rank-gate global intent config and generation-model writes (plan Phase 1)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: backend-engineer
+(Opus, auth) priority: P1 estimated_hours: 6 tag: product depends_on: [FOLLOW-1320] blocks:
+[FOLLOW-1323] promoted_to_queue: true
+
+**What.** `lib/tracer-auth.ts` `verifyTracerAdminAuth` returns
+`{kind:'staff', role, canWrite, isSuperadmin} | {kind:'secret'}` using `STAFF_ROLE_RANK`/`canWrite`/
+`isSuperadmin` from `lib/session-auth.ts:226-236,456-457` (no fourth copy of the rank table). Apply
+to `api/admin/intent/config/route.ts` (GET/POST), `…/[id]/route.ts` (PUT) and
+`api/admin/generation-model` PUT. Writes need >= `ops`; generation-model needs `superadmin`
+(ADR-0018 #3). Bearer `ADMIN_API_SECRET`: 403 on write, GET unchanged (harness reads rollup with
+it). `admin/tracer/weights/page.tsx` goes read-only for `readonly`. Every write ->
+`staff_audit_log`.
+
+AC:
+
+- [ ] Tests: readonly 403, secret 403, ops 200, ops on generation-model 403, audit row written.
+- [ ] `check-follow555-session-auth.sh`, `check-staff-write-atomicity.sh` green; checkpoint K1.
+- [ ] Series: PR does not touch the harness pathspec beyond control-plane; run per plan rules.
+
+Do not: touch `intent-weights` (already has `canWrite`). cross_ref: [ADR-0018, plan §Faza 1]
+
+## FOLLOW-1322 — C2: `/admin` resolves the Estalara tenant, not a hardcoded production id (plan Phase 1)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: backend-engineer
+(Sonnet) priority: P1 estimated_hours: 4 tag: product depends_on: [FOLLOW-1320] blocks:
+[FOLLOW-1328] promoted_to_queue: true
+
+**What.** `lib/pilot-tenant.ts` -> `lib/estalara-tenant.ts` (`ESTALARA_TENANT_ID`, env
+`NEXT_PUBLIC_ESTALARA_TENANT_ID`, one release of fallback to `NEXT_PUBLIC_PILOT_TENANT_ID`; override
+honoured only when `NODE_ENV !== 'production'`). `app/admin/page.tsx`: `permanentRedirect` 308 ->
+`redirect` 307 (308 is browser-cached and pinned the stale id). `app/admin/layout.tsx:15,27-30`;
+`tenants/[id]/tracer/page.tsx:317` sends `tenant_id`; `scripts/dev/localhost-up.sh` exports the env
+= `$OPS_TENANT_ID`. Missing tenant in DB -> an explicit "tenant not configured" page naming the
+variable.
+
+AC:
+
+- [ ] `/admin` lands on the Estalara tenant locally; Live Monitor carries `tenant_id`.
+- [ ] Unit test: override works only outside production. N2 v0 cases pass at K1; one series.
+
+cross_ref: [plan §Faza 1]
+
+## FOLLOW-1323 — R1: remove `api/internal/schema` and `packages/platform-templates` (plan Phase 2)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: backend-engineer
+(Sonnet) priority: P2 estimated_hours: 4 tag: product depends_on: [FOLLOW-1320, FOLLOW-1321,
+FOLLOW-1322] blocks: [] promoted_to_queue: true
+
+**What.** Delete both (zero importers; grep result in the PR), workspace entries, turbo/tsconfig
+references and the lockfile rows. Update the ml-engineer row in `CLAUDE.md`. Checkpoint: K2a.
+
+AC:
+
+- [ ] Zero-importer grep pasted; `pnpm turbo typecheck lint test --concurrency=1` green.
+- [ ] N1 `--ratchet` shows both paths at 0; Rule I "0 new".
+
+cross_ref: [plan §Faza 2 R1]
+
+## FOLLOW-1324 — R2: remove the parked `apps/data-quality` (plan Phase 2)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: devops-engineer
+(Sonnet) priority: P2 estimated_hours: 4 tag: product depends_on: [FOLLOW-1320] blocks: []
+promoted_to_queue: true
+
+**What.** Delete the app and every register in the same PR: `ci.yml:192` matrix,
+`required-checks.txt:112`, REGISTRY in `scripts/check-modal-local-imports.py`,
+`check-modal-secret-keys.py:15`, `check-cron-heartbeat.sh:5`, `cron-heartbeat.yml`,
+`modal-deploy.yml`. Operator step `modal app stop estalara-schema-validation` goes to the CTO
+handover, not the PM queue. Checkpoint: K2b.
+
+AC:
+
+- [ ] `gh-pr-checks-verified.sh` exit 0 (register matches workflows); `check-gate-exit-codes.sh`
+      green.
+
+cross_ref: [plan §Faza 2 R2, FOLLOW-1298]
+
+## FOLLOW-1325 — R3: remove registrations (plan Phase 2)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: backend-engineer
+(Sonnet) priority: P2 estimated_hours: 4 tag: product depends_on: [FOLLOW-1320] blocks:
+[FOLLOW-1331] promoted_to_queue: true
+
+**What.** Delete `admin/registrations/*`, `app/register`, `api/registrations`, the sidebar link and
+`/register` from `PUBLIC_PREFIXES`. The `tenant_registrations` table and schema file STAY
+(`@deprecated`; DROP goes to the CTO list). KEEP `/api/v1/consent/platform-registration`.
+
+AC:
+
+- [ ] Zero-importer grep in the PR; consent route test still green; N1 ratchet down. Checkpoint K2a.
+
+cross_ref: [plan §Faza 2 R3, decision D-D]
+
+## FOLLOW-1326 — R4: remove demo sessions and the mockup (plan Phase 2)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: backend-engineer
+(Sonnet) priority: P2 estimated_hours: 4 tag: product depends_on: [FOLLOW-1320] blocks:
+[FOLLOW-1331] promoted_to_queue: true
+
+**What.** Delete `admin/demo-sessions`, `api/demo/sessions*`, `dashboard/demo/mockup*`,
+`lib/mockup-listings`. KEEP `api/demo/override` and `admin/tenants/[id]/demo` (archetype simulator).
+Grep proof that `verifyDemoJwt` does not depend on demo sessions (harness probe).
+
+AC:
+
+- [ ] Harness probe path unaffected; N1 ratchet down. Checkpoint K2a.
+
+cross_ref: [plan §Faza 2 R4, decision D-C]
+
+## FOLLOW-1327 — R5: operator API-key issuance script and runbook (plan Phase 2; precondition of R6)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: backend-engineer
+(Opus) priority: P1 estimated_hours: 8 tag: product depends_on: [FOLLOW-1320] blocks: [FOLLOW-1328]
+promoted_to_queue: true
+
+**What.** `apps/control-plane/scripts/issue-tenant-api-key.mts` +
+`docs/runbooks/API_KEY_ISSUANCE.md`. Same SHA-256 hashing as `seed-local-tenant.mts`; rotate and
+revoke; flips the tenant `pending -> active` and calls `seedListingEmbeddingsForActivation`
+(`seed-listing-embeddings.ts:367`), which `schema/activate` does today. The key is never logged.
+
+AC:
+
+- [ ] Integration proof at K2b: operator issues key -> SDK sends -> ingest returns 2xx;
+      `apps/ingest test:integration:clickhouse` green. gitleaks clean.
+
+cross_ref: [plan §Faza 2 R5]
+
+## FOLLOW-1328 — R6: remove the detection chain (plan Phase 2)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: sdk-engineer +
+backend-engineer (Opus) priority: P1 estimated_hours: 12 tag: product depends_on: [FOLLOW-1327,
+FOLLOW-1322] blocks: [FOLLOW-1334] promoted_to_queue: true
+
+**What.** Delete `components/onboarding/*`, `dashboard/onboarding/detect`, `dashboard/detection`,
+`api/detect`, `api/schema/activate`, `shared/schemas/detect.ts`, `packages/sdk/src/auto-detect/**`,
+the type export at `sdk/src/index.ts:141`, the alias in `vitest.config.ts`, `demo-integration.yml`,
+`sprint-9-5-demo.spec.ts`; `ci.yml` ~496 and `required-checks.txt:87` in the same PR. KEEP
+`lib/ssrf.ts`, `tenant_site_schemas`, `lib/tenant-schema.ts`; seed `inquiry_submit_selector` in
+`seed-local-tenant`. ESC entry BEFORE the PR (public SDK surface).
+
+AC:
+
+- [ ] SDK bundle shrinks or holds (<= 43,136 B gzip); series 3x GREEN `[FRESH]`; checkpoint K2b.
+
+cross_ref: [plan §Faza 2 R6, ESC-085]
+
+## FOLLOW-1329 — R7: remove the tenants fleet list (plan Phase 2)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: backend-engineer
+(Sonnet) priority: P2 estimated_hours: 4 tag: product depends_on: [FOLLOW-1320] blocks:
+[FOLLOW-1330] promoted_to_queue: true
+
+**What.** Commit 1 moves `getTenantById` to `admin/tenants/[id]/data.ts`; commit 2 deletes
+`tenants/page.tsx`, `getTenantsList` and `api/admin/diagnostics/first-party-tenant`. Update Sentry
+`TOTAL_SITES` (`observability-signals.test.ts:173`); mark `docs/runbooks/BRAND_PROVISIONING.md`
+superseded.
+
+AC:
+
+- [ ] Unit test for the moved `getTenantById`; N1 ratchet down. Checkpoint K2a.
+
+cross_ref: [plan §Faza 2 R7]
+
+## FOLLOW-1330 — R8: collapse cross-brand analytics, keep the rollup route (plan Phase 2)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: backend-engineer
+(Opus) priority: P1 estimated_hours: 8 tag: product depends_on: [FOLLOW-1329, FOLLOW-1322] blocks:
+[FOLLOW-1331] promoted_to_queue: true
+
+**What.** Delete only the page `admin/analytics`; `api/admin/analytics/rollup` STAYS (harness :4997,
+Bearer, no `tenant_id` -> `ESTALARA_TENANT_ID`). Move the `reorder_withheld` and scoring-path panels
+to `admin/tenants/[id]/analytics`. Keep `rollup-lift-parity.test.ts`. FIRST add a contract test
+pinning the response keys AC(5) reads (`data_source`, `rollup.ctaLift`, `conversion_source`).
+
+AC:
+
+- [ ] Contract test lands before the change; series 3x GREEN `[FRESH]`. Checkpoint K2c.
+
+cross_ref: [plan §Faza 2 R8, FOLLOW-1220]
+
+## FOLLOW-1331 — R9: remove Stripe code (plan Phase 2)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: backend-engineer
+(Sonnet) priority: P2 estimated_hours: 4 tag: product depends_on: [FOLLOW-1320] blocks: []
+promoted_to_queue: true
+
+**What.** Delete `lib/stripe.ts`, `api/webhooks/stripe`, tests and env entries. `tenants.plan` STAYS
+(read by `api/config`, `api/tenants`, `api/audit`), pinned in the seed. CTO handover: disable the
+webhook endpoint, remove `STRIPE_*` secrets.
+
+AC:
+
+- [ ] Zero-importer grep; typecheck/lint/test green; N1 ratchet. Checkpoint K2c.
+
+cross_ref: [plan §Faza 2 R9, decision D-H, ESC-085]
+
+## FOLLOW-1332 — R10: replace `lib/brand-identity.ts` with constants (plan Phase 2)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: backend-engineer
+(Opus) priority: P1 estimated_hours: 12 tag: product depends_on: [FOLLOW-1322] blocks: [FOLLOW-1333]
+promoted_to_queue: true
+
+**What.** Fold the 563-line module into constants in `lib/estalara-tenant.ts`; update importers
+(`origin-policy`, `api-key-auth`, `quiz/completion`, `api/config`, `dsr/initiate`,
+`consent/platform-registration`, `tenant-config-editor`). Behaviour and `tenant_id` value unchanged.
+compliance-engineer confirms no change of DSR/consent data scope.
+
+AC:
+
+- [ ] Same-value tests; N1 `--final` shows zero `brand-identity` hits. Checkpoint K2c.
+
+cross_ref: [plan §Faza 2 R10]
+
+## FOLLOW-1333 — R11: static origin list replaces DB `allowed_origins` (plan Phase 2)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: backend-engineer +
+devops-engineer (Opus) priority: P1 estimated_hours: 16 tag: product depends_on: [FOLLOW-1332]
+blocks: [FOLLOW-1335] promoted_to_queue: true
+
+**What.** Tri-state `allowed_origins` -> a static list in `lib/origin-policy.ts`,
+`lib/api-key-auth.ts`, `apps/ingest/src/{origin-gate,auth,router}.ts`,
+`scripts/project-allowed-origins.mts`, middleware preflight (FOLLOW-941: stop reflecting any
+Origin). PROD = `app.estalara.com`, `admin.estalara.com`; DEV = existing dev list INCLUDING the
+fixture origin :5173. `control-plane-probe.test.ts` and `harness-preflight.test.ts` in the same PR.
+DB column stays, unread.
+
+AC:
+
+- [ ] Ingest vitest: prod origins OK, localhost OK only outside production, others 403.
+- [ ] Series 3x GREEN `[FRESH]`; N3-lite accepts :5173. Checkpoint K2c (riskiest; PM reads N1).
+
+cross_ref: [plan §Faza 2 R11, FOLLOW-941]
+
+## FOLLOW-1334 — M1: port unique dashboard surfaces into `/admin/tenants/[id]` (plan Phase 3)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: backend-engineer
+(Sonnet UI; Opus auth review) priority: P1 estimated_hours: 16 tag: product depends_on:
+[FOLLOW-1328] blocks: [FOLLOW-1335] promoted_to_queue: true
+
+**What.** Port `quiz/analytics`, `listings/[id]/answers` (FAQ RAG), the pilot tab and the label
+calibration panel (`labels-editor.tsx:9`). `api/dashboard/analytics/{summary,lift}` move to
+`resolveTenantAccess` on the staff path; `lift/route-helpers.ts` exports stay (rollup imports them).
+
+AC:
+
+- [ ] `page.test.tsx` for each ported page; auth review recorded. Checkpoint K3.
+
+cross_ref: [plan §Faza 3 M1, decision D-B]
+
+## FOLLOW-1335 — M2: remove agency roles and `/dashboard` (plan Phase 3)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: backend-engineer
+(Opus) priority: P1 estimated_hours: 16 tag: product depends_on: [FOLLOW-1334, FOLLOW-1333,
+FOLLOW-1325, FOLLOW-1326, FOLLOW-1328] blocks: [FOLLOW-1336] promoted_to_queue: true
+
+**What.** Delete `app/dashboard/**`; `/dashboard/*` -> `/admin/...` redirects for one release;
+remove `AGENCY_ROLE_RANK`, `requireAgencyRole`, `x-agency-role` (`middleware.ts`), agency claims
+(`packages/auth/src/jwt.ts:23-62`) and agency branches in `session-auth.ts`, `demo/override:195`,
+`config/route.ts:282` (agency branch ONLY; the API-key path serves the SDK),
+`admin/labels/[id]:138-156`; ~30 tests. Middleware is imported by the harness probe, so run the
+series.
+
+AC:
+
+- [ ] N1: no `app/dashboard/**/page.tsx` outside redirects; series 3x GREEN `[FRESH]`. K3.
+
+cross_ref: [plan §Faza 3 M2, decision D-B]
+
+## FOLLOW-1336 — M3: backoffice defects — not-found, error, password reset (plan Phase 3)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: backend-engineer
+(Sonnet; Opus reviews the callback) priority: P1 estimated_hours: 12 tag: product depends_on:
+[FOLLOW-1322] blocks: [FOLLOW-1343] promoted_to_queue: true
+
+**What.** `app/not-found.tsx`, `app/error.tsx`; password recovery: `app/auth/callback/route.ts`
+(code exchange), `/reset-password` page, "forgot password" link, fix `SignInForm.tsx:34` (Supabase
+client only inside the submit handler); tidy the sidebar. Supabase redirect-URL step -> handover.
+
+AC:
+
+- [ ] Unknown URL renders `not-found`; reset flow tested end to end locally. Checkpoint K3.
+
+cross_ref: [plan §Faza 3 M3]
+
+## FOLLOW-1337 — M4: repair the local `next build` (plan Phase 3, operational)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: devops-engineer
+(Sonnet) priority: P1 estimated_hours: 4 tag: gate depends_on: [] blocks: [FOLLOW-1346]
+promoted_to_queue: true
+
+**What.** Two React copies in local `node_modules` break `next build` (Vercel builds fine). Remove
+`node_modules` fully, clean `pnpm install`; if the duplicate returns, a small `pnpm.overrides` PR.
+Recorded as a handover precondition. Run only with the stack down (RAM).
+
+AC:
+
+- [ ] `next build` exit 0 after a clean install; command and output in the PR. Checkpoint K7 input.
+
+cross_ref: [plan §Faza 3 M4]
+
+## FOLLOW-1338 — M5: lift report — D-J breakdown, daily snapshot, CSV export (plan Phase 3)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: backend-engineer
+(Sonnet; Opus reviews migration/RLS) priority: P1 estimated_hours: 12 tag: product depends_on:
+[FOLLOW-1334] blocks: [] promoted_to_queue: true
+
+**What.** (a) `components/analytics/pilot-view.tsx` and `api/dashboard/analytics/lift`: windows
+7/14/30/90 days; `live_signup_rate` and `agent_contact_rate` beside the combined conversion; arm
+sizes and significance badge unchanged. (b) PG `lift_daily_snapshots` (tenant, day, arm, sessions,
+conversions per event, `relative_lift_pct`, `p_value`, `confidence`) written by
+`api/cron/lift-snapshot` (`CRON_SECRET`); migration with RLS like sibling tables. (c) CSV export
+`api/dashboard/analytics/lift/export`, staff-only. Formula in `lib/pilot-stats.ts` and the rollup
+contract are NOT changed.
+
+AC:
+
+- [ ] Cron test: one day -> one row per arm, idempotent; CSV headers = panel columns. Checkpoints
+      K3, K5.
+
+cross_ref: [plan §Faza 3 M5, decision D-K, D-J]
+
+## FOLLOW-1339 — X1: signed `live.signup` and `inquiry.completed` from the Estalara app (plan Phase 5)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: backend-engineer
+(Opus) priority: P1 estimated_hours: 16 tag: product depends_on: [FOLLOW-1345] blocks: [FOLLOW-1344]
+promoted_to_queue: true
+
+**What.** In `core-master` (local repo, no git; `tar` snapshot first, deliver as patches + README in
+`docs/handover/estalara-app-patches/`): (a) `live.signup` on `LIVE_PRESENTATION_REGISTRATION`
+(`LivestreamServiceImpl`); (b) `inquiry.completed` on `ConversationCreatedEvent` with buyer
+`initiatorRole`. Server key from `hmac_secret` to `/v1/events` (contract §V.3.2); `session_id`/`xid`
+carrier chosen and documented. HMAC unit test with the same vector as the control-plane verifier.
+Fixture server `:8081` emits both types. ESC entry on the event-contract change BEFORE the PR.
+
+AC:
+
+- [ ] Both events reach CH signed (`caller_signed=1`). Checkpoint K5.
+
+cross_ref: [plan §Faza 5 X1, decision D-J]
+
+## FOLLOW-1340 — X2: Estalara app calls the `listing-updated` webhook (plan Phase 5)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: backend-engineer
+(Opus) priority: P2 estimated_hours: 4 tag: product depends_on: [FOLLOW-1345] blocks: []
+promoted_to_queue: true
+
+**What.** `core-master` calls `/api/webhooks/listing-updated` on listing save (revision bump).
+Delivered as a patch under `docs/handover/estalara-app-patches/`.
+
+AC:
+
+- [ ] A listing save bumps the revision on localhost. Checkpoint K5.
+
+cross_ref: [plan §Faza 5 X2]
+
+## FOLLOW-1341 — X3: `cta` and `feature` slot hooks on the listing page (plan Phase 5)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: sdk-engineer (Sonnet)
+priority: P2 estimated_hours: 4 tag: product depends_on: [FOLLOW-1345] blocks: [] promoted_to_queue:
+true
+
+**What.** `web-master`: add hooks for the `cta` and `feature` slots beside `headline` and
+`description` on the listing page. Patch delivery as for X1.
+
+AC:
+
+- [ ] Both slots adapt on the real listing page. Checkpoint K5.
+
+cross_ref: [plan §Faza 5 X3]
+
+## FOLLOW-1342 — X4: `data-debug` from env in the Estalara web app (plan Phase 5)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: sdk-engineer (Sonnet)
+priority: P2 estimated_hours: 2 tag: product depends_on: [FOLLOW-1345] blocks: [] promoted_to_queue:
+true
+
+**What.** `web-master`: `data-debug` derives from env, not hardcoded `true`.
+
+AC:
+
+- [ ] `grep -r 'data-debug="true"'` over the app returns 0. Checkpoint K5.
+
+cross_ref: [plan §Faza 5 X4]
+
+## FOLLOW-1343 — N2: backoffice smoke — nav reachability test and Playwright admin-smoke (plan instrument)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: qa-engineer (Opus)
+priority: P1 estimated_hours: 12 tag: gate depends_on: [FOLLOW-1322] blocks: [] promoted_to_queue:
+true
+
+**What.** `admin/__tests__/admin-nav-reachability.test.ts` (BFS over the nav manifest: every kept
+function <= 2 clicks from `/admin`, every inventory page in nav or explicitly hidden, every
+`/dashboard/*` redirect has a target) in CI; `tests/e2e/backoffice/admin-smoke.spec.ts` with
+`playwright.config.ts` (reuse `@playwright/test` from `packages/sdk` or add to `tests/e2e`): staff
+login, pinned tenant, click each function, 500/`error.tsx` = fail, rank check, unknown route ->
+`not-found`. Needs only PG + control plane (~1.5 GB, ~3 min).
+
+AC:
+
+- [ ] N2 v0 at K1; full at K3 (one staff role opens everything); `page.test.tsx` for every kept
+      page.
+
+cross_ref: [plan §N2, K1, K3]
+
+## FOLLOW-1344 — N3: `scripts/dev/real-app-acceptance.mjs` (plan instrument)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: qa-engineer (Opus)
+priority: P1 estimated_hours: 16 tag: measurement depends_on: [FOLLOW-1339] blocks: [FOLLOW-1346]
+promoted_to_queue: true
+
+**What.** Extend `local-pilot-session.mjs` (no degrade-to-skipped): consent -> ~30 s -> quiz
+(Investment, Rental income, Steady yield) -> `yield_hunter` -> `/api/adapt` 200 `llm_tweaked`,
+headline and description DOM changed, `/api/adapt/description` `ai_cached`, no `data-debug="true"`.
+From K4: inquiry -> signed `inquiry.completed` in CH -> rollup `conversion_source='signed_events'`,
+`data_source='clickhouse'`, `ctaLift` non-null. From K4b: same xid in a new context adapts on the
+first call. From K5: both conversion paths and `--arms N` (holdout forced via caller `holdout_pct`)
+asserting a numeric `relative_lift_pct` and `confidence != 'insufficient'` at N >= 30. Writes
+`SESSION_JSON` with both repo SHAs.
+
+AC:
+
+- [ ] First use at K4b; K5 runs it 3x on one un-restarted control plane, then `--arms 40`.
+
+cross_ref: [plan §N3, decision D-J]
+
+## FOLLOW-1345 — harness AC(1b), AC(9) and the checkpoint ledger convention (plan instrument)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: qa-engineer (Opus)
+priority: P1 estimated_hours: 16 tag: measurement depends_on: [FOLLOW-1316, FOLLOW-1317] blocks:
+[FOLLOW-1339, FOLLOW-1340, FOLLOW-1341, FOLLOW-1342] promoted_to_queue: true
+
+**What.** AC(1b) grounding fidelity (sub-check of AC(1): no playbook markers in the description;
+every price/street equals the `:8081` source; each typed claim has a grounded field; "single-storey"
+rejected) with `ac1b-verdict.test.ts` in `pnpm e2e:smoke`. AC(9) returning buyer (session 1 consent
+
+- quiz; session 2 fresh context, same xid, zero behavioural events -> first `/api/adapt` already
+  `llm_tweaked` with the same archetype; negative control: xid without consent or revoked by DSR ->
+  no adaptation) with `ac9-verdict.test.ts`; TALLY `total=8`. Ledger convention: each checkpoint
+  writes `docs/checkpoints/K<n>.md` (SHA, artefact paths, instrument results) and tag `k<n>-green`.
+
+AC:
+
+- [ ] Series 8/8 GREEN `[FRESH]`; older artefacts become STALE by design. Checkpoints K4a, K4b.
+
+cross_ref: [plan §Faza 4, §Nowe instrumenty]
+
+## FOLLOW-1346 — Phase 7: final localhost proof H1/H2 and CTO handover v1 (plan Phase 7)
+
+source_retro: — (approved plan 2026-10-17) source_ticket: — recommended_agent: architect (Fable) for
+H2; qa-engineer (Opus) for H1 priority: P1 estimated_hours: 24 tag: docs depends_on: [FOLLOW-1337,
+FOLLOW-1344, FOLLOW-1307, FOLLOW-1308, FOLLOW-1309, FOLLOW-1310] blocks: [] promoted_to_queue: true
+
+**What.** H1: full localhost proof at the final SHA (series 3x 8/8 `[FRESH]`, N3 3x, N2,
+`next build` exit 0 after a clean install with the stack down). H2: freeze
+`docs/handover/CTO_HANDOVER.md` v1 (production steps from Phase 0.4 plus everything appended since,
+Estalara patch set, open-risk register, production canaries as post-deploy checks, rollback with the
+2026-10-13 cutover record). H3: PM closes or defers tickets superseded by the plan. H4: CEO
+acceptance (K7).
+
+AC:
+
+- [ ] K7 gates green; PM checks every secret name against env files, migrations 0022/0023/0024 with
+      flags, Modal stops, Vercel/Doppler, ESC-020.
+
+cross_ref: [plan §Faza 7, K7]
+
+## AMENDMENT to FOLLOW-1246 — 2026-10-18 by FOLLOW-1320: plan phase and order
+
+**AMENDMENT (2026-10-18).** Phase 4 order P1 (first: a stale `dist` hides fixes, so the series must
+be trustworthy before any other Phase 4 PR). Sonnet. Gated by checkpoint K4a (with P2..P6). Source:
+approved plan `~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`; ESC-085.
+
+## AMENDMENT to FOLLOW-1317 — 2026-10-18 by FOLLOW-1320: plan phase and order
+
+**AMENDMENT (2026-10-18).** Phase 4 order P2 (Opus; widen scope to align
+`scripts/dev/fixture-listing-details-server.mjs` with the real core-master DTO). Gated by checkpoint
+K4a; AC(1b) proves it. Source: approved plan
+`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`; ESC-085.
+
+## AMENDMENT to FOLLOW-1318 — 2026-10-18 by FOLLOW-1320: plan phase and order
+
+**AMENDMENT (2026-10-18).** Phase 4 order P3 (Sonnet). Gated by checkpoint K4a. Source: approved
+plan `~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`; ESC-085.
+
+## AMENDMENT to FOLLOW-1233 — 2026-10-18 by FOLLOW-1320: plan phase and order
+
+**AMENDMENT (2026-10-18).** Phase 4 order P4 (Sonnet): cosine seed path invoked from the bring-up
+procedure. Gated by checkpoint K4a. Source: approved plan
+`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`; ESC-085.
+
+## AMENDMENT to FOLLOW-1168 — 2026-10-18 by FOLLOW-1320: plan phase and order
+
+**AMENDMENT (2026-10-18).** Phase 4 order P5 (Opus): bandit inert on the LLM branches. Gated by
+checkpoint K4a. Source: approved plan `~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`;
+ESC-085.
+
+## AMENDMENT to FOLLOW-1311 — 2026-10-18 by FOLLOW-1320: plan phase and order
+
+**AMENDMENT (2026-10-18).** Phase 4 order P6 (Opus): typed claim contract. Re-scoped from post-GO to
+in-scope P1 by the approved plan; re-scope against single-tenant code before dispatch. Gated by
+checkpoint K4a. Source: approved plan `~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`;
+ESC-085.
+
+## AMENDMENT to FOLLOW-1316 — 2026-10-18 by FOLLOW-1320: plan phase and order
+
+**AMENDMENT (2026-10-18).** Phase 4 order P7 (Opus), last in Phase 4. Merge gate: signed
+compliance-engineer review recorded in ESC (consent, DPIA/ROPA, retention, DSR, opt-out). Gated by
+checkpoint K4b (AC(9) with negative control). Source: approved plan
+`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`; ESC-085.
+
+## AMENDMENT to FOLLOW-1307 — 2026-10-18 by FOLLOW-1320: plan phase and order
+
+**AMENDMENT (2026-10-18).** Phase 6 S1 (Opus, `/security-review`). Re-scoped from post-GO to
+in-scope P1 by the approved plan; re-scope against single-tenant code before dispatch. Build the
+method x role matrix from the N2 route inventory. Gated by checkpoint K6; starts after R11 and M2.
+Source: approved plan `~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`; ESC-085.
+
+## AMENDMENT to FOLLOW-1308 — 2026-10-18 by FOLLOW-1320: plan phase and order
+
+**AMENDMENT (2026-10-18).** Phase 6 S2 (Opus). Re-scoped from post-GO to in-scope P1 by the approved
+plan; re-scope against single-tenant code before dispatch. After deletion AC(9) must report no
+adaptation. Gated by checkpoint K6. Source: approved plan
+`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`; ESC-085.
+
+## AMENDMENT to FOLLOW-1309 — 2026-10-18 by FOLLOW-1320: plan phase and order
+
+**AMENDMENT (2026-10-18).** Phase 6 S3 (Opus): SSRF (private IP, redirect-to-private, DNS rebind) on
+`lib/ssrf.ts`, which stays. Re-scoped from post-GO to in-scope P1 by the approved plan; re-scope
+against single-tenant code before dispatch (the onboarding/detect parts are removed by R6). Gated by
+checkpoint K6. Source: approved plan `~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`;
+ESC-085.
+
+## AMENDMENT to FOLLOW-1310 — 2026-10-18 by FOLLOW-1320: plan phase and order
+
+**AMENDMENT (2026-10-18).** Phase 6 S4 (Opus): bounded, recoverable ingest. Re-scoped from post-GO
+to in-scope P1 by the approved plan; re-scope against single-tenant code before dispatch. Gated by
+checkpoint K6. Source: approved plan `~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`;
+ESC-085.

@@ -13,9 +13,10 @@ authorization.
 
 ## What we're building
 
-**Estalara Adaptive Listings** is an embeddable AI layer + standalone SaaS that lets any real estate
-website serve listings adapted in real time to each anonymous buyer based on chat, behavior,
-questions, and cross-listing journey.
+**Estalara Adaptive Listings** is an embeddable AI layer + standalone SaaS that serves
+app.estalara.com's listings adapted in real time to each anonymous buyer based on chat, behavior,
+questions, and cross-listing journey. Adaptive Listings is single-tenant by CEO ruling 2026-10-17
+(ESC-085): app.estalara.com is the only host; the internal `tenant_id` stays as one constant.
 
 > **Historical — Tiers retired 2026-06-05 (CEO ruling, MASTER_DESIGN §E.7).** Adaptive Listings now
 > ships a single experience for all tenants; there are no Tier 1/2/3 product boundaries. The three
@@ -31,6 +32,12 @@ Three (retired) integration tiers:
 Founders: Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD (CPO).
 
 ## Localhost-first until FOLLOW-820 GO (CEO ruling, 2026-08-21)
+
+**Update 2026-10-18.** The FOLLOW-820 GO ruling is deferred (CEO 2026-10-16). The governing plan is
+the CEO-approved 2026-10-17 plan (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`: phases
+0–7, checkpoints K0–K7); the definition of done is K7, then the CTO handover package. The critical
+path is now C → R5 → R6 → R10 → R11 → M2 → S → H (FOLLOW-1321/1322, 1327, 1328, 1332, 1333, 1335,
+1307–1310, 1346). The rest of this section is kept as history.
 
 **The final version of Adaptive Listings is tested to completion on localhost before any production
 step.** Piotr's standing ruling (reaffirming 2026-06-10 localhost-first and ESC-052 option 2 — there
@@ -70,8 +77,9 @@ Repository scale (current target):
   data-quality, parked and not deployed — FOLLOW-1298)
 - 5 packages (packages/sdk, shared, db, auth, platform-templates)
 
-Four regions (EU/US/UK/UAE), 12-week MVP timeline. (The former three integration tiers — Observer /
-Augment / Native — were retired 2026-06-05; see the note above and §E.7.)
+12-week MVP timeline. (The earlier four-region EU/US/UK/UAE plan is historical. The former three
+integration tiers — Observer / Augment / Native — were retired 2026-06-05; see the note above and
+§E.7.)
 
 Read these in order before doing anything:
 
@@ -149,11 +157,10 @@ Retros are **batched weekly**, not run per merge. Docs-only PRs get **no retro**
 3. Checks adjacent QUEUE.md tickets for cascading assumptions affected by this merge
 4. Produces a structured 7-section RETRO-NNN entry in `backlog/RETROSPECTIVES.md`
 5. Files **at most 3** follow-up stubs in `backlog/FOLLOW_UPS.md`, each classified `product`,
-   `measurement`, `docs` or `gate`. Until FOLLOW-820 GO, new P2/P3 stubs are not filed: those
-   observations go into the retro text as a list. P0/P1 stubs are still allowed.
+   `measurement`, `docs` or `gate`. The D8 moratorium on new P2/P3 stubs is lifted (ESC-085,
+   2026-10-17); the weekly batching and the >100-line rule stay.
 6. Promotes a finding to a permanent Rule in `CONVENTIONS_PATCH.md` only if the same pattern
-   appeared in ≥2 prior retros, and not at all while the moratorium on new Rules (until FOLLOW-820
-   GO) stands
+   appeared in ≥2 prior retros. The moratorium on new Rules was lifted with D8 (ESC-085).
 
 This loop is self-improving — each retro is more effective than the last because it reads
 accumulated prior findings. The goal: zero "forgot something fundamental" surprises at MVP end.
@@ -202,17 +209,17 @@ These are codified in CONVENTIONS_PATCH.md. Highlights:
 
 ## The 9 agents
 
-| Agent                 | Role                                                                                                                                                                 | Model  |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| `pm-orchestrator`     | Reads backlog, delegates to workers, validates output, updates queue                                                                                                 | sonnet |
-| `architect`           | Designs interfaces between modules, writes ADRs, resolves cross-cutting concerns                                                                                     | sonnet |
-| `sdk-engineer`        | Builds `@estalara/sdk` (Preact + Shadow DOM, vanilla TS)                                                                                                             | sonnet |
-| `backend-engineer`    | Cloudflare Workers ingest, Next.js control plane (dashboard + API including Magic Link onboarding wizard), Postgres/Supabase, and the Auto-Onboarding HTTP API layer | sonnet |
-| `data-engineer`       | ClickHouse schemas, ETL jobs, and the daily continuous schema validation cron (drift detection per tenant, per Master Design B.6)                                    | sonnet |
-| `ml-engineer`         | Intent engine, embeddings, archetype space, adaptation engine, and the platform templates library (packages/platform-templates)                                      | sonnet |
-| `devops-engineer`     | Terraform, CI/CD, multi-region deploy, observability                                                                                                                 | sonnet |
-| `qa-engineer`         | E2E tests, integration tests, load tests, accessibility                                                                                                              | sonnet |
-| `compliance-engineer` | DPIA, ROPA, privacy policy, GDPR/CCPA/UAE PDPL implementation                                                                                                        | sonnet |
+| Agent                 | Role                                                                                  | Model  |
+| --------------------- | ------------------------------------------------------------------------------------- | ------ |
+| `pm-orchestrator`     | Reads backlog, delegates to workers, validates output, updates queue                  | sonnet |
+| `architect`           | Designs interfaces between modules, writes ADRs, resolves cross-cutting concerns      | sonnet |
+| `sdk-engineer`        | Builds `@estalara/sdk` (Preact + Shadow DOM, vanilla TS)                              | sonnet |
+| `backend-engineer`    | Cloudflare Workers ingest, Next.js control plane (dashboard + API), Postgres/Supabase | sonnet |
+| `data-engineer`       | ClickHouse schemas, ETL jobs                                                          | sonnet |
+| `ml-engineer`         | Intent engine, embeddings, archetype space, adaptation engine                         | sonnet |
+| `devops-engineer`     | Terraform, CI/CD, multi-region deploy, observability                                  | sonnet |
+| `qa-engineer`         | E2E tests, integration tests, load tests, accessibility                               | sonnet |
+| `compliance-engineer` | DPIA, ROPA, privacy policy, GDPR/CCPA/UAE PDPL implementation                         | sonnet |
 
 Each agent is defined in `.claude/agents/<name>.md`.
 

@@ -1,8 +1,53 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 178 (2026-10-16) — **CEO ruling 2026-10-16: the FOLLOW-820 GO/NO-GO ruling is DEFERRED. The project first completes ALL development and testing on localhost; production deployment then happens as a handover package to the CTO (deployment guide plus accesses), not as PM-run production steps. The same day the CEO reviewed the localhost demo (six findings); the demo substrate moved off the harness fixture page onto the real Estalara app (local-only repo `~/Projects/Estalara-gitlab-2026-08-17`, SDK to the real control plane :3000, documented in `ADAPTIVE_LISTINGS_LOCAL.md` of that repo). New tickets: FOLLOW-1316 (cross-visit profile persistence, P1, CEO-approved, NEXT), FOLLOW-1317 (grounding loses price and street address on the real backend, P1), FOLLOW-1318 (description route leaks playbook text on a cache miss, P2). Next free: FOLLOW-1319, RETRO-368, ESC-085.**
+## ▶️ START HERE — session 179 (2026-10-18) — **The CEO approved the closing plan (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, 2026-10-17): Adaptive Listings is SINGLE-TENANT (app.estalara.com only) — ESC-085 reverses ADR-0018 §Decision 0 (FOLLOW-1319). FOLLOW-820 GO stays DEFERRED; the definition of done is K7, then the CTO handover package (`docs/handover/CTO_HANDOVER.md`). The D8 moratorium on new P2/P3 stubs and new Rules is LIFTED (ESC-085). Phases and checkpoints: Phase 0 housekeeping (K0 baseline) → Phase 1 C1 ∥ C2 (K1) → Phase 2 removals R1..R11 (K2a/K2b/K2c) → Phase 3 one backoffice M1..M5 (K3, CEO review 1) → Phase 4 buyer path P1..P7 (K4a/K4b) → Phase 5 Estalara app X1..X4 (K5, CEO review 2) → Phase 6 security S1..S4 (K6) → Phase 7 proof and handover (K7, CEO review 3). Tickets: FOLLOW-1319 (docs, IN_PROGRESS), 1320 (this bookkeeping + N1 gate), 1321/1322 (C1/C2), 1323..1333 (R1..R11), 1334..1338 (M1..M5), 1339..1342 (X1..X4), 1343 (N2), 1344 (N3), 1345 (AC(1b)/AC(9) + checkpoint ledger), 1346 (Phase 7). Reused: 1246, 1317, 1318, 1233, 1168, 1311, 1316 (Phase 4 P1..P7), 1307..1310 (Phase 6 S1..S4, re-scoped from post-GO). NEXT = K0 baseline → Phase 1 C1 ∥ C2. Next free: FOLLOW-1347, RETRO-368, ESC-086.**
+
+## ▶️ Previous banner — session 178 (2026-10-16) — **CEO ruling 2026-10-16: the FOLLOW-820 GO/NO-GO ruling is DEFERRED. The project first completes ALL development and testing on localhost; production deployment then happens as a handover package to the CTO (deployment guide plus accesses), not as PM-run production steps. The same day the CEO reviewed the localhost demo (six findings); the demo substrate moved off the harness fixture page onto the real Estalara app (local-only repo `~/Projects/Estalara-gitlab-2026-08-17`, SDK to the real control plane :3000, documented in `ADAPTIVE_LISTINGS_LOCAL.md` of that repo). New tickets: FOLLOW-1316 (cross-visit profile persistence, P1, CEO-approved, NEXT), FOLLOW-1317 (grounding loses price and street address on the real backend, P1), FOLLOW-1318 (description route leaks playbook text on a cache miss, P2). Next free: FOLLOW-1319, RETRO-368, ESC-085.**
 
 ## ▶️ Previous banner — session 177 (2026-10-11) — **FOLLOW-1290 DONE (#971, `9212e9f0`). Codex Review assessed and INTAKEN (plan `~/.claude/plans/…smooth-elephant.md`; PM assessment in `docs/CODEX_REVIEW.md` §"Ocena PM"): diagnosis confirmed, RED-for-buyers consistent with localhost-first; "8%" and week estimates not adopted. CEO rulings 2026-10-11 (ESC-083): §P.0 gains condition **1c** (unsupported claims contained before FIT/cache) = FOLLOW-1305 on the 820 path after FOLLOW-1251; the full claim contract = FOLLOW-1311 after FOLLOW-1297, checkpoint B; the security/privacy axis = FOLLOW-1307..1310 (P1, axis B, after the 820 path). Stubs amended from Codex corrections: 1302 (F-04 fixture + depends on 1306), 1303 (tenant-mixing premise withdrawn), 1291 (revision fence regardless of p95), 1294 (JSONB key, no migration 0040), 1297 (ADR-0023 first; G-02/03/06/10 folded; Modal auto-deploy), 1251 (first on the gateway), 1279 (absorbed by 1308).** ⚠️ Standing operator steps: CH 0023 on prod (three DROPs, not `migrate.sh`); `modal app stop estalara-schema-validation`. ⚠️ PM lesson of record: a quiet agent is not a dead agent (`feedback_quiet_agent_is_not_dead_agent`). **2026-10-11 later: 1251 DONE (#973), 1305 DONE (#974 — condition 1c now "measured, not ruled on"), 1306 DONE (#975). CEO ruled per-slot refusal → FOLLOW-1312 DONE (#977 `784c8160`, 2026-10-12) ∥ FOLLOW-1302 DONE (#978 `84535b94`). CEO rulings 2026-10-12: **1b MET, 1c MET with limits of record** (#979, MASTER_DESIGN 4.19). FOLLOW-1280 DONE (#980), FOLLOW-1303 DONE (#981). FOLLOW-1291 DONE (#983, Redis stays per D10; revision fence shipped). FOLLOW-1292 DONE (#985), FOLLOW-1313 DONE (#986, PG cache on in the series). FOLLOW-1294 DONE (#988). FOLLOW-1293 DONE (#991). FOLLOW-1296 DONE (#993), FOLLOW-1295 DONE (#996), ADR-0023 ACCEPTED (#995). FOLLOW-1297 DONE 2026-10-13 (PR A #997, production cutover via #1000, PR B #1001) — **every Phase 2 package is merged**. Operator step owed: `modal app stop estalara-description-generator`. **Checkpoint K2 PASSED — CEO ruling 2026-10-13** (two misses accepted: `llm-gateway.ts` 928 lines, nine ticket-named tests under `api/adapt`). FOLLOW-1220 DONE (#1005), FOLLOW-1203 DONE (#1007), condition-1 series at `main` HEAD recorded (README §5.23, 2026-10-14). **NEXT = the CEO's FOLLOW-820 GO/NO-GO ruling** — nothing else is on the critical path; on the critical path FOLLOW-819 ×3 condition-1 README §5 record (owed) → 1203 → 1220 → FOLLOW-820; ∥ 1303 (amended) and 1280; then 1291 (amended) → 1292 → 1294 → 1293 → 1296 → 1295 → 1297 → K2 → FOLLOW-820; axis B 1307 → 1308 → 1309 → 1310 → 1311 after GO (earlier only with free RAM and disjoint files).** Next free: FOLLOW-1316, RETRO-368, ESC-085.
+
+### Dispatch record (session 179)
+
+Phase and checkpoint per the approved plan; one heavy item at a time (RAM).
+
+- **FOLLOW-1319** — status: IN_PROGRESS # P1. Phase 0 docs: ESC-085, ADR-0018 annex, MASTER_DESIGN
+  4.27, CTO handover v0 (parallel PR).
+- **FOLLOW-1320** — status: IN_PROGRESS # P1. Phase 0: this bookkeeping PR + N1 gate
+  `scripts/check-single-tenant.sh` (gate PR in flight).
+- **FOLLOW-1321** — status: READY # P1. Phase 1 C1: rank-gate global intent config and
+  generation-model writes. Checkpoint K1.
+- **FOLLOW-1322** — status: READY # P1. Phase 1 C2: `/admin` resolves `ESTALARA_TENANT_ID`.
+  Checkpoint K1.
+- **FOLLOW-1323** — status: BACKLOG # Phase 2 R1 (schema route, platform-templates). K2a.
+- **FOLLOW-1324** — status: BACKLOG # Phase 2 R2 (data-quality app and its registers). K2b.
+- **FOLLOW-1325** — status: BACKLOG # Phase 2 R3 (registrations). K2a.
+- **FOLLOW-1326** — status: BACKLOG # Phase 2 R4 (demo sessions, mockup). K2a.
+- **FOLLOW-1327** — status: BACKLOG # Phase 2 R5 (API-key issuance script; precondition of R6). K2b.
+- **FOLLOW-1328** — status: BACKLOG # Phase 2 R6 (detection chain; series 3x). K2b.
+- **FOLLOW-1329** — status: BACKLOG # Phase 2 R7 (fleet list). K2a.
+- **FOLLOW-1330** — status: BACKLOG # Phase 2 R8 (cross-brand analytics page; rollup route stays).
+  K2c.
+- **FOLLOW-1331** — status: BACKLOG # Phase 2 R9 (Stripe). K2c.
+- **FOLLOW-1332** — status: BACKLOG # Phase 2 R10 (`brand-identity` to constants). K2c.
+- **FOLLOW-1333** — status: BACKLOG # Phase 2 R11 (static origin list; series 3x). K2c.
+- **FOLLOW-1334** — status: BACKLOG # Phase 3 M1 (port unique dashboard surfaces). K3.
+- **FOLLOW-1335** — status: BACKLOG # Phase 3 M2 (remove agency roles and `/dashboard`). K3.
+- **FOLLOW-1336** — status: BACKLOG # Phase 3 M3 (not-found, error, password reset). K3.
+- **FOLLOW-1337** — status: BACKLOG # Phase 3 M4 (repair local `next build`). K3/K7.
+- **FOLLOW-1338** — status: BACKLOG # Phase 3 M5 (lift report, daily snapshot, CSV). K3/K5.
+- **FOLLOW-1339** — status: BACKLOG # Phase 5 X1 (signed `live.signup` and `inquiry.completed`). K5.
+- **FOLLOW-1340** — status: BACKLOG # Phase 5 X2 (`listing-updated` webhook). K5.
+- **FOLLOW-1341** — status: BACKLOG # Phase 5 X3 (`cta`/`feature` slot hooks). K5.
+- **FOLLOW-1342** — status: BACKLOG # Phase 5 X4 (`data-debug` from env). K5.
+- **FOLLOW-1343** — status: BACKLOG # Instrument N2 (nav reachability + Playwright admin-smoke). K1
+  v0, K3 full.
+- **FOLLOW-1344** — status: BACKLOG # Instrument N3 (`real-app-acceptance.mjs`). K4b first use, K5
+  full.
+- **FOLLOW-1345** — status: BACKLOG # Harness AC(1b), AC(9), checkpoint ledger convention. K4a/K4b.
+- **FOLLOW-1346** — status: BACKLOG # Phase 7 H1/H2 final proof and handover v1. K7.
+- Reused tickets, new phase and order: **FOLLOW-1246** P1, **1317** P2, **1318** P3, **1233** P4,
+  **1168** P5, **1311** P6, **1316** P7 (Phase 4, gates K4a/K4b); **1307..1310** S1..S4 (Phase 6,
+  gate K6, re-scoped from post-GO). Statuses unchanged; see the AMENDMENT blocks in FOLLOW_UPS.
 
 ### Dispatch record (session 177)
 
@@ -69,11 +114,12 @@
   CEO 2026-10-16: ruling deferred until localhost completion.
 - **FOLLOW-1316** — status: READY # P1, NEXT UP, CEO-approved 2026-10-16. Cross-visit buyer profile
   persistence (`xid` to the server, profile restored on a new session); compliance-engineer review
-  is a gate. sdk + backend.
+  is a gate. sdk + backend. Plan 2026-10-17: Phase 4 P7, gate K4b.
 - **FOLLOW-1317** — status: READY # P1. Grounding loses price and street address on the real
-  Estalara backend (`priceUsd`/`priceEur`, no `streetAddress`). control-plane.
+  Estalara backend (`priceUsd`/`priceEur`, no `streetAddress`). control-plane. Plan: Phase 4 P2,
+  gate K4a.
 - **FOLLOW-1318** — status: BACKLOG # P2. `GET /api/adapt/description` returns playbook-internal
-  text on `template_fallback`. control-plane.
+  text on `template_fallback`. control-plane. Plan: Phase 4 P3, gate K4a.
 - **FOLLOW-1297** — status: DONE # PR A #997 `2bb2db6c` (port, parity 98/98), production cutover
   2026-10-13 (#1000 `0cbca8dc`, smoke green), PR B #1001 `95e15d36` (`apps/llm-gateway` and its
   gates deleted; register 42 → 39 checks). Operator step owed:
@@ -83,6 +129,8 @@
   message 2 (0.367 → 0.664, `llm_full`); red-first; 3× GREEN `[FRESH]` at `359db019`; row 1b
   "measured, not ruled on". Negative case 0.403 live vs 0.484 intake (same outcome, unexplained).
 - **FOLLOW-1307, 1308, 1309, 1310, 1311** — status: READY # P1, axis B; dispatch after the 820 path.
+  Plan 2026-10-17 (session 179): 1307..1310 = Phase 6 S1..S4 (gate K6, after R11 and M2); 1311 =
+  Phase 4 P6 (gate K4a); all re-scoped from post-GO to in-scope P1.
 - **FOLLOW-1279** — status: CLOSED # absorbed by FOLLOW-1308.
 - **FOLLOW-1251, 1302, 1303, 1291, 1294, 1297** — amended (see FOLLOW_UPS); statuses unchanged.
 

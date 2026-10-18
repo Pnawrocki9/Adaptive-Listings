@@ -91,14 +91,12 @@ interface OriginPolicyInput {
   /** `tenants.allowed_origins` — `NOT NULL DEFAULT []`; `[]` means NOT CONFIGURED, not deny-all. */
   tenantOrigins: string[];
   /**
-   * Whether the resolved tenant is the first party (Estalara itself), as a TRI-STATE.
-   * [FOLLOW-951]
-   *
-   * `'unverified'` means `FIRST_PARTY_TENANT_ID` is unset/blank/malformed, so the answer is
-   * UNKNOWABLE — it is deliberately NOT a synonym for `'confirmed'` here, because the two
-   * branches below need opposite defaults on it. See `classifyFirstPartyTenant`.
+   * Whether the resolved tenant is the Estalara tenant (`isEstalaraTenant`, FOLLOW-1332). Only it
+   * inherits the platform allow-list. Before FOLLOW-1332 this was a tri-state derived from a
+   * first-party env var (`'confirmed' | 'external' | 'unverified'`); with one tenant held as a
+   * constant the `'unverified'` state no longer exists.
    */
-  firstPartyStatus: 'confirmed' | 'external' | 'unverified';
+  isEstalaraTenant: boolean;
   /** The platform allow-list, inherited only by the first party. */
   platformOrigins: readonly string[];
 }
@@ -112,7 +110,7 @@ interface OriginPolicyInput {
  * ingest Worker does.
  */
 export function resolveOriginDecision(input: OriginPolicyInput): OriginDecision {
-  const { requestOrigin, keyOrigins, tenantOrigins, firstPartyStatus, platformOrigins } = input;
+  const { requestOrigin, keyOrigins, tenantOrigins, isEstalaraTenant, platformOrigins } = input;
 
   if (!requestOrigin) {
     return { verdict: 'allow', origin: '', source: 'platform' };
@@ -136,78 +134,21 @@ export function resolveOriginDecision(input: OriginPolicyInput): OriginDecision 
     if (allowed.includes(canonical)) {
       return { verdict: 'allow', origin: canonical, source };
     }
-    // FOLLOW-946 — the FIRST PARTY additionally keeps the platform list, and this is not a
+    // FOLLOW-946 — the Estalara tenant additionally keeps the platform list, and this is not a
     // convenience. `tenants.allowed_origins` exists to be populated for the INGEST KV projection
-    // (`project-allowed-origins.mts`, `BRAND_PROVISIONING.md` §Step 6). Before this clause, doing
-    // that documented thing for Estalara's own tenant would have silently locked Estalara out of
-    // its OWN control plane — a column written for one layer taking precedence in another.
-    //
-    // **`'confirmed'` and not "not external" — this branch is fail-CLOSED, and the asymmetry with
-    // the unconfigured branch below is the whole of FOLLOW-951.** This clause GRANTS origins a
-    // tenant did not configure, so on unknowable first-party identity it must grant nothing:
-    // `'unverified'` (env unset/blank/malformed) previously read as first-party via
-    // `isFirstPartyTenant`'s fail-open and would have handed EVERY brand Estalara's two origins —
-    // the FOLLOW-658 failure, found by RETRO-267 auditing the PR that introduced this clause.
-    // Falsification: if a first party ever legitimately runs with the env unset AND a populated
-    // origin list, it will be refused here, and the fix is to set the env var, not to widen this.
-    if (platformOrigins.includes(canonical)) {
-      if (firstPartyStatus === 'confirmed') {
-        return { verdict: 'allow', origin: canonical, source: 'platform' };
-      }
-      if (firstPartyStatus === 'unverified') {
-        // A DISTINCT reason, not `forbidden_origin`. [FOLLOW-957 AC(1)]
-        //
-        // The refusal is identical in effect and completely different in cause: the origin IS a
-        // platform origin and the caller MAY be the first party — we simply cannot tell, because
-        // `FIRST_PARTY_TENANT_ID` is unset/blank/malformed in the environment that decides. Under
-        // the old single reason this arrived as `forbidden_origin`, byte-identical to a genuinely
-        // disallowed origin, and four of six callers then collapse it into a 401 (FOLLOW-943), so
-        // the observable symptom of Estalara being locked out of its own control plane was
-        // **a 401 on a correct API key**. The module already proved it can distinguish causes
-        // (`origin_policy_unconfigured` below); this branch now uses that capability.
-        //
-        // What an operator sees the day `BRAND_PROVISIONING.md` §Step 6 arms this: `403` with
-        // `first_party_unverified`, plus a `first_party_tenant_id_unresolved` warning from
-        // `brand-identity.ts` once per server instance. Either one is the fix instruction — set
-        // `FIRST_PARTY_TENANT_ID` in **Vercel**, which is the store read at runtime.
-        return { verdict: 'deny', reason: 'first_party_unverified' };
-      }
-      // `'external'` falls through: an external brand being refused Estalara's platform origins is
-      // the CORRECT verdict and a genuine `forbidden_origin` (the FOLLOW-658 failure, one layer up).
+    // (`project-allowed-origins.mts`). Without this clause, doing that for Estalara's own tenant
+    // would lock Estalara out of its OWN control plane — a column written for one layer taking
+    // precedence in another. Any other tenant id gets no such grant: a genuine `forbidden_origin`.
+    if (isEstalaraTenant && platformOrigins.includes(canonical)) {
+      return { verdict: 'allow', origin: canonical, source: 'platform' };
     }
     return { verdict: 'deny', reason: 'forbidden_origin' };
   }
 
-  // `!== 'external'` — this branch DELIBERATELY keeps the fail-open, which is the opposite
-  // default to the grant branch above. [FOLLOW-951]
-  //
-  // It is not a grant of anything extra: an unconfigured tenant has no origin list at all, and
-  // this is the only thing standing between the live first party and a 403 on every SDK request.
-  // No production tenant or key has a populated `allowed_origins` [MP-001], so EVERY live request
-  // takes this branch. Requiring `'confirmed'` here would turn an unset or drifted
-  // `FIRST_PARTY_TENANT_ID` into a total control-plane outage rather than a security fix — and that
-  // env var lives in two unsynced stores, Doppler `prd` [MP-003] and Vercel [MP-002], of which only
-  // Vercel's is read at runtime.
-  //
-  // **`'unverified'` is not live in production [MP-002]** — the Vercel Production value resolves to
-  // a real, active tenant row. [FOLLOW-957, NARROWED and CLOSED by FOLLOW-973]
-  //
-  // The MEASUREMENT itself — the exact diagnostic call, its expected shape, when to re-take it, and
-  // the `vercel env ls` vs `env pull` trap that nearly produced a false drift alarm — lives in
-  // `docs/ops/MEASURED_PREMISES.md`, not here. [FOLLOW-952] A comment in shipped source asserting
-  // what a live environment holds has no owner, no expiry and no reader; the register has all
-  // three, and a CI gate goes red when a premise passes its revalidation date.
-  //
-  // What DOES belong here is why the code cannot answer the question itself. Neither log-based
-  // instrument can: the `first_party_tenant_id_unresolved` Sentry signal has no channel
-  // (`SENTRY_DSN_CONTROL_PLANE` unset in every Vercel environment [MP-004] — FOLLOW-965 /
-  // ESC-057), so its silence carries zero bits; and the surviving `console.warn` is reached only
-  // via `classifyFirstPartyTenant` at `api-key-auth.ts:186`, AFTER the `if (!requestOrigin)`
-  // short-circuit at `:168-170` — i.e. it needs authenticated browser-shaped traffic this estate
-  // has not established reaches prod. Absence of that warning is consistent with at least four
-  // world-states (Rule AR). That is why the premise is measured out-of-band and registered, rather
-  // than inferred from quiet logs.
-  if (firstPartyStatus !== 'external') {
+  // The Estalara tenant with nothing configured falls back to the platform list. This is the branch
+  // every live request takes: no production tenant or key has a populated `allowed_origins`
+  // [MP-001]. Any other tenant id has no origin list at all and is refused as unconfigured.
+  if (isEstalaraTenant) {
     return platformOrigins.includes(canonical)
       ? { verdict: 'allow', origin: canonical, source: 'platform' }
       : { verdict: 'deny', reason: 'forbidden_origin' };

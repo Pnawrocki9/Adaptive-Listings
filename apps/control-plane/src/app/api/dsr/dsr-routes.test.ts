@@ -43,7 +43,7 @@ vi.mock('next/server', async () => {
 });
 
 import { NextRequest, after } from 'next/server';
-import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type * as DsrVerifyModule from '@/lib/dsr-verify';
 
 // ─── Stable mock references (vi.hoisted for hoist safety) ────────────────────
@@ -101,8 +101,6 @@ vi.mock('@estalara/db', () => ({
     createdAt: 'created_at',
   },
   sessionEmbeddings: { sessionId: 'session_id', tenantId: 'tenant_id' },
-  // FOLLOW-654: brand identity lookup for the DSR OTP email display name.
-  tenants: { id: 'id', brandConfig: 'brand_config' },
   consentRecords: {
     sessionId: 'session_id',
     // FOLLOW-1108: tenantId present — every consent_records read/delete in the
@@ -154,8 +152,8 @@ vi.mock('@estalara/auth', () => ({
   isTenantClaims: mockIsTenantClaims,
 }));
 
-// FOLLOW-659: /api/dsr/initiate alerts (never blocks) when an EXTERNAL brand has no
-// configured legal identity — the alarm is the Sentry capture, so it is asserted.
+// FOLLOW-1332: /api/dsr/initiate no longer captures to Sentry (the FOLLOW-659 external-brand
+// alarm went with `lib/brand-identity.ts`); asserted silent on the first-party path.
 const { mockCaptureMessage } = vi.hoisted(() => ({ mockCaptureMessage: vi.fn() }));
 vi.mock('@sentry/nextjs', () => ({
   captureMessage: mockCaptureMessage,
@@ -373,9 +371,7 @@ describe('POST /api/dsr/initiate', () => {
 
   it('returns 202 with request_id and expires_at when everything is valid', async () => {
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-    mockSelect
-      .mockReturnValueOnce(buildChain([{ sessionId: 'sess-valid-001' }])) // session lookup
-      .mockReturnValueOnce(buildChain([])); // FOLLOW-654 brand identity lookup (no row → Estalara)
+    mockSelect.mockReturnValueOnce(buildChain([{ sessionId: 'sess-valid-001' }])); // session lookup
     mockInsert.mockReturnValue(buildChain([{ id: 'dsr-uuid-001', expiresAt }]));
 
     const { POST } = await import('./initiate/route.js');
@@ -398,44 +394,14 @@ describe('POST /api/dsr/initiate', () => {
     );
   });
 
-  // ─── FOLLOW-654 leg 3: per-brand DSR OTP email display identity ────────────
+  // ─── FOLLOW-1332: the OTP e-mail names Estalara, the only tenant ─────────────
+  // Pins the first-party e-mail byte-identical to what the per-brand resolver (FOLLOW-654 leg 3)
+  // produced for the Estalara tenant (no `brand_config.brand_name` → Estalara fallback), and that
+  // the ownership check still runs: the session lookup is the ONLY select the route issues now.
 
-  it('uses the brand display identity in the OTP email for a non-first-party tenant', async () => {
+  it('sends the OTP e-mail as Estalara, after the session-ownership check, with no brand lookup', async () => {
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-    mockSelect
-      .mockReturnValueOnce(buildChain([{ sessionId: 'sess-valid-001' }])) // session lookup
-      .mockReturnValueOnce(
-        buildChain([{ brandConfig: { brand_name: 'Costa Sol Properties' } }]), // brand identity
-      );
-    mockInsert.mockReturnValue(buildChain([{ id: 'dsr-uuid-002', expiresAt }]));
-
-    const { POST } = await import('./initiate/route.js');
-    const req = makeRequest('POST', '/api/dsr/initiate', {
-      body: { session_id: 'sess-valid-001', email: 'buyer@example.com', dsr_type: 'access' },
-      headers: { Authorization: 'Bearer jwt_token' },
-    });
-    const res = await POST(req);
-
-    expect(res.status).toBe(202);
-    expect(mockSendEmail).toHaveBeenCalledWith(
-      expect.objectContaining({
-        from: 'Costa Sol Properties <noreply@contact.estalara.com>',
-        subject: 'Your Costa Sol Properties data request',
-        html: expect.stringContaining('processed by Costa Sol Properties'),
-      }),
-    );
-    // Sending domain/infrastructure is unchanged — only the display name differs.
-    const call = mockSendEmail.mock.calls[0]?.[0] as { from: string };
-    expect(call.from).toContain('noreply@contact.estalara.com');
-  });
-
-  it('falls back to the Estalara identity when the tenant has no brand_name (first-party)', async () => {
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-    mockSelect
-      .mockReturnValueOnce(buildChain([{ sessionId: 'sess-valid-001' }])) // session lookup
-      .mockReturnValueOnce(
-        buildChain([{ brandConfig: { primary_color: '#1a73e8' } }]), // no brand_name key
-      );
+    mockSelect.mockReturnValueOnce(buildChain([{ sessionId: 'sess-valid-001' }])); // session lookup
     mockInsert.mockReturnValue(buildChain([{ id: 'dsr-uuid-003', expiresAt }]));
 
     const { POST } = await import('./initiate/route.js');
@@ -446,90 +412,27 @@ describe('POST /api/dsr/initiate', () => {
     const res = await POST(req);
 
     expect(res.status).toBe(202);
-    expect(mockSendEmail).toHaveBeenCalledWith(
-      expect.objectContaining({
-        from: 'Estalara <noreply@contact.estalara.com>',
-        subject: 'Your Estalara data request',
-        html: expect.stringContaining('processed by Estalara'),
-      }),
+    expect(mockSelect).toHaveBeenCalledTimes(1);
+    expect(mockSendEmail).toHaveBeenCalledOnce();
+    const call = mockSendEmail.mock.calls[0]?.[0] as {
+      from: string;
+      to: string;
+      subject: string;
+      html: string;
+    };
+    expect(call.from).toBe('Estalara <noreply@contact.estalara.com>');
+    expect(call.to).toBe('buyer@example.com');
+    expect(call.subject).toBe('Your Estalara data request');
+    expect(call.html).toBe(
+      [
+        '<p>You requested access to your personal data processed by Estalara.</p>',
+        '        <p>Your one-time verification code is:</p>',
+        '        <p style="font-size: 2em; letter-spacing: 0.2em; font-weight: bold;">123456</p>',
+        '        <p>This code is valid for <strong>15 minutes</strong>.</p>',
+        '        <p>If you did not request this, you can safely ignore this email.</p>',
+      ].join('\n'),
     );
-  });
-
-  // ─── FOLLOW-659: un-provisioned external brand → alert, but never drop the mail ──
-
-  describe('brand identity provisioning alarm (FOLLOW-659)', () => {
-    afterEach(() => {
-      vi.unstubAllEnvs();
-    });
-
-    function primeSelects(brandConfig: unknown): void {
-      mockSelect
-        .mockReturnValueOnce(buildChain([{ sessionId: 'sess-valid-001' }])) // session lookup
-        .mockReturnValueOnce(buildChain([{ brandConfig }])); // brand identity lookup
-      mockInsert.mockReturnValue(
-        buildChain([{ id: 'dsr-uuid-659', expiresAt: new Date(Date.now() + 15 * 60 * 1000) }]),
-      );
-    }
-
-    function initiateRequest(): NextRequest {
-      return makeRequest('POST', '/api/dsr/initiate', {
-        body: { session_id: 'sess-valid-001', email: 'buyer@example.com', dsr_type: 'access' },
-        headers: { Authorization: 'Bearer jwt_token' },
-      });
-    }
-
-    // [FOLLOW-678] Well-formed UUID, distinct from TENANT_CLAIMS.tenant_id — the env value must
-    // be a well-formed UUID to reach the `valid` classification (a malformed value now degrades
-    // to "unset", not "deny everyone"); it must also differ from the claims tenant id so these
-    // tests still exercise the "external, non-matching" branch they exercise pre-fix.
-    const OTHER_FIRST_PARTY_UUID = '99999999-9999-4999-8999-999999999999';
-
-    it('external brand with no brand_name → STILL sends the OTP e-mail, and alerts Sentry', async () => {
-      // Blocking here would obstruct the data subject's Art. 15 request over an operator
-      // config gap — the alarm goes to ops, not to the data subject.
-      vi.stubEnv('FIRST_PARTY_TENANT_ID', OTHER_FIRST_PARTY_UUID);
-      primeSelects({ primary_color: '#1a73e8' });
-
-      const { POST } = await import('./initiate/route.js');
-      const res = await POST(initiateRequest());
-
-      expect(res.status).toBe(202);
-      expect(mockSendEmail).toHaveBeenCalledOnce();
-      expect(mockCaptureMessage).toHaveBeenCalledOnce();
-      const [msg, ctx] = mockCaptureMessage.mock.calls[0] as [string, Record<string, unknown>];
-      expect(msg).toContain('brand_config.brand_name');
-      expect(ctx.level).toBe('error');
-    });
-
-    it('THE first-party tenant with no brand_name → no alert (Estalara is its correct identity)', async () => {
-      // [FOLLOW-678] TENANT_CLAIMS.tenant_id ('tenant-uuid-001') is not itself a well-formed
-      // UUID, so it can never equal a well-formed FIRST_PARTY_TENANT_ID env value under the
-      // canonicalized comparison. Override just this test's claims to a well-formed UUID so the
-      // env and the tenant id can genuinely match (exercising the `valid`-match branch, not the
-      // malformed→unset fallback).
-      const FIRST_PARTY_UUID = '11111111-1111-4111-8111-111111111111';
-      mockGetAuthClaims.mockResolvedValueOnce({ ...TENANT_CLAIMS, tenant_id: FIRST_PARTY_UUID });
-      vi.stubEnv('FIRST_PARTY_TENANT_ID', FIRST_PARTY_UUID);
-      primeSelects({ primary_color: '#1a73e8' });
-
-      const { POST } = await import('./initiate/route.js');
-      const res = await POST(initiateRequest());
-
-      expect(res.status).toBe(202);
-      expect(mockSendEmail).toHaveBeenCalledOnce();
-      expect(mockCaptureMessage).not.toHaveBeenCalled();
-    });
-
-    it('external brand WITH a configured identity → no alert', async () => {
-      vi.stubEnv('FIRST_PARTY_TENANT_ID', OTHER_FIRST_PARTY_UUID);
-      primeSelects({ brand_name: 'Costa Sol Properties' });
-
-      const { POST } = await import('./initiate/route.js');
-      const res = await POST(initiateRequest());
-
-      expect(res.status).toBe(202);
-      expect(mockCaptureMessage).not.toHaveBeenCalled();
-    });
+    expect(mockCaptureMessage).not.toHaveBeenCalled();
   });
 
   // ─── FOLLOW-455 / audit F-20: anti email-bomb rate limiting ────────────────
@@ -1039,9 +942,7 @@ describe('FOLLOW-431: writeDsrAuditLog registered via after() in DSR initiate ro
 
   it('FOLLOW-431: POST /api/dsr/initiate registers writeDsrAuditLog via after()', async () => {
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-    mockSelect
-      .mockReturnValueOnce(buildChain([{ sessionId: 'sess-431-test' }])) // session lookup
-      .mockReturnValueOnce(buildChain([])); // FOLLOW-654 brand identity lookup
+    mockSelect.mockReturnValueOnce(buildChain([{ sessionId: 'sess-431-test' }])); // session lookup
     mockInsert.mockReturnValue(buildChain([{ id: 'dsr-uuid-431', expiresAt }]));
 
     const { POST } = await import('./initiate/route.js');

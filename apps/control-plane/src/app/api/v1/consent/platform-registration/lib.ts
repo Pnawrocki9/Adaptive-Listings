@@ -16,8 +16,7 @@
 
 import { createHash } from 'crypto';
 import { z } from 'zod';
-import type { BrandIdentity } from '@/lib/brand-identity';
-import { FIRST_PARTY_BRAND_IDENTITY } from '@/lib/brand-identity';
+import { ESTALARA_BRAND_IDENTITY } from '@/lib/estalara-tenant';
 
 // ─── TOS / consent-text versioning ────────────────────────────────────────────
 
@@ -62,11 +61,11 @@ export const PLATFORM_REGISTRATION_TOS_VERSION = 'platform-v1.4-2026-08-07' as c
  * Renders the canonical §6.1 platform-registration umbrella disclosure with the
  * tenant's brand display identity substituted in.
  *
- * This is the authoritative server-side source of the consent text for a given
- * brand. White-label client deployments (out-of-repo SvelteKit product, Rafał's
- * side — see FOLLOW-656) fetch it via `GET /api/v1/consent/platform-registration`
- * so the brand's own name / legal entity render in the disclosure instead of the
- * hardcoded "Estalara" / "Time2Show, Inc.".
+ * This is the authoritative server-side source of the consent text. app.estalara.com
+ * (out-of-repo, Rafał's side) fetches it via `GET /api/v1/consent/platform-registration`.
+ * Since FOLLOW-1332 (ESC-085, one tenant) the only identity ever passed in is
+ * `ESTALARA_BRAND_IDENTITY` (`@/lib/estalara-tenant`); the parameter is kept so the
+ * substitution points stay explicit for the `consent-text-sync` gate.
  *
  * SUBSTITUTED: the brand display name and legal entity only.
  *
@@ -120,9 +119,10 @@ export const PLATFORM_REGISTRATION_TOS_VERSION = 'platform-v1.4-2026-08-07' as c
  * @param identity - The resolved brand identity (`brandName`, `legalEntity`).
  * @returns The full disclosure text with a single trailing newline stripped.
  */
-export function renderPlatformConsentText(
-  identity: Pick<BrandIdentity, 'brandName' | 'legalEntity'>,
-): string {
+export function renderPlatformConsentText(identity: {
+  brandName: string;
+  legalEntity: string;
+}): string {
   const { brandName, legalEntity } = identity;
   return `By creating an account and clicking "I agree", you consent to the ${brandName} Adaptive Listings service (provided by ${legalEntity}) processing your information for the following purposes:
 
@@ -168,7 +168,7 @@ export function computeConsentTextHash(text: string): string {
  * supply its own hash.
  *
  * DERIVED, NOT ASSERTED (FOLLOW-704 AC-1, chosen option; FOLLOW-714 amendment item 2). This is
- * literally `computeConsentTextHash(renderPlatformConsentText(FIRST_PARTY_BRAND_IDENTITY))` —
+ * literally `computeConsentTextHash(renderPlatformConsentText(ESTALARA_BRAND_IDENTITY))` —
  * the same two functions the GET leg calls to serve `consent_text` / `consent_text_hash` and
  * the same pair the POST leg's evidence check uses. There is no second expression that could
  * drift from it.
@@ -210,7 +210,7 @@ export function computeConsentTextHash(text: string): string {
  * checkout-and-recompute; v1.3 default-path rows are not verifiable and never were.
  */
 export const CANONICAL_CONSENT_TEXT_HASH: string = computeConsentTextHash(
-  renderPlatformConsentText(FIRST_PARTY_BRAND_IDENTITY),
+  renderPlatformConsentText(ESTALARA_BRAND_IDENTITY),
 );
 
 // ─── Zod schema ───────────────────────────────────────────────────────────────
@@ -234,9 +234,10 @@ export const PlatformRegistrationConsentSchema = z.object({
   tos_version: z.string().min(1).optional(),
   /**
    * SHA-256 hex of the exact consent text displayed to the investor.
-   * When not supplied, the route defaults it to the hash of the text IT renders for the
-   * tenant — CANONICAL_CONSENT_TEXT_HASH for a first-party/fallback identity, the brand's own
-   * rendered hash for a provisioned one (FOLLOW-707). One exception, added by FOLLOW-815: on
+   * When not supplied, the route defaults it to CANONICAL_CONSENT_TEXT_HASH — the hash of the
+   * text it renders for the Estalara tenant, the only tenant it accepts (FOLLOW-1332; before
+   * that, a provisioned white-label brand defaulted to its own rendered hash, FOLLOW-707).
+   * One exception, added by FOLLOW-815: on
    * the FOLLOW-715 grace band (a caller still attesting the PREVIOUS tos_version) there is no
    * honest default, so the column is written NULL rather than defaulted — see route.ts step 9.
    * Must be supplied when a non-EN translation is displayed.

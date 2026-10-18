@@ -158,6 +158,34 @@ package 0.3 allocates their FOLLOW numbers on `main` before any of them is dispa
 keeps reporting what is in the tree (the surfaces are still present at HEAD) — rows carry a dated
 "ruled REMOVED by ESC-085, deletion = Phase 2" bracket, not a flipped verdict.
 
+**Compliance review of R10 (FOLLOW-1332, PR #1030) — 2026-10-18.** Reviewer: compliance-engineer
+(Opus), read-only on the diff. Full review in the PR. Signed block:
+
+```
+COMPLIANCE REVIEW — ESC-085 / plan R10 / FOLLOW-1332 (PR #1030) — 2026-10-18
+Reviewer: compliance-engineer (Opus). Basis: diff origin/main(bed16746)...4dc28c3c, read only.
+VERDICT: APPROVE WITH CONDITIONS.
+Finding: for the Estalara tenant with no stored legal identity, the data scope of consent and DSR
+does not change: same consent_records keys/values, IP encryption, text, hash, tos_version and
+retention; DSR verification, ownership check, OTP, audit and e-mail unchanged; no legitimate DSR
+newly refused; nothing new logged or exposed. DPIA and ROPA: no update required.
+Conditions:
+ C1 (pre-merge, CEO, prod read-only): tenants.brand_config holds no brand_name/legal_entity other
+    than Estalara / Time2Show, Inc.; platform_registration hashes are all canonical, NULL or known
+    prior values; no tenant_config.update audit row set them. Else: hold, archive, decide a
+    tos_version bump.
+ C2 (pre-merge, CEO): Vercel Production NEXT_PUBLIC_ESTALARA_TENANT_ID and
+    NEXT_PUBLIC_PILOT_TENANT_ID unset or = cbc51cfa-1056-40aa-b0a9-6e982b52b1de, and that is the
+    tenant_id app.estalara.com signs into consent GET/POST. Else every consent is refused.
+ C3 (this PR): fix backlog/HANDOFFS.md :2922, :3028-3029, :3067.
+ C4 (follow-up, docs, P3): superseded banner on
+    docs/compliance/EXTERNAL_BRAND_GOLIVE_CHECK-2026-07.md; revision note appended to
+    docs/compliance/PRIVACY_NOTICE_TEMPLATE.md §6.1 (:296-297, :355-375).
+```
+
+C1/C2 are CEO actions before the PR leaves draft; C3 is applied in the PR; C4 is a P3 docs follow-up
+(stub at the next bookkeeping PR).
+
 ## RESOLVED — ESC-084: FOLLOW-1203's three open forks — `chat.contact_initiated`, browser-emitted conversions, and who emits the signed conversion [FOLLOW-1203]
 
 **Filed by:** pm-orchestrator **Date:** 2026-10-13 **Affects:** FOLLOW-1203 (server-confirmed

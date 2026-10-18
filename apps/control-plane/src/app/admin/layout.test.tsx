@@ -86,7 +86,7 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
     );
   }
 
-  it('AC1-a: renders exactly 8 nav links (3 tracer + 3 tenants hub + 2 platform)', () => {
+  it('AC1-a: renders exactly 7 nav links (3 tracer + 2 tenants hub + 2 platform)', () => {
     renderLayout();
 
     // All three tracer link labels must be present (FOLLOW-332 AC1)...
@@ -101,13 +101,13 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
     const analyticsLink = screen.getByText('Cross-Brand Analytics').closest('a');
     expect(analyticsLink?.getAttribute('href')).toBe('/admin/analytics');
 
-    // Count every <a> inside the <nav> element — must be exactly 8 (FOLLOW-593
-    // un-hides the Tenants hub: Tenants, Registrations, Demo Sessions; FOLLOW-638
+    // Count every <a> inside the <nav> element — must be exactly 7 (FOLLOW-593
+    // un-hides the Tenants hub: Tenants, Demo Sessions; FOLLOW-638
     // adds Cross-Brand Analytics to the Platform section).
     const nav = document.querySelector('nav');
     expect(nav).not.toBeNull();
     const navLinks = nav?.querySelectorAll('a') ?? [];
-    expect(navLinks.length).toBe(8);
+    expect(navLinks.length).toBe(7);
   });
 
   it('AC1-b: "Live Monitor" href contains ESTALARA_TENANT_ID', () => {
@@ -139,13 +139,11 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
     expect(weightLink?.getAttribute('href')).not.toContain(ESTALARA_TENANT_ID);
   });
 
-  it('AC1-c (FOLLOW-593): nav contains "Registrations" link to /admin/registrations', () => {
+  it('FOLLOW-1325: nav no longer contains a "Registrations" link (single tenant)', () => {
     renderLayout();
 
     const nav = document.querySelector('nav');
-    expect(nav?.textContent).toContain('Registrations');
-    const link = screen.getByText('Registrations').closest('a');
-    expect(link?.getAttribute('href')).toBe('/admin/registrations');
+    expect(nav?.textContent).not.toContain('Registrations');
   });
 
   it('AC1-c (FOLLOW-593): nav contains "Tenants" link to /admin/tenants', () => {
@@ -188,7 +186,7 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
     expect(screen.getByText('Sign out')).toBeDefined();
   });
 
-  it('the eight nav link hrefs are distinct (no duplicate routes)', () => {
+  it('the seven nav link hrefs are distinct (no duplicate routes)', () => {
     renderLayout();
 
     const nav = document.querySelector('nav');
@@ -196,6 +194,6 @@ describe('AdminLayout sidebar — multi-tenant navigation (FOLLOW-332 AC1 + FOLL
       (a) => a.getAttribute('href') ?? '',
     );
     const uniqueHrefs = new Set(hrefs);
-    expect(uniqueHrefs.size).toBe(8);
+    expect(uniqueHrefs.size).toBe(7);
   });
 });

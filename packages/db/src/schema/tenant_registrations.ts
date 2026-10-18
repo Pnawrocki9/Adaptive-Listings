@@ -5,6 +5,12 @@
  * On approval, a tenant row is created and tenant_id set here.
  * This table is accessed via service role only (no RLS).
  *
+ * @deprecated Kept for migration parity; no code path reads or writes it since FOLLOW-1325
+ * (ESC-085); DROP owed to the CTO handover §4. Do NOT delete this file: the next
+ * `drizzle-kit generate` would emit a `DROP TABLE` that `db-migrate.yml` auto-applies to
+ * production. Rule I: the export is covered by this deferral, see FOLLOW-1325 in
+ * `backlog/FOLLOW_UPS.md`.
+ *
  * @module @estalara/db/schema/tenant_registrations
  */
 

@@ -162,7 +162,9 @@ curl -s -X POST https://admin.estalara.com/api/tenants \
   (broadest capability set) unless billing says otherwise. Do not read this as a live product tier.
 - `registration_id` / `approved_by` are **optional** and tied to the self-serve
   `tenant_registrations` approval flow (`apps/control-plane/src/app/api/registrations/route.ts`).
-  External re-brand clients are bespoke deals, not self-serve signups — omit both fields.
+  **[Superseded 2026-10-18 — removed by FOLLOW-1325 (ESC-085): the registration page, public sign-up
+  and API no longer exist; the table is kept `@deprecated` until the CTO DROP.]** External re-brand
+  clients are bespoke deals, not self-serve signups — omit both fields.
 - On success (201): the route **also seeds 54 `ab_bandit_weights` rows** (18 canonical archetypes ×
   3 variants, uniform `Beta(1,1)` priors) via `seedBanditWeightsForTenant`
   (`apps/control-plane/src/lib/bandit-seed.ts:26`) so Thompson sampling has arms to draw from

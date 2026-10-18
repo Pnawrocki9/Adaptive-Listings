@@ -7,23 +7,23 @@ Postgres with pgBouncer connection pooling.
 
 15 tables across migrations 0000–0012:
 
-| Table                       | Migration | RLS?                   | Description                                                                        |
-| --------------------------- | --------- | ---------------------- | ---------------------------------------------------------------------------------- |
-| `tenants`                   | 0000      | Yes (0012)             | Agency accounts — plan, status, brand/quiz config                                  |
-| `tenant_registrations`      | 0000      | No (service role only) | Inbound sign-up requests pending admin approval                                    |
-| `users`                     | 0000      | Yes (0012)             | RBAC for agency staff and Estalara employees                                       |
-| `api_keys`                  | 0000      | Yes (0012)             | Public/secret API keys with scopes, rotation, and revocation                       |
-| `staff_audit_log`           | 0000      | No (service role only) | Append-only audit log of all Estalara admin actions — 7-year retention             |
-| `consent_records`           | 0000      | Yes (0012)             | Generic consent tracking (anonymous, no PII)                                       |
-| `demo_sessions`             | 0001      | Yes (0012)             | Tenant-scoped demo sessions for the onboarding wizard                              |
-| `archetype_embeddings`      | 0002      | No (CAT-B global)      | Global cross-tenant archetype space (seeded by 0005)                               |
-| `session_embeddings`        | 0002      | Yes (0012)             | Anonymous visitor session embeddings; CAT-D — ML reads via service_role            |
-| `tenant_site_schemas`       | 0003      | Yes (0012)             | Auto-detected CSS selectors per tenant domain                                      |
-| `ab_bandit_weights`         | 0004      | Yes (0004)             | Thompson sampling Beta parameters per (tenant, archetype, variant); seeded by 0007 |
-| `answers`                   | 0006      | Yes (0006)             | Agency FAQ content per listing; 1536-dim embedding for RAG retrieval               |
-| `schema_validation_history` | 0008      | Yes (0008, SELECT)     | Daily cron validation results per tenant                                           |
-| `tenant_compliance_records` | 0009      | Yes (0009, SELECT)     | GDPR LIA records — service role INSERT only                                        |
-| `dsr_verifications`         | 0011      | Yes (0011)             | OTP-based DSR (access/erase/portability) request tokens                            |
+| Table                       | Migration | RLS?                   | Description                                                                          |
+| --------------------------- | --------- | ---------------------- | ------------------------------------------------------------------------------------ |
+| `tenants`                   | 0000      | Yes (0012)             | Agency accounts — plan, status, brand/quiz config                                    |
+| `tenant_registrations`      | 0000      | No (service role only) | Inbound sign-up requests (DEPRECATED: code removed by FOLLOW-1325; DROP owed to CTO) |
+| `users`                     | 0000      | Yes (0012)             | RBAC for agency staff and Estalara employees                                         |
+| `api_keys`                  | 0000      | Yes (0012)             | Public/secret API keys with scopes, rotation, and revocation                         |
+| `staff_audit_log`           | 0000      | No (service role only) | Append-only audit log of all Estalara admin actions — 7-year retention               |
+| `consent_records`           | 0000      | Yes (0012)             | Generic consent tracking (anonymous, no PII)                                         |
+| `demo_sessions`             | 0001      | Yes (0012)             | Tenant-scoped demo sessions for the onboarding wizard                                |
+| `archetype_embeddings`      | 0002      | No (CAT-B global)      | Global cross-tenant archetype space (seeded by 0005)                                 |
+| `session_embeddings`        | 0002      | Yes (0012)             | Anonymous visitor session embeddings; CAT-D — ML reads via service_role              |
+| `tenant_site_schemas`       | 0003      | Yes (0012)             | Auto-detected CSS selectors per tenant domain                                        |
+| `ab_bandit_weights`         | 0004      | Yes (0004)             | Thompson sampling Beta parameters per (tenant, archetype, variant); seeded by 0007   |
+| `answers`                   | 0006      | Yes (0006)             | Agency FAQ content per listing; 1536-dim embedding for RAG retrieval                 |
+| `schema_validation_history` | 0008      | Yes (0008, SELECT)     | Daily cron validation results per tenant                                             |
+| `tenant_compliance_records` | 0009      | Yes (0009, SELECT)     | GDPR LIA records — service role INSERT only                                          |
+| `dsr_verifications`         | 0011      | Yes (0011)             | OTP-based DSR (access/erase/portability) request tokens                              |
 
 RLS policies are applied via migration 0012 (`migrations/0012_rls_policies.sql`). All policies use
 the `current_setting('request.jwt.claims', true)` pattern. `staff_audit_log`,

@@ -67,8 +67,8 @@ const { chromium } = requireFromSdk('@playwright/test');
 
 /**
  * FOLLOW-1200: `:5173` is the fixture origin the README's §3.3 bring-up actually serves
- * (`npx serve -l 5173 …`) and the one origin `CORS_DEV_EXTRA_ORIGINS` allowlists alongside `:3000`
- * itself (`origin-policy.ts`). The old `:9200` default was CORS-refused (README §6.2): the server
+ * (`npx serve -l 5173 …`) and the one origin the constant browser-origin list accepts outside
+ * production alongside `:3000` itself (`packages/shared/src/browser-origins.ts`, FOLLOW-1333). The old `:9200` default was CORS-refused (README §6.2): the server
  * still answers 200 and logs a decision row, so AC(3) could look green while the browser never saw
  * the response body and AC(1)/AC(2) went red for a reason that had nothing to do with confidence.
  * `assertRealControlPlane()` below is the hard stop for any OTHER misconfiguration of this variable:
@@ -2135,11 +2135,12 @@ export async function readServerConfidenceGate() {
  * is `500 demo_auth_misconfigured`), finds the key is not a JWT, and falls back to `resolveApiKey()`.
  *
  * WHY IT CARRIES `Origin`. It is the one header every browser request from `LISTING_URL` carries.
- * Middleware echoes it in `access-control-allow-origin` only when the running process allows it
- * (`sdkCorsAllowedOrigins()`: `CORS_PROD_ORIGINS` alone under `NODE_ENV=production`, PROD + DEV
- * otherwise), and `resolveApiKey()` refuses it with 403 when the key's or tenant's
- * `allowed_origins` exclude it. FOLLOW-1206 replaced a regex over `origin-policy.ts`, which read one
- * of the two lists, could not see `NODE_ENV`, and silently misread a commented-out entry.
+ * Middleware echoes it in `access-control-allow-origin`, and `resolveApiKey()` admits it, only when
+ * it is on the constant browser-origin list for the running process (FOLLOW-1333,
+ * `packages/shared/src/browser-origins.ts`: `https://app.estalara.com` and
+ * `https://admin.estalara.com` alone under `NODE_ENV=production`; plus `http://localhost:5173` and
+ * `http://localhost:3000` otherwise). An unlisted origin is refused with 403. FOLLOW-1206 replaced a
+ * regex over `origin-policy.ts`, which could not see `NODE_ENV`, with this probe of the real code.
  *
  * The body is `{}`, so a healthy handler stops at `AdaptPostBodySchema` with
  * `400 Validation failed`: auth passed, nothing was assigned and no decision row was written.
@@ -2186,7 +2187,7 @@ export function buildControlPlaneProbeRequest({ decisionOrigin, listingUrl, apiK
  * | `400 Validation failed`, ACAO absent     | CORS: the browser will not read the body (`NODE_ENV=production`, or origin not listed) |
  * | `500 demo_auth_misconfigured`            | L-1: `DEMO_MODE_JWT_SECRET` absent (README §6.5)      |
  * | `401 invalid_demo_token`                 | the key did not authenticate — see below              |
- * | `403 <reason>`                           | the key's or tenant's `allowed_origins` refuse the origin |
+ * | `403 <reason>`                           | the origin is not on the constant list for this build |
  * | `404`                                    | not the real decision route                            |
  * | anything else, or no answer              | not a healthy real control plane                       |
  *
@@ -2248,9 +2249,10 @@ export function evaluateControlPlaneProbe(probe, listingOrigin) {
   }
   if (probe.status === 403) {
     return fail(
-      'origin_refused_by_key_policy',
-      `the key's or tenant's allowed_origins refuse ${listingOrigin}; the SDK request from that ` +
-        'origin will be refused the same way',
+      'origin_not_listed',
+      `${listingOrigin} is not on the constant browser-origin list for this control plane ` +
+        '(packages/shared/src/browser-origins.ts, FOLLOW-1333); the SDK request from that origin ' +
+        'will be refused the same way — serve the fixture from :5173',
     );
   }
   if (probe.status !== 400 || bodyCode !== 'Validation failed') {
@@ -2266,7 +2268,7 @@ export function evaluateControlPlaneProbe(probe, listingOrigin) {
       `auth passed, but the control plane did not echo ${listingOrigin} in ` +
         'access-control-allow-origin, so the browser will be refused every response body while ' +
         'the server still logs decisions (README §6.2). Under `next start` (NODE_ENV=production) ' +
-        'only CORS_PROD_ORIGINS are echoed; under `next dev` serve the fixture from :5173',
+        'only the two production origins are echoed; under `next dev` serve the fixture from :5173',
     );
   }
   return {
@@ -3984,8 +3986,9 @@ async function countThisRunConversions(sid) {
  *   - `POST /v1/events` carries `Origin: <LISTING_URL origin>`, the header every browser request
  *     from the fixture page carries and the one thing the harness's copy of `dispatchEvents()` was
  *     missing. After #902 the ingest Worker refuses a caller with no `Origin` and no signature
- *     (`401 unsigned_server_caller`). With `Origin` it takes the browser path, gated by the key's
- *     `allowed_origins` (README §3.5 seeds `:5173`). Harmless before #902.
+ *     (`401 unsigned_server_caller`). With `Origin` it takes the browser path, gated by the
+ *     constant origin list, which accepts `:5173` outside production (FOLLOW-1333). Harmless
+ *     before #902.
  *
  * @param {{archetype: string|null, confidence: number, similarity: number}|null} profile
  *   the adapted arm's winning state, or null when it never produced one.

@@ -2789,3 +2789,21 @@ The premise was wrong here and would have produced a probe that cannot fail.
   fetch stand-in only. · Guardrail: a ticket that adds a table outside `packages/db/migrations/`
   should require a test that applies the SQL file itself (PGlite), and its handover row should be
   written against the deploy trigger, not against a person's step.
+- **2026-10-19 / FOLLOW-1335** · M2: deleted `app/dashboard/**` (15 files), `/dashboard/*` → 307 to
+  the `/admin` equivalent from `lib/dashboard-redirects.ts` (before any session lookup);
+  `@estalara/auth` is staff-only (`AuthClaims = StaffClaims`, `extractClaims` rejects any non-staff
+  payload); `resolveTenantAccess` lost its agency path, `minAgencyRole` and
+  `requireTenantSessionAccess`; every route's agency branch removed (writes are now staff + audited
+  in one tx); `tenant-context` + `lib/tenant.ts` deleted; N1 agency counters 0. · Risks weighed:
+  removing a union member turns `if (access.via === 'staff') {...}` fall-through agency code into
+  `never` — TS only errors where a property is read, so every route had to be read, not just
+  compiled; signature tests (tampered / missing secret / cookie) signed the AGENCY payload and would
+  have passed vacuously once non-staff tokens return null — re-signed with a staff payload and
+  mutation-checked; a narrowed `claims` type made a defensive branch "always falsy" under
+  `strictTypeChecked` (kept with a reasoned disable); the N1 identifier counters grep COMMENTS too,
+  so prose must not quote `agency:admin` / `x-agency-role`; `dsr/initiate` had no remaining caller
+  shape — made it fail closed and pointed at FOLLOW-1279 rather than inventing a staff initiator
+  (compliance posture); vitest PGlite/e2e hooks time out when a full folder runs beside another
+  agent's eslint — rerun in isolation before calling a failure. · Guardrail: _when a removal narrows
+  a shared auth type, grep the tests for fixtures of the removed shape that feed NEGATIVE assertions
+  (null / 401 / 403) — they keep passing for the new reason and silently stop testing the old one_.

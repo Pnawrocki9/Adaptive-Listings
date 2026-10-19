@@ -3092,6 +3092,30 @@ non-null `ctaLift` (run 1: `sessions=381, adapted=242, holdout=139`). The tenant
 applies to the scoring-path and reorder-withheld queries changed nothing on localhost, where every
 row carries the OPS tenant. The caveats of §5.23 (a)–(d) apply.
 
+### 5.30 — 2026-10-18 (checkpoint K2c series at `main` HEAD `1de62758`, EXECUTED ×3) — **three consecutive `run=GREEN` with `total=7` (runs 1, 2, 3), each `[FRESH]` as an ancestor of HEAD — checkpoint K2c control I1 of the localhost-completion plan; Phase 2 (R1–R11) complete**
+
+**MANUAL, run by the PM.** Full `scripts/dev/localhost-up.sh` (rebuild: R11 #1039 touched
+`packages/shared` and the ingest Worker) from a clean `main` checkout at `1de62758` (R10 #1030, R11
+#1039, FOLLOW-1347 #1037 and the docs PR #1038 since §5.29). Every step passed; the chat shim and
+ingest answered `/health` before run 1. One control plane, never restarted; artefact copied after
+every run, `--check-staleness` on each copy. The real Estalara app (N3-lite) was driven on the same
+stack after run 3 (`docs/checkpoints/K2c.md` control I3); `scripts/dev/localhost-down.sh` after.
+
+| Run | Started (UTC)            | `TALLY`                                              | `--check-staleness`                                                                                                                                                      |
+| --- | ------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | 2026-10-18T16:56:03.546Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run1.json: harnessSha 1de62758… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T16:56:03.546Z` |
+| 2   | 2026-10-18T16:59:02.380Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run2.json: harnessSha 1de62758… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T16:59:02.380Z` |
+| 3   | 2026-10-18T17:01:21.931Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN` | `[FRESH] run3.json: harnessSha 1de62758… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-18T17:01:21.931Z` |
+
+Run 1 logged one `[FOLLOW-1125] ⚠ ADAPTED-ARM ASSIGNMENT INDETERMINATE (clickhouse_unreachable)`
+inside AC(5)'s evidence: the harness's `chQuery(...).catch(() => null)` turns any transient into
+that label, and the first run after a full rebuild started with ~1 GB free. AC(5) itself passed on
+all three runs with `data_source='clickhouse'`, `conversion_source='signed_events'` and a non-null
+`ctaLift` (the K2c STOP check); the label did not recur in runs 2–3 and had not appeared in any of
+the 19 runs of §5.25–§5.29. After R11 the origin gate admits `http://localhost:5173` only outside a
+production build (`packages/shared/src/browser-origins.ts`), which is what let the fixture page and
+the real app through here. The caveats of §5.23 (a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

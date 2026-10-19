@@ -2,7 +2,11 @@
  * Tests for GET /api/pilot/inquiry-starts
  *
  * ClickHouse absent in CI → mock data path.
- * JWT verification mocked via vi.mock('@estalara/auth').
+ * Auth (ADR-0018 §2, FOLLOW-1334): the route delegates agency + staff resolution to
+ * `resolveTenantAccess`, whose own end-to-end wiring is exercised by
+ * `src/lib/__tests__/resolve-tenant-access.test.ts`. These tests PARTIALLY MOCK
+ * `@/lib/session-auth` — only `resolveTenantAccess` is a spy; `AccessError` stays real so
+ * `accessErrorToResponse` maps statuses for real.
  *
  * Rule K.2 paths:
  *   - CLICKHOUSE_URL set + query fails → 500 + Sentry.captureException
@@ -15,17 +19,20 @@ import { NextRequest } from 'next/server';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 import type { InquiryStartsResponse } from './route.js';
+import type * as SessionAuthModule from '@/lib/session-auth';
 
 // ─── Mock @estalara/auth ───────────────────────────────────────────────────────
 
 const TENANT_ID = '550e8400-e29b-41d4-a716-446655440099';
+const OTHER_TENANT_ID = '550e8400-e29b-41d4-a716-4466554400b2';
 
-vi.mock('@estalara/auth', () => ({
-  getAuthClaims: vi.fn(),
-}));
+vi.mock('@/lib/session-auth', async (importOriginal) => {
+  const actual = await importOriginal<typeof SessionAuthModule>();
+  return { ...actual, resolveTenantAccess: vi.fn() };
+});
 
-import { getAuthClaims } from '@estalara/auth';
-const mockGetAuthClaims = vi.mocked(getAuthClaims);
+import { resolveTenantAccess, AccessError, type TenantAccess } from '@/lib/session-auth';
+const mockResolve = vi.mocked(resolveTenantAccess);
 
 // ─── Mock @sentry/nextjs ──────────────────────────────────────────────────────
 
@@ -38,8 +45,11 @@ vi.mock('@sentry/nextjs', () => ({
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function makeRequest(opts: { tenantId?: string; windowDays?: number } = {}): NextRequest {
+function makeRequest(
+  opts: { tenantId?: string; queryTenantId?: string; windowDays?: number } = {},
+): NextRequest {
   const url = new URL('http://localhost/api/pilot/inquiry-starts');
+  if (opts.queryTenantId !== undefined) url.searchParams.set('tenant_id', opts.queryTenantId);
   if (opts.windowDays !== undefined) {
     url.searchParams.set('window_days', String(opts.windowDays));
   }
@@ -56,14 +66,38 @@ async function parseBody<T>(res: Response): Promise<T> {
 }
 
 function authAsTenant(): void {
-  mockGetAuthClaims.mockResolvedValue({
-    sub: 'user-uuid',
-    email: 'user@agency.com',
-    tenant_id: TENANT_ID,
-    agency_role: 'agency:admin',
-    estalara_staff: false,
-    mfa_verified: true,
+  mockResolve.mockResolvedValue({
+    via: 'agency',
+    tenantId: TENANT_ID,
+    claims: {
+      sub: 'user-uuid',
+      email: 'user@agency.com',
+      tenant_id: TENANT_ID,
+      agency_role: 'agency:admin',
+      estalara_staff: false,
+      mfa_verified: true,
+    },
+    rawToken: 'agency-jwt',
   });
+}
+
+/** A resolved Estalara-staff access acting on an explicit, validated tenant (readonly rank). */
+function staffAccess(tenantId: string): TenantAccess {
+  return {
+    via: 'staff',
+    tenantId,
+    staff: {
+      sub: 'staff-uuid',
+      email: 'staff@estalara.com',
+      tenant_id: null,
+      estalara_staff: true,
+      estalara_role: 'estalara:readonly',
+      mfa_verified: true,
+    },
+    role: 'estalara:readonly',
+    canWrite: false,
+    isSuperadmin: false,
+  };
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -80,8 +114,8 @@ describe('GET /api/pilot/inquiry-starts', () => {
     delete process.env.CLICKHOUSE_URL;
   });
 
-  it('returns 401 when getAuthClaims returns null', async () => {
-    mockGetAuthClaims.mockResolvedValue(null);
+  it('returns 401 when resolveTenantAccess throws AccessError(401) (no valid session)', async () => {
+    mockResolve.mockRejectedValue(new AccessError(401, 'Unauthorized: no tenant access'));
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest());
@@ -91,20 +125,29 @@ describe('GET /api/pilot/inquiry-starts', () => {
     expect(body.error.code).toBe('unauthorized');
   });
 
-  it('returns 401 for staff user without tenant_id', async () => {
-    mockGetAuthClaims.mockResolvedValue({
-      sub: 'staff-uuid',
-      email: 'staff@estalara.com',
-      tenant_id: null,
-      estalara_staff: true,
-      estalara_role: 'estalara:ops',
-      mfa_verified: false,
-    });
+  it('returns 403 when an agency session names a foreign tenant_id', async () => {
+    mockResolve.mockRejectedValue(
+      new AccessError(403, 'Access denied: agency session cannot act on a foreign tenant'),
+    );
 
     const { GET } = await import('./route.js');
-    const res = await GET(makeRequest({ tenantId: 'staff' }));
+    const res = await GET(makeRequest({ queryTenantId: OTHER_TENANT_ID }));
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(403);
+  });
+
+  it('agency path: no ?tenant_id is passed to resolveTenantAccess (tenant from the claim)', async () => {
+    authAsTenant();
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest({ tenantId: TENANT_ID }));
+
+    expect(res.status).toBe(200);
+    expect(mockResolve).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ allowStaffOverride: true }),
+    );
+    expect(mockResolve.mock.calls[0]?.[1]).not.toHaveProperty('tenantId');
   });
 
   // ─── Rule K.2: CLICKHOUSE_URL unset → mock path ─────────────────────────────
@@ -332,5 +375,78 @@ describe('GET /api/pilot/inquiry-starts', () => {
       // Must NOT reference the phantom column assigned_at.
       expect(sql).not.toContain('assigned_at');
     }
+  });
+});
+
+describe('GET /api/pilot/inquiry-starts — staff override (ADR-0018, FOLLOW-1334)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env.CLICKHOUSE_URL;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.CLICKHOUSE_URL;
+  });
+
+  it('staff readonly with a validated ?tenant_id → 200 with that tenant’s data', async () => {
+    mockResolve.mockResolvedValue(staffAccess(OTHER_TENANT_ID));
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest({ queryTenantId: OTHER_TENANT_ID }));
+
+    expect(res.status).toBe(200);
+    const body = await parseBody<InquiryStartsResponse>(res);
+    expect(body.tenant_id).toBe(OTHER_TENANT_ID);
+    expect(body.data_source).toBe('mock');
+    expect(mockResolve).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ allowStaffOverride: true, tenantId: OTHER_TENANT_ID }),
+    );
+  });
+
+  it('staff caller who omits ?tenant_id → 400 (resolve throws AccessError(400))', async () => {
+    mockResolve.mockRejectedValue(
+      new AccessError(400, 'tenantId is required when allowStaffOverride is true'),
+    );
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest());
+
+    expect(res.status).toBe(400);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('bad_request');
+  });
+
+  it('staff caller with an unknown ?tenant_id → 404 (resolve throws AccessError(404))', async () => {
+    mockResolve.mockRejectedValue(new AccessError(404, 'Unknown tenant'));
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest({ queryTenantId: '99999999-9999-4999-8999-999999999999' }));
+
+    expect(res.status).toBe(404);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('not_found');
+  });
+
+  it('MANDATORY (RETRO-187): a staff read for tenant B binds param_tenant_id=B into BOTH ClickHouse queries', async () => {
+    mockResolve.mockResolvedValue(staffAccess(OTHER_TENANT_ID));
+    process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
+
+    const fences: (string | null)[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((urlStr: unknown) => {
+        fences.push(new URL(String(urlStr)).searchParams.get('param_tenant_id'));
+        return Promise.resolve(new Response('', { status: 200 }));
+      }),
+    );
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest({ queryTenantId: OTHER_TENANT_ID }));
+
+    expect(res.status).toBe(200);
+    expect(fences).toEqual([OTHER_TENANT_ID, OTHER_TENANT_ID]);
+    expect(fences).not.toContain(TENANT_ID);
   });
 });

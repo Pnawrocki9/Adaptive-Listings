@@ -31,7 +31,12 @@
  *   (features_snapshot, model_version, score) → outcome_class export and CANNOT
  *   use this shape (FOLLOW-237 AC5 correction).
  *
- * Auth: Bearer JWT required; tenant_id from JWT claim (never from query string).
+ * Auth (ADR-0018 §2, FOLLOW-1334): `resolveTenantAccess` with `allowStaffOverride`. Agency path:
+ * tenant from the session claim ONLY — an agency `?tenant_id` is a cross-check, never an override.
+ * Estalara staff may read the tenant named by an explicit `?tenant_id=<uuid>`, validated against
+ * the `tenants` table; that validated id is the SINGLE tenant fence bound into the ClickHouse query
+ * and the Postgres label query. Staff calls without `?tenant_id` are rejected (400); the headless
+ * `ADMIN_API_SECRET` Bearer is not attributable and is rejected (403).
  *
  * Data access:
  *   ClickHouse  — adaptation_decisions: adapt_decision_id, confidence, model_version
@@ -55,7 +60,8 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
-import { getSessionAuthClaims } from '@/lib/session-auth';
+import { resolveTenantAccess, type TenantAccess } from '@/lib/session-auth';
+import { accessErrorToResponse } from '@/lib/access-error-response';
 import { eq, and, inArray } from 'drizzle-orm';
 import { createAdminClient, conversionLabels } from '@estalara/db';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
@@ -289,23 +295,31 @@ function jsonExportResponse(
  *
  * @returns 200 CalibrationResponse on success (with data_source provenance field).
  * @returns 400 when an unknown ?format= value is supplied (FOLLOW-237 AC3).
- * @returns 401 when no valid tenant JWT is present.
+ * @returns 400 also when a staff caller omits `?tenant_id`.
+ * @returns 401 when no valid session is present.
+ * @returns 403 when the caller is not permitted (e.g. agency acting on a foreign tenant).
+ * @returns 404 when a staff caller supplies an unknown tenant id.
  * @returns 500 when CLICKHOUSE_URL is set but ClickHouse query fails,
  *   OR when Postgres label fetch fails (Rule K.2 — fail loud; never fall back to
  *   mock when a real data store is configured).
  */
 export async function GET(req: NextRequest): Promise<NextResponse | Response> {
-  const claims = await getSessionAuthClaims(req);
-  if (!claims || !('tenant_id' in claims) || !claims.tenant_id) {
-    return NextResponse.json(
-      {
-        error: { code: 'unauthorized', message: 'Valid Bearer JWT with tenant_id claim required' },
-      },
-      { status: 401 },
-    );
+  // One auth path for agency + staff (ADR-0018 invariant 5): `access.tenantId` is the ONLY tenant
+  // fence — bound into the ClickHouse query and the Postgres label query for BOTH paths.
+  const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
+  let access: TenantAccess;
+  try {
+    access = await resolveTenantAccess(req, {
+      allowStaffOverride: true,
+      // exactOptionalPropertyTypes: omit the key when absent so a staff caller without
+      // ?tenant_id still reaches resolve's 400.
+      ...(tenantIdParam ? { tenantId: tenantIdParam } : {}),
+    });
+  } catch (err) {
+    return accessErrorToResponse(err);
   }
 
-  const tenantId: string = claims.tenant_id;
+  const tenantId: string = access.tenantId;
   const windowDays = parseWindowDays(req.nextUrl.searchParams.get('window_days'));
 
   // AC3 (FOLLOW-237): unknown ?format= values return HTTP 400 instead of silently falling

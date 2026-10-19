@@ -12,4 +12,4 @@ id_PILOT_TENANT_ID=2
 id_FIRST_PARTY_TENANT_ID=0
 id_allowed_origins=0
 routes_unlisted=0
-routes_inventory=92
+routes_inventory=94

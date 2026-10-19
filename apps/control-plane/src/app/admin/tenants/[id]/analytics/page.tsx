@@ -19,6 +19,11 @@
  * removed cross-brand page. They read `getTenantAnalyticsRollup(id)` server-side — the data layer
  * of `GET /api/admin/analytics/rollup`, fenced on this tenant.
  *
+ * The page is tabbed (FOLLOW-1334, {@link AnalyticsTabs}; `?tab=pilot|quiz` selects the initial
+ * tab): "Overview" is everything above; "Pilot" and "Quiz" are the two agency-dashboard surfaces
+ * that had no `/admin` equivalent (adapted-vs-holdout pilot lift, quiz completions), mounted with
+ * the same `tenantId` so their GETs hit the staff-override routes for this tenant.
+ *
  * Staff gating: the existing `/admin/*` middleware already requires a valid staff
  * session for this route — no new middleware is added here.
  *
@@ -31,13 +36,19 @@ import { tenantExists } from '@/lib/session-auth';
 import { getTenantAnalyticsRollup } from '@/app/api/admin/analytics/rollup/data';
 import { AnalyticsView } from '@/components/analytics/analytics-view';
 import { DecisionTelemetryPanels } from '@/components/analytics/decision-telemetry-panels';
+import { AnalyticsTabs, parseAnalyticsTab } from './analytics-tabs';
 
 interface StaffTenantAnalyticsPageProps {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ tab?: string }>;
 }
 
-export default async function StaffTenantAnalyticsPage({ params }: StaffTenantAnalyticsPageProps) {
+export default async function StaffTenantAnalyticsPage({
+  params,
+  searchParams,
+}: StaffTenantAnalyticsPageProps) {
   const { id } = await params;
+  const initialTab = parseAnalyticsTab((await searchParams)?.tab);
 
   // Validate the URL-supplied tenant id against real tenants (existence + not
   // soft-deleted) before rendering. Unknown/malformed → 404 (same fence the API
@@ -59,9 +70,17 @@ export default async function StaffTenantAnalyticsPage({ params }: StaffTenantAn
         </p>
       </div>
 
-      <AnalyticsView tenantId={id} />
+      <AnalyticsTabs
+        tenantId={id}
+        initialTab={initialTab}
+        overview={
+          <>
+            <AnalyticsView tenantId={id} />
 
-      <DecisionTelemetryPanels result={telemetry} />
+            <DecisionTelemetryPanels result={telemetry} />
+          </>
+        }
+      />
     </div>
   );
 }

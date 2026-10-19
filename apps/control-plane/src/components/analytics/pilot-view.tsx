@@ -24,6 +24,12 @@
  *   GET /api/pilot/inquiry-starts?window_days=<7|14|30>  (panel 2)
  * A shared window selector controls both endpoints simultaneously.
  *
+ * ADR-0018 §1 (FOLLOW-594/FOLLOW-1334): like `AnalyticsView`, the view takes `tenantId` as a PROP.
+ * `/dashboard/analytics` (agency) renders it without one — the URLs are byte-identical to what the
+ * agency dashboard has always sent. `/admin/tenants/[id]/analytics` (Estalara staff) renders it
+ * with `tenantId={id}`, so both GETs carry `&tenant_id=<id>` and the staff-override routes fence
+ * their ClickHouse queries to that tenant.
+ *
  * FOLLOW-122: Honest rendering — surfaces data_source badge and HTTP 500 errors.
  *
  * @module apps/control-plane/src/components/analytics/pilot-view
@@ -570,8 +576,14 @@ function ArchetypePanel({ state }: { state: FetchState<LiftResponse> }) {
 
 const WINDOW_OPTIONS = [7, 14, 30] as const;
 
-export function PilotView() {
+interface PilotViewProps {
+  /** Staff only: the tenant to read (sent as `&tenant_id=`). Absent → session-scoped agency read. */
+  tenantId?: string;
+}
+
+export function PilotView({ tenantId }: PilotViewProps = {}) {
   const [windowDays, setWindowDays] = useState<number>(7);
+  const tenantQuery = tenantId ? `&tenant_id=${encodeURIComponent(tenantId)}` : '';
 
   const [ctaState, setCtaState] = useState<FetchState<LiftResponse>>({
     loading: true,
@@ -592,7 +604,7 @@ export function PilotView() {
     setInquiryState({ loading: true, data: null, error: null });
 
     // ── cta-lift fetch (FOLLOW-122: check res.ok before parsing) ──────────
-    fetch(`/api/dashboard/analytics/lift?window_days=${String(windowDays)}`)
+    fetch(`/api/dashboard/analytics/lift?window_days=${String(windowDays)}${tenantQuery}`)
       .then(async (res) => {
         if (cancelled) return;
         if (!res.ok) {
@@ -623,7 +635,7 @@ export function PilotView() {
       });
 
     // ── inquiry-starts fetch (FOLLOW-122: check res.ok before parsing) ────
-    fetch(`/api/pilot/inquiry-starts?window_days=${String(windowDays)}`)
+    fetch(`/api/pilot/inquiry-starts?window_days=${String(windowDays)}${tenantQuery}`)
       .then(async (res) => {
         if (cancelled) return;
         if (!res.ok) {
@@ -658,7 +670,7 @@ export function PilotView() {
     return () => {
       cancelled = true;
     };
-  }, [windowDays]);
+  }, [windowDays, tenantQuery]);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">

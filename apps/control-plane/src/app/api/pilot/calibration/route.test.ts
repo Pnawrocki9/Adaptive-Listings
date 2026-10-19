@@ -20,6 +20,8 @@
 import { NextRequest } from 'next/server';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
+import type * as SessionAuthModule from '@/lib/session-auth';
+
 import {
   confidenceDecile,
   buildCalibrationFromRaw,
@@ -32,16 +34,22 @@ import {
   type CalibrationExportRow,
 } from './route-helpers';
 
-// ─── Mock @estalara/auth ─────────────────────────────────────────────────────
+// ─── Partial mock of @/lib/session-auth (only resolveTenantAccess is a spy) ───
+// Auth (ADR-0018 §2, FOLLOW-1334): the route delegates agency + staff resolution to
+// `resolveTenantAccess`, whose own wiring is exercised by
+// `src/lib/__tests__/resolve-tenant-access.test.ts`. `AccessError` stays real so
+// `accessErrorToResponse` maps statuses for real.
 
 const TENANT_ID = '550e8400-e29b-41d4-a716-446655440042';
+const OTHER_TENANT_ID = '550e8400-e29b-41d4-a716-4466554400b2';
 
-vi.mock('@estalara/auth', () => ({
-  getAuthClaims: vi.fn(),
-}));
+vi.mock('@/lib/session-auth', async (importOriginal) => {
+  const actual = await importOriginal<typeof SessionAuthModule>();
+  return { ...actual, resolveTenantAccess: vi.fn() };
+});
 
-import { getAuthClaims } from '@estalara/auth';
-const mockGetAuthClaims = vi.mocked(getAuthClaims);
+import { resolveTenantAccess, AccessError, type TenantAccess } from '@/lib/session-auth';
+const mockResolve = vi.mocked(resolveTenantAccess);
 
 // ─── Mock @sentry/nextjs ─────────────────────────────────────────────────────
 
@@ -109,14 +117,38 @@ async function parseBody<T>(res: Response): Promise<T> {
 }
 
 function authAsTenant(): void {
-  mockGetAuthClaims.mockResolvedValue({
-    sub: 'user-uuid',
-    email: 'user@agency.com',
-    tenant_id: TENANT_ID,
-    agency_role: 'agency:admin',
-    estalara_staff: false,
-    mfa_verified: true,
+  mockResolve.mockResolvedValue({
+    via: 'agency',
+    tenantId: TENANT_ID,
+    claims: {
+      sub: 'user-uuid',
+      email: 'user@agency.com',
+      tenant_id: TENANT_ID,
+      agency_role: 'agency:admin',
+      estalara_staff: false,
+      mfa_verified: true,
+    },
+    rawToken: 'agency-jwt',
   });
+}
+
+/** A resolved Estalara-staff access acting on an explicit, validated tenant (readonly rank). */
+function staffAccess(tenantId: string): TenantAccess {
+  return {
+    via: 'staff',
+    tenantId,
+    staff: {
+      sub: 'staff-uuid',
+      email: 'staff@estalara.com',
+      tenant_id: null,
+      estalara_staff: true,
+      estalara_role: 'estalara:readonly',
+      mfa_verified: true,
+    },
+    role: 'estalara:readonly',
+    canWrite: false,
+    isSuperadmin: false,
+  };
 }
 
 // ─── Unit: confidenceDecile bucketing ────────────────────────────────────────
@@ -328,8 +360,8 @@ describe('GET /api/pilot/calibration', () => {
     delete process.env.CLICKHOUSE_URL;
   });
 
-  it('returns 401 when getAuthClaims returns null (no JWT)', async () => {
-    mockGetAuthClaims.mockResolvedValue(null);
+  it('returns 401 when resolveTenantAccess throws AccessError(401) (no session)', async () => {
+    mockResolve.mockRejectedValue(new AccessError(401, 'Unauthorized: no tenant access'));
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest('7', false));
     expect(res.status).toBe(401);
@@ -337,18 +369,15 @@ describe('GET /api/pilot/calibration', () => {
     expect(body.error.code).toBe('unauthorized');
   });
 
-  it('returns 401 for a staff user without tenant_id', async () => {
-    mockGetAuthClaims.mockResolvedValue({
-      sub: 'staff-uuid',
-      email: 'staff@estalara.com',
-      tenant_id: null,
-      estalara_staff: true,
-      estalara_role: 'estalara:ops',
-      mfa_verified: false,
-    });
+  it('returns 403 when an agency session names a foreign tenant_id', async () => {
+    mockResolve.mockRejectedValue(
+      new AccessError(403, 'Access denied: agency session cannot act on a foreign tenant'),
+    );
     const { GET } = await import('./route.js');
-    const res = await GET(makeRequest('7'));
-    expect(res.status).toBe(401);
+    const url = new URL('http://localhost/api/pilot/calibration');
+    url.searchParams.set('tenant_id', OTHER_TENANT_ID);
+    const res = await GET(new NextRequest(url.toString()));
+    expect(res.status).toBe(403);
   });
 
   // ─── CLICKHOUSE_URL guard (Rule K.2) ───────────────────────────────────────
@@ -529,6 +558,87 @@ describe('GET /api/pilot/calibration', () => {
   });
 });
 
+describe('GET /api/pilot/calibration — staff override (ADR-0018, FOLLOW-1334)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env.CLICKHOUSE_URL;
+    mockCaptureException.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.CLICKHOUSE_URL;
+  });
+
+  function makeStaffRequest(tenantId?: string): NextRequest {
+    const url = new URL('http://localhost/api/pilot/calibration');
+    if (tenantId) url.searchParams.set('tenant_id', tenantId);
+    return new NextRequest(url.toString());
+  }
+
+  it('staff readonly with a validated ?tenant_id → 200 with that tenant’s data', async () => {
+    mockResolve.mockResolvedValue(staffAccess(OTHER_TENANT_ID));
+    const { GET } = await import('./route.js');
+    const res = await GET(makeStaffRequest(OTHER_TENANT_ID));
+    expect(res.status).toBe(200);
+    const body = await parseBody<CalibrationResponse>(res);
+    expect(body.tenant_id).toBe(OTHER_TENANT_ID);
+    expect(body.data_source).toBe('mock');
+    expect(mockResolve).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ allowStaffOverride: true, tenantId: OTHER_TENANT_ID }),
+    );
+  });
+
+  it('agency path: no ?tenant_id reaches resolveTenantAccess (tenant from the claim)', async () => {
+    authAsTenant();
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest('7'));
+    expect(res.status).toBe(200);
+    expect(mockResolve.mock.calls[0]?.[1]).not.toHaveProperty('tenantId');
+  });
+
+  it('staff caller who omits ?tenant_id → 400 (resolve throws AccessError(400))', async () => {
+    mockResolve.mockRejectedValue(
+      new AccessError(400, 'tenantId is required when allowStaffOverride is true'),
+    );
+    const { GET } = await import('./route.js');
+    const res = await GET(makeStaffRequest());
+    expect(res.status).toBe(400);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('bad_request');
+  });
+
+  it('staff caller with an unknown ?tenant_id → 404 (resolve throws AccessError(404))', async () => {
+    mockResolve.mockRejectedValue(new AccessError(404, 'Unknown tenant'));
+    const { GET } = await import('./route.js');
+    const res = await GET(makeStaffRequest('99999999-9999-4999-8999-999999999999'));
+    expect(res.status).toBe(404);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('not_found');
+  });
+
+  it('MANDATORY (RETRO-187): a staff read for tenant B binds param_tenant_id=B, never the caller’s tenant', async () => {
+    mockResolve.mockResolvedValue(staffAccess(OTHER_TENANT_ID));
+    process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response('', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    mockCreateAdminClient.mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+      }),
+    } as unknown as ReturnType<typeof createAdminClient>);
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeStaffRequest(OTHER_TENANT_ID));
+
+    expect(res.status).toBe(200);
+    const url = String((fetchMock.mock.calls[0] as unknown[])[0]);
+    expect(new URL(url).searchParams.get('param_tenant_id')).toBe(OTHER_TENANT_ID);
+    expect(url).not.toContain(TENANT_ID);
+  });
+});
+
 // ─── Unit: buildCalibrationExportRows (FOLLOW-221, FOLLOW-237) ───────────────
 
 describe('buildCalibrationExportRows', () => {
@@ -669,7 +779,7 @@ describe('GET /api/pilot/calibration?format=json', () => {
   });
 
   it('returns 401 for unauthenticated export request', async () => {
-    mockGetAuthClaims.mockResolvedValue(null);
+    mockResolve.mockRejectedValue(new AccessError(401, 'Unauthorized: no tenant access'));
     const { GET } = await import('./route.js');
     const res = await GET(makeExportRequest('7', false));
     expect(res.status).toBe(401);

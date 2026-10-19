@@ -15,7 +15,7 @@
  */
 
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -37,6 +37,19 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/components/analytics/analytics-view', () => ({
   AnalyticsView: ({ tenantId }: { tenantId?: string }) => (
     <div data-testid="analytics-view">tenant:{tenantId ?? 'none'}</div>
+  ),
+}));
+
+// FOLLOW-1334: the Pilot and Quiz tabs mount the shared agency components with the tenant id.
+vi.mock('@/components/analytics/pilot-view', () => ({
+  PilotView: ({ tenantId }: { tenantId?: string }) => (
+    <div data-testid="pilot-view">pilot:{tenantId ?? 'none'}</div>
+  ),
+}));
+
+vi.mock('@/components/analytics/quiz-analytics-view', () => ({
+  QuizAnalyticsView: ({ tenantId }: { tenantId?: string }) => (
+    <div data-testid="quiz-analytics-view">quiz:{tenantId ?? 'none'}</div>
   ),
 }));
 
@@ -129,5 +142,72 @@ describe('StaffTenantAnalyticsPage', () => {
 
     expect(screen.getByTestId('analytics-view')).toBeDefined();
     expect(screen.getByTestId('decision-telemetry').textContent).toBe('telemetry:error');
+  });
+
+  // ─── FOLLOW-1334: Pilot + Quiz tabs ──────────────────────────────────────────
+
+  describe('tabs (FOLLOW-1334)', () => {
+    beforeEach(() => {
+      mockTenantExists.mockResolvedValue(true);
+      mockGetRollup.mockResolvedValue({
+        ok: true,
+        data: { tenant_id: KNOWN_TENANT } as TenantAnalyticsRollup,
+      });
+    });
+
+    const renderPage = async (tab?: string) =>
+      render(
+        await StaffTenantAnalyticsPage({
+          params: Promise.resolve({ id: KNOWN_TENANT }),
+          ...(tab === undefined ? {} : { searchParams: Promise.resolve({ tab }) }),
+        }),
+      );
+
+    it('defaults to Overview; Pilot and Quiz do not mount (no requests for an unopened tab)', async () => {
+      await renderPage();
+
+      expect(screen.getByRole('tab', { name: 'Overview' }).getAttribute('aria-selected')).toBe(
+        'true',
+      );
+      expect(screen.getByTestId('analytics-view')).toBeDefined();
+      expect(screen.queryByTestId('pilot-view')).toBeNull();
+      expect(screen.queryByTestId('quiz-analytics-view')).toBeNull();
+    });
+
+    it('?tab=pilot opens the Pilot tab for THIS tenant', async () => {
+      await renderPage('pilot');
+
+      expect(screen.getByTestId('pilot-view').textContent).toBe(`pilot:${KNOWN_TENANT}`);
+      expect(screen.queryByTestId('analytics-view')).toBeNull();
+      expect(screen.getByRole('tab', { name: 'Pilot' }).getAttribute('aria-selected')).toBe('true');
+    });
+
+    it('?tab=quiz opens the Quiz tab for THIS tenant', async () => {
+      await renderPage('quiz');
+
+      expect(screen.getByTestId('quiz-analytics-view').textContent).toBe(`quiz:${KNOWN_TENANT}`);
+      expect(screen.queryByTestId('analytics-view')).toBeNull();
+    });
+
+    it('an unknown ?tab= falls back to Overview', async () => {
+      await renderPage('../../etc');
+
+      expect(screen.getByTestId('analytics-view')).toBeDefined();
+    });
+
+    it('clicking a tab switches the panel', async () => {
+      await renderPage();
+
+      fireEvent.click(screen.getByRole('tab', { name: 'Pilot' }));
+      expect(screen.getByTestId('pilot-view')).toBeDefined();
+      expect(screen.queryByTestId('analytics-view')).toBeNull();
+
+      fireEvent.click(screen.getByRole('tab', { name: 'Quiz' }));
+      expect(screen.getByTestId('quiz-analytics-view')).toBeDefined();
+      expect(screen.queryByTestId('pilot-view')).toBeNull();
+
+      fireEvent.click(screen.getByRole('tab', { name: 'Overview' }));
+      expect(screen.getByTestId('analytics-view')).toBeDefined();
+    });
   });
 });

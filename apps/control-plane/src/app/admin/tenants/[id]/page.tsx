@@ -11,8 +11,9 @@
  * banner (distinct from "not found") instead of silently treating the
  * tenant as missing or fabricating its data.
  *
- * Hub-links every per-tenant staff surface shipped so far (Analytics, Quiz
- * config, Demo Mode, Labels, Intent Weights, Audit Log, Settings [FOLLOW-600])
+ * Hub-links every per-tenant staff surface shipped so far (Analytics [Overview / Pilot / Quiz tabs,
+ * FOLLOW-1334], Quiz config, Demo Mode, Labels [with the calibration panel, FOLLOW-1334], Listing
+ * FAQ Answers [FOLLOW-1334], Intent Weights, Audit Log, Settings [FOLLOW-600])
  * alongside the K.3.6 Tracer surfaces (FOLLOW-606). Bandit weights live inside
  * the Analytics resume action, not as a standalone page. New per-tenant
  * surfaces should add their landing link here in the same PR (FOLLOW-606 AC).
@@ -101,6 +102,18 @@ export default async function TenantLandingPage({ params }: TenantLandingPagePro
             Analytics
           </Link>
           <Link
+            href={`/admin/tenants/${tenant.id}/analytics?tab=pilot`}
+            className="text-purple-600 underline hover:text-purple-800"
+          >
+            Pilot Lift
+          </Link>
+          <Link
+            href={`/admin/tenants/${tenant.id}/analytics?tab=quiz`}
+            className="text-purple-600 underline hover:text-purple-800"
+          >
+            Quiz Analytics
+          </Link>
+          <Link
             href={`/admin/tenants/${tenant.id}/quiz`}
             className="text-purple-600 underline hover:text-purple-800"
           >
@@ -129,6 +142,12 @@ export default async function TenantLandingPage({ params }: TenantLandingPagePro
             className="text-purple-600 underline hover:text-purple-800"
           >
             Labels
+          </Link>
+          <Link
+            href={`/admin/tenants/${tenant.id}/listings`}
+            className="text-purple-600 underline hover:text-purple-800"
+          >
+            Listing FAQ Answers
           </Link>
           <Link
             href={`/admin/tenants/${tenant.id}/intent`}

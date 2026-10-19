@@ -4,12 +4,11 @@
  * StaffLabelsEditor — minimal Estalara-staff editor for a tenant's conversion labels
  * (ADR-0018 §6 Phase 2 / FOLLOW-597).
  *
- * SURFACE DECISION (mirrors FOLLOW-595's `StaffQuizConfigEditor`): the agency labels
- * page (`dashboard/analytics/labels/page.tsx`) also renders a Calibration/Aggregate
- * panel backed by `GET /api/pilot/calibration`, which has NO staff-override port yet —
- * pulling it in would drag an out-of-scope route into this ticket. This is a MINIMAL
- * staff surface: the first page of joined label rows for the tenant, with inline
- * reclassify (no filters/pagination — a follow-up if staff need to page past 25 rows).
+ * SURFACE DECISION (mirrors FOLLOW-595's `StaffQuizConfigEditor`): a MINIMAL staff surface for the
+ * label rows — the first page of joined label rows for the tenant, with inline reclassify (no
+ * filters/pagination — a follow-up if staff need to page past 25 rows). The Calibration/Aggregate
+ * panel (`GET /api/pilot/calibration`) is mounted by the page itself as `CalibrationSection`
+ * (FOLLOW-1334, shared with the agency labels page).
  *
  * Canonical types imported from route-helpers — never redeclared inline (Rule H /
  * the pattern RETRO-005/008/013/015 flagged).

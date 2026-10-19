@@ -7,7 +7,7 @@
  *   T3: unknown tenant id — calls next/navigation notFound(), not a broken page
  *   T4: DB configured but lookup throws — renders visible error banner (Rule K.2),
  *       does NOT call notFound() (a lookup failure isn't "tenant doesn't exist")
- *   T5: renders hub links to all 8 per-tenant staff surfaces (FOLLOW-606 AC +
+ *   T5: renders hub links to all per-tenant staff surfaces (FOLLOW-606 AC +
  *       FOLLOW-599 Audit Log + FOLLOW-600 Settings)
  *
  * @module apps/control-plane/src/app/admin/tenants/[id]/page.test
@@ -128,6 +128,16 @@ describe('TenantLandingPage — FOLLOW-593', () => {
 
     const labelsLink = screen.getByText('Labels').closest('a');
     expect(labelsLink?.getAttribute('href')).toBe(`/admin/tenants/${TENANT_ID}/labels`);
+
+    // FOLLOW-1334: the surfaces ported from the agency /dashboard.
+    const pilotLink = screen.getByText('Pilot Lift').closest('a');
+    expect(pilotLink?.getAttribute('href')).toBe(`/admin/tenants/${TENANT_ID}/analytics?tab=pilot`);
+    const quizAnalyticsLink = screen.getByText('Quiz Analytics').closest('a');
+    expect(quizAnalyticsLink?.getAttribute('href')).toBe(
+      `/admin/tenants/${TENANT_ID}/analytics?tab=quiz`,
+    );
+    const listingsLink = screen.getByText('Listing FAQ Answers').closest('a');
+    expect(listingsLink?.getAttribute('href')).toBe(`/admin/tenants/${TENANT_ID}/listings`);
 
     const intentLink = screen.getByText('Intent Weights').closest('a');
     expect(intentLink?.getAttribute('href')).toBe(`/admin/tenants/${TENANT_ID}/intent`);

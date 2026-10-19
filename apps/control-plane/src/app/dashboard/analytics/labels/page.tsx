@@ -7,7 +7,8 @@
  *   1. Joined Prediction + Outcome table  — filterable by outcome_class, date range,
  *      model_version, pagination; each row has a "Reclassify" inline action that
  *      opens a modal to set a new outcome_class + notes (writes label_source=manual_admin).
- *   2. Calibration / Aggregate panel — renders the CalibrationResponse from
+ *   2. Calibration / Aggregate panel — `CalibrationSection`
+ *      (components/analytics/calibration-panel, shared with the staff labels page, FOLLOW-1334):
  *      GET /api/pilot/calibration (FOLLOW-173): conversion aggregates per
  *      (outcome_class, model_version) + the reliability curve decile table.
  *
@@ -27,11 +28,7 @@ import { useEffect, useState, useCallback } from 'react';
 // ─── Canonical types from route-helpers (FOLLOW-174 — no inline redeclaration) ─
 
 import type { AdminLabelsResponse, JoinedLabelRow } from '../../../api/admin/labels/route-helpers';
-import type {
-  CalibrationResponse,
-  CalibrationRow,
-  ConversionAggRow,
-} from '../../../api/pilot/calibration/route-helpers';
+import { CalibrationSection } from '@/components/analytics/calibration-panel';
 
 // ─── Shared UI primitives ─────────────────────────────────────────────────────
 
@@ -451,168 +448,6 @@ function TablePanel({
   );
 }
 
-// ─── Panel 2 — Calibration / aggregate view ───────────────────────────────────
-
-interface CalibrationPanelProps {
-  loading: boolean;
-  data: CalibrationResponse | null;
-  error: string | null;
-  windowDays: number;
-  onWindowChange: (d: number) => void;
-}
-
-const WINDOW_OPTIONS = [7, 14, 30] as const;
-
-function CalibrationPanel({
-  loading,
-  data,
-  error,
-  windowDays,
-  onWindowChange,
-}: CalibrationPanelProps) {
-  return (
-    <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-semibold text-gray-700">
-            Calibration + Conversion Aggregates
-          </h2>
-          <p className="mt-0.5 text-xs text-gray-400">
-            Score-vs-actual reliability curve and per-outcome-class conversion rates by model
-            version (FOLLOW-173).
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {!loading && data?.data_source !== 'clickhouse' && <MockDataBadge />}
-          <label className="flex items-center gap-1.5 text-xs text-gray-600">
-            Window
-            <select
-              value={windowDays}
-              onChange={(e) => {
-                onWindowChange(Number(e.target.value));
-              }}
-              className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs text-gray-800 focus:outline-none"
-            >
-              {WINDOW_OPTIONS.map((d) => (
-                <option key={d} value={d}>
-                  {d}d
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </div>
-
-      {!loading && error && <ErrorBanner message={error} />}
-
-      {loading && (
-        <div className="space-y-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-8 w-full" />
-          ))}
-        </div>
-      )}
-
-      {!loading && !error && (
-        <>
-          {/* Conversion aggregates sub-panel */}
-          {(data?.conversion_aggregates.length ?? 0) > 0 && (
-            <div className="mb-6">
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
-                Conversion Aggregates
-              </h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-100 text-left text-xs text-gray-500">
-                      <th className="pb-2 font-medium">Outcome Class</th>
-                      <th className="pb-2 font-medium">Model Version</th>
-                      <th className="pb-2 font-medium">Count</th>
-                      <th className="pb-2 font-medium">Rate</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {(data?.conversion_aggregates ?? []).map((row: ConversionAggRow) => (
-                      <tr key={`${row.model_version}::${row.outcome_class}`}>
-                        <td className="py-2">
-                          <OutcomeClassBadge cls={row.outcome_class} />
-                        </td>
-                        <td className="py-2 text-xs text-gray-500">{row.model_version}</td>
-                        <td className="py-2 tabular-nums text-gray-700">
-                          {row.count.toLocaleString()}
-                        </td>
-                        <td className="py-2 tabular-nums text-gray-700">
-                          {row.rate !== null ? (row.rate * 100).toFixed(1) + '%' : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Reliability curve sub-panel */}
-          {(data?.calibration.length ?? 0) > 0 && (
-            <div>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
-                Reliability Curve (score vs actual)
-              </h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-100 text-left text-xs text-gray-500">
-                      <th className="pb-2 font-medium">Decile</th>
-                      <th className="pb-2 font-medium">Predicted Rate</th>
-                      <th className="pb-2 font-medium">Actual Rate</th>
-                      <th className="pb-2 font-medium">Sample n</th>
-                      <th className="pb-2 font-medium">Model</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {(data?.calibration ?? []).map((row: CalibrationRow) => {
-                      const gap = Math.abs(row.predicted_rate - row.actual_conversion_rate);
-                      const wellCalibrated = gap < 0.1;
-                      return (
-                        <tr key={`${row.model_version}::${String(row.confidence_decile)}`}>
-                          <td className="py-2 tabular-nums text-gray-700">
-                            {(row.confidence_decile * 100).toFixed(0)}–
-                            {(row.confidence_decile * 100 + 10).toFixed(0)}%
-                          </td>
-                          <td className="py-2 tabular-nums text-gray-600">
-                            {(row.predicted_rate * 100).toFixed(1)}%
-                          </td>
-                          <td
-                            className={`py-2 tabular-nums font-semibold ${
-                              wellCalibrated ? 'text-green-700' : 'text-amber-700'
-                            }`}
-                          >
-                            {(row.actual_conversion_rate * 100).toFixed(1)}%
-                          </td>
-                          <td className="py-2 tabular-nums text-gray-500">{row.sample_size}</td>
-                          <td className="py-2 text-xs text-gray-400">{row.model_version}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {(data?.calibration.length ?? 0) === 0 &&
-            (data?.conversion_aggregates.length ?? 0) === 0 && (
-              <p className="text-sm text-gray-400">
-                No calibration data yet — labels and adaptation decisions will appear here once data
-                flows.
-              </p>
-            )}
-        </>
-      )}
-    </section>
-  );
-}
-
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function LabelManagementPage() {
@@ -621,12 +456,6 @@ export default function LabelManagementPage() {
   const [labelsLoading, setLabelsLoading] = useState(true);
   const [labelsData, setLabelsData] = useState<AdminLabelsResponse | null>(null);
   const [labelsError, setLabelsError] = useState<string | null>(null);
-
-  // ── Calibration state ─────────────────────────────────────────────────────
-  const [calibWindowDays, setCalibWindowDays] = useState<number>(7);
-  const [calibLoading, setCalibLoading] = useState(true);
-  const [calibData, setCalibData] = useState<CalibrationResponse | null>(null);
-  const [calibError, setCalibError] = useState<string | null>(null);
 
   // ── Reclassify modal state ─────────────────────────────────────────────────
   const [modalOpen, setModalOpen] = useState(false);
@@ -677,39 +506,6 @@ export default function LabelManagementPage() {
   useEffect(() => {
     fetchLabels(filters);
   }, [filters, fetchLabels]);
-
-  // ── Fetch calibration ─────────────────────────────────────────────────────
-  useEffect(() => {
-    setCalibLoading(true);
-    setCalibError(null);
-
-    fetch(`/api/pilot/calibration?window_days=${String(calibWindowDays)}`)
-      .then(async (res) => {
-        if (!res.ok) {
-          let msg = `HTTP ${String(res.status)}`;
-          try {
-            const body = (await res.json()) as {
-              error?: { message?: string };
-            };
-            if (body.error?.message) msg = body.error.message;
-          } catch {
-            // keep status string
-          }
-          setCalibError(msg);
-          setCalibLoading(false);
-          return;
-        }
-        const raw = (await res.json()) as unknown;
-        if (raw && typeof raw === 'object' && 'calibration' in raw) {
-          setCalibData(raw as CalibrationResponse);
-        }
-        setCalibLoading(false);
-      })
-      .catch((err: unknown) => {
-        setCalibError(err instanceof Error ? err.message : 'Network error');
-        setCalibLoading(false);
-      });
-  }, [calibWindowDays]);
 
   // ── Filter change handler ─────────────────────────────────────────────────
   function handleFilterChange(next: Partial<Filters>) {
@@ -779,13 +575,7 @@ export default function LabelManagementPage() {
             onReclassify={openReclassify}
           />
 
-          <CalibrationPanel
-            loading={calibLoading}
-            data={calibData}
-            error={calibError}
-            windowDays={calibWindowDays}
-            onWindowChange={setCalibWindowDays}
-          />
+          <CalibrationSection />
         </div>
       </div>
     </>

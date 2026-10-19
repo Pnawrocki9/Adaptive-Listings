@@ -35,7 +35,11 @@ const MAX_HOPS = 2;
 const MAX_HOPS_LABEL = String(MAX_HOPS);
 
 /** Pages deliberately more than MAX_HOPS clicks from /admin today, each with its reason. */
-const HIDDEN_BY_DESIGN: Readonly<Record<string, string>> = {};
+const HIDDEN_BY_DESIGN: Readonly<Record<string, string>> = {
+  '/admin/tenants/[id]/listings/[id]/answers':
+    'FOLLOW-1334: drill-down from the listings index (sidebar Tenant -> hub "Listing FAQ Answers" -> ' +
+    "a listing). It needs a listing id the hub cannot know; the function's entry is 2 clicks away.",
+};
 
 const LEGACY_PILOT = /cbc51cfa|PILOT_TENANT_ID/;
 
@@ -145,6 +149,29 @@ describe('FOLLOW-1343 N2 — /admin navigation reachability (built from source)'
     // which must stay within two clicks (sidebar "Tenant" → hub "Analytics").
     expect(hops.get('/admin/tenants/[id]/analytics')?.hops).toBeLessThanOrEqual(MAX_HOPS);
     expect(inventory.has('/admin/analytics')).toBe(false);
+    // FOLLOW-1334: the surfaces ported from the agency /dashboard sit inside the same budget — the
+    // analytics page carries the Pilot and Quiz tabs, the labels page the calibration panel, and the
+    // FAQ answers function is entered through the listings index. The per-listing manager is the
+    // one drill-down (a listing id is needed): exactly one click past the index, and it must stay
+    // listed in HIDDEN_BY_DESIGN rather than silently unreachable.
+    for (const route of [
+      '/admin/tenants/[id]/listings',
+      '/admin/tenants/[id]/labels',
+      '/admin/tenants/[id]/analytics',
+    ]) {
+      expect(inventory.has(route), route).toBe(true);
+      expect(hops.get(route)?.hops, route).toBeLessThanOrEqual(MAX_HOPS);
+    }
+    const answers = '/admin/tenants/[id]/listings/[id]/answers';
+    expect(hops.get(answers)?.hops).toBe((hops.get('/admin/tenants/[id]/listings')?.hops ?? 0) + 1);
+    expect(answers in HIDDEN_BY_DESIGN).toBe(true);
+  });
+
+  it('FOLLOW-1334: the hub links the Pilot and Quiz tabs and the listings index', () => {
+    const hubHrefs = read(join(ADMIN_DIR, 'tenants', '[id]', 'page.tsx'));
+    expect(hubHrefs).toContain('/analytics?tab=pilot');
+    expect(hubHrefs).toContain('/analytics?tab=quiz');
+    expect(hubHrefs).toContain('/listings`');
   });
 
   it(`(a) every admin page is within ${MAX_HOPS_LABEL} clicks of /admin or HIDDEN_BY_DESIGN`, () => {

@@ -201,6 +201,11 @@
  * `app/api/tenants/[id]/lia/route.ts` (1 — the record insert or its `staff_audit_log` row failing,
  * rolled back together) and `app/api/tenants/[id]/lia/[recordId]/route.ts` (1 — the same for the
  * soft-delete) are new rows. It is now **104 in 64**.
+ *
+ * FOLLOW-1358 (Faza Q package Q3) added one row, one site: `app/api/quiz/run/route.ts` — a quiz-run
+ * ping that could not be recorded, either because `quiz_runs` is not created yet
+ * (`quiz_runs_table_missing`, 503, the CTO handover step H002) or because the write or the api_keys
+ * lookup failed (500); one shared `fail()` helper, so ONE site. It is now **105 in 65**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -214,7 +219,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 104;
+const TOTAL_SITES = 105;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -563,6 +568,13 @@ const REGISTER: CaptureSiteGroup[] = [
     file: 'app/api/quiz/config/route.ts',
     sites: 1,
     meaning: 'The quiz configuration could not be served.',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'app/api/quiz/run/route.ts',
+    sites: 1,
+    meaning:
+      'A quiz-run lifecycle ping (shown / dismissed / completed / confirmed / corrected / unconfirmed) was not recorded — `quiz_runs` not created yet (`quiz_runs_table_missing`, 503: apply H002, CTO handover section 4), or the write / api_keys lookup failed (500). The accuracy measurement loses that run; the buyer sees nothing (the SDK ping is fire-and-forget). (FOLLOW-1358)',
     consumer: NO_CHANNEL,
   },
   {

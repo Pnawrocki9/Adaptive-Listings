@@ -29,6 +29,9 @@
  * omitted from the portability export (Art. 20 completeness).
  * `engagement_scores` was dropped by FOLLOW-1268 (never had a writer).
  *
+ * FOLLOW-1358 (ESC-086 item 2): exports `quiz_runs` (the handover table H002) on the same
+ * (tenant_id, session_id) key, via `readQuizRunsForSession` — a missing table reads as no rows.
+ *
  * @module apps/control-plane/src/app/api/dsr/portability/route
  */
 
@@ -47,6 +50,7 @@ import {
 import { verifyAndConsumeOtp, dsrVerifyFailureResponse } from '@/lib/dsr-verify';
 import { getClickHouseDisclosure, readClickHouseConfig } from '@/lib/clickhouse-dsr';
 import type { ClickHouseDisclosure } from '@/lib/clickhouse-dsr';
+import { readQuizRunsForSession } from '@/lib/quiz-runs';
 import { DSR_AUDIT_ACTIONS, writeDsrAuditLog } from '../_clickhouse';
 
 // ─── GET handler ───────────────────────────────────────────────────────────────
@@ -135,6 +139,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // store the controller demonstrably holds. See parity test:
   // apps/control-plane/src/app/api/dsr/disclosure-route-driven-pglite.test.ts
   // ("FOLLOW-558 PARITY" describe block).
+
+  // FOLLOW-1358: quiz_runs (H002 handover table; erased in the same cascade).
+  const quizRunRows = await readQuizRunsForSession(db, record.tenantId, record.sessionId);
 
   const quizCompletionRows = await db
     .select({
@@ -343,6 +350,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       language: q.language,
       created_at: q.createdAt.toISOString(),
     })),
+    // FOLLOW-1358: quiz_runs (0..n rows per session — one per quiz shown).
+    quiz_runs: quizRunRows,
     // FOLLOW-558 / audit A3-F-06: intent_sessions (single row per
     // (tenant_id, session_id) — unique constraint — null when the K.3.6
     // archetype tracer never ran for this session).

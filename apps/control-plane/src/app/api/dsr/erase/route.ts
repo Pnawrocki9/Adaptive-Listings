@@ -20,6 +20,8 @@
  *        Only runs when dsr_verifications.durable_lead_id is non-null/non-empty.
  *        Same empty-key guard as above (GDPR Art. 17 completeness, RETRO-031 §4a LG-1).
  *      - DELETE FROM quiz_completions WHERE session_id AND tenant_id (FOLLOW-455)
+ *      - DELETE FROM quiz_runs WHERE session_id AND tenant_id (FOLLOW-1358; in a SAVEPOINT, and a
+ *        missing table — H002 not applied — is tolerated for this table only)
  *      - DELETE FROM intent_sessions WHERE session_id AND tenant_id (FOLLOW-455)
  *   3. Redis DEL session:{session_id}:* AND shadow:{tenant_id}:{session_id}:chat_intent
  *      (fire-and-forget). The shadow key is the chat-intent shadow namespace
@@ -57,6 +59,7 @@ import {
   dsrClickhouseMutations,
 } from '@estalara/db';
 import { verifyAndConsumeOtp, dsrVerifyFailureResponse } from '@/lib/dsr-verify';
+import { eraseQuizRunsForSession } from '@/lib/quiz-runs';
 import { deleteShadowChatIntent } from '@/lib/chat-intent-cache';
 import { DSR_AUDIT_ACTIONS, writeDsrAuditLog } from '../_clickhouse';
 import {
@@ -415,6 +418,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           eq(quizCompletions.tenantId, record.tenantId),
         ),
       );
+
+    // ── FOLLOW-1358: quiz_runs erasure cascade ───────────────────────────────
+    // One row per quiz shown (handover table H002), keyed like quiz_completions. Runs in a
+    // SAVEPOINT inside this transaction: if H002 is not applied yet (SQLSTATE 42P01) only the
+    // savepoint rolls back and the cascade continues — a table that does not exist holds no data.
+    // Any other error aborts the whole erase, as every other DELETE here does.
+    await eraseQuizRunsForSession(tx, record.tenantId, record.sessionId);
 
     // ── FOLLOW-455 / audit F-20: intent_sessions erasure cascade ─────────────
     // K.3.6 archetype tracer aggregate state (archetype weights, confidence,

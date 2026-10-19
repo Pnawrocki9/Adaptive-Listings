@@ -858,7 +858,9 @@ describe('AC1-LG2 (FOLLOW-256): ne() guard — empty lead_id rows are never disc
 // PARITY: the erase route's Postgres DELETE targets, as of `erase/route.ts`
 // current HEAD (this file is READ-ONLY against that route — see FOLLOW-557),
 // are: session_embeddings, consent_records, conversion_labels,
-// quiz_completions, intent_sessions (engagement_scores dropped by FOLLOW-1268).
+// quiz_completions, intent_sessions (engagement_scores dropped by FOLLOW-1268), and quiz_runs
+// (FOLLOW-1358 — a handover table, so its erase/access/portability parity is pinned in
+// `quiz-runs-route-driven-pglite.test.ts` against the real H002 SQL rather than in this fixture).
 // session_embeddings / consent_records / conversion_labels disclosure is
 // already covered above (AC1-AC3, LG-2). This block proves the remaining two ALSO round-trip
 // through both disclosure routes — closing the Art. 15/20 gap this ticket

@@ -157,6 +157,14 @@ vi.mock('@sentry/nextjs', () => ({
   captureException: vi.fn(),
 }));
 
+// FOLLOW-1358: quiz_runs is a handover table read/erased through raw SQL in `@/lib/quiz-runs`
+// (covered route-driven against PGlite in dsr/quiz-runs-route-driven-pglite.test.ts). This file's
+// hand-built db mock has no `execute` / nested `transaction`, so the helpers are stubbed here.
+vi.mock('@/lib/quiz-runs', () => ({
+  eraseQuizRunsForSession: vi.fn().mockResolvedValue(0),
+  readQuizRunsForSession: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock('@/lib/dsr-otp', () => ({
   generateOtp: vi.fn().mockReturnValue('123456'),
   hashOtp: mockHashOtp,

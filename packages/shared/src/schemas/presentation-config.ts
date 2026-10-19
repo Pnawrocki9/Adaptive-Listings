@@ -628,6 +628,18 @@ export const PresentationConfigResponseSchema = QuizPublicConfigResponseSchema.e
    * (`packages/sdk/src/ui/quiz-widget.ts` walker via `index.ts` `mergeQuizConfig`) walks it.
    */
   quiz_definition: QuizDefinitionSchema.optional(),
+  /**
+   * The `quiz_definitions.version` of the served `quiz_definition`, or `null` when the served
+   * tree is the built-in `DEFAULT_QUIZ_DEFINITION_V2` (ESC-086 item 3, FOLLOW-1358). Present
+   * exactly when `quiz_definition` is. Echoed by the SDK in its `POST /api/quiz/run` pings.
+   */
+  definition_version: z.number().int().nullable().optional(),
+  /**
+   * `computeQuizDefinitionHash(quiz_definition)` — the identity the pre-registered accuracy
+   * analysis counts runs on (ESC-086 item 3, FOLLOW-1358). Present exactly when
+   * `quiz_definition` is.
+   */
+  definition_hash: z.string().max(128).optional(),
 });
 
 /** TypeScript type for the unified `GET /api/quiz/public-config` 200 response body. */

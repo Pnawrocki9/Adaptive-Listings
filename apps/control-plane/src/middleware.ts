@@ -14,9 +14,9 @@
  * page can send the user back after successful authentication.
  *
  * CORS for SDK-facing routes:
- *   /api/adapt, /api/adapt/description, /api/adapt/feedback, /api/quiz/completion need CORS
- *   headers for the browser SDK. Both the preflight and the actual response answer
- *   `Access-Control-Allow-Origin` for a LISTED origin only — the constant list in
+ *   /api/adapt, /api/adapt/description, /api/adapt/feedback, /api/quiz/completion and
+ *   /api/quiz/run need CORS headers for the browser SDK. Both the preflight and the actual
+ *   response answer `Access-Control-Allow-Origin` for a LISTED origin only — the constant list in
  *   `lib/origin-policy.ts` (`https://app.estalara.com`, `https://admin.estalara.com`; plus
  *   `http://localhost:5173` and `http://localhost:3000` outside `NODE_ENV=production`). Until
  *   FOLLOW-1333 the preflight, and the actual response of the fully origin-gated routes, REFLECTED
@@ -69,8 +69,13 @@ import { resolveOriginDecision } from '@/lib/origin-policy';
  * is HMAC-signed and writes tenant-scoped rows, so it takes `/api/adapt`'s listed-origin answer.
  * Added as a PREFIX here rather than as a second inline CORS block in the route (Rule AQ), which
  * also means it inherits the preflight handler for free.
+ *
+ * `/api/quiz/run` (FOLLOW-1358, ESC-086 item 2) joined for the same reason on day one: the SDK quiz
+ * widget POSTs its lifecycle pings with the same three non-safelisted headers, HMAC-signed, and the
+ * route writes tenant-scoped `quiz_runs` rows — without this entry the browser would never send a
+ * single ping (FOLLOW-936's silent failure, again).
  */
-const SDK_CORS_PREFIXES = ['/api/adapt', '/api/quiz/completion'] as const;
+const SDK_CORS_PREFIXES = ['/api/adapt', '/api/quiz/completion', '/api/quiz/run'] as const;
 
 /**
  * The `Access-Control-Allow-Origin` value for a request: its own `Origin` when that origin is on

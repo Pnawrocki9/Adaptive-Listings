@@ -66,6 +66,16 @@
  * unconfigured tenant is byte-identical to pre-ADR-0019 and the SDK walks its built-in default
  * tree (D4/D5). Like `brand`, it rides `data_source` (a `fallback` response carries no definition).
  *
+ * ESC-086 item 3 / FOLLOW-1358 (MASTER_DESIGN §E.4.7–§E.4.8 v3.0) amends the last paragraph: a
+ * `db` response ALWAYS carries a `quiz_definition` now — the tenant's active row when it parses,
+ * otherwise the built-in `DEFAULT_QUIZ_DEFINITION_V2` (EN + PL) from `@estalara/shared` — plus
+ * `definition_version` (the row's `version`; `null` for the default) and `definition_hash`
+ * (`computeQuizDefinitionHash` over the PARSED definition: the identity the pre-registered accuracy
+ * analysis counts runs on, echoed by the SDK in its `POST /api/quiz/run` pings). The serve-time
+ * parse stays the LENIENT `QuizDefinitionSchema`; an active row that still fails it is logged and
+ * the default is served (buyers keep a quiz, the run carries the default's hash, not a wrong one).
+ * A `fallback` response still carries no definition (the SDK walks its bundled tree).
+ *
  * @module apps/control-plane/src/app/api/quiz/public-config/route
  */
 
@@ -83,10 +93,12 @@ import type {
 } from '@estalara/shared';
 import {
   BrandConfigSchema,
+  DEFAULT_QUIZ_DEFINITION_V2,
   OptOutWidgetConfigSchema,
   PresentationConfigResponseSchema,
   QUIZ_DEFAULT_CONFIG,
   QuizDefinitionSchema,
+  computeQuizDefinitionHash,
   parseStoredQuizConfig,
 } from '@estalara/shared';
 import { resolveApiKey } from '@/lib/api-key-auth';
@@ -155,6 +167,34 @@ function parsePublicBrandConfig(raw: unknown): BrandConfig | undefined {
 function parseActiveQuizDefinition(raw: unknown): QuizDefinition | undefined {
   const result = QuizDefinitionSchema.safeParse(raw);
   return result.success ? result.data : undefined;
+}
+
+/** The served quiz tree with its identity (ESC-086 item 3, FOLLOW-1358). */
+interface ServedQuizDefinition {
+  quiz_definition: QuizDefinition;
+  /** `quiz_definitions.version`; `null` for the built-in default. */
+  definition_version: number | null;
+  /** `computeQuizDefinitionHash(quiz_definition)`. */
+  definition_hash: string;
+}
+
+/** The built-in default, parsed and hashed once per process (it is a constant). */
+let defaultServedDefinition: Promise<ServedQuizDefinition> | undefined;
+
+/**
+ * `DEFAULT_QUIZ_DEFINITION_V2` run through the same serve-time parse as a stored row, then hashed —
+ * "the same way" as a row, so the hash depends on the definition only, never on its source.
+ */
+function servedDefaultDefinition(): Promise<ServedQuizDefinition> {
+  defaultServedDefinition ??= (async () => {
+    const quizDefinition = QuizDefinitionSchema.parse(DEFAULT_QUIZ_DEFINITION_V2);
+    return {
+      quiz_definition: quizDefinition,
+      definition_version: null,
+      definition_hash: await computeQuizDefinitionHash(quizDefinition),
+    };
+  })();
+  return defaultServedDefinition;
 }
 
 // ─── Opt-out widget slice (ADR-0019 / FOLLOW-641) ──────────────────────────────
@@ -280,14 +320,31 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // ADR-0019 (FOLLOW-639): optional quiz-definition slice — the tenant's ACTIVE editable
     // tree, if any. A separate fenced read on the dedicated `quiz_definitions` table (D2).
     const activeDefRows = await db
-      .select({ definition: quizDefinitions.definition })
+      .select({ definition: quizDefinitions.definition, version: quizDefinitions.version })
       .from(quizDefinitions)
       // invariant 5: the tenant fence on this service-role client.
       .where(and(eq(quizDefinitions.tenantId, tenantId), eq(quizDefinitions.isActive, true)))
       .limit(1);
-    const quizDefinition = activeDefRows[0]
-      ? parseActiveQuizDefinition(activeDefRows[0].definition)
+    const activeRow = activeDefRows[0];
+    const activeDefinition = activeRow
+      ? parseActiveQuizDefinition(activeRow.definition)
       : undefined;
+    if (activeRow && !activeDefinition) {
+      console.warn(
+        `[quiz/public-config] the active quiz_definitions row (version ${String(activeRow.version)}) ` +
+          'fails QuizDefinitionSchema - serving DEFAULT_QUIZ_DEFINITION_V2 instead',
+      );
+    }
+    // ESC-086 item 3 / FOLLOW-1358: the active row when it parses, else the built-in v2 default,
+    // always with its version and hash.
+    const served: ServedQuizDefinition =
+      activeRow && activeDefinition
+        ? {
+            quiz_definition: activeDefinition,
+            definition_version: activeRow.version,
+            definition_hash: await computeQuizDefinitionHash(activeDefinition),
+          }
+        : await servedDefaultDefinition();
 
     const payload: PresentationConfigResponse = {
       quiz_enabled: quizEnabled,
@@ -302,8 +359,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       ...(quizPlacement ? { quiz_placement: quizPlacement } : {}),
       // FOLLOW-641: omit when the tenant configured no opt-out widget → SDK defaults (D4).
       ...(optOutWidget ? { opt_out_widget: optOutWidget } : {}),
-      // Omit the key when the tenant has no active/valid definition → SDK built-in default (D4/D5).
-      ...(quizDefinition ? { quiz_definition: quizDefinition } : {}),
+      // ESC-086 item 3: always present on a `db` response (the row, or the served v2 default).
+      quiz_definition: served.quiz_definition,
+      definition_version: served.definition_version,
+      definition_hash: served.definition_hash,
     };
 
     // Validate outbound shape with the canonical superset schema (belt-and-suspenders).

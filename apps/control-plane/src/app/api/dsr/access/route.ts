@@ -15,7 +15,8 @@
  *      - Pass B: lead_id = durable_lead_id (CRM deep-outcome labels), when non-null/non-empty/!=
  *        session_id; empty-key guard on both passes (FOLLOW-180/LG-2).
  *      Rows are union-merged and deduplicated by primary key (id).
- *   4. Query quiz_completions and intent_sessions (FOLLOW-558 / audit A3-F-06).
+ *   4. Query quiz_completions and intent_sessions (FOLLOW-558 / audit A3-F-06), and quiz_runs
+ *      (FOLLOW-1358; the H002 handover table — a missing table reads as no rows).
  *      Both are already covered by the DSR erasure cascade in
  *      `apps/control-plane/src/app/api/dsr/erase/route.ts` (FOLLOW-455) but were
  *      previously omitted from Access disclosure — an Art. 15 completeness gap
@@ -50,6 +51,7 @@ import {
 import { verifyAndConsumeOtp, dsrVerifyFailureResponse } from '@/lib/dsr-verify';
 import { getClickHouseDisclosure, readClickHouseConfig } from '@/lib/clickhouse-dsr';
 import type { ClickHouseDisclosure } from '@/lib/clickhouse-dsr';
+import { readQuizRunsForSession } from '@/lib/quiz-runs';
 import { DSR_AUDIT_ACTIONS, writeDsrAuditLog } from '../_clickhouse';
 
 // ─── GET handler ───────────────────────────────────────────────────────────────
@@ -138,6 +140,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // store the controller demonstrably holds. See parity test:
   // apps/control-plane/src/app/api/dsr/disclosure-route-driven-pglite.test.ts
   // ("FOLLOW-558 PARITY" describe block).
+
+  // FOLLOW-1358: quiz_runs (H002 handover table; erased in the same cascade).
+  const quizRunRows = await readQuizRunsForSession(db, record.tenantId, record.sessionId);
 
   const quizCompletionRows = await db
     .select({
@@ -347,6 +352,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         language: q.language,
         created_at: q.createdAt.toISOString(),
       })),
+      // FOLLOW-1358: quiz_runs (0..n rows per session — one per quiz shown).
+      quiz_runs: quizRunRows,
       // FOLLOW-558 / audit A3-F-06: intent_sessions (single row per
       // (tenant_id, session_id) — unique constraint — null when the K.3.6
       // archetype tracer never ran for this session).

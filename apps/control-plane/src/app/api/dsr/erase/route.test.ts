@@ -138,6 +138,14 @@ vi.mock('@estalara/db', () => ({
   ne: vi.fn((col: unknown, val: unknown) => ({ col, val, _op: 'ne' })),
 }));
 
+// FOLLOW-1358: quiz_runs is a handover table read/erased through raw SQL in `@/lib/quiz-runs`
+// (covered route-driven against PGlite in dsr/quiz-runs-route-driven-pglite.test.ts). This file's
+// hand-built db mock has no `execute` / nested `transaction`, so the helpers are stubbed here.
+vi.mock('@/lib/quiz-runs', () => ({
+  eraseQuizRunsForSession: vi.fn().mockResolvedValue(0),
+  readQuizRunsForSession: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock('@/lib/dsr-otp', () => ({
   hashOtp: mockHashOtp,
 }));

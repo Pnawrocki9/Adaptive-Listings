@@ -214,6 +214,7 @@ describe('FOLLOW-1333 — the ACTUAL response answers listed origins only, on ev
     ['/api/adapt/description', 'GET'],
     ['/api/adapt/feedback', 'POST'],
     ['/api/quiz/completion', 'POST'],
+    ['/api/quiz/run', 'POST'],
   ] as const;
 
   it('no SDK route reflects an unlisted origin in prod', async () => {

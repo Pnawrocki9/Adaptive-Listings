@@ -11,6 +11,10 @@
  * lift in % (empty when the holdout rate is 0 - undefined, not 0). The adapted-vs-holdout lift,
  * p-value and confidence are carried on BOTH arm rows of a block.
  *
+ * Reconciliation: the `summary` block counts each session ONCE over the whole window, the `daily`
+ * rows count a session on every UTC day it has a decision, so the daily sessions can sum to more
+ * than the summary's - the two blocks are different cohorts by design, not a discrepancy.
+ *
  * Injection (OWASP "CSV injection"): a STRING cell whose first character is `=`, `+`, `-`, `@`, tab
  * or CR gets a leading `'` so a spreadsheet reads text, not a formula. Numbers are emitted from
  * `number` values only (never from text), so `-12.5` stays a number.

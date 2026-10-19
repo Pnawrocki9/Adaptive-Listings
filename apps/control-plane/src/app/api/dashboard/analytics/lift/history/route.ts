@@ -1,7 +1,7 @@
 /**
  * GET /api/dashboard/analytics/lift/history?tenant_id=<uuid>
  *
- * The newest 90 rows of `lift_daily_snapshots` for one tenant (FOLLOW-1338) — the "History" table
+ * The newest 180 rows (90 days x 2 arms) of `lift_daily_snapshots` for one tenant (FOLLOW-1338) — the "History" table
  * of the Pilot tab. Written by `api/cron/lift-snapshot`.
  *
  * Auth: staff-only, any staff rank (a read) — `lib/lift-staff-access`. The validated `?tenant_id`
@@ -10,7 +10,7 @@
  * Rule K.2 — provenance and failure: `data_source: 'postgres'` on success (an empty `rows` is a
  * genuinely empty table, not an error); `data_source: 'not_configured'` when no admin database URL
  * is set (dev / CI); 500 `lift_snapshot_table_missing` when the CTO has not yet applied
- * `docs/handover/migrations/0042_lift_daily_snapshots.sql` (SQLSTATE 42P01 — no Sentry here, the
+ * `docs/handover/migrations/H001_lift_daily_snapshots.sql` (SQLSTATE 42P01 — no Sentry here, the
  * cron already raises it daily); any other failure is a 500 `lift_snapshot_read_failed` plus one
  * Sentry capture. Never an empty list standing in for a failed read.
  *
@@ -29,6 +29,9 @@ import {
   type LiftHistoryResponse,
 } from '@/lib/lift-snapshots';
 
+/** Per-staff data: never cached by a shared cache or the browser. */
+const NO_STORE = { headers: { 'Cache-Control': 'no-store' } } as const;
+
 /**
  * @returns 200 {@link LiftHistoryResponse}; 400/401/403/404 from the staff gate; 500 with
  *   `error.code` `lift_snapshot_table_missing` | `lift_snapshot_read_failed`.
@@ -44,13 +47,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       data_source: 'not_configured',
       rows: [],
     };
-    return NextResponse.json(body);
+    return NextResponse.json(body, NO_STORE);
   }
 
   try {
     const rows = await readLiftSnapshots(tenantId);
     const body: LiftHistoryResponse = { tenant_id: tenantId, data_source: 'postgres', rows };
-    return NextResponse.json(body);
+    return NextResponse.json(body, NO_STORE);
   } catch (err: unknown) {
     if (isLiftSnapshotTableMissing(err)) {
       return NextResponse.json(
@@ -59,7 +62,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
             code: LIFT_SNAPSHOT_TABLE_MISSING,
             message:
               'lift_daily_snapshots does not exist in this database yet (CTO handover step: ' +
-              'docs/handover/migrations/0042_lift_daily_snapshots.sql)',
+              'docs/handover/migrations/H001_lift_daily_snapshots.sql)',
           },
         },
         { status: 500 },

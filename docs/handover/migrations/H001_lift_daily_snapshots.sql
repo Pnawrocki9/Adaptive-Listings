@@ -1,14 +1,18 @@
--- Handover migration: 0042_lift_daily_snapshots
+-- Handover migration: H001_lift_daily_snapshots
 -- FOLLOW-1338 (plan Phase 3 M5, ruling D-K): the daily history of the pilot lift.
 --
 -- WHY THIS FILE IS NOT UNDER packages/db/migrations/
 --   `.github/workflows/db-migrate.yml` applies every file under `packages/db/migrations/**` to the
 --   LIVE production Supabase on each push to `main`. CEO ruling 2026-10-19: this table exists only
 --   on localhost until the CTO applies it. Localhost: `scripts/dev/localhost-up.sh` applies this
---   file to `al_pg_local` (step 4). Production: docs/handover/CTO_HANDOVER.md section 4 (the lift_daily_snapshots row) -
---   apply it BEFORE deploying the control plane that contains the cron `api/cron/lift-snapshot`.
---   Until then the cron answers 500 `lift_snapshot_table_missing` (one Sentry event per run) and the
---   Pilot tab's History table shows an error banner; nothing else depends on the table.
+--   file to `al_pg_local` (step 4). Production: docs/handover/CTO_HANDOVER.md section 4 (the
+--   lift_daily_snapshots row) - apply it BEFORE, or together with, row 4's flip of
+--   `CALLER_SIGNED_COLUMN_ENABLED`. The control plane deploys on every merge to main; until that
+--   flip the cron `api/cron/lift-snapshot` answers 200 `conversion_source: 'disabled'` and does not
+--   touch Postgres. After the flip and before this file is applied it answers 500
+--   `lift_snapshot_table_missing` (one Sentry event per run) and the Pilot tab's History table shows
+--   an error banner; nothing else depends on the table.
+--   (H001: a handover number, deliberately outside the drizzle 00NN sequence.)
 --
 -- WHAT IT HOLDS
 --   One row per (tenant, UTC day, arm) written by `api/cron/lift-snapshot` (UPSERT on the unique key,
@@ -55,3 +59,16 @@ DROP POLICY IF EXISTS lift_daily_snapshots_tenant_isolation ON lift_daily_snapsh
 CREATE POLICY lift_daily_snapshots_tenant_isolation
   ON lift_daily_snapshots
   USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+-- The table is reachable only through the service-role client; take the API roles' default grants
+-- away so RLS is not the only barrier. Guarded: a plain Postgres (CI, PGlite) has no such roles.
+DO $$
+DECLARE r text;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+      EXECUTE format('REVOKE ALL ON lift_daily_snapshots FROM %I', r);
+    END IF;
+  END LOOP;
+END
+$$;

@@ -48,7 +48,7 @@ import { GET } from './route';
 
 const MIGRATION = readFileSync(
   new URL(
-    '../../../../../../../../../docs/handover/migrations/0042_lift_daily_snapshots.sql',
+    '../../../../../../../../../docs/handover/migrations/H001_lift_daily_snapshots.sql',
     import.meta.url,
   ),
   'utf8',
@@ -124,23 +124,24 @@ describe('GET history', () => {
     expect(await res.json()).toEqual({ tenant_id: TENANT, data_source: 'postgres', rows: [] });
   });
 
-  it('returns the newest 90 rows, newest day first, for THIS tenant only', async () => {
+  it('returns the newest 180 rows (90 days x 2 arms), newest day first, for THIS tenant only', async () => {
     await freshDb(true);
-    // 60 days x 2 arms = 120 rows for TENANT, plus one row of another tenant
+    // 100 days x 2 arms = 200 rows for TENANT, plus one row of another tenant
     await pg!.exec(`
       insert into lift_daily_snapshots (tenant_id, day, arm, sessions, conversions, live_signups, agent_contacts, relative_lift_pct, p_value, confidence)
       select '${TENANT}', date '2026-08-01' + g, a, 10 + g, 1, 1, 0, case when g = 0 then null else 12.5 end, 0.5, 'not_significant'
-      from generate_series(0, 59) g, unnest(array['adapted','holdout']) a;
+      from generate_series(0, 99) g, unnest(array['adapted','holdout']) a;
       insert into lift_daily_snapshots (tenant_id, day, arm, sessions, conversions, live_signups, agent_contacts, p_value, confidence)
       values ('${OTHER}', '2026-12-31', 'adapted', 1, 0, 0, 0, 1, 'not_significant');
     `);
     const res = await GET(req());
+    expect(res.headers.get('cache-control')).toBe('no-store');
     const body = (await res.json()) as {
       rows: { day: string; arm: string; relative_lift_pct: number | null; computed_at: string }[];
     };
-    expect(body.rows).toHaveLength(90);
-    expect(body.rows[0]).toMatchObject({ day: '2026-09-29', arm: 'adapted' }); // 2026-08-01 + 59
-    expect(body.rows[1]).toMatchObject({ day: '2026-09-29', arm: 'holdout' });
+    expect(body.rows).toHaveLength(180);
+    expect(body.rows[0]).toMatchObject({ day: '2026-11-08', arm: 'adapted' }); // 2026-08-01 + 99
+    expect(body.rows[1]).toMatchObject({ day: '2026-11-08', arm: 'holdout' });
     expect(body.rows.every((r) => r.day !== '2026-12-31')).toBe(true);
     expect(body.rows[0]!.relative_lift_pct).toBe(12.5);
     expect(body.rows[0]!.computed_at).toMatch(/^\d{4}-\d\d-\d\dT.*Z$/);

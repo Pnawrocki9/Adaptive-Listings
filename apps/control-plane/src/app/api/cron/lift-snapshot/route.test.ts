@@ -2,7 +2,7 @@
  * @vitest-environment node
  *
  * GET /api/cron/lift-snapshot (FOLLOW-1338) — route-driven against a REAL Postgres engine (PGlite)
- * that has had the actual handover SQL (`docs/handover/migrations/0042_lift_daily_snapshots.sql`)
+ * that has had the actual handover SQL (`docs/handover/migrations/H001_lift_daily_snapshots.sql`)
  * applied, so the unique key, the CHECKs and the idempotent UPSERT are the production DDL's, not a
  * hand-copied mirror. ClickHouse is a fetch stand-in.
  *
@@ -45,7 +45,7 @@ import { GET } from './route';
 
 const MIGRATION = readFileSync(
   new URL(
-    '../../../../../../../docs/handover/migrations/0042_lift_daily_snapshots.sql',
+    '../../../../../../../docs/handover/migrations/H001_lift_daily_snapshots.sql',
     import.meta.url,
   ),
   'utf8',
@@ -272,6 +272,25 @@ describe('the handover migration', () => {
       `select relrowsecurity from pg_class where relname = 'lift_daily_snapshots'`,
     );
     expect(rls.rows[0]!.relrowsecurity).toBe(true);
+  });
+
+  it("takes the API roles' grants away when those roles exist (and is a no-op when they do not)", async () => {
+    // This PGlite has no anon/authenticated: the guarded DO block must have skipped them silently
+    // (freshDb applied the file above without error). Create them, grant, re-apply, check.
+    await freshDb(true);
+    await pg!.exec(`CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN;`);
+    await pg!.exec(`GRANT SELECT ON lift_daily_snapshots TO anon, authenticated`);
+    const can = async (role: string) =>
+      (
+        await pg!.query<{ ok: boolean }>(
+          `select has_table_privilege('${role}', 'lift_daily_snapshots', 'select') as ok`,
+        )
+      ).rows[0]!.ok;
+    expect(await can('anon')).toBe(true);
+    await pg!.exec(MIGRATION);
+    expect(await can('anon')).toBe(false);
+    expect(await can('authenticated')).toBe(false);
+    await pg!.exec(`DROP TABLE lift_daily_snapshots; DROP ROLE anon; DROP ROLE authenticated;`);
   });
 
   it('rejects a bad arm / confidence / negative count (CHECKs)', async () => {

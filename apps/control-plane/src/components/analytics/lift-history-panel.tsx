@@ -78,7 +78,7 @@ export function LiftHistoryPanel({ tenantId }: { tenantId: string }) {
     >
       <h2 className="mb-1 text-sm font-semibold text-gray-700">History — daily snapshots</h2>
       <p className="mb-4 text-xs text-gray-400">
-        One row per UTC day and arm, written by the daily snapshot job (last 90 rows). Independent
+        One row per UTC day and arm, written by the daily snapshot job (last 90 days). Independent
         of the window above.
       </p>
 

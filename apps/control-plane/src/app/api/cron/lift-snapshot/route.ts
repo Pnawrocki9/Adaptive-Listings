@@ -23,7 +23,11 @@
  * 'not_configured'`, no row) or when `CALLER_SIGNED_COLUMN_ENABLED` is off (200
  * `conversion_source: 'disabled'`, no row — zero counts would be a lie). Mock data is NEVER stored.
  *
- * **Missing table:** until the CTO applies `docs/handover/migrations/0042_lift_daily_snapshots.sql`
+ * **Deployment timing:** the control plane deploys on every merge to main, so until handover row 4
+ * flips `CALLER_SIGNED_COLUMN_ENABLED` this route answers 200 `conversion_source: 'disabled'` and
+ * never touches Postgres.
+ *
+ * **Missing table:** once that flag is on and the CTO has not yet applied `docs/handover/migrations/H001_lift_daily_snapshots.sql`
  * the INSERT fails with SQLSTATE 42P01 (`undefined_table`) naming `lift_daily_snapshots`
  * ({@link isLiftSnapshotTableMissing}). That is answered with 500 `lift_snapshot_table_missing` and
  * one Sentry capture — a single bounded request per scheduled run, no retry loop, no other effect.
@@ -131,7 +135,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       return fail(
         LIFT_SNAPSHOT_TABLE_MISSING,
         'lift_daily_snapshots does not exist in this database; the CTO applies ' +
-          'docs/handover/migrations/0042_lift_daily_snapshots.sql first',
+          'docs/handover/migrations/H001_lift_daily_snapshots.sql first',
         err,
         day,
       );

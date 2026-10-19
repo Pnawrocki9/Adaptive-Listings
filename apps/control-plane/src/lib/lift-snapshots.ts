@@ -3,7 +3,7 @@
  * pilot lift, written by `api/cron/lift-snapshot` and read by `api/dashboard/analytics/lift/history`.
  *
  * This is a typed query helper rather than a drizzle schema file ON PURPOSE. The table is created by
- * `docs/handover/migrations/0042_lift_daily_snapshots.sql`, which the CTO applies to production by
+ * `docs/handover/migrations/H001_lift_daily_snapshots.sql`, which the CTO applies to production by
  * hand (CEO ruling 2026-10-19: `.github/workflows/db-migrate.yml` applies every file under
  * `packages/db/migrations/**` to the live database on each push to `main`, so the file cannot live
  * there). A schema file in `@estalara/db` without a matching migration would claim a table the
@@ -23,8 +23,8 @@ import type { LiftArm, LiftDayRow } from '@/app/api/dashboard/analytics/lift/rou
 /** Wire code for "the table has not been created in this database yet" (Rule K.2: loud, not empty). */
 export const LIFT_SNAPSHOT_TABLE_MISSING = 'lift_snapshot_table_missing';
 
-/** Rows the History table shows at most. */
-const LIFT_HISTORY_ROW_LIMIT = 90;
+/** Rows the History table shows at most: the reader's longest window (90 days) x 2 arms. */
+const LIFT_HISTORY_ROW_LIMIT = 180;
 
 const TABLE = 'lift_daily_snapshots';
 /** SQLSTATE `undefined_table`. */
@@ -114,7 +114,7 @@ export interface LiftHistoryResponse {
 }
 
 /**
- * The newest {@link LIFT_HISTORY_ROW_LIMIT} rows of one tenant, newest day first (adapted before
+ * The newest {@link LIFT_HISTORY_ROW_LIMIT} (180 = 90 days x 2 arms) rows of one tenant, newest day first (adapted before
  * holdout within a day).
  *
  * @throws whatever the driver throws — including `undefined_table` ({@link isLiftSnapshotTableMissing}).

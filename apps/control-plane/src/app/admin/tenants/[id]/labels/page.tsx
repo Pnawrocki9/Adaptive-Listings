@@ -15,6 +15,10 @@
  * server-side, 403). Successful staff writes append a `staff_audit_log` row
  * (ADR-0018 §3) — both enforced in the routes, not this page.
  *
+ * Below the label editor, {@link CalibrationSection} renders the Calibration + Conversion Aggregates
+ * panel (FOLLOW-1334 — `GET /api/pilot/calibration?tenant_id=<id>`, the staff-override port of the
+ * agency panel; the same component the agency labels page mounts).
+ *
  * Staff gating: the existing `/admin/*` middleware already requires a valid staff
  * session for this route — no new middleware is added here.
  *
@@ -24,6 +28,7 @@
 import { notFound } from 'next/navigation';
 
 import { tenantExists } from '@/lib/session-auth';
+import { CalibrationSection } from '@/components/analytics/calibration-panel';
 import { StaffLabelsEditor } from './labels-editor';
 
 interface StaffTenantLabelsPageProps {
@@ -51,7 +56,12 @@ export default async function StaffTenantLabelsPage({ params }: StaffTenantLabel
         </p>
       </div>
 
-      <StaffLabelsEditor tenantId={id} />
+      <div className="space-y-6">
+        <StaffLabelsEditor tenantId={id} />
+        {/* FOLLOW-1334: the Calibration + Conversion Aggregates panel the agency labels page has
+            always had — GET /api/pilot/calibration with ?tenant_id (staff-override). */}
+        <CalibrationSection tenantId={id} />
+      </div>
     </div>
   );
 }

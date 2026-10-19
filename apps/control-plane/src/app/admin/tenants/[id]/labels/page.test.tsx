@@ -35,6 +35,12 @@ vi.mock('./labels-editor', () => ({
   ),
 }));
 
+vi.mock('@/components/analytics/calibration-panel', () => ({
+  CalibrationSection: ({ tenantId }: { tenantId?: string }) => (
+    <div data-testid="calibration-section">calibration:{tenantId ?? 'none'}</div>
+  ),
+}));
+
 import { tenantExists } from '@/lib/session-auth';
 import { notFound } from 'next/navigation';
 import StaffTenantLabelsPage from './page';
@@ -75,5 +81,27 @@ describe('StaffTenantLabelsPage', () => {
     expect(editor).toBeDefined();
     expect(editor.textContent).toBe(`tenant:${KNOWN_TENANT}`);
     expect(screen.getByText(KNOWN_TENANT)).toBeDefined();
+  });
+
+  it('mounts the Calibration + Conversion Aggregates section for the same tenant (FOLLOW-1334)', async () => {
+    mockTenantExists.mockResolvedValue(true);
+
+    const ui = await StaffTenantLabelsPage({
+      params: Promise.resolve({ id: KNOWN_TENANT }),
+    });
+    render(ui);
+
+    expect(screen.getByTestId('calibration-section').textContent).toBe(
+      `calibration:${KNOWN_TENANT}`,
+    );
+  });
+
+  it('does not mount the calibration section for an unknown tenant', async () => {
+    mockTenantExists.mockResolvedValue(false);
+
+    await expect(
+      StaffTenantLabelsPage({ params: Promise.resolve({ id: UNKNOWN_TENANT }) }),
+    ).rejects.toBe(NOT_FOUND);
+    expect(screen.queryByTestId('calibration-section')).toBeNull();
   });
 });

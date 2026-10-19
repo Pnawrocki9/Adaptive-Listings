@@ -15,6 +15,7 @@ export * from './tenant-compliance.js';
 export * from './quiz-config.js';
 export * from './widget-placement.js';
 export * from './presentation-config.js';
+export * from './quiz-walk.js';
 export * from './tracer.js';
 export * from './intent-weights.js';
 export * from './listing-embed-seed.js';

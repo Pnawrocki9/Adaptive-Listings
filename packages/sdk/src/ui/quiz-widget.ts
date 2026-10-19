@@ -28,7 +28,12 @@
  */
 
 import type { QuizDefinition, QuizLanguage, QuizQuestion, WidgetPlacement } from '@estalara/shared';
-import { DEFAULT_QUIZ_PLACEMENT, reduceWeightsToArchetype } from '@estalara/shared';
+import {
+  DEFAULT_QUIZ_PLACEMENT,
+  longestPathFrom,
+  resolveArchetypeFromPath,
+  resolveLabel,
+} from '@estalara/shared';
 
 import type { Archetype } from '../core/intent.js';
 import type { QuizAnswerPath } from '../core/adapt.js';
@@ -300,68 +305,14 @@ export const DEFAULT_QUIZ_DEFINITION: QuizDefinition = {
   ],
 };
 
-// ─── Pure walk helpers (shared by the renderer + tests) ─────────────────────────
-
-/** Resolve an i18n label for a language, falling back to `'en'` then the first present value. */
-export function resolveLabel(
-  bag: Partial<Record<QuizLanguage, string>>,
-  lang: QuizLanguage,
-): string {
-  return bag[lang] ?? bag.en ?? Object.values(bag)[0] ?? '';
-}
-
-/** Index a definition's questions by id. */
-function indexQuestions(def: QuizDefinition): Map<string, QuizQuestion> {
-  return new Map(def.questions.map((q) => [q.id, q]));
-}
+// ─── Pure walk helpers (moved to @estalara/shared — FOLLOW-1356) ────────────────
 
 /**
- * Resolve the leaf archetype for a sequence of answer selections (by answer index per
- * question), walking `definition` from its root. Pure — used by the renderer's completion
- * path and by the parity tests. Empty / all-zero accumulation ⇒ `neutral`.
+ * `resolveLabel` and `resolveArchetypeFromPath` now live in `@estalara/shared`
+ * (`schemas/quiz-walk.ts`), shared with the admin simulator and the editor lint. Re-exported
+ * under the same names so this module's importers and tests are unchanged.
  */
-export function resolveArchetypeFromPath(
-  def: QuizDefinition,
-  answerIndices: number[],
-): QuizResolvedArchetype {
-  const byId = indexQuestions(def);
-  let currentId: string | null = def.root;
-  const acc: Record<string, number> = {};
-  for (const idx of answerIndices) {
-    if (currentId === null) break;
-    const q = byId.get(currentId);
-    if (!q) break;
-    const ans = q.answers[idx];
-    if (!ans) break;
-    for (const [archetypeId, weight] of Object.entries(ans.weights)) {
-      acc[archetypeId] = (acc[archetypeId] ?? 0) + weight;
-    }
-    currentId = ans.next;
-  }
-  return reduceWeightsToArchetype(acc);
-}
-
-/** Longest number of remaining questions reachable from `qid` (for the progress indicator). */
-function longestPathFrom(def: QuizDefinition, qid: string): number {
-  const byId = indexQuestions(def);
-  const memo = new Map<string, number>();
-  const visit = (id: string, seen: ReadonlySet<string>): number => {
-    const cached = memo.get(id);
-    if (cached !== undefined) return cached;
-    const q = byId.get(id);
-    if (!q || seen.has(id)) return 0;
-    const nextSeen = new Set(seen).add(id);
-    let best = 0;
-    for (const ans of q.answers) {
-      const remaining = ans.next === null ? 0 : visit(ans.next, nextSeen);
-      if (remaining > best) best = remaining;
-    }
-    const total = 1 + best;
-    memo.set(id, total);
-    return total;
-  };
-  return visit(qid, new Set<string>());
-}
+export { resolveArchetypeFromPath, resolveLabel };
 
 // ─── Renderer ─────────────────────────────────────────────────────────────────
 
@@ -377,7 +328,7 @@ export function renderQuizWidget(
 ): () => void {
   try {
     const def = config.definition;
-    const byId = indexQuestions(def);
+    const byId = new Map<string, QuizQuestion>(def.questions.map((q) => [q.id, q]));
     const chrome = CHROME_LABELS[config.language];
 
     const style = document.createElement('style');

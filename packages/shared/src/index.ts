@@ -15,6 +15,7 @@ export * from './errors.js';
 export * from './demo.js';
 export * from './archetypes.js';
 export * from './traits.js';
+export * from './stats/wilson.js';
 export * from './quiz-default-v2.js';
 export * from './directives.js';
 export * from './placeholder-tokens.js';

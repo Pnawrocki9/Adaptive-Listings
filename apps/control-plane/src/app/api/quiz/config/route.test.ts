@@ -1,7 +1,7 @@
 /**
  * Tests for GET/POST /api/quiz/config.
  *
- * Auth model (ADR-0018 §2, FOLLOW-595): the route delegates the entire agency +
+ * Auth model (ADR-0018 §2, FOLLOW-595; staff-only since FOLLOW-1335): the route delegates the
  * staff resolution to `resolveTenantAccess`, whose own end-to-end wiring (SSR
  * cookie, staff gate, tenant existence check, RLS trap) is exercised by
  * `src/lib/__tests__/resolve-tenant-access.test.ts`. These route tests therefore
@@ -75,22 +75,6 @@ const STAFF_RANK: Record<string, number> = {
   'estalara:readonly': 1,
 };
 
-function agencyAccess(tenantId = TENANT_A): TenantAccess {
-  return {
-    via: 'agency',
-    tenantId,
-    claims: {
-      sub: 'agency-user',
-      email: 'user@agency.com',
-      tenant_id: tenantId,
-      agency_role: 'agency:viewer',
-      estalara_staff: false,
-      mfa_verified: false,
-    },
-    rawToken: 'agency-jwt',
-  };
-}
-
 function staffAccess(
   tenantId: string,
   role: 'estalara:superadmin' | 'estalara:ops' | 'estalara:readonly' = 'estalara:ops',
@@ -148,7 +132,7 @@ function makeMultiTenantDb(seed: Record<string, Record<string, unknown>> = {}): 
   const captured: FakeDb['_captured'] = { selectWhere: null, updateWhere: null, updateSet: null };
   const control = { failAuditInsert: false };
 
-  // Non-transactional writers, used by the AGENCY path (byte-unchanged).
+  // Non-transactional readers/writers (the agency write path was removed by FOLLOW-1335).
   const makeSelect = (
     target: Record<string, { quizConfig: Record<string, unknown> }>,
   ): ReturnType<typeof vi.fn> =>
@@ -259,7 +243,7 @@ async function parseBody<T>(res: Response): Promise<T> {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockResolve.mockResolvedValue(agencyAccess());
+  mockResolve.mockResolvedValue(staffAccess(TENANT_A));
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -334,10 +318,10 @@ describe('QuizConfigSchema strips enabled key (FOLLOW-271, Rule U)', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// GET — agency path (byte-unchanged behavior)
+// GET
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('GET /api/quiz/config — agency', () => {
+describe('GET /api/quiz/config', () => {
   it('returns 401 when resolveTenantAccess throws AccessError(401)', async () => {
     mockResolve.mockRejectedValue(new AccessError(401, 'Unauthorized'));
     const res = await GET(makeGet());
@@ -387,17 +371,17 @@ describe('GET /api/quiz/config — agency', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// POST — agency path (write semantics unchanged; NOT audited)
+// POST — validation and the happy path (ops staff, audited)
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('POST /api/quiz/config — agency', () => {
+describe('POST /api/quiz/config', () => {
   it('returns 401 when resolveTenantAccess throws AccessError(401)', async () => {
     mockResolve.mockRejectedValue(new AccessError(401, 'Unauthorized'));
     const res = await POST(makePost({ language: 'pl' }));
     expect(res.status).toBe(401);
   });
 
-  it('agency:viewer may write and gets the updated config (200)', async () => {
+  it('ops staff may write and gets the updated config (200)', async () => {
     useDb(makeMultiTenantDb({}));
     const res = await POST(makePost({ language: 'pl' }));
     expect(res.status).toBe(200);
@@ -419,23 +403,15 @@ describe('POST /api/quiz/config — agency', () => {
     expect(res.status).toBe(400);
   });
 
-  it('an agency write inserts ZERO staff_audit_log rows (§3 audits STAFF only)', async () => {
-    const db = makeMultiTenantDb({});
-    useDb(db);
-    const res = await POST(makePost({ language: 'pl' }));
-    expect(res.status).toBe(200);
-    expect(db._auditRows).toHaveLength(0);
-    expect(db.insert).not.toHaveBeenCalled();
-  });
-
-  // FOLLOW-603 — option-wiring: allowStaffOverride:true AND minAgencyRole:'agency:viewer'.
-  it('invokes resolveTenantAccess with allowStaffOverride:true and minAgencyRole:agency:viewer', async () => {
+  // FOLLOW-603 — option-wiring: allowStaffOverride:true, no agency role floor (FOLLOW-1335).
+  it('POST invokes resolveTenantAccess with allowStaffOverride:true (no agency role floor since FOLLOW-1335)', async () => {
     useDb(makeMultiTenantDb({}));
     await POST(makePost({ language: 'pl' }));
     expect(mockResolve).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ allowStaffOverride: true, minAgencyRole: 'agency:viewer' }),
+      expect.objectContaining({ allowStaffOverride: true }),
     );
+    expect(mockResolve.mock.calls[0]?.[1]).not.toHaveProperty('minAgencyRole');
   });
 });
 

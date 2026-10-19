@@ -3,15 +3,11 @@
 /**
  * GenerationModelSettings — shared "Content Generation Model" panel.
  *
- * Rendered by BOTH settings surfaces:
- *   - /admin/settings      (Estalara staff — the only accounts that can PUT, FOLLOW-456)
- *   - /dashboard/settings  (agency:admin/owner — read + save attempt; PUT is rejected
- *                           server-side for non-staff, surfaced via the error state)
+ * Rendered by /admin/settings (Estalara staff; the PUT needs a superadmin, FOLLOW-456).
  *
  * Extracted from /dashboard/settings/page.tsx (FOLLOW-161) when the /admin surface
- * was added (Phase 0 of the superadmin-access work, 2026-07-20) — one component,
- * two thin page wrappers, so the two zones cannot drift apart (the same
- * hand-maintained-copy failure class RETRO-179..186 closed for archetype IDs).
+ * was added (Phase 0 of the superadmin-access work, 2026-07-20) so the two zones could
+ * not drift apart; FOLLOW-1335 deleted the agency /dashboard/settings wrapper.
  *
  * Talks to GET/PUT /api/admin/generation-model; auth is entirely server-side
  * (session cookies ride the fetch). The generation model is the model used for
@@ -71,8 +67,7 @@ export default function GenerationModelSettings() {
   // was previously parsed as config because there was NO `!r.ok` guard — must
   // render its own visible error and disable Save. Otherwise a staff Save would
   // PUT the `claude-sonnet-4-6` default, resetting the GLOBAL generation model
-  // and busting the description cache. Shared by /admin/settings AND
-  // /dashboard/settings, so the guard covers both zones from one file.
+  // and busting the description cache.
   const [loadStatus, setLoadStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
   const [loadErrorMsg, setLoadErrorMsg] = useState('');
   const [retryNonce, setRetryNonce] = useState(0);

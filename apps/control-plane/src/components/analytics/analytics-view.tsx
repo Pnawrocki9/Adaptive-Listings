@@ -1,22 +1,19 @@
 'use client';
 
 /**
- * AnalyticsView — the reusable analytics surface shared by BOTH
- * `/dashboard/analytics` (agency, tenant from the session) and
- * `/admin/tenants/[id]/analytics` (Estalara staff, tenant from the URL).
+ * AnalyticsView — the analytics surface of `/admin/tenants/[id]/analytics` (Estalara
+ * staff, tenant from the URL). The agency `/dashboard/analytics` page that also rendered
+ * it was deleted by FOLLOW-1335.
  *
  * ADR-0018 §1 (FOLLOW-594): dashboard feature components take `tenantId` as a
  * PROP and never source the id themselves. This single component is the ONLY
  * implementation of the five analytics panels — there is no `/admin` copy to
- * drift from (the drift class RETRO-179..186 closed). The dashboard page renders
- * it with no `tenantId` (session-scoped, byte-identical fetch URLs) and
- * `allowResume` (Panel 5 Resume PATCH is agency-only); the staff page renders it
- * with `tenantId={id}` and read-only (no Resume — that write is FOLLOW-598).
+ * drift from (the drift class RETRO-179..186 closed). The staff page renders it
+ * with `tenantId={id}` and read-only. `allowResume` (the Panel-5 Resume PATCH) was set
+ * only by the deleted agency page; no caller sets it today.
  *
- * When `tenantId` is set, every GET carries an explicit `?tenant_id=<id>` so the
- * staff-override routes (summary, lift, ab/weights — FOLLOW-594) fence their
- * queries to that tenant. When absent, the URLs are exactly what the agency
- * dashboard has always sent.
+ * Every GET carries an explicit `?tenant_id=<id>` so the staff-override routes
+ * (summary, lift, ab/weights — FOLLOW-594) fence their queries to that tenant.
  *
  * @module apps/control-plane/src/components/analytics/analytics-view
  */
@@ -472,10 +469,10 @@ function Panel4({ state }: { state: FetchState<LiftResponse> }) {
 // ─── Panel 5 — Anomaly Feed ───────────────────────────────────────────────────
 
 /**
- * Panel 5 — anomaly feed. The `onResume` callback is OPTIONAL: the agency
- * dashboard passes it (Resume button visible, wired to the bandit-weight PATCH);
- * the read-only staff view omits it, so the feed renders WITHOUT a Resume control
- * (the PATCH is agency-only until FOLLOW-598).
+ * Panel 5 — anomaly feed. The `onResume` callback is OPTIONAL: with it the Resume
+ * button is visible, wired to the bandit-weight PATCH (superadmin-only since
+ * FOLLOW-598/FOLLOW-1335); the read-only staff view omits it, so the feed renders
+ * WITHOUT a Resume control.
  */
 function Panel5({
   loading,
@@ -571,24 +568,24 @@ function Panel5({
 
 export interface AnalyticsViewProps {
   /**
-   * Explicit tenant id (from `/admin/tenants/[id]`). When set, every GET carries
+   * Explicit tenant id (from `/admin/tenants/[id]`). Every GET carries
    * `?tenant_id=<id>` so the staff-override routes fence to this tenant. When
-   * omitted, the agency session's own tenant is used (byte-identical dashboard URLs).
+   * omitted, no `tenant_id` is sent and the staff-only routes answer 400 (FOLLOW-1335).
    */
   tenantId?: string;
   /**
-   * Show the Panel-5 Resume control (agency dashboard). The read-only staff port
-   * leaves this false — the bandit-weight PATCH stays agency-only (FOLLOW-598).
+   * Show the Panel-5 Resume control. Only the deleted agency dashboard set it; the
+   * read-only staff page leaves it false (the PATCH needs a superadmin, FOLLOW-598).
    */
   allowResume?: boolean;
 }
 
 /**
- * The five analytics panels + their fetch orchestration. Rendered by both the
- * agency dashboard and the staff per-tenant page (ADR-0018 §1).
+ * The five analytics panels + their fetch orchestration, rendered by the staff
+ * per-tenant page (ADR-0018 §1).
  */
 export function AnalyticsView({ tenantId, allowResume = false }: AnalyticsViewProps) {
-  // Explicit tenant scoping for the staff path; empty for the agency session path.
+  // Explicit tenant scoping (the staff routes need it — FOLLOW-1335).
   const tenantQuery = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
 
   // Panel 1 — Summary
@@ -717,13 +714,13 @@ export function AnalyticsView({ tenantId, allowResume = false }: AnalyticsViewPr
       });
   }, [tenantQuery]);
 
-  // ── Resume paused archetype (agency only) ─────────────────────────────────
+  // ── Resume paused archetype (only with `allowResume`) ─────────────────────
   function handleResume(archetype: string) {
     setResuming((prev) => new Set([...prev, archetype]));
 
     // Derive tenant_id from the weights data (rows carry tenant_id from API).
-    // The bandit PATCH is agency-only and tenant-scoped, so we POST to the
-    // tenant the weights belong to.
+    // The bandit PATCH is tenant-scoped, so we PATCH the tenant the weights
+    // belong to.
     const resumeTenantId = weightsData?.rows[0]?.['tenant_id' as keyof BanditRow] as
       | string
       | undefined;
@@ -777,7 +774,7 @@ export function AnalyticsView({ tenantId, allowResume = false }: AnalyticsViewPr
       {/* Panel 4 — Top Adaptation Types */}
       <Panel4 state={liftState} />
 
-      {/* Panel 5 — Anomaly Feed (Resume is agency-only) */}
+      {/* Panel 5 — Anomaly Feed (Resume only with allowResume) */}
       {/* exactOptionalPropertyTypes: omit onResume entirely on the read-only staff
           port rather than passing `undefined`; Panel5 hides the Resume control when
           the prop is absent. */}

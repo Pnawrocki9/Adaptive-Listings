@@ -12,7 +12,8 @@
  * Coverage:
  *   - Staff can flip quiz_enabled; the write is atomic (column + audit row in ONE tx).
  *   - The staff_audit_log row is written with action 'tenant_quiz_state.update' + delta.
- *   - Agency session → 403 staff_only (agencies use the dashboard toggle instead).
+ *   - (FOLLOW-1335: the agency-session 403 `staff_only` case is gone with the agency path;
+ *     a non-staff caller is refused inside resolveTenantAccess.)
  *   - Below-ops staff (readonly) PUT → 403, and NO mutation/audit row written.
  *   - Rule K.2: a thrown DB read/write → 500 (never a fabricated default / silent 200).
  *   - Tenant fence (invariant 5): the write targets ONLY the resolved tenant.
@@ -78,22 +79,6 @@ function staffAccess(
     role,
     canWrite: rank >= 2,
     isSuperadmin: rank >= 3,
-  };
-}
-
-function agencyAccess(tenantId: string): TenantAccess {
-  return {
-    via: 'agency',
-    tenantId,
-    claims: {
-      sub: 'user-uuid',
-      email: 'user@agency.com',
-      tenant_id: tenantId,
-      agency_role: 'agency:admin',
-      estalara_staff: false,
-      mfa_verified: true,
-    },
-    rawToken: 'agency-jwt',
   };
 }
 
@@ -225,15 +210,6 @@ describe('GET /api/admin/tenants/quiz-state', () => {
     expect(body.tenant_id).toBe(TENANT_A);
   });
 
-  it('agency → 403 staff_only (no agency read path)', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
-    makeDb({ [TENANT_A]: {} });
-    const res = await GET(makeRequest({ query: { tenant_id: TENANT_A } }));
-    expect(res.status).toBe(403);
-    const body = (await res.json()) as { error: { code: string } };
-    expect(body.error.code).toBe('staff_only');
-  });
-
   it('Rule K.2: a thrown DB read → 500, never a fabricated default', async () => {
     mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     const db = makeDb({ [TENANT_A]: {} });
@@ -289,18 +265,6 @@ describe('PUT /api/admin/tenants/quiz-state', () => {
     expect(db._tenants[TENANT_A]!.quizEnabled).toBe(true); // untouched
     expect(db._auditRows).toHaveLength(0);
     expect(db.transaction).not.toHaveBeenCalled();
-  });
-
-  it('agency → 403 staff_only (agencies use the dashboard toggle)', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
-    const db = makeDb({ [TENANT_A]: { quizEnabled: true } });
-    const res = await PUT(
-      makeRequest({ method: 'PUT', query: { tenant_id: TENANT_A }, body: { quiz_enabled: false } }),
-    );
-    expect(res.status).toBe(403);
-    const body = (await res.json()) as { error: { code: string } };
-    expect(body.error.code).toBe('staff_only');
-    expect(db._tenants[TENANT_A]!.quizEnabled).toBe(true);
   });
 
   it('invalid body (missing quiz_enabled) → 400', async () => {

@@ -9,12 +9,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-import { requireTenantSessionAccess, resolveTenantAccess } from '@/lib/session-auth';
+import { resolveTenantAccess } from '@/lib/session-auth';
 import { POST as ingestPOST } from './ingest/route';
 import { GET as overrideGET, PUT as overridePUT } from './override/route';
 
 vi.mock('@/lib/session-auth', () => ({
-  requireTenantSessionAccess: vi.fn(),
   resolveTenantAccess: vi.fn(),
 }));
 
@@ -43,7 +42,6 @@ describe.each([[''], ['true']])('api/demo/* with DEMO_MODE=%j', (value) => {
     const res = await call();
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: 'not_found' });
-    expect(requireTenantSessionAccess).not.toHaveBeenCalled();
     expect(resolveTenantAccess).not.toHaveBeenCalled();
   });
 });

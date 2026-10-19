@@ -3,7 +3,7 @@
  * FOLLOW-102 AC2: quiz_enabled toggle, auth, invalid payload.
  *
  * DATABASE_URL_ADMIN is not set in CI — route returns a mock response.
- * Auth is mocked via vi.mock('@estalara/auth').
+ * Auth is mocked via vi.mock('@estalara/auth'); staff is the only caller since FOLLOW-1335.
  *
  * @module apps/control-plane/src/app/api/tenants/[id]/route.test
  */
@@ -44,13 +44,10 @@ vi.mock('drizzle-orm', () => ({
   isNull: vi.fn((col: unknown) => ({ isNull: col })),
 }));
 
-// Mock auth — default to an authenticated tenant-scoped JWT.
-// FOLLOW-657: session-auth.ts's resolveTenantAccess also imports isTenantClaims,
-// isStaffClaims, and requireAgencyRole from @estalara/auth — these are pure
-// predicate/assert functions, safe to keep REAL via importOriginal. Only
-// getAuthClaims (the actual auth I/O) is mocked, exactly as before.
-// The agency-path mocks resolve a partial tenant claim (pre-existing style); the
-// FOLLOW-657 staff-path mocks resolve a full StaffClaims, so the union covers both.
+// Mock auth. session-auth.ts's resolveTenantAccess also imports isStaffClaims from
+// @estalara/auth — a pure predicate, kept REAL via importOriginal. Only getAuthClaims
+// (the actual auth I/O) is mocked. Most tests resolve a full StaffClaims; one resolves a
+// partial non-staff claim (the former tenant JWT) to prove it is no longer a caller.
 type MockedClaims = { tenant_id: string } | StaffClaims;
 const mockGetAuthClaims = vi.fn<(req: unknown) => Promise<MockedClaims | null>>();
 vi.mock('@estalara/auth', async (importOriginal) => {
@@ -64,17 +61,6 @@ vi.mock('@estalara/auth', async (importOriginal) => {
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-function makePatchRequest(
-  body: Record<string, unknown>,
-  tenantId = 'tenant-uuid-001',
-): NextRequest {
-  return new NextRequest(`http://localhost/api/tenants/${tenantId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test.jwt.token' },
-    body: JSON.stringify(body),
-  });
-}
-
 async function parseBody<T>(res: Response): Promise<T> {
   const raw: unknown = await res.json();
   return raw as T;
@@ -82,13 +68,93 @@ async function parseBody<T>(res: Response): Promise<T> {
 
 // ─── Tests ─────────────────────────────────────────────────────────────────────
 
+// FOLLOW-1335: staff is the only caller (the agency path — tenant from the JWT claim,
+// un-audited plain update — was removed with the agency roles). Shared staff fixtures:
+
+// tenantExists() (session-auth.ts) fails closed on non-UUID ids BEFORE hitting
+// the DB — must be a real-format UUID for the staff DB-mock path to be reached.
+const STAFF_TENANT_ID = '550e8400-e29b-41d4-a716-446655440001';
+
+function staffClaims(role: 'estalara:ops' | 'estalara:readonly' | 'estalara:superadmin') {
+  return {
+    sub: 'staff-uuid-777',
+    email: 'staff@estalara.com',
+    tenant_id: null,
+    estalara_staff: true as const,
+    estalara_role: role,
+    mfa_verified: true,
+  };
+}
+
+function makeStaffRequest(body: Record<string, unknown>, tenantId = STAFF_TENANT_ID): NextRequest {
+  return new NextRequest(`http://localhost/api/tenants/${tenantId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer staff-jwt-token',
+      'user-agent': 'vitest-staff-agent',
+      'x-forwarded-for': '203.0.113.9',
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+function makeStaffDb(
+  opts: { tenantExists?: boolean; failAudit?: boolean; rowFound?: boolean } = {},
+) {
+  const tenantExists = opts.tenantExists ?? true;
+  const failAudit = opts.failAudit ?? false;
+  const rowFound = opts.rowFound ?? true;
+  const auditRows: Record<string, unknown>[] = [];
+
+  const select = vi.fn(() => ({
+    from: vi.fn(() => ({
+      where: vi.fn(() => ({
+        limit: vi.fn(() => Promise.resolve(tenantExists ? [{ id: STAFF_TENANT_ID }] : [])),
+      })),
+    })),
+  }));
+
+  const transaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+    const stagedAudit: Record<string, unknown>[] = [];
+    const txUpdate = vi.fn(() => ({
+      set: vi.fn(() => ({
+        where: vi.fn(() => ({
+          returning: vi.fn(() =>
+            Promise.resolve(rowFound ? [{ id: STAFF_TENANT_ID, quizEnabled: true }] : []),
+          ),
+        })),
+      })),
+    }));
+    const txInsert = vi.fn(() => ({
+      values: vi.fn((v: Record<string, unknown>) => {
+        if (failAudit) return Promise.reject(new Error('audit sink down'));
+        stagedAudit.push(v);
+        return Promise.resolve([]);
+      }),
+    }));
+    const tx = { update: txUpdate, insert: txInsert };
+    await fn(tx); // rejecting inside discards staged state — nothing commits.
+    for (const row of stagedAudit) auditRows.push(row);
+  });
+
+  return { select, transaction, _auditRows: auditRows };
+}
+
 describe('PATCH /api/tenants/:id — no DB in CI (mock path)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default: authenticated as tenant-uuid-001
-    mockGetAuthClaims.mockResolvedValue({ tenant_id: 'tenant-uuid-001' });
+    // Default: an ops staff JWT; tenantExists() is served by the staff DB mock.
+    mockGetAuthClaims.mockResolvedValue(staffClaims('estalara:ops'));
     vi.stubEnv('DATABASE_URL_ADMIN', '');
     vi.stubEnv('DATABASE_URL_DIRECT', '');
+  });
+
+  beforeEach(async () => {
+    const { createAdminClient } = await import('@estalara/db');
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeStaffDb() as unknown as ReturnType<typeof createAdminClient>,
+    );
   });
 
   afterEach(() => {
@@ -98,13 +164,13 @@ describe('PATCH /api/tenants/:id — no DB in CI (mock path)', () => {
   // AC2 test 1: toggle quiz OFF
   it('returns 200 with quiz_enabled=false when toggling quiz OFF (mock path)', async () => {
     const { PATCH } = await import('./route.js');
-    const res = await PATCH(makePatchRequest({ quiz_enabled: false }), {
-      params: Promise.resolve({ id: 'tenant-uuid-001' }),
+    const res = await PATCH(makeStaffRequest({ quiz_enabled: false }), {
+      params: Promise.resolve({ id: STAFF_TENANT_ID }),
     });
 
     expect(res.status).toBe(200);
     const body = await parseBody<{ id: string; quiz_enabled: boolean; mock: boolean }>(res);
-    expect(body.id).toBe('tenant-uuid-001');
+    expect(body.id).toBe(STAFF_TENANT_ID);
     expect(body.quiz_enabled).toBe(false);
     expect(body.mock).toBe(true);
   });
@@ -112,8 +178,8 @@ describe('PATCH /api/tenants/:id — no DB in CI (mock path)', () => {
   // AC2 test 2: toggle quiz ON
   it('returns 200 with quiz_enabled=true when toggling quiz ON (mock path)', async () => {
     const { PATCH } = await import('./route.js');
-    const res = await PATCH(makePatchRequest({ quiz_enabled: true }), {
-      params: Promise.resolve({ id: 'tenant-uuid-001' }),
+    const res = await PATCH(makeStaffRequest({ quiz_enabled: true }), {
+      params: Promise.resolve({ id: STAFF_TENANT_ID }),
     });
 
     expect(res.status).toBe(200);
@@ -124,8 +190,8 @@ describe('PATCH /api/tenants/:id — no DB in CI (mock path)', () => {
   // AC2 test 3: invalid payload — string instead of boolean
   it('returns 400 for invalid payload (string instead of boolean)', async () => {
     const { PATCH } = await import('./route.js');
-    const res = await PATCH(makePatchRequest({ quiz_enabled: 'yes' }), {
-      params: Promise.resolve({ id: 'tenant-uuid-001' }),
+    const res = await PATCH(makeStaffRequest({ quiz_enabled: 'yes' }), {
+      params: Promise.resolve({ id: STAFF_TENANT_ID }),
     });
 
     expect(res.status).toBe(400);
@@ -136,8 +202,8 @@ describe('PATCH /api/tenants/:id — no DB in CI (mock path)', () => {
   // AC2 test 4: no updatable fields
   it('returns 400 when no updatable fields are provided', async () => {
     const { PATCH } = await import('./route.js');
-    const res = await PATCH(makePatchRequest({}), {
-      params: Promise.resolve({ id: 'tenant-uuid-001' }),
+    const res = await PATCH(makeStaffRequest({}), {
+      params: Promise.resolve({ id: STAFF_TENANT_ID }),
     });
 
     expect(res.status).toBe(400);
@@ -145,53 +211,28 @@ describe('PATCH /api/tenants/:id — no DB in CI (mock path)', () => {
 
   // AC2 auth: missing token → 401
   it('returns 401 when auth token is missing', async () => {
-    mockGetAuthClaims.mockResolvedValueOnce(null);
+    mockGetAuthClaims.mockResolvedValue(null);
 
     const { PATCH } = await import('./route.js');
-    const res = await PATCH(makePatchRequest({ quiz_enabled: false }), {
-      params: Promise.resolve({ id: 'tenant-uuid-001' }),
+    const res = await PATCH(makeStaffRequest({ quiz_enabled: false }), {
+      params: Promise.resolve({ id: STAFF_TENANT_ID }),
     });
 
     expect(res.status).toBe(401);
   });
 
-  // AC2 auth: mismatched tenant → 403
-  it('returns 403 when the JWT tenant does not match the :id param', async () => {
-    mockGetAuthClaims.mockResolvedValueOnce({ tenant_id: 'other-tenant-uuid' });
+  // FOLLOW-1335: the former tenant-scoped JWT (tenant_id matching :id, no staff flag) is no
+  // caller at all — it used to be the agency path that wrote this tenant.
+  it('returns 401 for a verified token that is not staff, even naming this tenant', async () => {
+    mockGetAuthClaims.mockResolvedValue({ tenant_id: STAFF_TENANT_ID });
 
     const { PATCH } = await import('./route.js');
-    const res = await PATCH(makePatchRequest({ quiz_enabled: false }), {
-      params: Promise.resolve({ id: 'tenant-uuid-001' }),
+    const res = await PATCH(makeStaffRequest({ quiz_enabled: false }), {
+      params: Promise.resolve({ id: STAFF_TENANT_ID }),
     });
 
-    expect(res.status).toBe(403);
-  });
-});
-
-describe('PATCH /api/tenants/:id — with DB configured', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockGetAuthClaims.mockResolvedValue({ tenant_id: 'tenant-uuid-001' });
-    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
-  });
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  // AC2 DB test: successful update returns id + quiz_enabled
-  it('returns 200 with id and quiz_enabled from DB row on success', async () => {
-    const { PATCH } = await import('./route.js');
-    const res = await PATCH(makePatchRequest({ quiz_enabled: false }), {
-      params: Promise.resolve({ id: 'tenant-uuid-001' }),
-    });
-
-    expect(res.status).toBe(200);
-    const body = await parseBody<{ id: string; quiz_enabled: boolean }>(res);
-    expect(body.id).toBe('tenant-uuid-001');
-    expect(body.quiz_enabled).toBe(false);
-    // DB path does not include 'mock' field
-    expect((body as Record<string, unknown>).mock).toBeUndefined();
+    expect(res.status).toBe(401);
+    expect(await parseBody<{ error: string }>(res)).toEqual({ error: 'Unauthorized' });
   });
 });
 
@@ -206,79 +247,6 @@ describe('PATCH /api/tenants/:id — with DB configured', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('PATCH /api/tenants/:id — Estalara staff override (ADR-0018 §2, FOLLOW-657)', () => {
-  // tenantExists() (session-auth.ts) fails closed on non-UUID ids BEFORE hitting
-  // the DB — must be a real-format UUID for the staff DB-mock path to be reached.
-  const STAFF_TENANT_ID = '550e8400-e29b-41d4-a716-446655440001';
-
-  function staffClaims(role: 'estalara:ops' | 'estalara:readonly' | 'estalara:superadmin') {
-    return {
-      sub: 'staff-uuid-777',
-      email: 'staff@estalara.com',
-      tenant_id: null,
-      estalara_staff: true as const,
-      estalara_role: role,
-      mfa_verified: true,
-    };
-  }
-
-  function makeStaffRequest(
-    body: Record<string, unknown>,
-    tenantId = STAFF_TENANT_ID,
-  ): NextRequest {
-    return new NextRequest(`http://localhost/api/tenants/${tenantId}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer staff-jwt-token',
-        'user-agent': 'vitest-staff-agent',
-        'x-forwarded-for': '203.0.113.9',
-      },
-      body: JSON.stringify(body),
-    });
-  }
-
-  function makeStaffDb(
-    opts: { tenantExists?: boolean; failAudit?: boolean; rowFound?: boolean } = {},
-  ) {
-    const tenantExists = opts.tenantExists ?? true;
-    const failAudit = opts.failAudit ?? false;
-    const rowFound = opts.rowFound ?? true;
-    const auditRows: Record<string, unknown>[] = [];
-
-    const select = vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(() => ({
-          limit: vi.fn(() => Promise.resolve(tenantExists ? [{ id: STAFF_TENANT_ID }] : [])),
-        })),
-      })),
-    }));
-
-    const transaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
-      const stagedAudit: Record<string, unknown>[] = [];
-      const txUpdate = vi.fn(() => ({
-        set: vi.fn(() => ({
-          where: vi.fn(() => ({
-            returning: vi.fn(() =>
-              Promise.resolve(rowFound ? [{ id: STAFF_TENANT_ID, quizEnabled: true }] : []),
-            ),
-          })),
-        })),
-      }));
-      const txInsert = vi.fn(() => ({
-        values: vi.fn((v: Record<string, unknown>) => {
-          if (failAudit) return Promise.reject(new Error('audit sink down'));
-          stagedAudit.push(v);
-          return Promise.resolve([]);
-        }),
-      }));
-      const tx = { update: txUpdate, insert: txInsert };
-      await fn(tx); // rejecting inside discards staged state — nothing commits.
-      for (const row of stagedAudit) auditRows.push(row);
-    });
-
-    return { select, transaction, _auditRows: auditRows };
-  }
-
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://user:pass@localhost:5432/db');
@@ -347,7 +315,7 @@ describe('PATCH /api/tenants/:id — Estalara staff override (ADR-0018 §2, FOLL
     expect(db.transaction).not.toHaveBeenCalled();
   });
 
-  it('estalara:ops staff → 200, one staff_audit_log row, attributed', async () => {
+  it('estalara:ops staff → 200 from the DB row (no mock flag), one staff_audit_log row, attributed', async () => {
     mockGetAuthClaims.mockResolvedValue(staffClaims('estalara:ops'));
     const { createAdminClient } = await import('@estalara/db');
     const db = makeStaffDb();
@@ -364,6 +332,8 @@ describe('PATCH /api/tenants/:id — Estalara staff override (ADR-0018 §2, FOLL
     const body = await parseBody<{ id: string; quiz_enabled: boolean }>(res);
     expect(body.id).toBe(STAFF_TENANT_ID);
     expect(body.quiz_enabled).toBe(true);
+    // The DB path never carries the dev/CI `mock` flag.
+    expect((body as Record<string, unknown>).mock).toBeUndefined();
 
     expect(db._auditRows).toHaveLength(1);
     const row = db._auditRows[0]!;

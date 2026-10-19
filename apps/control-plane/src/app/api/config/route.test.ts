@@ -2,8 +2,8 @@
  * Tests for GET + PATCH /api/config — real `tenants` table wiring (FOLLOW-600,
  * ADR-0018 §5/§6), superseding the FOLLOW-614-era in-memory `configStore` stub.
  *
- * Auth model (ADR-0018 §2, unchanged from FOLLOW-614/615): the route delegates
- * agency + staff resolution to `resolveTenantAccess`, whose own end-to-end wiring
+ * Auth model (ADR-0018 §2, FOLLOW-614/615; staff-only since FOLLOW-1335): the route
+ * delegates staff resolution to `resolveTenantAccess`, whose own end-to-end wiring
  * (SSR cookie, staff gate, tenant existence check, RLS trap) is exercised by
  * `src/lib/__tests__/resolve-tenant-access.test.ts`. These route tests PARTIALLY
  * MOCK `@/lib/session-auth` — only `resolveTenantAccess` is a spy; `AccessError`
@@ -16,7 +16,7 @@
  * `demo/override/route.test.ts`'s fake-DB harness.
  *
  * Coverage:
- *   - GET/PATCH agency + staff paths, spoof-header closure, option-wiring.
+ *   - GET/PATCH staff path, spoof-header closure, option-wiring (no agency role floor).
  *   - Rule K.2: a thrown DB query returns 500, never fabricated defaults.
  *   - Zod validation (brand.primary_color hex, brand.logo_url URL).
  *   - Staff write-rank gate (FOLLOW-615): readonly staff PATCH → 403, untouched.
@@ -77,25 +77,6 @@ const TENANT_B = '660e8400-e29b-41d4-a716-446655440099';
 const GATE_TENANT = '770e8400-e29b-41d4-a716-446655440077';
 
 // ─── Access fixtures ──────────────────────────────────────────────────────────
-
-function agencyAccess(
-  tenantId: string,
-  role: 'agency:viewer' | 'agency:admin' = 'agency:admin',
-): TenantAccess {
-  return {
-    via: 'agency',
-    tenantId,
-    claims: {
-      sub: 'user-uuid',
-      email: 'user@agency.com',
-      tenant_id: tenantId,
-      agency_role: role,
-      estalara_staff: false,
-      mfa_verified: true,
-    },
-    rawToken: 'agency-jwt',
-  };
-}
 
 const STAFF_RANK: Record<string, number> = {
   'estalara:superadmin': 3,
@@ -297,8 +278,8 @@ beforeEach(() => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('GET /api/config', () => {
-  it('agency viewer → 200 with own tenant config', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A, 'agency:viewer'));
+  it('readonly staff → 200 with the tenant config', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A, 'estalara:readonly'));
     useDb(makeDb({ [TENANT_A]: {} }));
     const res = await GET(makeRequest());
     expect(res.status).toBe(200);
@@ -311,7 +292,7 @@ describe('GET /api/config', () => {
   });
 
   it('SPOOF CLOSED: verified tenant A + spoofed victim headers → tenant A config, never the victim', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A, 'agency:viewer'));
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A, 'estalara:readonly'));
     useDb(makeDb({ [TENANT_A]: {}, [TENANT_B]: {} }));
     const res = await GET(
       makeRequest({
@@ -342,22 +323,22 @@ describe('GET /api/config', () => {
     expect(body.plan).toBe('native');
   });
 
-  it('option-wiring: calls resolveTenantAccess with allowStaffOverride + minAgencyRole viewer', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A, 'agency:viewer'));
+  it('option-wiring: calls resolveTenantAccess with allowStaffOverride (no agency role floor since FOLLOW-1335)', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A, 'estalara:readonly'));
     useDb(makeDb({ [TENANT_A]: {} }));
     await GET(makeRequest({ query: { tenant_id: TENANT_A } }));
     expect(mockResolve).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         allowStaffOverride: true,
-        minAgencyRole: 'agency:viewer',
         tenantId: TENANT_A,
       }),
     );
+    expect(mockResolve.mock.calls[0]?.[1]).not.toHaveProperty('minAgencyRole');
   });
 
   it('returns 500 (not fabricated defaults) when the DB query throws (Rule K.2)', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A, 'agency:viewer'));
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A, 'estalara:readonly'));
     vi.mocked(createAdminClient).mockReturnValue({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
@@ -375,7 +356,7 @@ describe('GET /api/config', () => {
   });
 
   it('returns 200 defaults with data_source: "default" (never silently) when the tenant row is not found (FOLLOW-627)', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A, 'agency:viewer'));
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A, 'estalara:readonly'));
     useDb(makeDb({}));
     const res = await GET(makeRequest());
     expect(res.status).toBe(200);
@@ -389,12 +370,12 @@ describe('GET /api/config', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PATCH — agency path
+// PATCH
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('PATCH /api/config — agency', () => {
-  it('agency admin → 200 with updated brand.white_label, other brand fields preserved', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A, 'agency:admin'));
+describe('PATCH /api/config', () => {
+  it('ops staff → 200 with updated brand.white_label, other brand fields preserved', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     useDb(
       makeDb({
         [TENANT_A]: {
@@ -412,18 +393,8 @@ describe('PATCH /api/config — agency', () => {
     expect(body.tenant_id).toBe(TENANT_A);
   });
 
-  it('agency viewer → 403 (below the admin floor, enforced from the verified claim)', async () => {
-    mockResolve.mockRejectedValue(new AccessError(403, 'Access denied: insufficient agency role'));
-    const res = await PATCH(
-      makeRequest({ method: 'PATCH', body: { brand: { white_label: true } } }),
-    );
-    expect(res.status).toBe(403);
-    const body = await parseBody<{ error: { code: string } }>(res);
-    expect(body.error.code).toBe('forbidden');
-  });
-
-  it('SPOOF CLOSED: verified tenant A admin + spoofed victim headers → mutates tenant A, never the victim', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A, 'agency:admin'));
+  it('SPOOF CLOSED: staff on tenant A + spoofed victim headers → mutates tenant A, never the victim', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     useDb(makeDb({ [TENANT_A]: {}, [TENANT_B]: {} }));
     const res = await PATCH(
       makeRequest({
@@ -446,18 +417,19 @@ describe('PATCH /api/config — agency', () => {
     expect(res.status).toBe(401);
   });
 
-  it('option-wiring: calls resolveTenantAccess with allowStaffOverride + minAgencyRole admin', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A, 'agency:admin'));
+  it('option-wiring (PATCH): calls resolveTenantAccess with allowStaffOverride (no agency role floor since FOLLOW-1335)', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     useDb(makeDb({ [TENANT_A]: {} }));
     await PATCH(makeRequest({ method: 'PATCH', body: { brand: { white_label: true } } }));
     expect(mockResolve).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ allowStaffOverride: true, minAgencyRole: 'agency:admin' }),
+      expect.objectContaining({ allowStaffOverride: true }),
     );
+    expect(mockResolve.mock.calls[0]?.[1]).not.toHaveProperty('minAgencyRole');
   });
 
   it('rejects invalid primary_color (400 validation_failed)', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A, 'agency:admin'));
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     useDb(makeDb({ [TENANT_A]: {} }));
     const res = await PATCH(
       makeRequest({ method: 'PATCH', body: { brand: { primary_color: 'not-a-color' } } }),
@@ -468,7 +440,7 @@ describe('PATCH /api/config — agency', () => {
   });
 
   it('returns 500 (fail-loud, Rule K.2) when the DB update throws', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A, 'agency:admin'));
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     const db = makeDb({ [TENANT_A]: {} });
     db._control.failUpdate = true;
     useDb(db);
@@ -477,18 +449,9 @@ describe('PATCH /api/config — agency', () => {
     );
     expect(res.status).toBe(500);
     const body = await parseBody<{ error: { code: string } }>(res);
-    expect(body.error.code).toBe('internal_error');
-  });
-
-  it('returns 404 unknown_tenant (never a "saved" 200) on a 0-row update — tenant_id has no tenants row (FOLLOW-627)', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A, 'agency:admin'));
-    useDb(makeDb({})); // TENANT_A seeded nowhere — the update below matches 0 rows
-    const res = await PATCH(
-      makeRequest({ method: 'PATCH', body: { brand: { white_label: true } } }),
-    );
-    expect(res.status).toBe(404);
-    const body = await parseBody<{ error: { code: string } }>(res);
-    expect(body.error.code).toBe('unknown_tenant');
+    // The update runs inside the audited transaction, so its failure is the atomic-write
+    // failure code (nothing was applied), not a generic internal_error.
+    expect(body.error.code).toBe('audit_write_failed');
   });
 });
 

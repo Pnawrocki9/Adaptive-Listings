@@ -4,7 +4,11 @@
  * Initiates a Data Subject Rights (DSR) request by generating a 6-digit OTP,
  * storing its hash in dsr_verifications, and emailing the OTP to the data subject.
  *
- * Auth: Bearer JWT (tenant-scoped agency user).
+ * Auth: Bearer JWT of a tenant-scoped user. FOLLOW-1335 removed the agency (tenant-user)
+ * claims from `@estalara/auth`: every verified JWT is now Estalara STAFF, whose `tenant_id`
+ * is null, so every caller is refused (401 / 403) — the route fails closed. Who initiates a
+ * DSR in the single-tenant product (staff acting on the Estalara tenant, attributable) is
+ * FOLLOW-1279's ownership redesign, together with the `session_embeddings` gate below.
  *
  * Flow:
  *   1. Validate JWT — extract tenant_id.
@@ -25,7 +29,7 @@ import type { NextRequest } from 'next/server';
 import { afterResponse } from '@/lib/after-response';
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
-import { getAuthClaims, isTenantClaims } from '@estalara/auth';
+import { getAuthClaims } from '@estalara/auth';
 import { createAdminClient, sessionEmbeddings, dsrVerifications } from '@estalara/db';
 import { generateOtp, hashOtp } from '@/lib/dsr-otp';
 import { checkInitiateRateLimit } from '@/lib/dsr-rate-limit';
@@ -91,7 +95,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { status: 401 },
     );
   }
-  if (!isTenantClaims(claims)) {
+  // A DSR is initiated FOR a tenant, so the caller must carry one. Staff claims never do
+  // (`tenant_id: null`) and no other verified claim shape exists since FOLLOW-1335, so this
+  // refuses every caller until FOLLOW-1279 defines the initiator (fail closed, never a guess).
+  const tenantId = claims.tenant_id;
+  if (typeof tenantId !== 'string') {
     return NextResponse.json(
       {
         error: { code: 'FORBIDDEN', message: 'Tenant user access required', request_id: requestId },
@@ -99,7 +107,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { status: 403 },
     );
   }
-  const tenantId = claims.tenant_id;
 
   // ── Parse + validate body ──────────────────────────────────────────────────
   let body: unknown;

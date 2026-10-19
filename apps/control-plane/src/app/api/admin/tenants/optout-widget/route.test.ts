@@ -12,7 +12,8 @@
  *   - Staff ops SAVE: tenants row updated AND staff_audit_log written in ONE transaction,
  *     `action: 'optout_widget.update'`, payload carrying before/after.
  *   - Below-ops staff → 403, no mutation, no audit row.
- *   - Agency session → 403 staff_only (this is an operator control).
+ *   - (FOLLOW-1335: the agency-session 403 `staff_only` case is gone with the agency path;
+ *     a non-staff caller is refused inside resolveTenantAccess.)
  *   - Invalid config (offset beyond the 200px bound) → 400, nothing written.
  *   - Unknown tenant → 404, nothing written.
  *   - Audit insert fails → whole tx rolls back → 500 audit_write_failed.
@@ -76,22 +77,6 @@ function staffAccess(
       estalara_role: role,
       mfa_verified: true,
     },
-  };
-}
-
-function agencyAccess(): TenantAccess {
-  return {
-    via: 'agency',
-    tenantId: TENANT_A,
-    claims: {
-      sub: 'agency-uuid-111',
-      email: 'owner@agency.example',
-      tenant_id: TENANT_A,
-      agency_role: 'agency:owner',
-      estalara_staff: false,
-      mfa_verified: true,
-    },
-    rawToken: null,
   };
 }
 
@@ -200,16 +185,6 @@ describe('GET /api/admin/tenants/optout-widget', () => {
     expect(res.status).toBe(200);
     const body = await parseBody<{ config: Record<string, unknown> }>(res);
     expect(body.config).toEqual({});
-  });
-
-  it('rejects an agency session — this is a staff-only operator control', async () => {
-    mockResolve.mockResolvedValue(agencyAccess());
-    wireDb(makeDb());
-
-    const res = await GET(makeRequest());
-    expect(res.status).toBe(403);
-    const body = await parseBody<{ error: { code: string } }>(res);
-    expect(body.error.code).toBe('staff_only');
   });
 });
 

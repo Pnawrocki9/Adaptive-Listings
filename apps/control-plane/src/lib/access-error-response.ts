@@ -1,9 +1,8 @@
 /**
  * Map an {@link AccessError} thrown by `resolveTenantAccess` (ADR-0018 §2) to a
  * uniform `NextResponse` error body across every route that opts into the staff
- * override. Keeps the `{ error: { code, message } }` envelope the existing
- * analytics routes already return, so the agency-path 401 shape is byte-identical
- * (its `code` stays `'unauthorized'`).
+ * override. Keeps the `{ error: { code, message } }` envelope the analytics routes
+ * have always returned (a 401's `code` stays `'unauthorized'`).
  *
  * Non-`AccessError` throwables are re-thrown so the caller's own catch (Sentry +
  * 500) still owns genuine bugs — this helper never swallows unexpected errors.

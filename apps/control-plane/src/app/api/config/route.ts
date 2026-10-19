@@ -5,19 +5,18 @@
  * FOLLOW-600 (ADR-0018 §5/§6): wires this route to the REAL `tenants` table via
  * `createAdminClient()`, replacing the FOLLOW-614-era in-memory `configStore` stub.
  *
- * Auth (ADR-0018 §2, FOLLOW-614 — spoofable-header hole closed; unchanged by this PR):
- *   GET   — `resolveTenantAccess(req, { allowStaffOverride: true, minAgencyRole: 'agency:viewer' })`
- *   PATCH — `resolveTenantAccess(req, { allowStaffOverride: true, minAgencyRole: 'agency:admin' })`
+ * Auth (ADR-0018 §2, FOLLOW-614 — spoofable-header hole closed):
+ *   GET   — `resolveTenantAccess(req, { allowStaffOverride: true, tenantId })`
+ *   PATCH — the same, plus the staff write-rank gate below
  *
- *   The tenant and the caller's role come ONLY from the verified session/JWT claims
- *   (the agency path sources the tenant from `claims.tenant_id`; the role floor is
- *   enforced by `minAgencyRole`). An Estalara staff caller may target any tenant via
- *   `?tenant_id=<uuid>`, which `resolveTenantAccess` validates against the `tenants`
- *   table (invariant 4).
+ *   The caller and its role come ONLY from the verified staff session/JWT claims. The
+ *   tenant is `?tenant_id=<uuid>`, which `resolveTenantAccess` validates against the
+ *   `tenants` table (invariant 4). FOLLOW-1335 removed the agency path (tenant from
+ *   `claims.tenant_id`, role floor `minAgencyRole`, un-audited PATCH) with the agency roles.
  *
  *   RLS TRAP (ADR-0018 §2 invariant 5): this route uses `createAdminClient()`
- *   (service-role, RLS BYPASSED) for BOTH the agency and staff paths — same choice
- *   as `quiz/config/route.ts` (the reference implementation this route copies). The
+ *   (service-role, RLS BYPASSED) — same choice as `quiz/config/route.ts` (the reference
+ *   implementation this route copies). The
  *   explicit `eq(tenants.id, access.tenantId)` fence bound into every query below is
  *   the ONLY tenant boundary; there is no database-level fence backstopping it.
  *
@@ -26,7 +25,7 @@
  *   (`quiz/config`, `demo/override`, `admin/intent-weights`). GET is unaffected —
  *   readonly staff keeps read access, matching the `/api/audit` precedent.
  *
- * Staff-write atomicity (ADR-0018 §3a, RETRO-202): the staff PATCH path commits the
+ * Staff-write atomicity (ADR-0018 §3a, RETRO-202): the PATCH commits the
  *   `tenants` update and the `staff_audit_log` insert (`action: 'tenant_config.update'`)
  *   TOGETHER in ONE `db.transaction()`, mirroring `quiz/config/route.ts`'s POST staff
  *   branch byte-for-byte in shape. The mutation is kept INLINE in this route file
@@ -196,7 +195,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     access = await resolveTenantAccess(req, {
       allowStaffOverride: true,
-      minAgencyRole: 'agency:viewer',
       // exactOptionalPropertyTypes (RETRO-189): omit the key when absent so a staff
       // caller without ?tenant_id reaches resolve's 400 rather than passing undefined.
       ...(tenantIdParam ? { tenantId: tenantIdParam } : {}),
@@ -237,7 +235,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   } catch (err: unknown) {
     // Rule K.2 — fail loud: the DB is configured but the query threw. Returning
     // fabricated defaults here would silently misrepresent the tenant's real
-    // config on a staff/agency-facing settings surface.
+    // config on the staff settings surface.
     console.error('[config GET] DB error:', err instanceof Error ? err.message : err);
     return NextResponse.json(
       { error: { code: 'internal_error', message: 'Failed to load tenant configuration' } },
@@ -253,7 +251,6 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
   try {
     access = await resolveTenantAccess(req, {
       allowStaffOverride: true,
-      minAgencyRole: 'agency:admin',
       ...(tenantIdParam ? { tenantId: tenantIdParam } : {}),
     });
   } catch (err) {
@@ -261,8 +258,8 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
   }
 
   // Write-rank gate (CEO Q3, ADR-0018 §4; FOLLOW-615): staff below `estalara:ops`
-  // (rank < 2) is view-only. `canWrite` is set on the staff branch iff rank ≥ ops.
-  if (access.via === 'staff' && !access.canWrite) {
+  // (rank < 2) is view-only. `canWrite` is set iff rank ≥ ops.
+  if (!access.canWrite) {
     return NextResponse.json(
       { error: { code: 'forbidden', message: 'Staff write requires estalara:ops or higher' } },
       { status: 403 },
@@ -343,109 +340,75 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     updatedAt: new Date(),
   };
 
-  if (access.via === 'staff') {
-    // ── Atomic staff write (ADR-0018 §3a) ──────────────────────────────────
-    // The tenant config mutation and its staff_audit_log row commit-or-roll-back
-    // TOGETHER in ONE transaction (RETRO-190 §4a / RETRO-202), mirroring
-    // quiz/config/route.ts's POST staff branch.
-    try {
-      await db.transaction(async (tx) => {
-        // FOLLOW-627: `.returning()` proves the update actually matched a row.
-        // A 0-row match (tenant_id has no `tenants` row) must never fall
-        // through to a "saved" 200 — throw so the outer catch returns 404
-        // instead of committing an audit row for a mutation that never
-        // happened.
-        const updated = await tx
-          .update(tenants)
-          .set(setValues)
-          .where(eq(tenants.id, tenantId))
-          .returning({ id: tenants.id });
-        if (updated.length === 0) {
-          throw new UnknownTenantError(tenantId);
-        }
-        // Staff audit trail (§3) — attributed to the acting staff user. AWAITED
-        // inside the tx so it commits atomically with the update.
-        await tx.insert(staffAuditLog).values({
-          adminUserId: access.staff.sub,
-          action: 'tenant_config.update',
-          targetTenantId: tenantId,
-          payload: {
-            before: {
-              plan: currentPlan,
-              brand: currentBrand,
-            },
-            after: {
-              plan: currentPlan,
-              brand: updatedBrand,
-            },
-          },
-          ipAddress: requestIp(req),
-          userAgent: req.headers.get('user-agent'),
-        });
-      });
-    } catch (err: unknown) {
-      // FOLLOW-627: a 0-row update surfaces as UnknownTenantError, not a
-      // generic tx failure — 404, no Sentry capture (expected caller error,
-      // not a dependency failure).
-      if (err instanceof UnknownTenantError) {
-        return NextResponse.json(
-          { error: { code: 'unknown_tenant', message: err.message } },
-          { status: 404 },
-        );
-      }
-      // Any other failure INSIDE the tx (the update OR the audit insert) rolls
-      // BOTH back — there is no orphan config mutation to leave behind. Fail
-      // loud: capture to Sentry and return 500, never a silent unattributed 200
-      // (Rule K.2). A retry is safe: it re-reads, re-applies the same config
-      // (idempotent) and appends a fresh audit row inside a new tx.
-      Sentry.captureException(err, {
-        tags: { route: 'config', staff_audit_error: 'true' },
-        extra: { tenant_id: tenantId, admin_user_id: access.staff.sub },
-      });
-      return NextResponse.json(
-        {
-          error: {
-            code: 'audit_write_failed',
-            message:
-              'The tenant config change could not be recorded atomically with its staff ' +
-              'audit row; the change was rolled back and NOT applied. Retry the action.',
-          },
-        },
-        { status: 500 },
-      );
-    }
-  } else {
-    // Agency self-service write — UNCHANGED and NOT audited (§3 audits STAFF only).
-    try {
-      // FOLLOW-627: `.returning()` proves the update matched a row — a 0-row
-      // match must fail loud (404) rather than fall through to a "saved" 200
-      // for a tenant that was never written.
-      const updated = await db
+  // ── Atomic staff write (ADR-0018 §3a) ──────────────────────────────────
+  // The tenant config mutation and its staff_audit_log row commit-or-roll-back
+  // TOGETHER in ONE transaction (RETRO-190 §4a / RETRO-202), mirroring
+  // quiz/config/route.ts's POST staff branch.
+  try {
+    await db.transaction(async (tx) => {
+      // FOLLOW-627: `.returning()` proves the update actually matched a row.
+      // A 0-row match (tenant_id has no `tenants` row) must never fall
+      // through to a "saved" 200 — throw so the outer catch returns 404
+      // instead of committing an audit row for a mutation that never
+      // happened.
+      const updated = await tx
         .update(tenants)
         .set(setValues)
         .where(eq(tenants.id, tenantId))
         .returning({ id: tenants.id });
       if (updated.length === 0) {
-        return NextResponse.json(
-          {
-            error: {
-              code: 'unknown_tenant',
-              message: `No tenants row found for tenant_id: ${tenantId}`,
-            },
-          },
-          { status: 404 },
-        );
+        throw new UnknownTenantError(tenantId);
       }
-    } catch (err: unknown) {
-      console.error(
-        '[config PATCH] failed to update tenant configuration:',
-        err instanceof Error ? err.message : err,
-      );
+      // Staff audit trail (§3) — attributed to the acting staff user. AWAITED
+      // inside the tx so it commits atomically with the update.
+      await tx.insert(staffAuditLog).values({
+        adminUserId: access.staff.sub,
+        action: 'tenant_config.update',
+        targetTenantId: tenantId,
+        payload: {
+          before: {
+            plan: currentPlan,
+            brand: currentBrand,
+          },
+          after: {
+            plan: currentPlan,
+            brand: updatedBrand,
+          },
+        },
+        ipAddress: requestIp(req),
+        userAgent: req.headers.get('user-agent'),
+      });
+    });
+  } catch (err: unknown) {
+    // FOLLOW-627: a 0-row update surfaces as UnknownTenantError, not a
+    // generic tx failure — 404, no Sentry capture (expected caller error,
+    // not a dependency failure).
+    if (err instanceof UnknownTenantError) {
       return NextResponse.json(
-        { error: { code: 'internal_error', message: 'Failed to update tenant configuration' } },
-        { status: 500 },
+        { error: { code: 'unknown_tenant', message: err.message } },
+        { status: 404 },
       );
     }
+    // Any other failure INSIDE the tx (the update OR the audit insert) rolls
+    // BOTH back — there is no orphan config mutation to leave behind. Fail
+    // loud: capture to Sentry and return 500, never a silent unattributed 200
+    // (Rule K.2). A retry is safe: it re-reads, re-applies the same config
+    // (idempotent) and appends a fresh audit row inside a new tx.
+    Sentry.captureException(err, {
+      tags: { route: 'config', staff_audit_error: 'true' },
+      extra: { tenant_id: tenantId, admin_user_id: access.staff.sub },
+    });
+    return NextResponse.json(
+      {
+        error: {
+          code: 'audit_write_failed',
+          message:
+            'The tenant config change could not be recorded atomically with its staff ' +
+            'audit row; the change was rolled back and NOT applied. Retry the action.',
+        },
+      },
+      { status: 500 },
+    );
   }
 
   const body: TenantConfig = {

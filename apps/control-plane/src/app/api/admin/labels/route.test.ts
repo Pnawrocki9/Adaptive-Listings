@@ -9,7 +9,8 @@
  *   - Fail-loud: 500 when Postgres configured-but-fails (Rule K.2)
  *   - Fail-loud: 500 when ClickHouse configured-but-fails (Rule K.2)
  *   - PATCH: writes label_source=manual_admin, validates outcome_class Zod enum
- *   - PATCH: cross-tenant guard (agency user gets 404, not 403, to avoid leaking)
+ *   - PATCH: staff-only since FOLLOW-1335 (the agency-owner path and its cross-tenant 404
+ *     guard were removed with the agency roles)
  *   - PATCH: 503 when DATABASE_URL_ADMIN absent
  *   - PATCH staff branch (FOLLOW-597): staff_audit_log insert + db.transaction()
  *     atomicity, rollback-on-audit-failure (ADR-0018 §3a)
@@ -97,18 +98,6 @@ const mockResolve = vi.mocked(resolveTenantAccess);
 
 // ─── Helpers — PATCH (getAuthClaims/isStaffClaims, unchanged shape) ───────────
 
-function agencyAuth(tenantId = TENANT_ID) {
-  mockGetAuthClaims.mockResolvedValue({
-    sub: 'user-uuid',
-    email: 'user@agency.com',
-    tenant_id: tenantId,
-    agency_role: 'agency:owner',
-    estalara_staff: false,
-    mfa_verified: true,
-  });
-  mockIsStaffClaims.mockReturnValue(false);
-}
-
 function staffAuth() {
   mockGetAuthClaims.mockResolvedValue({
     sub: 'staff-uuid',
@@ -122,22 +111,6 @@ function staffAuth() {
 }
 
 // ─── Helpers — GET (resolveTenantAccess fixtures, FOLLOW-597) ─────────────────
-
-function agencyAccess(tenantId = TENANT_ID): TenantAccess {
-  return {
-    via: 'agency',
-    tenantId,
-    claims: {
-      sub: 'user-uuid',
-      email: 'user@agency.com',
-      tenant_id: tenantId,
-      agency_role: 'agency:viewer',
-      estalara_staff: false,
-      mfa_verified: true,
-    },
-    rawToken: 'agency-jwt',
-  };
-}
 
 function staffAccess(tenantId: string): TenantAccess {
   return {
@@ -195,7 +168,7 @@ describe('GET /api/admin/labels', () => {
     delete process.env.DATABASE_URL_ADMIN;
     delete process.env.DATABASE_URL_DIRECT;
     delete process.env.CLICKHOUSE_URL;
-    mockResolve.mockResolvedValue(agencyAccess());
+    mockResolve.mockResolvedValue(staffAccess(TENANT_ID));
   });
 
   afterEach(() => {
@@ -563,15 +536,8 @@ describe('PATCH /api/admin/labels/[id]', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns 401 for agency viewer (insufficient role)', async () => {
-    mockGetAuthClaims.mockResolvedValue({
-      sub: 'user',
-      email: 'viewer@agency.com',
-      tenant_id: TENANT_ID,
-      agency_role: 'agency:viewer',
-      estalara_staff: false,
-      mfa_verified: true,
-    });
+  it('returns 401 for a verified token that is not staff — the resolver yields no caller (FOLLOW-1335)', async () => {
+    staffAuth();
     mockIsStaffClaims.mockReturnValue(false);
     const { PATCH } = await import('./[id]/route.js');
     const res = await PATCH(makePatchRequest(LABEL_ID, { outcome_class: 'offer_made' }), {
@@ -579,7 +545,7 @@ describe('PATCH /api/admin/labels/[id]', () => {
     });
     expect(res.status).toBe(401);
     const body = await parseBody<{ error: { code: string } }>(res);
-    expect(body.error.code).toBe('forbidden');
+    expect(body.error.code).toBe('unauthorized');
   });
 
   it('returns 401 for staff readonly (insufficient role)', async () => {
@@ -604,7 +570,7 @@ describe('PATCH /api/admin/labels/[id]', () => {
   // ── Service unavailable when DB not configured ─────────────────────────────
 
   it('returns 503 when DATABASE_URL_ADMIN is not configured', async () => {
-    agencyAuth();
+    staffAuth();
     const { PATCH } = await import('./[id]/route.js');
     const res = await PATCH(makePatchRequest(LABEL_ID, { outcome_class: 'offer_made' }), {
       params: makeParams(LABEL_ID),
@@ -617,7 +583,7 @@ describe('PATCH /api/admin/labels/[id]', () => {
   // ── Body validation ───────────────────────────────────────────────────────
 
   it('returns 400 for invalid outcome_class value', async () => {
-    agencyAuth();
+    staffAuth();
     process.env.DATABASE_URL_ADMIN = 'postgres://test';
 
     const { PATCH } = await import('./[id]/route.js');
@@ -630,7 +596,7 @@ describe('PATCH /api/admin/labels/[id]', () => {
   });
 
   it('returns 400 for extra fields (.strict() enforcement)', async () => {
-    agencyAuth();
+    staffAuth();
     process.env.DATABASE_URL_ADMIN = 'postgres://test';
 
     const { PATCH } = await import('./[id]/route.js');
@@ -647,7 +613,7 @@ describe('PATCH /api/admin/labels/[id]', () => {
   // ── 404 when label not found ──────────────────────────────────────────────
 
   it('returns 404 when label does not exist', async () => {
-    agencyAuth();
+    staffAuth();
     process.env.DATABASE_URL_ADMIN = 'postgres://test';
 
     const mockDb = {
@@ -668,135 +634,6 @@ describe('PATCH /api/admin/labels/[id]', () => {
       params: makeParams(LABEL_ID),
     });
     expect(res.status).toBe(404);
-  });
-
-  // ── Cross-tenant: agency user gets 404 (not 403) ─────────────────────────
-
-  it("returns 404 (not 403) when agency user tries to reclassify another tenant's label", async () => {
-    agencyAuth(TENANT_ID);
-    process.env.DATABASE_URL_ADMIN = 'postgres://test';
-
-    const mockDb = {
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([
-              {
-                id: LABEL_ID,
-                // label belongs to OTHER_TENANT_ID, not TENANT_ID
-                tenantId: OTHER_TENANT_ID,
-                predictionId: 'pred-001',
-                leadId: '',
-              },
-            ]),
-          }),
-        }),
-      }),
-    };
-    mockCreateAdminClient.mockReturnValue(
-      mockDb as unknown as ReturnType<typeof createAdminClient>,
-    );
-
-    const { PATCH } = await import('./[id]/route.js');
-    const res = await PATCH(makePatchRequest(LABEL_ID, { outcome_class: 'offer_made' }), {
-      params: makeParams(LABEL_ID),
-    });
-    // 404 prevents leaking "label exists but belongs to another tenant" information.
-    expect(res.status).toBe(404);
-  });
-
-  // ── Success path: writes label_source=manual_admin ────────────────────────
-
-  it('writes label_source=manual_admin and returns 200 on valid reclassification', async () => {
-    agencyAuth();
-    process.env.DATABASE_URL_ADMIN = 'postgres://test';
-
-    const mockDb = {
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([
-              {
-                id: LABEL_ID,
-                tenantId: TENANT_ID,
-                predictionId: 'pred-001',
-                leadId: '',
-              },
-            ]),
-          }),
-        }),
-      }),
-    };
-    mockCreateAdminClient.mockReturnValue(
-      mockDb as unknown as ReturnType<typeof createAdminClient>,
-    );
-    mockUpsertConversionLabel.mockResolvedValue(undefined);
-
-    const { PATCH } = await import('./[id]/route.js');
-    const res = await PATCH(
-      makePatchRequest(LABEL_ID, {
-        outcome_class: 'contract_signed',
-        notes: 'CRM confirmed — deal signed 2026-06-01',
-      }),
-      { params: makeParams(LABEL_ID) },
-    );
-    expect(res.status).toBe(200);
-    const body = await parseBody<{
-      ok: boolean;
-      id: string;
-      outcome_class: string;
-      label_source: string;
-    }>(res);
-    expect(body.ok).toBe(true);
-    expect(body.label_source).toBe('manual_admin');
-    expect(body.outcome_class).toBe('contract_signed');
-
-    // Verify upsertConversionLabel was called with the right arguments.
-    expect(mockUpsertConversionLabel).toHaveBeenCalledOnce();
-    const callArgs = mockUpsertConversionLabel.mock.calls[0]!;
-    expect(callArgs[1].labelSource).toBe('manual_admin');
-    expect(callArgs[1].outcomeClass).toBe('contract_signed');
-    expect(callArgs[1].notes).toBe('CRM confirmed — deal signed 2026-06-01');
-    expect(callArgs[1].tenantId).toBe(TENANT_ID);
-
-    expect(mockCaptureException).not.toHaveBeenCalled();
-  });
-
-  // ── Fail-loud: Postgres configured-but-fails on the write (Rule K.2) ──────
-
-  it('returns 500 and calls Sentry when upsertConversionLabel throws', async () => {
-    agencyAuth();
-    process.env.DATABASE_URL_ADMIN = 'postgres://test';
-
-    const mockDb = {
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([
-              {
-                id: LABEL_ID,
-                tenantId: TENANT_ID,
-                predictionId: 'pred-001',
-                leadId: '',
-              },
-            ]),
-          }),
-        }),
-      }),
-    };
-    mockCreateAdminClient.mockReturnValue(
-      mockDb as unknown as ReturnType<typeof createAdminClient>,
-    );
-    mockUpsertConversionLabel.mockRejectedValue(new Error('deadlock detected'));
-
-    const { PATCH } = await import('./[id]/route.js');
-    const res = await PATCH(makePatchRequest(LABEL_ID, { outcome_class: 'lost' }), {
-      params: makeParams(LABEL_ID),
-    });
-    expect(res.status).toBe(500);
-    const body = await parseBody<{ error: { code: string } }>(res);
-    expect(body.error.code).toBe('postgres_write_failed');
-    expect(mockCaptureException).toHaveBeenCalledOnce();
   });
 });
 
@@ -855,12 +692,25 @@ describe('PATCH /api/admin/labels/[id] — staff audit trail + atomicity', () =>
     mockUpsertConversionLabel.mockResolvedValue(undefined);
 
     const { PATCH } = await import('./[id]/route.js');
-    const res = await PATCH(makePatchRequest(LABEL_ID, { outcome_class: 'purchased' }), {
-      params: makeParams(LABEL_ID),
-    });
+    const res = await PATCH(
+      makePatchRequest(LABEL_ID, {
+        outcome_class: 'purchased',
+        notes: 'CRM confirmed — deal signed 2026-06-01',
+      }),
+      { params: makeParams(LABEL_ID) },
+    );
 
     expect(res.status).toBe(200);
+    const body = await parseBody<{ ok: boolean; label_source: string; outcome_class: string }>(res);
+    expect(body.ok).toBe(true);
+    expect(body.label_source).toBe('manual_admin');
+    expect(body.outcome_class).toBe('purchased');
     expect(db.transaction).toHaveBeenCalledOnce();
+    const upsertArgs = mockUpsertConversionLabel.mock.calls[0]![1];
+    expect(upsertArgs.labelSource).toBe('manual_admin');
+    expect(upsertArgs.notes).toBe('CRM confirmed — deal signed 2026-06-01');
+    // The tenant written is the label row's own, never one from the request.
+    expect(upsertArgs.tenantId).toBe(TENANT_ID);
     // upsertConversionLabel was called INSIDE the tx (with the tx handle as 1st arg).
     expect(mockUpsertConversionLabel).toHaveBeenCalledOnce();
     expect(mockUpsertConversionLabel.mock.calls[0]![1].outcomeClass).toBe('purchased');
@@ -913,35 +763,24 @@ describe('PATCH /api/admin/labels/[id] — staff audit trail + atomicity', () =>
     expect(mockCaptureException).toHaveBeenCalledOnce();
   });
 
-  it('agency write does NOT open a transaction and is NOT audited', async () => {
-    agencyAuth();
+  it('upsertConversionLabel throwing inside the tx → 500 audit_write_failed + one Sentry capture (Rule K.2)', async () => {
+    staffAuth();
     process.env.DATABASE_URL_ADMIN = 'postgres://test';
-    const db = {
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            limit: vi
-              .fn()
-              .mockResolvedValue([
-                { id: LABEL_ID, tenantId: TENANT_ID, predictionId: 'pred-001', leadId: '' },
-              ]),
-          }),
-        }),
-      }),
-      transaction: vi.fn(),
-    };
+    const auditRows: Record<string, unknown>[] = [];
+    const db = makeStaffWriteDb(auditRows);
     mockCreateAdminClient.mockReturnValue(db as unknown as ReturnType<typeof createAdminClient>);
-    mockUpsertConversionLabel.mockResolvedValue(undefined);
+    mockUpsertConversionLabel.mockRejectedValue(new Error('deadlock detected'));
 
     const { PATCH } = await import('./[id]/route.js');
-    const res = await PATCH(makePatchRequest(LABEL_ID, { outcome_class: 'purchased' }), {
+    const res = await PATCH(makePatchRequest(LABEL_ID, { outcome_class: 'lost' }), {
       params: makeParams(LABEL_ID),
     });
 
-    expect(res.status).toBe(200);
-    expect(db.transaction).not.toHaveBeenCalled();
-    // upsertConversionLabel called directly on `db` (not a tx handle) — unchanged shape.
-    expect(mockUpsertConversionLabel).toHaveBeenCalledWith(db, expect.anything());
+    expect(res.status).toBe(500);
+    const body = await parseBody<{ error: { code: string } }>(res);
+    expect(body.error.code).toBe('audit_write_failed');
+    expect(auditRows).toHaveLength(0);
+    expect(mockCaptureException).toHaveBeenCalledOnce();
   });
 });
 

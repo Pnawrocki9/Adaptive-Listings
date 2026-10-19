@@ -5,7 +5,7 @@
  * archetype + model override (ADR-0018 §6 Phase 2 / FOLLOW-596).
  *
  * SURFACE DECISION (ticket FOLLOW-596, mirrors FOLLOW-595): the agency editor
- * (`apps/control-plane/src/app/dashboard/demo/override/page.tsx`) is NOT extracted into
+ * (`app/dashboard/demo/override/page.tsx`, deleted by FOLLOW-1335) was NOT extracted into
  * a shared `tenantId`-prop component. Reason: that page is tightly coupled to the agency
  * session and carries a lot of explanatory chrome; a MINIMAL staff surface that only
  * reads/writes the override via `/api/demo/override?tenant_id=<id>` (which IS staff-

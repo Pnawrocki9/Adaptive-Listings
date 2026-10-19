@@ -2,12 +2,12 @@
  * PATCH /api/tenants/:id/answers/:answerId — update question and/or answer.
  * DELETE /api/tenants/:id/answers/:answerId — delete an answer row.
  *
- * Auth (ADR-0018 §2, FOLLOW-1334): `resolveTenantAccess` with `allowStaffOverride` via
- * `resolveAnswersAccess` (`lib/answers-access.ts`). Agency path (unchanged): Bearer JWT or Supabase
- * SSR browser session; tenant must match `:id` — 403 on mismatch. Staff path: an Estalara staff
- * session may act on any `:id` that exists in `tenants` (404 otherwise); a staff PATCH/DELETE needs
- * `estalara:ops`+ (403 below) and commits the mutation and its `staff_audit_log` row in ONE
- * transaction (ADR-0018 §3a).
+ * Auth (ADR-0018 §2, FOLLOW-1334; staff-only since FOLLOW-1335 removed the agency path):
+ * `resolveTenantAccess` with `allowStaffOverride` via `resolveAnswersAccess`
+ * (`lib/answers-access.ts`). An Estalara staff session may act on any `:id` that exists in
+ * `tenants` (404 otherwise; 401 without a staff session); a PATCH/DELETE needs `estalara:ops`+
+ * (403 below) and commits the mutation and its `staff_audit_log` row in ONE transaction
+ * (ADR-0018 §3a).
  *
  * PATCH:
  *   - If `question` changes, re-embeds via OpenAI and persists the new vector.
@@ -133,101 +133,81 @@ export async function PATCH(
     updatedAt: answers.updatedAt,
   };
 
-  if (access.via === 'staff') {
-    // ── Atomic staff write (ADR-0018 §3a / FOLLOW-605 reference impl) ─────────────────────────
-    // The update and its staff_audit_log row commit-or-roll-back TOGETHER. Fenced on
-    // access.tenantId (validated against `tenants`) AND the answer id.
-    try {
-      const outcome = await db.transaction(async (tx) => {
-        // Re-read the row UNDER A LOCK so the audited `before` is exactly what the UPDATE replaces
-        // (a concurrent edit waits; a concurrent delete is a plain 404, not an audit failure).
-        const locked = await tx
-          .select({
-            listingId: answers.listingId,
-            question: answers.question,
-            answer: answers.answer,
-          })
-          .from(answers)
-          .where(and(eq(answers.id, answerId), eq(answers.tenantId, tenantId)))
-          .limit(1)
-          .for('update');
-        const before = locked[0];
-        if (!before) return 'not_found' as const;
-        // The embedding above was decided from the unlocked read; if the question moved under us
-        // the vector would not match the stored text — refuse instead of writing it.
-        if (
-          newQuestion !== undefined &&
-          newQuestion !== before.question &&
-          updateValues.questionEmbedding === undefined
-        ) {
-          return 'conflict' as const;
-        }
-        const updated = await tx
-          .update(answers)
-          .set(updateValues)
-          .where(and(eq(answers.id, answerId), eq(answers.tenantId, tenantId)))
-          .returning(returningColumns);
-        const changed = updated[0];
-        if (!changed) throw new Error('answers update returned no row');
-        await tx.insert(staffAuditLog).values({
-          adminUserId: access.staff.sub,
-          action: 'listing_answer.update',
-          targetTenantId: tenantId,
-          payload: {
-            answer_id: answerId,
-            listing_id: before.listingId,
-            before: { question: before.question, answer: before.answer },
-            after: { question: changed.question, answer: changed.answer },
-          },
-          ipAddress: requestIp(req),
-          userAgent: req.headers.get('user-agent'),
-        });
-        return changed;
-      });
-      if (outcome === 'not_found') {
-        return NextResponse.json({ error: 'Answer not found' }, { status: 404 });
+  // ── Atomic staff write (ADR-0018 §3a / FOLLOW-605 reference impl) ─────────────────────────
+  // The update and its staff_audit_log row commit-or-roll-back TOGETHER. Fenced on
+  // access.tenantId (validated against `tenants`) AND the answer id.
+  try {
+    const outcome = await db.transaction(async (tx) => {
+      // Re-read the row UNDER A LOCK so the audited `before` is exactly what the UPDATE replaces
+      // (a concurrent edit waits; a concurrent delete is a plain 404, not an audit failure).
+      const locked = await tx
+        .select({
+          listingId: answers.listingId,
+          question: answers.question,
+          answer: answers.answer,
+        })
+        .from(answers)
+        .where(and(eq(answers.id, answerId), eq(answers.tenantId, tenantId)))
+        .limit(1)
+        .for('update');
+      const before = locked[0];
+      if (!before) return 'not_found' as const;
+      // The embedding above was decided from the unlocked read; if the question moved under us
+      // the vector would not match the stored text — refuse instead of writing it.
+      if (
+        newQuestion !== undefined &&
+        newQuestion !== before.question &&
+        updateValues.questionEmbedding === undefined
+      ) {
+        return 'conflict' as const;
       }
-      if (outcome === 'conflict') {
-        return NextResponse.json(
-          { error: 'The answer was changed by someone else meanwhile. Reload and retry.' },
-          { status: 409 },
-        );
-      }
-      const row = outcome;
-      return NextResponse.json(row, { status: 200 });
-    } catch (err) {
-      Sentry.captureException(err, {
-        tags: { route: 'tenants/answers/[answerId]', staff_audit_error: 'true' },
-        extra: { tenant_id: tenantId, admin_user_id: access.staff.sub, answer_id: answerId },
-      });
-      return NextResponse.json(
-        {
-          error:
-            'The answer change could not be recorded atomically with its staff audit row; ' +
-            'it was rolled back and NOT applied. Retry the action.',
-          code: 'audit_write_failed',
+      const updated = await tx
+        .update(answers)
+        .set(updateValues)
+        .where(and(eq(answers.id, answerId), eq(answers.tenantId, tenantId)))
+        .returning(returningColumns);
+      const changed = updated[0];
+      if (!changed) throw new Error('answers update returned no row');
+      await tx.insert(staffAuditLog).values({
+        adminUserId: access.staff.sub,
+        action: 'listing_answer.update',
+        targetTenantId: tenantId,
+        payload: {
+          answer_id: answerId,
+          listing_id: before.listingId,
+          before: { question: before.question, answer: before.answer },
+          after: { question: changed.question, answer: changed.answer },
         },
-        { status: 500 },
+        ipAddress: requestIp(req),
+        userAgent: req.headers.get('user-agent'),
+      });
+      return changed;
+    });
+    if (outcome === 'not_found') {
+      return NextResponse.json({ error: 'Answer not found' }, { status: 404 });
+    }
+    if (outcome === 'conflict') {
+      return NextResponse.json(
+        { error: 'The answer was changed by someone else meanwhile. Reload and retry.' },
+        { status: 409 },
       );
     }
-  }
-
-  try {
-    const updated = await db
-      .update(answers)
-      .set(updateValues)
-      .where(and(eq(answers.id, answerId), eq(answers.tenantId, tenantId)))
-      .returning(returningColumns);
-
-    const row = updated[0];
-    if (!row) {
-      return NextResponse.json({ error: 'Update failed' }, { status: 500 });
-    }
-
+    const row = outcome;
     return NextResponse.json(row, { status: 200 });
   } catch (err) {
-    console.error('[answers PATCH] DB update failed:', err instanceof Error ? err.message : err);
-    return NextResponse.json({ error: 'Failed to update answer' }, { status: 500 });
+    Sentry.captureException(err, {
+      tags: { route: 'tenants/answers/[answerId]', staff_audit_error: 'true' },
+      extra: { tenant_id: tenantId, admin_user_id: access.staff.sub, answer_id: answerId },
+    });
+    return NextResponse.json(
+      {
+        error:
+          'The answer change could not be recorded atomically with its staff audit row; ' +
+          'it was rolled back and NOT applied. Retry the action.',
+        code: 'audit_write_failed',
+      },
+      { status: 500 },
+    );
   }
 }
 
@@ -252,74 +232,55 @@ export async function DELETE(
     return NextResponse.json({ error: 'Answer not found' }, { status: 404 });
   }
 
-  if (access.via === 'staff') {
-    // ── Atomic staff write (ADR-0018 §3a / FOLLOW-605 reference impl) ─────────────────────────
-    // The delete and its staff_audit_log row commit-or-roll-back TOGETHER; the audit payload keeps
-    // the deleted question/answer, so the row stays recoverable by hand. Fenced on access.tenantId.
-    try {
-      const db = createAdminClient();
-      const removed = await db.transaction(async (tx) => {
-        const rows = await tx
-          .delete(answers)
-          .where(and(eq(answers.id, answerId), eq(answers.tenantId, tenantId)))
-          .returning({
-            id: answers.id,
-            listingId: answers.listingId,
-            question: answers.question,
-            answer: answers.answer,
-          });
-        const gone = rows[0];
-        if (!gone) return null;
-        await tx.insert(staffAuditLog).values({
-          adminUserId: access.staff.sub,
-          action: 'listing_answer.delete',
-          targetTenantId: tenantId,
-          payload: {
-            answer_id: gone.id,
-            listing_id: gone.listingId,
-            question: gone.question,
-            answer: gone.answer,
-          },
-          ipAddress: requestIp(req),
-          userAgent: req.headers.get('user-agent'),
-        });
-        return gone;
-      });
-      if (!removed) {
-        return NextResponse.json({ error: 'Answer not found' }, { status: 404 });
-      }
-      return new NextResponse(null, { status: 204 });
-    } catch (err) {
-      Sentry.captureException(err, {
-        tags: { route: 'tenants/answers/[answerId]', staff_audit_error: 'true' },
-        extra: { tenant_id: tenantId, admin_user_id: access.staff.sub, answer_id: answerId },
-      });
-      return NextResponse.json(
-        {
-          error:
-            'The answer deletion could not be recorded atomically with its staff audit row; ' +
-            'it was rolled back and NOT applied. Retry the action.',
-          code: 'audit_write_failed',
-        },
-        { status: 500 },
-      );
-    }
-  }
-
+  // ── Atomic staff write (ADR-0018 §3a / FOLLOW-605 reference impl) ─────────────────────────
+  // The delete and its staff_audit_log row commit-or-roll-back TOGETHER; the audit payload keeps
+  // the deleted question/answer, so the row stays recoverable by hand. Fenced on access.tenantId.
   try {
     const db = createAdminClient();
-    const deleted = await db
-      .delete(answers)
-      .where(and(eq(answers.id, answerId), eq(answers.tenantId, tenantId)))
-      .returning({ id: answers.id });
-
-    if (deleted.length === 0) {
+    const removed = await db.transaction(async (tx) => {
+      const rows = await tx
+        .delete(answers)
+        .where(and(eq(answers.id, answerId), eq(answers.tenantId, tenantId)))
+        .returning({
+          id: answers.id,
+          listingId: answers.listingId,
+          question: answers.question,
+          answer: answers.answer,
+        });
+      const gone = rows[0];
+      if (!gone) return null;
+      await tx.insert(staffAuditLog).values({
+        adminUserId: access.staff.sub,
+        action: 'listing_answer.delete',
+        targetTenantId: tenantId,
+        payload: {
+          answer_id: gone.id,
+          listing_id: gone.listingId,
+          question: gone.question,
+          answer: gone.answer,
+        },
+        ipAddress: requestIp(req),
+        userAgent: req.headers.get('user-agent'),
+      });
+      return gone;
+    });
+    if (!removed) {
       return NextResponse.json({ error: 'Answer not found' }, { status: 404 });
     }
-
     return new NextResponse(null, { status: 204 });
   } catch (err) {
-    console.error('[answers DELETE] DB delete failed:', err instanceof Error ? err.message : err);
-    return NextResponse.json({ error: 'Failed to delete answer' }, { status: 500 });
+    Sentry.captureException(err, {
+      tags: { route: 'tenants/answers/[answerId]', staff_audit_error: 'true' },
+      extra: { tenant_id: tenantId, admin_user_id: access.staff.sub, answer_id: answerId },
+    });
+    return NextResponse.json(
+      {
+        error:
+          'The answer deletion could not be recorded atomically with its staff audit row; ' +
+          'it was rolled back and NOT applied. Retry the action.',
+        code: 'audit_write_failed',
+      },
+      { status: 500 },
+    );
   }
 }

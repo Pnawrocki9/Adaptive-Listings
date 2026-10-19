@@ -5,11 +5,11 @@
  * conversion rate per (outcome_class, model_version) and the score-vs-actual reliability curve,
  * read from `GET /api/pilot/calibration`.
  *
- * Shared by `/dashboard/analytics/labels` (agency, tenant from the session) and
- * `/admin/tenants/[id]/labels` (Estalara staff, tenant from the URL — FOLLOW-1334; this is the
- * panel `labels-editor.tsx` used to list as "not ported to staff"). ADR-0018 §1: the section takes
- * `tenantId` as a PROP; absent → the URL is byte-identical to what the agency page has always sent,
- * present → `&tenant_id=<id>` (the route opts into `resolveTenantAccess` with `allowStaffOverride`).
+ * Mounted by `/admin/tenants/[id]/labels` (Estalara staff, tenant from the URL — FOLLOW-1334; this
+ * is the panel `labels-editor.tsx` used to list as "not ported to staff"; the agency
+ * `/dashboard/analytics/labels` page that also mounted it was deleted by FOLLOW-1335). ADR-0018 §1:
+ * the section takes `tenantId` as a PROP and sends `&tenant_id=<id>` (the route opts into
+ * `resolveTenantAccess` with `allowStaffOverride`).
  *
  * Rule K.2 — fail loud: a non-2xx response renders a visible error banner, never zeros; a
  * non-ClickHouse `data_source` renders an observable "MOCK DATA" badge.
@@ -239,7 +239,7 @@ function CalibrationPanel({
 // ─── Section — owns the window selector and the fetch ─────────────────────────
 
 interface CalibrationSectionProps {
-  /** Staff only: the tenant to read (sent as `&tenant_id=`). Absent → session-scoped agency read. */
+  /** The tenant to read (sent as `&tenant_id=`). Absent → no `tenant_id` is sent, which the staff-only route answers 400 since FOLLOW-1335. */
   tenantId?: string;
 }
 

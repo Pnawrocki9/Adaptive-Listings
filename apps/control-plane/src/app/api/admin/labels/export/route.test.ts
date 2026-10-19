@@ -8,7 +8,8 @@
  *   (d) data_source: 'mock' in-body + X-Data-Source: mock header when DATABASE_URL_ADMIN unset
  *   (e) 400 on unknown format value
  *   (f) 401 on missing JWT
- *   + 400 for staff with no tenant_id param
+ *   + 400 for staff with no tenant_id param (staff is the only caller since FOLLOW-1335;
+ *     requests name the tenant unless a test opts out)
  *   + 500 when Postgres configured-but-fails (Rule K.2)
  *   + 500 when ClickHouse configured-but-fails (Rule K.2)
  *   + Postgres-only rows (features_snapshot: null) when CLICKHOUSE_URL unset
@@ -66,18 +67,6 @@ const mockCaptureException = vi.mocked(Sentry.captureException);
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
-function agencyAuth(tenantId = TENANT_ID): void {
-  mockGetAuthClaims.mockResolvedValue({
-    sub: 'user-uuid',
-    email: 'user@agency.com',
-    tenant_id: tenantId,
-    agency_role: 'agency:owner',
-    estalara_staff: false,
-    mfa_verified: true,
-  });
-  mockIsStaffClaims.mockReturnValue(false);
-}
-
 function staffAuth(): void {
   mockGetAuthClaims.mockResolvedValue({
     sub: 'staff-uuid',
@@ -92,8 +81,13 @@ function staffAuth(): void {
 
 // ─── Request factory ──────────────────────────────────────────────────────────
 
-function makeExportRequest(params?: Record<string, string>, authed = true): NextRequest {
+function makeExportRequest(
+  params?: Record<string, string>,
+  authed = true,
+  tenant: string | null = TENANT_ID,
+): NextRequest {
   const url = new URL('http://localhost/api/admin/labels/export');
+  if (tenant !== null) url.searchParams.set('tenant_id', tenant);
   if (params) {
     for (const [k, v] of Object.entries(params)) {
       url.searchParams.set(k, v);
@@ -156,10 +150,19 @@ describe('GET /api/admin/labels/export', () => {
     expect(body.error.code).toBe('unauthorized');
   });
 
+  it('FOLLOW-1335: a verified token that is not staff gets no export (401, the tenant is never taken from it)', async () => {
+    staffAuth();
+    mockIsStaffClaims.mockReturnValue(false);
+    const { GET } = await import('./route.js');
+    const res = await GET(makeExportRequest());
+    expect(res.status).toBe(401);
+    expect(mockCreateAdminClient).not.toHaveBeenCalled();
+  });
+
   // ── (e) 400 on unknown format ──────────────────────────────────────────────
 
   it('(e) returns 400 for unknown format value', async () => {
-    agencyAuth();
+    staffAuth();
     const { GET } = await import('./route.js');
     const res = await GET(makeExportRequest({ format: 'parquet' }));
     expect(res.status).toBe(400);
@@ -172,7 +175,7 @@ describe('GET /api/admin/labels/export', () => {
   it('returns 400 when staff caller omits tenant_id param', async () => {
     staffAuth();
     const { GET } = await import('./route.js');
-    const res = await GET(makeExportRequest());
+    const res = await GET(makeExportRequest(undefined, true, null));
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('validation_error');
@@ -181,7 +184,7 @@ describe('GET /api/admin/labels/export', () => {
   // ── (d) Mock path when DATABASE_URL_ADMIN unset ────────────────────────────
 
   it('(d) returns X-Data-Source: mock with 3 sample rows when DATABASE_URL_ADMIN is unset', async () => {
-    agencyAuth();
+    staffAuth();
     const { GET } = await import('./route.js');
     const res = await GET(makeExportRequest());
     expect(res.status).toBe(200);
@@ -195,7 +198,7 @@ describe('GET /api/admin/labels/export', () => {
   });
 
   it('(d) mock path with jsonl format returns 3 JSONL lines with in-body data_source', async () => {
-    agencyAuth();
+    staffAuth();
     const { GET } = await import('./route.js');
     const res = await GET(makeExportRequest({ format: 'jsonl' }));
     expect(res.status).toBe(200);
@@ -219,7 +222,7 @@ describe('GET /api/admin/labels/export', () => {
   // ── (b) JSONL format output shape ─────────────────────────────────────────
 
   it('(b) returns JSONL format with correct shape when DB configured', async () => {
-    agencyAuth();
+    staffAuth();
     process.env.DATABASE_URL_ADMIN = 'postgres://test';
 
     const mockDb = mockDbWithLabels([
@@ -259,7 +262,7 @@ describe('GET /api/admin/labels/export', () => {
   // ── (a) CSV format output shape ────────────────────────────────────────────
 
   it('(a) returns CSV format with header row and data rows', async () => {
-    agencyAuth();
+    staffAuth();
     process.env.DATABASE_URL_ADMIN = 'postgres://test';
 
     const mockDb = mockDbWithLabels([
@@ -294,7 +297,7 @@ describe('GET /api/admin/labels/export', () => {
   });
 
   it('(a) CSV default format when format param is omitted', async () => {
-    agencyAuth();
+    staffAuth();
     process.env.DATABASE_URL_ADMIN = 'postgres://test';
 
     const mockDb = mockDbWithLabels([]);
@@ -311,7 +314,7 @@ describe('GET /api/admin/labels/export', () => {
   // ── (c) PII exclusion ─────────────────────────────────────────────────────
 
   it('(c) JSONL rows never contain lead_id, outcome_raw, notes, id, or tenant_id', async () => {
-    agencyAuth();
+    staffAuth();
     process.env.DATABASE_URL_ADMIN = 'postgres://test';
 
     const mockDb = mockDbWithLabels([
@@ -342,7 +345,7 @@ describe('GET /api/admin/labels/export', () => {
   // ── 500 when Postgres configured-but-fails (Rule K.2) ─────────────────────
 
   it('returns 500 and calls Sentry when Postgres is configured but throws', async () => {
-    agencyAuth();
+    staffAuth();
     process.env.DATABASE_URL_ADMIN = 'postgres://test';
 
     const mockDb = {
@@ -367,7 +370,7 @@ describe('GET /api/admin/labels/export', () => {
   // ── 500 when ClickHouse configured-but-fails (Rule K.2) ───────────────────
 
   it('returns 500 and calls Sentry when ClickHouse is configured but fetch fails', async () => {
-    agencyAuth();
+    staffAuth();
     process.env.DATABASE_URL_ADMIN = 'postgres://test';
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
 
@@ -393,7 +396,7 @@ describe('GET /api/admin/labels/export', () => {
   // ── Postgres-only path (CLICKHOUSE_URL absent) ─────────────────────────────
 
   it('returns features_snapshot:null when CLICKHOUSE_URL is not configured', async () => {
-    agencyAuth();
+    staffAuth();
     process.env.DATABASE_URL_ADMIN = 'postgres://test';
     // CLICKHOUSE_URL is intentionally absent
 
@@ -420,7 +423,7 @@ describe('GET /api/admin/labels/export', () => {
   // ── ClickHouse join populates features_snapshot ────────────────────────────
 
   it('populates features_snapshot from ClickHouse when CLICKHOUSE_URL is configured', async () => {
-    agencyAuth();
+    staffAuth();
     process.env.DATABASE_URL_ADMIN = 'postgres://test';
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
 

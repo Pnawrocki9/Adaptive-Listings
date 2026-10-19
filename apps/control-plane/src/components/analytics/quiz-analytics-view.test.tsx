@@ -1,6 +1,6 @@
 /**
- * Tests for the real quiz analytics view (FOLLOW-1000; Rule K.2 consumer-side clause), shared by
- * the agency page and the staff "Quiz" tab (FOLLOW-1334).
+ * Tests for the real quiz analytics view (FOLLOW-1000; Rule K.2 consumer-side clause), mounted by
+ * the staff "Quiz" tab (FOLLOW-1334; the agency page was deleted by FOLLOW-1335).
  *
  * Replaces the deleted mock-data suite (`quiz.test.ts`), whose only subject was
  * the fabricated QUIZ_STATS/DAILY_COMPLETIONS constants. This suite drives the
@@ -144,7 +144,7 @@ describe('QuizAnalyticsView — tenant scoping (ADR-0018, FOLLOW-1334)', () => {
     expect(fetchMock).toHaveBeenCalledWith(`/api/quiz/analytics?tenant_id=${TENANT}`);
   });
 
-  it('without a tenantId prop the URL is byte-identical to the agency page’s', async () => {
+  it('without a tenantId prop no tenant_id is sent (the route answers 400 since FOLLOW-1335)', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(SAMPLE) });

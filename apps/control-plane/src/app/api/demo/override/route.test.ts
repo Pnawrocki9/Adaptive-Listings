@@ -1,8 +1,8 @@
 /**
  * Tests for GET/PUT /api/demo/override — DEMO-001 + ADR-0018 §6 staff port (FOLLOW-596).
  *
- * Auth model (ADR-0018 §2, FOLLOW-596): the route delegates agency + staff resolution
- * to `resolveTenantAccess`, whose own end-to-end wiring (SSR cookie, staff gate, tenant
+ * Auth model (ADR-0018 §2, FOLLOW-596; staff-only since FOLLOW-1335): the route delegates
+ * staff resolution to `resolveTenantAccess`, whose own end-to-end wiring (SSR cookie, staff gate, tenant
  * existence check, RLS trap) is exercised by `src/lib/__tests__/resolve-tenant-access.test.ts`.
  * These route tests therefore PARTIALLY MOCK `@/lib/session-auth` — only
  * `resolveTenantAccess` is a spy; `AccessError`, `tenantExists` and every other export
@@ -10,7 +10,7 @@
  * maps statuses for real.
  *
  * The `@/lib/demo-override-store` module stays REAL — `getDemoOverride` (GET + staff
- * read-before) and `upsertDemoOverride` (agency PUT) drive REAL Drizzle queries against a
+ * read-before) and `upsertDemoOverride` (the PUT, inside its tx) drive REAL Drizzle queries against a
  * mocked `createAdminClient()`. The tenant-filter tests (READ + WRITE) observe the value
  * the query actually binds/inserts (RETRO-187 — NOT a pre-filtered local array). A
  * mis-fence would key a different tenant and the assertions fail.
@@ -76,25 +76,6 @@ const STAFF_RANK: Record<string, number> = {
   'estalara:ops': 2,
   'estalara:readonly': 1,
 };
-
-function agencyAccess(
-  tenantId = TENANT_A,
-  agencyRole: 'agency:owner' | 'agency:admin' | 'agency:viewer' = 'agency:admin',
-): TenantAccess {
-  return {
-    via: 'agency',
-    tenantId,
-    claims: {
-      sub: 'agency-user-123',
-      email: 'user@agency.com',
-      tenant_id: tenantId,
-      agency_role: agencyRole,
-      estalara_staff: false,
-      mfa_verified: false,
-    },
-    rawToken: 'agency-jwt',
-  };
-}
 
 function staffAccess(
   tenantId: string,
@@ -316,14 +297,14 @@ async function parseBody<T>(res: Response): Promise<T> {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockResolve.mockResolvedValue(agencyAccess());
+  mockResolve.mockResolvedValue(staffAccess(TENANT_A));
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// GET — agency path (byte-unchanged behaviour)
+// GET
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('GET /api/demo/override — agency', () => {
+describe('GET /api/demo/override', () => {
   it('returns 401 when resolveTenantAccess throws AccessError(401)', async () => {
     mockResolve.mockRejectedValue(new AccessError(401, 'Unauthorized'));
     const res = await GET(makeGet());
@@ -332,8 +313,8 @@ describe('GET /api/demo/override — agency', () => {
     expect(body.error.code).toBe('unauthorized');
   });
 
-  it('returns current override state for an agency caller', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A, 'agency:viewer'));
+  it('returns current override state for a readonly staff caller', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A, 'estalara:readonly'));
     useDb(makeDb({ [TENANT_A]: { enabled: true, overrideArchetype: 'family_buyer' } }));
 
     const res = await GET(makeGet());
@@ -373,31 +354,26 @@ describe('GET /api/demo/override — agency', () => {
   });
 
   // FOLLOW-603 — option-wiring assertion: dropping allowStaffOverride fails here.
-  it('invokes resolveTenantAccess with allowStaffOverride:true and minAgencyRole:agency:viewer', async () => {
+  it('invokes resolveTenantAccess with allowStaffOverride:true (no agency role floor since FOLLOW-1335)', async () => {
     useDb(makeDb({}));
     await GET(makeGet());
     expect(mockResolve).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ allowStaffOverride: true, minAgencyRole: 'agency:viewer' }),
+      expect.objectContaining({ allowStaffOverride: true }),
     );
+    expect(mockResolve.mock.calls[0]?.[1]).not.toHaveProperty('minAgencyRole');
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PUT — agency path (write semantics unchanged: admin+; NOT audited)
+// PUT — validation and the happy path (ops staff, audited)
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('PUT /api/demo/override — agency', () => {
+describe('PUT /api/demo/override', () => {
   it('returns 401 when resolveTenantAccess throws AccessError(401)', async () => {
     mockResolve.mockRejectedValue(new AccessError(401, 'Unauthorized'));
     const res = await PUT(makePut({ enabled: false, override_model: 'claude-sonnet-4-6' }));
     expect(res.status).toBe(401);
-  });
-
-  it('returns 403 when an agency:viewer tries to write (admin+ required, UNCHANGED)', async () => {
-    mockResolve.mockRejectedValue(new AccessError(403, 'Access denied: insufficient agency role'));
-    const res = await PUT(makePut({ enabled: false, override_model: 'claude-sonnet-4-6' }));
-    expect(res.status).toBe(403);
   });
 
   it('returns 400 on invalid archetype', async () => {
@@ -429,7 +405,7 @@ describe('PUT /api/demo/override — agency', () => {
     expect(body.error.message).toMatch(/override_archetype is required/);
   });
 
-  it('agency admin succeeds with enabled=false and null archetype', async () => {
+  it('ops staff succeeds with enabled=false and null archetype', async () => {
     useDb(makeDb({}));
     const res = await PUT(makePut({ enabled: false, override_model: 'claude-sonnet-4-6' }));
     expect(res.status).toBe(200);
@@ -439,7 +415,7 @@ describe('PUT /api/demo/override — agency', () => {
     expect(typeof body.updated_at).toBe('string');
   });
 
-  it('agency admin succeeds enabling DEMO MODE with valid archetype + model', async () => {
+  it('ops staff succeeds enabling DEMO MODE with valid archetype + model', async () => {
     const db = makeDb({});
     useDb(db);
     const res = await PUT(
@@ -454,10 +430,10 @@ describe('PUT /api/demo/override — agency', () => {
     expect(body.enabled).toBe(true);
     expect(body.override_archetype).toBe('yield_hunter');
     expect(body.override_model).toBe('claude-opus-4-8');
-    // Tenant id comes from the session claim, never the body.
+    // Tenant id comes from the resolved access, never the body.
     expect(db._overrides[TENANT_A]?.tenantId).toBe(TENANT_A);
-    // Agency writes are NOT audited (§3 audits STAFF only).
-    expect(db._auditRows).toHaveLength(0);
+    // Every write is audited (§3) — one row.
+    expect(db._auditRows).toHaveLength(1);
   });
 
   it('returns 500 when the DB throws on write (fail-loud Rule K.2)', async () => {
@@ -473,17 +449,19 @@ describe('PUT /api/demo/override — agency', () => {
     );
     expect(res.status).toBe(500);
     const body = await parseBody<{ error: { code: string } }>(res);
-    expect(body.error.code).toBe('internal_error');
+    // The upsert runs inside the audited tx: its failure rolls back and is reported as such.
+    expect(body.error.code).toBe('audit_write_failed');
   });
 
-  // FOLLOW-603 — option-wiring: allowStaffOverride:true AND minAgencyRole:'agency:admin'.
-  it('invokes resolveTenantAccess with allowStaffOverride:true and minAgencyRole:agency:admin', async () => {
+  // FOLLOW-603 — option-wiring: allowStaffOverride:true, no agency role floor (FOLLOW-1335).
+  it('invokes resolveTenantAccess with allowStaffOverride:true (PUT, no agency role floor since FOLLOW-1335)', async () => {
     useDb(makeDb({}));
     await PUT(makePut({ enabled: false, override_model: 'claude-sonnet-4-6' }));
     expect(mockResolve).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ allowStaffOverride: true, minAgencyRole: 'agency:admin' }),
+      expect.objectContaining({ allowStaffOverride: true }),
     );
+    expect(mockResolve.mock.calls[0]?.[1]).not.toHaveProperty('minAgencyRole');
   });
 });
 

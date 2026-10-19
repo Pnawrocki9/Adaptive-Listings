@@ -20,20 +20,17 @@
  * row written here is picked up by the SDK-facing `GET /api/intent/config` exactly
  * like a row written via the legacy admin route (`is_tenant_specific: true`).
  *
- * Auth (ADR-0018 §2, FOLLOW-597): `resolveTenantAccess` with `allowStaffOverride`.
- *   Agency: `agency:viewer`+ may read; `agency:admin`+ may write their OWN tenant
- *   (mirrors `demo/override`'s write gating — intent weights directly steer the
- *   ML intent engine, a sensitive per-tenant knob). Staff: read/write ANY tenant via
+ * Auth (ADR-0018 §2, FOLLOW-597; staff-only since FOLLOW-1335 removed the agency read/write
+ *   path): `resolveTenantAccess` with `allowStaffOverride`. Staff read/write a tenant via
  *   `?tenant_id=<uuid>` (validated against `tenants`, invariant 4); that validated id
  *   is the SINGLE tenant fence bound into every query (invariant 5). This route uses
  *   `createAdminClient()` (service-role, RLS BYPASSED), so the explicit
  *   `eq(intentWeightConfigs.tenantId, access.tenantId)` fence is the ONLY tenant
  *   boundary.
  *
- *   PUT — write. Staff additionally gated on `access.canWrite` (rank ≥
- *   `estalara:ops`, CEO Q3) — below-ops staff is 403. Every successful STAFF write
- *   appends one `staff_audit_log` row (`action: 'intent_weights.update'`); agency
- *   writes are NOT audited (§3 audits STAFF only).
+ *   PUT — write, gated on `access.canWrite` (rank ≥ `estalara:ops`, CEO Q3) — below-ops
+ *   staff is 403. Every successful write appends one `staff_audit_log` row
+ *   (`action: 'intent_weights.update'`).
  *   ATOMICITY (ADR-0018 §3a): the one-active-row swap (deactivate the tenant's
  *   current active row, then insert the new one) and the `staff_audit_log` insert
  *   commit-or-roll-back TOGETHER in ONE `db.transaction()` — mirrors `quiz/config`
@@ -83,15 +80,11 @@ function requestIp(req: NextRequest): string | null {
   return req.headers.get('x-real-ip');
 }
 
-/** Resolve tenant access shared by GET + PUT (agency read floor vs write floor differ). */
-async function resolveAccess(
-  req: NextRequest,
-  minAgencyRole: 'agency:viewer' | 'agency:admin',
-): Promise<TenantAccess> {
+/** Resolve the staff caller's tenant access, shared by GET + PUT (PUT adds the write gate). */
+async function resolveAccess(req: NextRequest): Promise<TenantAccess> {
   const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
   return resolveTenantAccess(req, {
     allowStaffOverride: true,
-    minAgencyRole,
     // exactOptionalPropertyTypes (RETRO-189): omit the key when absent rather than
     // passing `undefined`, so a staff caller without ?tenant_id reaches resolve's 400.
     ...(tenantIdParam ? { tenantId: tenantIdParam } : {}),
@@ -114,7 +107,7 @@ const PutBodySchema = z.object({
 export async function GET(req: NextRequest): Promise<NextResponse> {
   let access: TenantAccess;
   try {
-    access = await resolveAccess(req, 'agency:viewer');
+    access = await resolveAccess(req);
   } catch (err) {
     return accessErrorToResponse(err);
   }
@@ -197,13 +190,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 export async function PUT(req: NextRequest): Promise<NextResponse> {
   let access: TenantAccess;
   try {
-    access = await resolveAccess(req, 'agency:admin');
+    access = await resolveAccess(req);
   } catch (err) {
     return accessErrorToResponse(err);
   }
 
   // Write-rank gate (CEO Q3, ADR-0018 §4): staff below `estalara:ops` is view-only.
-  if (access.via === 'staff' && !access.canWrite) {
+  if (!access.canWrite) {
     return NextResponse.json(
       { error: { code: 'forbidden', message: 'Staff write requires estalara:ops or higher' } },
       { status: 403 },
@@ -252,7 +245,7 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const createdBy = access.via === 'staff' ? access.staff.sub : access.claims.sub;
+  const createdBy = access.staff.sub;
 
   try {
     const db = createAdminClient();
@@ -277,19 +270,17 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
           createdAt: intentWeightConfigs.createdAt,
         });
 
-      if (access.via === 'staff') {
-        // Staff audit trail (§3) — attributed to the acting staff user. AWAITED
-        // inside the tx (never fire-and-forget) so it commits atomically with the
-        // swap (ADR-0018 §3a).
-        await tx.insert(staffAuditLog).values({
-          adminUserId: access.staff.sub,
-          action: 'intent_weights.update',
-          targetTenantId: tenantId,
-          payload: { weights },
-          ipAddress: requestIp(req),
-          userAgent: req.headers.get('user-agent'),
-        });
-      }
+      // Staff audit trail (§3) — attributed to the acting staff user. AWAITED
+      // inside the tx (never fire-and-forget) so it commits atomically with the
+      // swap (ADR-0018 §3a).
+      await tx.insert(staffAuditLog).values({
+        adminUserId: access.staff.sub,
+        action: 'intent_weights.update',
+        targetTenantId: tenantId,
+        payload: { weights },
+        ipAddress: requestIp(req),
+        userAgent: req.headers.get('user-agent'),
+      });
 
       return inserted[0];
     });
@@ -307,22 +298,20 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
     });
     return NextResponse.json(body, { status: 200 });
   } catch (err: unknown) {
-    // Any failure INSIDE the tx (the swap OR, for staff, the audit insert) rolls
-    // BOTH back — there is no orphan weight mutation to leave behind. Fail loud:
-    // capture to Sentry and return 500, never a silent unattributed 200 (Rule K.2).
-    const isStaffWrite = access.via === 'staff';
+    // Any failure INSIDE the tx (the swap OR the audit insert) rolls BOTH back —
+    // there is no orphan weight mutation to leave behind. Fail loud: capture to
+    // Sentry and return 500, never a silent unattributed 200 (Rule K.2).
     Sentry.captureException(err, {
-      tags: { route: 'admin/intent-weights', staff_audit_error: String(isStaffWrite) },
+      tags: { route: 'admin/intent-weights', staff_audit_error: 'true' },
       extra: { tenant_id: tenantId },
     });
     return NextResponse.json(
       {
         error: {
-          code: isStaffWrite ? 'audit_write_failed' : 'db_write_failed',
-          message: isStaffWrite
-            ? 'The intent weight change could not be recorded atomically with its staff ' +
-              'audit row; the change was rolled back and NOT applied. Retry the action.'
-            : 'The intent weight change could not be saved. Retry the action.',
+          code: 'audit_write_failed',
+          message:
+            'The intent weight change could not be recorded atomically with its staff ' +
+            'audit row; the change was rolled back and NOT applied. Retry the action.',
         },
       },
       { status: 500 },

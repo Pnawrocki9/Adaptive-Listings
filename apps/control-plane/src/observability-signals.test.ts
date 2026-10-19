@@ -191,6 +191,11 @@
  * failing under the CSV export) and `app/api/dashboard/analytics/lift/history/route.ts` (the
  * snapshot read failing for a reason other than the missing table, which is not captured there).
  * No existing row moved. It is now **103 in 62**.
+ *
+ * FOLLOW-1335 (M2) removed the agency path of `app/api/admin/labels/[id]/route.ts` with its
+ * un-audited write and that write's capture (`admin_labels_patch_write_error`; 3 -> 2 — the
+ * row read failing and the audited staff write failing remain). The deleted `app/dashboard/**`
+ * held no capture site. Counted on top of FOLLOW-1338 (103 in 62): it is now **102 in 62**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -204,7 +209,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 103;
+const TOTAL_SITES = 102;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -290,8 +295,8 @@ const REGISTER: CaptureSiteGroup[] = [
   },
   {
     file: 'app/api/admin/labels/[id]/route.ts',
-    sites: 3,
-    meaning: 'A conversion-label record could not be read, updated or deleted.',
+    sites: 2,
+    meaning: 'A conversion-label record could not be read, or its audited reclassification failed.',
     consumer: NO_CHANNEL,
   },
   {

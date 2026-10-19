@@ -17,9 +17,9 @@
  *     swallow writes.
  *
  * Shared write helper (FOLLOW-609): `upsertDemoOverride` accepts an optional
- * `tx` (a Drizzle transaction handle) as its 4th argument. The AGENCY path
- * (`api/demo/override/route.ts` PUT, un-audited) calls it with no `tx`, opening
- * its own `createAdminClient()` exactly as before. The STAFF path calls it WITH
+ * `tx` (a Drizzle transaction handle) as its 4th argument. Without one it opens
+ * its own `createAdminClient()` (the un-audited agency PUT did, until FOLLOW-1335
+ * removed it). The staff PUT (`api/demo/override/route.ts`) calls it WITH
  * the route's own `db.transaction(async (tx) => { ... })` handle, so the same
  * single write implementation participates in the same transaction as the
  * `staff_audit_log` insert (ADR-0018 §3a) — eliminating the byte-duplicated
@@ -156,8 +156,7 @@ export async function getDemoOverride(tenantId: string): Promise<DemoOverride> {
  *   `createAdminClient()` — pass the route's own `db.transaction(async (tx) =>
  *   ...)` callback argument so this write commits/rolls back atomically with
  *   whatever else the caller does inside that same transaction (e.g. a
- *   `staff_audit_log` insert, ADR-0018 §3a). Omit it for a standalone write
- *   (the agency path).
+ *   `staff_audit_log` insert, ADR-0018 §3a). Omit it for a standalone write.
  * @returns The full updated row.
  */
 export async function upsertDemoOverride(

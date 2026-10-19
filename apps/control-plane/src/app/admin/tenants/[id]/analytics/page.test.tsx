@@ -40,7 +40,7 @@ vi.mock('@/components/analytics/analytics-view', () => ({
   ),
 }));
 
-// FOLLOW-1334: the Pilot and Quiz tabs mount the shared agency components with the tenant id.
+// FOLLOW-1334: the Pilot and Quiz tabs mount the shared components with the tenant id.
 vi.mock('@/components/analytics/pilot-view', () => ({
   PilotView: ({ tenantId }: { tenantId?: string }) => (
     <div data-testid="pilot-view">pilot:{tenantId ?? 'none'}</div>

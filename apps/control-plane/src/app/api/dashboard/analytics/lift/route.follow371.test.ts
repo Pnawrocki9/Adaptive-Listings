@@ -24,9 +24,6 @@ const TENANT_ID = '550e8400-e29b-41d4-a716-446655440371';
 
 vi.mock('@estalara/auth', () => ({
   getAuthClaims: vi.fn(),
-  isTenantClaims: vi.fn((claims: Record<string, unknown>) => {
-    return claims.estalara_staff === false && typeof claims.tenant_id === 'string';
-  }),
 }));
 
 import { getAuthClaims } from '@estalara/auth';
@@ -50,28 +47,24 @@ vi.mock('@sentry/nextjs', () => ({
   captureMessage: vi.fn(),
 }));
 
-function authAsTenant(): void {
-  mockGetAuthClaims.mockResolvedValue({
-    sub: 'user-uuid',
-    email: 'analyst@agency.com',
-    tenant_id: TENANT_ID,
-    agency_role: 'agency:admin',
-    estalara_staff: false,
+function authAsStaff(): void {
+  const staff = {
+    sub: 'staff-uuid',
+    email: 'analyst@estalara.com',
+    tenant_id: null,
+    estalara_staff: true as const,
+    estalara_role: 'estalara:ops' as const,
     mfa_verified: true,
-  });
-  // Dashboard lift route resolves via resolveTenantAccess (agency, own tenant).
+  };
+  mockGetAuthClaims.mockResolvedValue(staff);
+  // The lift route resolves via resolveTenantAccess (staff, explicit tenant — FOLLOW-1335).
   mockResolve.mockResolvedValue({
-    via: 'agency',
+    via: 'staff',
     tenantId: TENANT_ID,
-    claims: {
-      sub: 'user-uuid',
-      email: 'analyst@agency.com',
-      tenant_id: TENANT_ID,
-      agency_role: 'agency:admin',
-      estalara_staff: false,
-      mfa_verified: true,
-    },
-    rawToken: 'agency-jwt',
+    staff,
+    role: 'estalara:ops',
+    canWrite: true,
+    isSuperadmin: false,
   });
 }
 
@@ -88,7 +81,7 @@ describe('FOLLOW-371: lift route exclusion filter (all three queries)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test:8123';
-    authAsTenant();
+    authAsStaff();
   });
 
   afterEach(() => {
@@ -152,7 +145,7 @@ describe('FOLLOW-371: calibration exclusion filter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test:8123';
-    authAsTenant();
+    authAsStaff();
   });
 
   afterEach(() => {

@@ -31,9 +31,8 @@
  *   (features_snapshot, model_version, score) → outcome_class export and CANNOT
  *   use this shape (FOLLOW-237 AC5 correction).
  *
- * Auth (ADR-0018 §2, FOLLOW-1334): `resolveTenantAccess` with `allowStaffOverride`. Agency path:
- * tenant from the session claim ONLY — an agency `?tenant_id` is a cross-check, never an override.
- * Estalara staff may read the tenant named by an explicit `?tenant_id=<uuid>`, validated against
+ * Auth (ADR-0018 §2, FOLLOW-1334; staff-only since FOLLOW-1335 removed the agency path):
+ * `resolveTenantAccess` with `allowStaffOverride`. Estalara staff read the tenant named by an explicit `?tenant_id=<uuid>`, validated against
  * the `tenants` table; that validated id is the SINGLE tenant fence bound into the ClickHouse query
  * and the Postgres label query. Staff calls without `?tenant_id` are rejected (400); the headless
  * `ADMIN_API_SECRET` Bearer is not attributable and is rejected (403).
@@ -297,15 +296,15 @@ function jsonExportResponse(
  * @returns 400 when an unknown ?format= value is supplied (FOLLOW-237 AC3).
  * @returns 400 also when a staff caller omits `?tenant_id`.
  * @returns 401 when no valid session is present.
- * @returns 403 when the caller is not permitted (e.g. agency acting on a foreign tenant).
+ * @returns 403 when the caller is not permitted.
  * @returns 404 when a staff caller supplies an unknown tenant id.
  * @returns 500 when CLICKHOUSE_URL is set but ClickHouse query fails,
  *   OR when Postgres label fetch fails (Rule K.2 — fail loud; never fall back to
  *   mock when a real data store is configured).
  */
 export async function GET(req: NextRequest): Promise<NextResponse | Response> {
-  // One auth path for agency + staff (ADR-0018 invariant 5): `access.tenantId` is the ONLY tenant
-  // fence — bound into the ClickHouse query and the Postgres label query for BOTH paths.
+  // ADR-0018 invariant 5: `access.tenantId` (the validated `?tenant_id`) is the ONLY tenant
+  // fence — bound into the ClickHouse query and the Postgres label query.
   const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
   let access: TenantAccess;
   try {

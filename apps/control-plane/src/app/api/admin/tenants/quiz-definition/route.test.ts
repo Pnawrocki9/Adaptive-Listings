@@ -12,7 +12,8 @@
  *     row written with action 'quiz_definition.update' — all in ONE transaction (atomicity).
  *   - HARD validation (unknown archetype id) → 400, no mutation, no audit row.
  *   - Below-ops staff → 403 and NO mutation / audit row.
- *   - Agency session → 403 staff_only.
+ *   - (FOLLOW-1335: the agency-session 403 `staff_only` case is gone with the agency path;
+ *     a non-staff caller is refused inside resolveTenantAccess.)
  *   - Audit insert fails → whole tx rolls back → 500, nothing persisted (Rule K.2).
  *   - Tenant fence (invariant 5): the write is attributed to ONLY the resolved tenant.
  *
@@ -98,22 +99,6 @@ function staffAccess(
     role,
     canWrite: rank >= 2,
     isSuperadmin: rank >= 3,
-  };
-}
-
-function agencyAccess(tenantId: string): TenantAccess {
-  return {
-    via: 'agency',
-    tenantId,
-    claims: {
-      sub: 'user-uuid',
-      email: 'user@agency.com',
-      tenant_id: tenantId,
-      agency_role: 'agency:admin',
-      estalara_staff: false,
-      mfa_verified: true,
-    },
-    rawToken: 'agency-jwt',
   };
 }
 
@@ -303,15 +288,6 @@ describe('GET /api/admin/tenants/quiz-definition', () => {
     expect(body.definition).toBeNull();
     expect(body.warnings.unreachable_archetypes).toEqual([]);
   });
-
-  it('agency → 403 staff_only', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
-    makeDb([]);
-    const res = await GET(makeRequest({ query: { tenant_id: TENANT_A } }));
-    expect(res.status).toBe(403);
-    const body = (await res.json()) as { error: { code: string } };
-    expect(body.error.code).toBe('staff_only');
-  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -415,22 +391,6 @@ describe('PUT /api/admin/tenants/quiz-definition', () => {
     expect(db._rows).toHaveLength(0);
     expect(db._auditRows).toHaveLength(0);
     expect(db.transaction).not.toHaveBeenCalled();
-  });
-
-  it('agency → 403 staff_only', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
-    const db = makeDb([]);
-    const res = await PUT(
-      makeRequest({
-        method: 'PUT',
-        query: { tenant_id: TENANT_A },
-        body: { definition: VALID_DEF },
-      }),
-    );
-    expect(res.status).toBe(403);
-    const body = (await res.json()) as { error: { code: string } };
-    expect(body.error.code).toBe('staff_only');
-    expect(db._rows).toHaveLength(0);
   });
 
   it('audit insert fails → whole tx rolls back → 500, nothing persisted (Rule K.2)', async () => {

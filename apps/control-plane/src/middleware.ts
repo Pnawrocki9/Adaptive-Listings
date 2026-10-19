@@ -29,9 +29,9 @@
  * sb-<project-ref>-auth-token cookie format set by signInWithPassword() (FOLLOW-326).
  *
  * FOLLOW-1335 (ESC-085, decision D-B): the agency `/dashboard` zone, its session gate and the
- * `x-agency-role` request header are gone — there are no agency roles any more, only Estalara
- * staff ranks. Old `/dashboard/*` links are forwarded by `dashboardRedirectPath`
- * (`lib/dashboard-redirects.ts`).
+ * forwarded agency-role / tenant request headers are gone — there are no agency roles any
+ * more, only Estalara staff ranks. Old `/dashboard/*` links are forwarded by
+ * `dashboardRedirectPath` (`lib/dashboard-redirects.ts`).
  *
  * @module apps/control-plane/src/middleware
  */

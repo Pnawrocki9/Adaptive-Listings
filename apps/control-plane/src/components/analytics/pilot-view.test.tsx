@@ -1,5 +1,5 @@
 /**
- * RTL tests for the Pilot tab (FOLLOW-122; moved under /dashboard/analytics by FOLLOW-1289).
+ * RTL tests for the Pilot tab (FOLLOW-122; a tab of /admin/tenants/[id]/analytics since FOLLOW-1334).
  *
  * Covers:
  *   - HTTP 500 → error banner rendered, NO metric numbers shown
@@ -327,7 +327,7 @@ describe('PilotView — tenant scoping (ADR-0018, FOLLOW-1334)', () => {
     expect(urls).toContain(`/api/dashboard/analytics/lift/history?tenant_id=${TENANT}`);
   });
 
-  it('without a tenantId prop the URLs are byte-identical to the agency dashboard’s', async () => {
+  it('without a tenantId prop no tenant_id is sent (the routes answer 400 since FOLLOW-1335)', async () => {
     const fetchMock = makeFetchMock(
       { ok: true, status: 200, body: MOCK_CTA_CLICKHOUSE },
       { ok: true, status: 200, body: MOCK_INQUIRY_CLICKHOUSE },

@@ -2,8 +2,8 @@
  * Tests for PATCH /api/tenants/:id/bandit/weights/:archetype (FOLLOW-598,
  * ADR-0018 §6 Phase 3 — superadmin-only staff-write port).
  *
- * Auth model (ADR-0018 §2): the route delegates the entire agency + staff
- * resolution to `resolveTenantAccess`, whose own end-to-end wiring (SSR cookie,
+ * Auth model (ADR-0018 §2; staff-only since FOLLOW-1335): the route delegates the
+ * staff resolution to `resolveTenantAccess`, whose own end-to-end wiring (SSR cookie,
  * staff gate, tenant existence check, RLS trap) is exercised by
  * `src/lib/__tests__/resolve-tenant-access.test.ts`. These route tests therefore
  * PARTIALLY MOCK `@/lib/session-auth` — only `resolveTenantAccess` is a spy;
@@ -26,7 +26,6 @@ import type * as SessionAuthModule from '@/lib/session-auth';
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
 vi.mock('@estalara/db', () => ({
-  createTenantClient: vi.fn(),
   createAdminClient: vi.fn(),
   abBanditWeights: {
     tenantId: 'tenant_id',
@@ -53,7 +52,7 @@ vi.mock('@sentry/nextjs', () => ({
   captureException: mockCaptureException,
 }));
 
-import { createTenantClient, createAdminClient } from '@estalara/db';
+import { createAdminClient } from '@estalara/db';
 import { resolveTenantAccess, AccessError, type TenantAccess } from '@/lib/session-auth';
 
 import { PATCH } from './route';
@@ -71,22 +70,6 @@ const STAFF_RANK: Record<string, number> = {
   'estalara:ops': 2,
   'estalara:readonly': 1,
 };
-
-function agencyAccess(tenantId = TENANT_A): TenantAccess {
-  return {
-    via: 'agency',
-    tenantId,
-    claims: {
-      sub: 'agency-user',
-      email: 'user@agency.com',
-      tenant_id: tenantId,
-      agency_role: 'agency:admin',
-      estalara_staff: false,
-      mfa_verified: false,
-    },
-    rawToken: 'agency-jwt',
-  };
-}
 
 function staffAccess(
   tenantId: string,
@@ -169,48 +152,9 @@ function makeAdminDb(): AdminFakeDb {
   };
 }
 
-interface TenantFakeDb {
-  _captured: { rlsWhere: { and: { col: unknown; val: string }[] } | null };
-  readonly _rlsCalls: number;
-  rls: ReturnType<typeof vi.fn>;
-}
-
-/** RLS-enforced tenant client mock (agency path — no transaction, no audit). */
-function makeTenantDb(): TenantFakeDb {
-  const captured: TenantFakeDb['_captured'] = { rlsWhere: null };
-  const state = { rlsCalls: 0 };
-  const db: TenantFakeDb = {
-    _captured: captured,
-    get _rlsCalls() {
-      return state.rlsCalls;
-    },
-    rls: vi.fn((fn: (tx: unknown) => unknown) => {
-      state.rlsCalls += 1;
-      const tx = {
-        update: vi.fn(() => ({
-          set: vi.fn(() => ({
-            where: vi.fn((w: { and: { col: unknown; val: string }[] }) => {
-              captured.rlsWhere = w;
-              return Promise.resolve([]);
-            }),
-          })),
-        })),
-      };
-      return fn(tx);
-    }),
-  };
-  return db;
-}
-
 function useAdminDb(db: AdminFakeDb): void {
   vi.mocked(createAdminClient).mockReturnValue(
     db as unknown as ReturnType<typeof createAdminClient>,
-  );
-}
-
-function useTenantDb(db: TenantFakeDb): void {
-  vi.mocked(createTenantClient).mockReturnValue(
-    db as unknown as ReturnType<typeof createTenantClient>,
   );
 }
 
@@ -240,7 +184,7 @@ async function parseBody<T>(res: Response): Promise<T> {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv('DATABASE_URL', 'postgresql://test:test@localhost:5432/test');
-  mockResolve.mockResolvedValue(agencyAccess());
+  mockResolve.mockResolvedValue(staffAccess(TENANT_A));
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -263,8 +207,10 @@ describe('PATCH bandit resume — auth resolution', () => {
     expect(body.error.code).toBe('unauthorized');
   });
 
-  it('maps AccessError(403) → 403 (agency viewer / foreign-tenant rejections preserved)', async () => {
-    mockResolve.mockRejectedValue(new AccessError(403, 'Access denied: insufficient agency role'));
+  it('maps AccessError(403) → 403', async () => {
+    mockResolve.mockRejectedValue(
+      new AccessError(403, 'Unauthorized: no tenant access for this request'),
+    );
     const res = await PATCH(makePatch(), makeContext());
     expect(res.status).toBe(403);
     const body = await parseBody<{ error: { code: string } }>(res);
@@ -277,17 +223,17 @@ describe('PATCH bandit resume — auth resolution', () => {
     expect(res.status).toBe(404);
   });
 
-  it('calls resolveTenantAccess with allowStaffOverride:true, minAgencyRole:agency:admin, URL tenant', async () => {
-    useTenantDb(makeTenantDb());
+  it('calls resolveTenantAccess with allowStaffOverride:true and the URL tenant (no agency role floor since FOLLOW-1335)', async () => {
+    useAdminDb(makeAdminDb());
     await PATCH(makePatch(TENANT_A), makeContext(TENANT_A));
     expect(mockResolve).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         allowStaffOverride: true,
-        minAgencyRole: 'agency:admin',
         tenantId: TENANT_A,
       }),
     );
+    expect(mockResolve.mock.calls[0]?.[1]).not.toHaveProperty('minAgencyRole');
   });
 });
 
@@ -365,35 +311,12 @@ describe('PATCH bandit resume — staff audit trail + atomicity', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Agency path — byte-unchanged (RLS, no audit, no transaction)
+// Dependency not configured (dev/CI) — observable mock (the agency path that used to sit
+// here, RLS client + no audit, was removed by FOLLOW-1335)
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('PATCH bandit resume — agency path unchanged', () => {
-  it('agency admin with DB configured → 200 via createTenantClient + db.rls, NO transaction, NO audit', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
-    const tenantDb = makeTenantDb();
-    const adminDb = makeAdminDb();
-    useTenantDb(tenantDb);
-    useAdminDb(adminDb);
-
-    const res = await PATCH(makePatch(TENANT_A), makeContext(TENANT_A));
-    expect(res.status).toBe(200);
-    const body = await parseBody<{ resumed: boolean; archetype: string; mock?: boolean }>(res);
-    expect(body.resumed).toBe(true);
-    expect(body.archetype).toBe(ARCHETYPE);
-    expect(body.mock).toBeUndefined();
-
-    expect(tenantDb._rlsCalls).toBe(1);
-    expect(adminDb.transaction).not.toHaveBeenCalled();
-    expect(adminDb._auditRows).toHaveLength(0);
-    // RLS-enforced query is still tenant-fenced to the agency's own tenant.
-    expect(
-      tenantDb._captured.rlsWhere ? tenantFromAndClause(tenantDb._captured.rlsWhere) : null,
-    ).toBe(TENANT_A);
-  });
-
-  it('agency admin with DB unconfigured → 200 dev/CI mock { resumed, archetype, mock: true }', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
+describe('PATCH bandit resume — DB unconfigured', () => {
+  it('superadmin with DB unconfigured → 200 dev/CI mock { resumed, archetype, mock: true }, no client', async () => {
     vi.stubEnv('DATABASE_URL', '');
 
     const res = await PATCH(makePatch(TENANT_A), makeContext(TENANT_A));
@@ -402,18 +325,7 @@ describe('PATCH bandit resume — agency path unchanged', () => {
     expect(body.resumed).toBe(true);
     expect(body.archetype).toBe(ARCHETYPE);
     expect(body.mock).toBe(true);
-  });
-
-  it('agency admin DB error → 500 internal_error (fail loud)', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
-    vi.mocked(createTenantClient).mockReturnValue({
-      rls: vi.fn().mockRejectedValue(new Error('connection refused')),
-    } as unknown as ReturnType<typeof createTenantClient>);
-
-    const res = await PATCH(makePatch(TENANT_A), makeContext(TENANT_A));
-    expect(res.status).toBe(500);
-    const body = await parseBody<{ error: { code: string } }>(res);
-    expect(body.error.code).toBe('internal_error');
+    expect(vi.mocked(createAdminClient)).not.toHaveBeenCalled();
   });
 });
 
@@ -460,6 +372,5 @@ describe('PATCH bandit resume — BANDIT_ENABLED off (FOLLOW-1286, D3)', () => {
     expect(body.error.details.reason).toBe('bandit_disabled');
     expect(mockResolve).not.toHaveBeenCalled();
     expect(vi.mocked(createAdminClient)).not.toHaveBeenCalled();
-    expect(vi.mocked(createTenantClient)).not.toHaveBeenCalled();
   });
 });

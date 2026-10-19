@@ -3,14 +3,15 @@
  * — FOLLOW-161.
  *
  * Coverage (AC2, AC1 contract, auth + allow-list validation, persistence, fail-loud):
- *   - GET: auth required (401 when no JWT / insufficient role)
+ *   - GET: Estalara staff auth required (401 without it, incl. a verified non-staff token —
+ *     the agency admin/owner read went with FOLLOW-1335)
  *   - GET: returns current model, allowed_models, is_default, updated_at
  *   - GET: returns default values when DB not configured
  *   - GET: DB failure → 500 (fail-loud Rule K.2)
  *   - PUT: auth required — Estalara staff ONLY (FOLLOW-456 / audit F-13):
  *       - 401 when no auth at all
- *       - 403 when caller has a valid tenant agency:admin JWT (NOT staff) — the hole this
- *         ticket closes: a tenant admin must NOT be able to mutate the platform-global model
+ *       - 403 when caller has a verified non-staff JWT (the former agency admin shape) — the
+ *         hole FOLLOW-456 closed: a tenant admin must NOT mutate the platform-global model
  *       - 403 via Bearer <ADMIN_API_SECRET> (read-only since FOLLOW-1321: no identity to audit)
  *       - 403 for estalara:readonly and estalara:ops staff (superadmin required, FOLLOW-598)
  *       - 200 via a verified estalara:superadmin JWT, with one staff_audit_log row written
@@ -30,7 +31,6 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 const {
   mockGetGlobalGenerationModel,
   mockSetGlobalGenerationModel,
-  mockRequireTenantAccess,
   mockCreateAdminClient,
   mockGetAuthClaims,
   mockIsStaffClaims,
@@ -39,7 +39,6 @@ const {
 } = vi.hoisted(() => ({
   mockGetGlobalGenerationModel: vi.fn(),
   mockSetGlobalGenerationModel: vi.fn(),
-  mockRequireTenantAccess: vi.fn(),
   mockCreateAdminClient: vi.fn(),
   mockGetAuthClaims: vi.fn(),
   mockIsStaffClaims: vi.fn(),
@@ -69,12 +68,10 @@ vi.mock('@/lib/global-config-store', () => ({
 // verifyTracerAdminAuth (PUT's guard) is exercised via the real module — only its
 // own @estalara/auth dependencies (getAuthClaims/isStaffClaims) are mocked, same
 // pattern as apps/control-plane/src/app/api/admin/intent/config/route.test.ts.
-// requireTenantAccess (GET's guard) is mocked directly since GET does not go
-// through verifyTracerAdminAuth.
+// GET goes through the same guard since FOLLOW-1335 removed its agency read.
 // The rank itself comes from the REAL `@/lib/staff-rank` via verifyTracerAdminAuth
 // (FOLLOW-1321) — no rank table is re-implemented in this test.
 vi.mock('@estalara/auth', () => ({
-  requireTenantAccess: mockRequireTenantAccess,
   getAuthClaims: mockGetAuthClaims,
   isStaffClaims: mockIsStaffClaims,
 }));
@@ -114,12 +111,13 @@ import { GET, PUT } from './route';
 const USER_ID = 'aaaabbbb-0000-0000-0000-000000000001';
 const TENANT_ID = '550e8400-e29b-41d4-a716-446655440099';
 
-const ADMIN_CLAIMS = {
+/** A verified token that is not staff — the agency-admin claim shape before FOLLOW-1335. */
+const NON_STAFF_CLAIMS = {
   sub: USER_ID,
   email: 'admin@estalara.com',
   tenant_id: TENANT_ID,
-  agency_role: 'agency:admin' as const,
-  estalara_staff: false as const,
+  agency_role: 'agency:admin',
+  estalara_staff: false,
   mfa_verified: false,
 };
 
@@ -187,24 +185,27 @@ async function parseBody<T>(res: Response): Promise<T> {
 describe('GET /api/admin/generation-model', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default caller: a verified estalara:ops staff JWT (any staff rank may read).
+    mockGetAuthClaims.mockResolvedValue(STAFF_CLAIMS);
+    mockIsStaffClaims.mockReturnValue(true);
   });
 
   it('returns 401 when no valid JWT', async () => {
-    mockRequireTenantAccess.mockRejectedValue(new Error('Unauthorized'));
+    mockGetAuthClaims.mockResolvedValue(null);
     const res = await GET(makeGetRequest());
     expect(res.status).toBe(401);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('unauthorized');
   });
 
-  it('returns 401 when caller has viewer role (insufficient)', async () => {
-    mockRequireTenantAccess.mockRejectedValue(new Error('Insufficient role'));
+  it('returns 401 for a verified token that is not staff (the former agency admin read, FOLLOW-1335)', async () => {
+    mockGetAuthClaims.mockResolvedValue(NON_STAFF_CLAIMS);
+    mockIsStaffClaims.mockReturnValue(false);
     const res = await GET(makeGetRequest());
     expect(res.status).toBe(401);
   });
 
-  it('returns current model config for admin user', async () => {
-    mockRequireTenantAccess.mockResolvedValue(ADMIN_CLAIMS);
+  it('returns current model config for a staff user', async () => {
     mockGetGlobalGenerationModel.mockResolvedValue('claude-sonnet-4-6');
     // readConfigRow will use mocked createAdminClient which returns []
 
@@ -219,7 +220,6 @@ describe('GET /api/admin/generation-model', () => {
   });
 
   it('is_default=true when no DB row has been written', async () => {
-    mockRequireTenantAccess.mockResolvedValue(ADMIN_CLAIMS);
     mockGetGlobalGenerationModel.mockResolvedValue('claude-sonnet-4-6');
     // DB returns empty rows (no configured override yet)
 
@@ -231,7 +231,6 @@ describe('GET /api/admin/generation-model', () => {
   });
 
   it('returns 500 when getGlobalGenerationModel throws (fail-loud Rule K.2)', async () => {
-    mockRequireTenantAccess.mockResolvedValue(ADMIN_CLAIMS);
     mockGetGlobalGenerationModel.mockRejectedValue(new Error('DB connection refused'));
 
     const res = await GET(makeGetRequest());
@@ -241,9 +240,8 @@ describe('GET /api/admin/generation-model', () => {
   });
 
   // ─── Staff path (Phase 0 superadmin-access, 2026-07-20) ────────────────────
-  // The /admin/settings page is used by staff sessions that carry NO agency_role,
-  // so GET must accept the same staff auth PUT already does. Additive: the agency
-  // path above is untouched (a non-staff caller falls through to it).
+  // The /admin/settings page is used by staff sessions; GET accepts the same staff
+  // auth PUT does (and, since FOLLOW-1335, nothing else).
   describe('staff auth path (/admin/settings page)', () => {
     beforeEach(() => {
       vi.clearAllMocks();
@@ -255,9 +253,7 @@ describe('GET /api/admin/generation-model', () => {
       vi.unstubAllEnvs();
     });
 
-    it('succeeds via ADMIN_API_SECRET Bearer without any agency session', async () => {
-      // Agency guard must NOT be consulted on the staff path — reject if called.
-      mockRequireTenantAccess.mockRejectedValue(new Error('should not be called'));
+    it('succeeds via ADMIN_API_SECRET Bearer (read-only)', async () => {
       mockGetGlobalGenerationModel.mockResolvedValue('claude-sonnet-4-6');
 
       const req = new NextRequest('http://localhost/api/admin/generation-model', {
@@ -268,13 +264,11 @@ describe('GET /api/admin/generation-model', () => {
 
       const body = await parseBody<Record<string, unknown>>(res);
       expect(body.generation_model).toBe('claude-sonnet-4-6');
-      expect(mockRequireTenantAccess).not.toHaveBeenCalled();
     });
 
-    it('succeeds via a verified estalara_staff:true JWT without any agency session', async () => {
+    it('succeeds via a verified estalara_staff:true JWT', async () => {
       mockIsStaffClaims.mockReturnValue(true);
       mockGetAuthClaims.mockResolvedValue(STAFF_CLAIMS);
-      mockRequireTenantAccess.mockRejectedValue(new Error('should not be called'));
       mockGetGlobalGenerationModel.mockResolvedValue('claude-opus-4-8');
 
       const req = new NextRequest('http://localhost/api/admin/generation-model', {
@@ -285,14 +279,11 @@ describe('GET /api/admin/generation-model', () => {
 
       const body = await parseBody<Record<string, unknown>>(res);
       expect(body.generation_model).toBe('claude-opus-4-8');
-      expect(mockRequireTenantAccess).not.toHaveBeenCalled();
     });
 
-    it('still 401 for a caller that is neither staff nor agency:admin', async () => {
-      // Not staff (JWT path rejects), and the agency fallback rejects too.
+    it('still 401 for a caller that is not staff', async () => {
       mockIsStaffClaims.mockReturnValue(false);
       mockGetAuthClaims.mockResolvedValue(null);
-      mockRequireTenantAccess.mockRejectedValue(new Error('Unauthorized'));
 
       const req = new NextRequest('http://localhost/api/admin/generation-model', {
         headers: { Authorization: 'Bearer some-random-token' },
@@ -326,11 +317,10 @@ describe('PUT /api/admin/generation-model', () => {
     expect(res.status).toBe(401);
   });
 
-  // FOLLOW-456 / audit F-13 — the hole this ticket closes: a tenant's own
-  // agency:admin/agency:owner role must NOT be sufficient to mutate the
-  // platform-global model.
-  it('returns 403 when caller has a valid tenant agency:admin JWT (NOT staff)', async () => {
-    mockGetAuthClaims.mockResolvedValue(ADMIN_CLAIMS);
+  // FOLLOW-456 / audit F-13 — a verified token that is not staff (the former tenant
+  // admin shape) must NOT be sufficient to mutate the platform-global model.
+  it('returns 403 when caller has a verified JWT that is NOT staff', async () => {
+    mockGetAuthClaims.mockResolvedValue(NON_STAFF_CLAIMS);
     mockIsStaffClaims.mockReturnValue(false);
     const res = await PUT(
       makePutRequest({ generation_model: 'claude-sonnet-4-6' }, { bearer: 'tenant-jwt-token' }),
@@ -473,7 +463,8 @@ describe('PUT /api/admin/generation-model', () => {
 
 describe('getGlobalGenerationModel default fallback (AC1)', () => {
   it('returns allowed_models list containing all 3 curated models on GET', async () => {
-    mockRequireTenantAccess.mockResolvedValue(ADMIN_CLAIMS);
+    mockGetAuthClaims.mockResolvedValue(STAFF_CLAIMS);
+    mockIsStaffClaims.mockReturnValue(true);
     mockGetGlobalGenerationModel.mockResolvedValue('claude-sonnet-4-6');
 
     const res = await GET(makeGetRequest());

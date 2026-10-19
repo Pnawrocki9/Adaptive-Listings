@@ -1,9 +1,9 @@
 /**
  * Access gate for the per-listing FAQ answer routes (`/api/tenants/:id/answers[/:answerId]`).
  *
- * ADR-0018 §2 / FOLLOW-1334: the agency path (tenant from the session claim, `:id` as a cross-check)
- * is unchanged; an Estalara staff session may act on the tenant named by `:id`, which
- * `resolveTenantAccess` validates against the `tenants` table. A staff WRITE additionally needs
+ * ADR-0018 §2 / FOLLOW-1334: an Estalara staff session may act on the tenant named by `:id`, which
+ * `resolveTenantAccess` validates against the `tenants` table (FOLLOW-1335 removed the agency path,
+ * which took the tenant from the session claim). A WRITE additionally needs
  * `estalara:ops` or higher (CEO Q3, ADR-0018 §4) and is audited by the route, in the same
  * transaction as the mutation (ADR-0018 §3a). Responses keep the legacy `{ error: string }` body
  * these routes have always returned.
@@ -22,7 +22,7 @@ type AnswersAccess = { ok: true; access: TenantAccess } | { ok: false; response:
  * Resolve who is calling and which tenant they may touch.
  *
  * @param req - the incoming request
- * @param tenantId - the `:id` path segment (cross-check for agency, explicit target for staff)
+ * @param tenantId - the `:id` path segment (the explicit target tenant)
  * @param mode - `'write'` additionally rejects a staff caller below `estalara:ops` (403)
  * @returns the resolved access, or the error response to return as-is
  */
@@ -45,7 +45,7 @@ export async function resolveAnswersAccess(
     throw err;
   }
 
-  if (mode === 'write' && access.via === 'staff' && !access.canWrite) {
+  if (mode === 'write' && !access.canWrite) {
     return {
       ok: false,
       response: NextResponse.json(

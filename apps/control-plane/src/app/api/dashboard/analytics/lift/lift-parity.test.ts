@@ -23,9 +23,6 @@ const TENANT_ID = '550e8400-e29b-41d4-a716-446655441289';
 
 vi.mock('@estalara/auth', () => ({
   getAuthClaims: vi.fn(),
-  isTenantClaims: vi.fn((claims: Record<string, unknown>) => {
-    return claims.estalara_staff === false && typeof claims.tenant_id === 'string';
-  }),
 }));
 
 import { getAuthClaims } from '@estalara/auth';
@@ -195,21 +192,24 @@ function clickhouseSimulator(urlStr: string): Response {
   return new Response(lines.map((l) => JSON.stringify(l)).join('\n'), { status: 200 });
 }
 
-function authAsTenant(): void {
-  const claims = {
-    sub: 'user-uuid',
-    email: 'analyst@agency.com',
-    tenant_id: TENANT_ID,
-    agency_role: 'agency:admin' as const,
-    estalara_staff: false as const,
+function authAsStaff(): void {
+  const staff = {
+    sub: 'staff-uuid',
+    email: 'analyst@estalara.com',
+    tenant_id: null,
+    estalara_staff: true as const,
+    estalara_role: 'estalara:ops' as const,
     mfa_verified: true,
   };
-  mockGetAuthClaims.mockResolvedValue(claims);
+  mockGetAuthClaims.mockResolvedValue(staff);
+  // The lift route resolves via resolveTenantAccess (staff, explicit tenant — FOLLOW-1335).
   mockResolve.mockResolvedValue({
-    via: 'agency',
+    via: 'staff',
     tenantId: TENANT_ID,
-    claims,
-    rawToken: 'agency-jwt',
+    staff,
+    role: 'estalara:ops',
+    canWrite: true,
+    isSuperadmin: false,
   });
 }
 
@@ -246,7 +246,7 @@ describe('FOLLOW-1289: lift parity (same sample → same lift)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test:8123';
-    authAsTenant();
+    authAsStaff();
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation((u: unknown) => Promise.resolve(clickhouseSimulator(String(u)))),

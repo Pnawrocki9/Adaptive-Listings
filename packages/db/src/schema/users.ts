@@ -34,7 +34,10 @@ export const users = pgTable(
     // Agency user fields (null for Estalara staff)
     /** Foreign key → tenants.id. Null for Estalara staff accounts. */
     tenantId: uuid('tenant_id'),
-    /** 'agency:owner' | 'agency:admin' | 'agency:viewer' */
+    /**
+     * Former agency role (owner / admin / viewer). Unread since FOLLOW-1335 removed the agency
+     * roles; the column stays (forward-only migrations) and no code writes it.
+     */
     agencyRole: text('agency_role'),
 
     // Estalara staff fields (null for agency users)

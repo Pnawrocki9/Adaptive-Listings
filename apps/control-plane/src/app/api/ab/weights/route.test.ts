@@ -1,13 +1,13 @@
 /**
  * Tests for GET /api/ab/weights
  *
- * Auth model (ADR-0018 §2, FOLLOW-594): the route delegates agency + staff
- * resolution to `resolveTenantAccess`. Its end-to-end wiring is covered by
+ * Auth model (ADR-0018 §2, FOLLOW-594; staff-only since FOLLOW-1335): the route
+ * delegates staff resolution to `resolveTenantAccess`. Its end-to-end wiring is covered by
  * `src/lib/__tests__/resolve-tenant-access.test.ts`; here we PARTIALLY MOCK
  * `@/lib/session-auth` — only `resolveTenantAccess` is a spy, `AccessError` and
  * the other exports stay real (via `importOriginal`).
  *
- * `@estalara/db` and `drizzle-orm` are mocked to avoid a real DB. The staff path
+ * `@estalara/db` and `drizzle-orm` are mocked to avoid a real DB. The route
  * uses `createAdminClient` (RLS BYPASSED), so the explicit `WHERE tenant_id`
  * (route `buildWhere`) is the ONLY tenant fence — the mandatory tenant-filter test
  * captures that WHERE from the route's real query (ADR-0018 invariant 5).
@@ -78,12 +78,10 @@ import { resolveTenantAccess, AccessError, type TenantAccess } from '@/lib/sessi
 const mockResolve = vi.mocked(resolveTenantAccess);
 
 // ─── Mock @estalara/db ─────────────────────────────────────────────────────────
-// Agency path → createTenantClient(...).rls(tx => ...). Staff path →
-// createAdminClient().select().from().where(). Both terminate in a `.where(cond)`
-// that resolves the seeded rows, filtered by the captured drizzle `eq` value so a
+// createAdminClient().select().from().where() terminates in a `.where(cond)` that
+// resolves the seeded rows, filtered by the captured drizzle `eq` value so a
 // wrong/missing fence is observable.
 
-const agencyState: { rows: DbRow[] } = { rows: [] };
 const adminState: { capturedWhere: unknown; rows: DbRow[] } = {
   capturedWhere: undefined,
   rows: [],
@@ -103,19 +101,6 @@ function whereTenantVal(where: unknown): string | undefined {
 }
 
 vi.mock('@estalara/db', () => ({
-  createTenantClient: vi.fn(() => ({
-    rls: vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
-      const txStub = {
-        select: vi.fn().mockReturnThis(),
-        from: vi.fn().mockReturnThis(),
-        where: vi.fn((cond: unknown) => {
-          const val = whereTenantVal(cond);
-          return Promise.resolve(agencyState.rows.filter((r) => r.tenantId === val));
-        }),
-      };
-      return fn(txStub);
-    }),
-  })),
   createAdminClient: vi.fn(() => ({
     select: () => ({
       from: () => ({
@@ -145,22 +130,6 @@ vi.mock('drizzle-orm', () => ({
 }));
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
-
-function agencyAccess(tenantId = TENANT_A): TenantAccess {
-  return {
-    via: 'agency',
-    tenantId,
-    claims: {
-      sub: 'user-uuid',
-      email: 'user@agency.com',
-      tenant_id: tenantId,
-      agency_role: 'agency:admin',
-      estalara_staff: false,
-      mfa_verified: true,
-    },
-    rawToken: 'agency-jwt',
-  };
-}
 
 function staffAccess(tenantId: string): TenantAccess {
   return {
@@ -209,7 +178,7 @@ function clearDatabaseUrl(saved: string | undefined) {
   }
 }
 
-// ─── Agency-path tests ──────────────────────────────────────────────────────────
+// ─── Route tests (staff caller on tenant A) ─────────────────────────────────────
 
 // FOLLOW-1286 (D3): this file pins the pre-freeze bandit behaviour, which now runs only with
 // BANDIT_ENABLED=true. The frozen default (flag off) is pinned by `lib/__tests__/bandit-flag.test.ts`,
@@ -223,10 +192,9 @@ describe('GET /api/ab/weights', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default: agency caller on their own tenant. Seed A's rows on the RLS path.
-    mockResolve.mockResolvedValue(agencyAccess());
-    agencyState.rows = [...MOCK_DB_ROWS];
-    adminState.rows = [];
+    // Default: a staff caller on tenant A. Seed A's rows in the service-role table.
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    adminState.rows = [...MOCK_DB_ROWS];
     adminState.capturedWhere = undefined;
     savedDatabaseUrl = process.env.DATABASE_URL;
     setFakeDatabaseUrl();
@@ -247,7 +215,9 @@ describe('GET /api/ab/weights', () => {
   });
 
   it('returns 403 when resolveTenantAccess throws AccessError(403)', async () => {
-    mockResolve.mockRejectedValue(new AccessError(403, 'Access denied: insufficient agency role'));
+    mockResolve.mockRejectedValue(
+      new AccessError(403, 'Unauthorized: no tenant access for this request'),
+    );
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest());
@@ -268,7 +238,7 @@ describe('GET /api/ab/weights', () => {
   });
 
   it('?archetype=yield_hunter filter — returns rows for the queried archetype', async () => {
-    agencyState.rows = MOCK_DB_ROWS.filter((r) => r.archetype === 'yield_hunter').slice(0, 1);
+    adminState.rows = MOCK_DB_ROWS.filter((r) => r.archetype === 'yield_hunter').slice(0, 1);
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest({ archetype: 'yield_hunter' }));
@@ -279,7 +249,7 @@ describe('GET /api/ab/weights', () => {
   });
 
   it('empty table → [] with total 0 (graceful)', async () => {
-    agencyState.rows = [];
+    adminState.rows = [];
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest());
@@ -314,17 +284,6 @@ describe('GET /api/ab/weights', () => {
     const body = await parseBody<AbWeightsResponse>(res);
     expect(body.total).toBe(body.rows.length);
   });
-
-  it('DATABASE_URL absent (agency path) — returns empty rows gracefully', async () => {
-    delete process.env.DATABASE_URL;
-
-    const { GET } = await import('./route.js');
-    const res = await GET(makeRequest());
-    expect(res.status).toBe(200);
-    const body = await parseBody<AbWeightsResponse>(res);
-    expect(body.rows).toHaveLength(0);
-    expect(body.total).toBe(0);
-  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -342,7 +301,7 @@ describe('GET /api/ab/weights — learning_state (FOLLOW-637)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockResolve.mockResolvedValue(agencyAccess());
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     adminState.rows = [];
     adminState.capturedWhere = undefined;
     savedDatabaseUrl = process.env.DATABASE_URL;
@@ -361,7 +320,7 @@ describe('GET /api/ab/weights — learning_state (FOLLOW-637)', () => {
 
   it('FEEDBACK_ENDPOINT_ENABLED unset + arms moved off prior → paused (the frozen-in-prod case)', async () => {
     delete process.env.FEEDBACK_ENDPOINT_ENABLED;
-    agencyState.rows = [...MOCK_DB_ROWS]; // alpha/beta already moved off (1,1)
+    adminState.rows = [...MOCK_DB_ROWS]; // alpha/beta already moved off (1,1)
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest());
@@ -371,7 +330,7 @@ describe('GET /api/ab/weights — learning_state (FOLLOW-637)', () => {
 
   it('FEEDBACK_ENDPOINT_ENABLED=true but every arm still at Beta(1,1) prior → paused', async () => {
     process.env.FEEDBACK_ENDPOINT_ENABLED = 'true';
-    agencyState.rows = MOCK_DB_ROWS.map((r) => ({ ...r, alpha: 1, beta: 1 }));
+    adminState.rows = MOCK_DB_ROWS.map((r) => ({ ...r, alpha: 1, beta: 1 }));
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest());
@@ -381,7 +340,7 @@ describe('GET /api/ab/weights — learning_state (FOLLOW-637)', () => {
 
   it('FEEDBACK_ENDPOINT_ENABLED=true AND at least one arm moved off the prior → active', async () => {
     process.env.FEEDBACK_ENDPOINT_ENABLED = 'true';
-    agencyState.rows = [...MOCK_DB_ROWS];
+    adminState.rows = [...MOCK_DB_ROWS];
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest());
@@ -391,7 +350,7 @@ describe('GET /api/ab/weights — learning_state (FOLLOW-637)', () => {
 
   it('FEEDBACK_ENDPOINT_ENABLED=false explicitly + arms moved off prior → paused', async () => {
     process.env.FEEDBACK_ENDPOINT_ENABLED = 'false';
-    agencyState.rows = [...MOCK_DB_ROWS];
+    adminState.rows = [...MOCK_DB_ROWS];
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest());
@@ -401,17 +360,7 @@ describe('GET /api/ab/weights — learning_state (FOLLOW-637)', () => {
 
   it('empty table + FEEDBACK_ENDPOINT_ENABLED=true → paused (vacuous, no data yet)', async () => {
     process.env.FEEDBACK_ENDPOINT_ENABLED = 'true';
-    agencyState.rows = [];
-
-    const { GET } = await import('./route.js');
-    const res = await GET(makeRequest());
-    const body = await parseBody<AbWeightsResponse>(res);
-    expect(body.learning_state).toBe('paused');
-  });
-
-  it('DATABASE_URL absent (agency path) → learning_state paused regardless of env', async () => {
-    process.env.FEEDBACK_ENDPOINT_ENABLED = 'true';
-    delete process.env.DATABASE_URL;
+    adminState.rows = [];
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest());
@@ -429,7 +378,6 @@ describe('GET /api/ab/weights — staff override (ADR-0018)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    agencyState.rows = [];
     adminState.rows = [];
     adminState.capturedWhere = undefined;
     savedDatabaseUrl = process.env.DATABASE_URL;
@@ -517,7 +465,7 @@ describe('GET /api/ab/weights — BANDIT_ENABLED off (FOLLOW-1286, D3)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv('BANDIT_ENABLED', '');
-    mockResolve.mockResolvedValue(agencyAccess());
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
   });
 
   afterEach(() => {

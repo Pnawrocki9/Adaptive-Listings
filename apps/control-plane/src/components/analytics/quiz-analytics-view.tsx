@@ -2,11 +2,10 @@
 
 /**
  * QuizAnalyticsView — REAL data from `quiz_completions` via `GET /api/quiz/analytics`
- * (FOLLOW-1000). Shared by `/dashboard/quiz/analytics` (agency, tenant from the session) and the
- * "Quiz" tab of `/admin/tenants/[id]/analytics` (Estalara staff, tenant from the URL — FOLLOW-1334).
- * ADR-0018 §1: the view takes `tenantId` as a PROP; absent → the URL is byte-identical to what the
- * agency page has always sent, present → `?tenant_id=<id>` (the route already opts into
- * `resolveTenantAccess` with `allowStaffOverride`, FOLLOW-1000/FOLLOW-594).
+ * (FOLLOW-1000). Mounted by the "Quiz" tab of `/admin/tenants/[id]/analytics` (Estalara staff,
+ * tenant from the URL — FOLLOW-1334; the agency `/dashboard/quiz/analytics` page was deleted by
+ * FOLLOW-1335). ADR-0018 §1: the view takes `tenantId` as a PROP and sends `?tenant_id=<id>` (the
+ * route opts into `resolveTenantAccess` with `allowStaffOverride`, FOLLOW-1000/FOLLOW-594).
  *
  * Replaces the mock this page shipped with since Sprint 4.5 ("Mock data — real
  * data available in Sprint 5", which was never built). Every number rendered
@@ -62,7 +61,7 @@ const BRANCH_LABELS: Record<string, string> = {
 };
 
 interface QuizAnalyticsViewProps {
-  /** Staff only: the tenant to read (sent as `?tenant_id=`). Absent → session-scoped agency read. */
+  /** The tenant to read (sent as `?tenant_id=`). Absent → no `tenant_id` is sent, which the staff-only route answers 400 since FOLLOW-1335. */
   tenantId?: string;
 }
 

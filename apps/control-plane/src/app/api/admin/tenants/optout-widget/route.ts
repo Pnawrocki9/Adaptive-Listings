@@ -15,8 +15,8 @@
  * profiling + DOM adaptation) are unchanged and owned elsewhere.
  *
  * Auth (ADR-0018 §2): `resolveTenantAccess` with `allowStaffOverride`. STAFF-ONLY — the opt-out
- *   widget config is an Estalara operator control (no agency write path), so a resolved agency
- *   session is rejected 403 (`staff_only`), mirroring `al-state` / `quiz-definition`. An Estalara
+ *   widget config is an Estalara operator control; a non-staff caller is 401 in
+ *   `resolveTenantAccess` (FOLLOW-1335 removed the agency path and this route's 403). An Estalara
  *   staff caller targets a tenant via `?tenant_id=<uuid>`, validated against the `tenants` table;
  *   that validated id is the SINGLE tenant fence bound into every query (invariant 5). This route
  *   uses `createAdminClient()` (service-role, RLS BYPASSED), so the explicit `eq(tenants.id, …)`
@@ -70,37 +70,19 @@ function requestIp(req: NextRequest): string | null {
   return req.headers.get('x-real-ip');
 }
 
-/** Resolve access shared by GET + PUT, then enforce STAFF-ONLY (no agency path). */
+/** Resolve the staff caller's access, shared by GET + PUT. */
 async function resolveStaffAccess(
   req: NextRequest,
-): Promise<{ access: Extract<TenantAccess, { via: 'staff' }> } | { error: NextResponse }> {
+): Promise<{ access: TenantAccess } | { error: NextResponse }> {
   const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
   let access: TenantAccess;
   try {
     access = await resolveTenantAccess(req, {
       allowStaffOverride: true,
-      // Lowest agency floor: a resolved agency session is allowed THROUGH the role check only to
-      // be rejected below with a clear staff-only 403. The opt-out widget config is an operator
-      // control.
-      minAgencyRole: 'agency:viewer',
       ...(tenantIdParam ? { tenantId: tenantIdParam } : {}),
     });
   } catch (err) {
     return { error: accessErrorToResponse(err) };
-  }
-
-  if (access.via !== 'staff') {
-    return {
-      error: NextResponse.json(
-        {
-          error: {
-            code: 'staff_only',
-            message: 'The opt-out widget config is an Estalara staff/superadmin control',
-          },
-        },
-        { status: 403 },
-      ),
-    };
   }
 
   return { access };

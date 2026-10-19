@@ -35,7 +35,7 @@ import {
 } from './route-helpers';
 
 // ─── Partial mock of @/lib/session-auth (only resolveTenantAccess is a spy) ───
-// Auth (ADR-0018 §2, FOLLOW-1334): the route delegates agency + staff resolution to
+// Auth (ADR-0018 §2, FOLLOW-1334; staff-only since FOLLOW-1335): the route delegates staff resolution to
 // `resolveTenantAccess`, whose own wiring is exercised by
 // `src/lib/__tests__/resolve-tenant-access.test.ts`. `AccessError` stays real so
 // `accessErrorToResponse` maps statuses for real.
@@ -116,20 +116,8 @@ async function parseBody<T>(res: Response): Promise<T> {
   return raw as T;
 }
 
-function authAsTenant(): void {
-  mockResolve.mockResolvedValue({
-    via: 'agency',
-    tenantId: TENANT_ID,
-    claims: {
-      sub: 'user-uuid',
-      email: 'user@agency.com',
-      tenant_id: TENANT_ID,
-      agency_role: 'agency:admin',
-      estalara_staff: false,
-      mfa_verified: true,
-    },
-    rawToken: 'agency-jwt',
-  });
+function authAsStaff(): void {
+  mockResolve.mockResolvedValue(staffAccess(TENANT_ID));
 }
 
 /** A resolved Estalara-staff access acting on an explicit, validated tenant (readonly rank). */
@@ -369,21 +357,10 @@ describe('GET /api/pilot/calibration', () => {
     expect(body.error.code).toBe('unauthorized');
   });
 
-  it('returns 403 when an agency session names a foreign tenant_id', async () => {
-    mockResolve.mockRejectedValue(
-      new AccessError(403, 'Access denied: agency session cannot act on a foreign tenant'),
-    );
-    const { GET } = await import('./route.js');
-    const url = new URL('http://localhost/api/pilot/calibration');
-    url.searchParams.set('tenant_id', OTHER_TENANT_ID);
-    const res = await GET(new NextRequest(url.toString()));
-    expect(res.status).toBe(403);
-  });
-
   // ─── CLICKHOUSE_URL guard (Rule K.2) ───────────────────────────────────────
 
   it('returns mock with data_source: mock when CLICKHOUSE_URL is unset', async () => {
-    authAsTenant();
+    authAsStaff();
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest('14'));
     expect(res.status).toBe(200);
@@ -400,7 +377,7 @@ describe('GET /api/pilot/calibration', () => {
   });
 
   it('defaults window_days to 7 when query param is missing', async () => {
-    authAsTenant();
+    authAsStaff();
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest(undefined));
     expect(res.status).toBe(200);
@@ -410,7 +387,7 @@ describe('GET /api/pilot/calibration', () => {
   });
 
   it('defaults window_days to 7 for invalid param', async () => {
-    authAsTenant();
+    authAsStaff();
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest('999'));
     expect(res.status).toBe(200);
@@ -421,7 +398,7 @@ describe('GET /api/pilot/calibration', () => {
   // ─── ClickHouse configured — success path ──────────────────────────────────
 
   it('returns data_source: clickhouse and correct calibration when ClickHouse succeeds', async () => {
-    authAsTenant();
+    authAsStaff();
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
 
     // ClickHouse returns 3 decisions
@@ -484,7 +461,7 @@ describe('GET /api/pilot/calibration', () => {
   // ─── ClickHouse configured — fail-loud paths (Rule K.2) ───────────────────
 
   it('returns HTTP 500 and calls Sentry when CLICKHOUSE_URL is set but ClickHouse query fails', async () => {
-    authAsTenant();
+    authAsStaff();
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
     vi.stubGlobal(
       'fetch',
@@ -511,7 +488,7 @@ describe('GET /api/pilot/calibration', () => {
   });
 
   it('returns HTTP 500 when CLICKHOUSE_URL is set but fetch rejects (network error)', async () => {
-    authAsTenant();
+    authAsStaff();
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
 
@@ -529,7 +506,7 @@ describe('GET /api/pilot/calibration', () => {
   // ─── Parameterised query (no string interpolation) ─────────────────────────
 
   it('binds tenant_id as a query param, never interpolated into SQL', async () => {
-    authAsTenant();
+    authAsStaff();
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
 
     const fetchMock = vi.fn().mockResolvedValueOnce(new Response('', { status: 200 }));
@@ -588,14 +565,6 @@ describe('GET /api/pilot/calibration — staff override (ADR-0018, FOLLOW-1334)'
       expect.anything(),
       expect.objectContaining({ allowStaffOverride: true, tenantId: OTHER_TENANT_ID }),
     );
-  });
-
-  it('agency path: no ?tenant_id reaches resolveTenantAccess (tenant from the claim)', async () => {
-    authAsTenant();
-    const { GET } = await import('./route.js');
-    const res = await GET(makeRequest('7'));
-    expect(res.status).toBe(200);
-    expect(mockResolve.mock.calls[0]?.[1]).not.toHaveProperty('tenantId');
   });
 
   it('staff caller who omits ?tenant_id → 400 (resolve throws AccessError(400))', async () => {
@@ -786,7 +755,7 @@ describe('GET /api/pilot/calibration?format=json', () => {
   });
 
   it('returns JSON envelope with data_source: mock when CLICKHOUSE_URL is unset (AC1/AC2)', async () => {
-    authAsTenant();
+    authAsStaff();
     const { GET } = await import('./route.js');
     const res = await GET(makeExportRequest('14'));
 
@@ -830,7 +799,7 @@ describe('GET /api/pilot/calibration?format=json', () => {
   });
 
   it('includes Content-Disposition: attachment; filename="calibration.json" header', async () => {
-    authAsTenant();
+    authAsStaff();
     const { GET } = await import('./route.js');
     const res = await GET(makeExportRequest('7'));
 
@@ -839,7 +808,7 @@ describe('GET /api/pilot/calibration?format=json', () => {
   });
 
   it('chart path (no ?format=json) is unaffected — returns CalibrationResponse shape', async () => {
-    authAsTenant();
+    authAsStaff();
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest('7'));
 
@@ -860,7 +829,7 @@ describe('GET /api/pilot/calibration?format=json', () => {
   });
 
   it('returns JSON export envelope with data_source: clickhouse when ClickHouse is configured (AC1/AC2)', async () => {
-    authAsTenant();
+    authAsStaff();
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
 
     // ClickHouse returns 2 decisions for the same model
@@ -939,7 +908,7 @@ describe('GET /api/pilot/calibration — unknown format values', () => {
   });
 
   it('returns HTTP 400 for ?format=csv (AC3)', async () => {
-    authAsTenant();
+    authAsStaff();
     const { GET } = await import('./route.js');
     const res = await GET(makeFormatRequest('csv'));
     expect(res.status).toBe(400);
@@ -950,7 +919,7 @@ describe('GET /api/pilot/calibration — unknown format values', () => {
   });
 
   it('returns HTTP 400 for ?format=jsonl (AC3)', async () => {
-    authAsTenant();
+    authAsStaff();
     const { GET } = await import('./route.js');
     const res = await GET(makeFormatRequest('jsonl'));
     expect(res.status).toBe(400);
@@ -960,7 +929,7 @@ describe('GET /api/pilot/calibration — unknown format values', () => {
   });
 
   it('returns HTTP 400 for ?format=JSON (uppercase — AC3)', async () => {
-    authAsTenant();
+    authAsStaff();
     const { GET } = await import('./route.js');
     const res = await GET(makeFormatRequest('JSON'));
     expect(res.status).toBe(400);
@@ -971,7 +940,7 @@ describe('GET /api/pilot/calibration — unknown format values', () => {
   });
 
   it('chart path (no ?format=) still works — not affected by format validation', async () => {
-    authAsTenant();
+    authAsStaff();
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest('7'));
     expect(res.status).toBe(200);

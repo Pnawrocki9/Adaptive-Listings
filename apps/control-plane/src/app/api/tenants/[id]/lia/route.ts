@@ -3,20 +3,21 @@
  * POST /api/tenants/:id/lia — create a new LIA record (old records retained for audit trail).
  *
  * Auth:
- *   GET  — Bearer JWT scoped to the tenant OR a staff JWT.
- *   POST — Bearer JWT scoped to the tenant OR a staff JWT.
- *   Both: the tenant_id in the JWT must match the `:id` param (or caller must be staff).
+ *   GET  — Estalara staff (Bearer JWT or SSR session).
+ *   POST — Estalara staff (Bearer JWT or SSR session).
+ *   FOLLOW-1335 removed the tenant-user path (JWT `tenant_id` matching `:id`) with the
+ *   agency roles.
  *
  * GET responses:
  *   200 { lia: TenantComplianceRecord } — active LIA found.
  *   404 { error: "no_lia_on_file" }    — no non-deleted LIA exists for this tenant.
  *   401 { error: "Unauthorized" }       — missing or invalid JWT.
- *   403 { error: "Forbidden" }          — JWT tenant mismatch.
+ *   403 { error: "Forbidden" }          — the caller is not Estalara staff.
  *
  * POST responses:
  *   201 { lia: TenantComplianceRecord } — record created.
  *   401 { error: "Unauthorized" }        — missing or invalid JWT.
- *   403 { error: "Forbidden" }           — JWT tenant mismatch.
+ *   403 { error: "Forbidden" }           — the caller is not Estalara staff.
  *   422 { error: "Validation failed", details: ... } — Zod validation failure.
  *   500 { error: "Failed to create LIA record" }     — DB error.
  *
@@ -40,29 +41,18 @@ import { LiaRecordSchema } from '@estalara/shared';
 // ---------------------------------------------------------------------------
 
 /**
- * Validate the Bearer JWT and assert the caller has access to the given tenantId.
- *
- * Access is granted if:
- *   1. The caller is Estalara staff (estalara_staff = true), OR
- *   2. The caller's tenant_id matches the requested tenantId.
+ * Validate the caller's session/JWT and assert it is Estalara staff, who may access any
+ * tenant's compliance records (FOLLOW-1335: the tenant-user path is gone).
  *
  * Returns `{ ok: true }` on success, or a NextResponse error.
  */
-async function validateLiaAuth(
-  req: NextRequest,
-  tenantId: string,
-): Promise<{ ok: true } | NextResponse> {
+async function validateLiaAuth(req: NextRequest): Promise<{ ok: true } | NextResponse> {
   const claims = await getSessionAuthClaims(req);
   if (!claims) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  if (isStaffClaims(claims)) {
-    // Staff can access any tenant's compliance records.
-    return { ok: true };
-  }
-  // Agency user — must match the requested tenant.
-  if (!claims.tenant_id || claims.tenant_id !== tenantId) {
-    return NextResponse.json({ error: 'Forbidden: tenant mismatch' }, { status: 403 });
+  if (!isStaffClaims(claims)) {
+    return NextResponse.json({ error: 'Forbidden: Estalara staff only' }, { status: 403 });
   }
   return { ok: true };
 }
@@ -85,7 +75,7 @@ export async function GET(
 ): Promise<NextResponse> {
   const { id: tenantId } = await params;
 
-  const authResult = await validateLiaAuth(req, tenantId);
+  const authResult = await validateLiaAuth(req);
   if (authResult instanceof NextResponse) return authResult;
 
   try {
@@ -140,7 +130,7 @@ export async function POST(
 ): Promise<NextResponse> {
   const { id: tenantId } = await params;
 
-  const authResult = await validateLiaAuth(req, tenantId);
+  const authResult = await validateLiaAuth(req);
   if (authResult instanceof NextResponse) return authResult;
 
   let rawBody: unknown;

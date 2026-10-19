@@ -15,9 +15,9 @@
  *   format — 'csv' (default) | 'jsonl'
  *             400 on any other value.
  *
- * Auth: verified Supabase JWT (HMAC-SHA-256).
- *   - Estalara staff (estalara_staff: true): must supply tenant_id query param.
- *   - Agency users: tenant_id pinned from JWT claims; query param is ignored.
+ * Auth: verified Supabase JWT (HMAC-SHA-256) or SSR session of Estalara staff
+ *   (estalara_staff: true), who must supply the tenant_id query param. FOLLOW-1335 removed
+ *   the agency path (tenant_id pinned from the JWT claims) with the agency roles.
  *
  * Rule K.2 — fail loud:
  *   DATABASE_URL_ADMIN unset  → 200 with data_source:'mock', 3 sample rows.
@@ -350,24 +350,27 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // FOLLOW-1335: Estalara staff is the only caller (defence in depth — the resolver above
+  // already returns staff claims or null).
+  if (!isStaffClaims(claims)) {
+    return NextResponse.json(
+      { error: { code: 'forbidden', message: 'Estalara staff access is required' } },
+      { status: 403 },
+    );
+  }
+
   // ── Resolve tenant_id ─────────────────────────────────────────────────────
-  let tenantId: string;
-  if (isStaffClaims(claims)) {
-    const rawTenantId = req.nextUrl.searchParams.get('tenant_id');
-    if (!rawTenantId) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'validation_error',
-            message: 'Staff callers must supply tenant_id query param',
-          },
+  const tenantId = req.nextUrl.searchParams.get('tenant_id');
+  if (!tenantId) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'validation_error',
+          message: 'Staff callers must supply tenant_id query param',
         },
-        { status: 400 },
-      );
-    }
-    tenantId = rawTenantId;
-  } else {
-    tenantId = claims.tenant_id;
+      },
+      { status: 400 },
+    );
   }
 
   // ── Parse format param ────────────────────────────────────────────────────

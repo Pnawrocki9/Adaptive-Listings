@@ -9,7 +9,8 @@
  * asserted on EVERY query.
  *
  * Coverage:
- *   - Agency session → 200 with real metrics fenced to the SESSION tenant.
+ *   - Staff session → 200 with real metrics fenced to the resolved tenant (the agency session
+ *     path went with FOLLOW-1335).
  *   - Staff with ?tenant_id → 200 fenced to the validated override tenant.
  *   - Empty tenant → real zeroes/empty arrays (a successful empty read, not a
  *     fabricated fallback).
@@ -62,22 +63,6 @@ const mockResolve = vi.mocked(resolveTenantAccess);
 const TENANT_A = '550e8400-e29b-41d4-a716-446655440042';
 
 // ─── Access fixtures ──────────────────────────────────────────────────────────
-
-function agencyAccess(tenantId: string): TenantAccess {
-  return {
-    via: 'agency',
-    tenantId,
-    claims: {
-      sub: 'user-uuid',
-      email: 'user@agency.com',
-      tenant_id: tenantId,
-      agency_role: 'agency:admin',
-      estalara_staff: false,
-      mfa_verified: true,
-    },
-    rawToken: 'agency-jwt',
-  };
-}
 
 function staffAccess(tenantId: string): TenantAccess {
   return {
@@ -166,8 +151,8 @@ beforeEach(() => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('GET /api/quiz/analytics', () => {
-  it('agency session → 200 with real metrics, aggregates sorted desc', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
+  it('staff session → 200 with real metrics, aggregates sorted desc', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     makeDb(HAPPY_QUEUE);
 
     const res = await GET(makeRequest());
@@ -186,7 +171,7 @@ describe('GET /api/quiz/analytics', () => {
   });
 
   it('tenant fence (invariant 5): EVERY query carries the resolved tenant id', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     const db = makeDb(HAPPY_QUEUE);
     await GET(makeRequest());
     // Five queries — five fenced where()s (and() passes the eq fence through).
@@ -202,7 +187,7 @@ describe('GET /api/quiz/analytics', () => {
   });
 
   it('empty tenant → genuine zeroes and empty arrays (successful read, not a fallback)', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     makeDb([[{ cnt: 0 }], [{ cnt: 0 }], [], [], []]);
     const res = await GET(makeRequest());
     expect(res.status).toBe(200);
@@ -213,7 +198,7 @@ describe('GET /api/quiz/analytics', () => {
   });
 
   it('Rule K.2: a thrown DB query → 500, never fabricated zeroes', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     makeDb([new Error('db down')]);
     const res = await GET(makeRequest());
     expect(res.status).toBe(500);

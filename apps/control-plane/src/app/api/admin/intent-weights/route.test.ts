@@ -1,8 +1,8 @@
 /**
  * Tests for GET/PUT /api/admin/intent-weights (FOLLOW-597).
  *
- * Auth model (ADR-0018 §2): the route delegates the entire agency + staff resolution
- * to `resolveTenantAccess`, whose own end-to-end wiring (SSR cookie, staff gate,
+ * Auth model (ADR-0018 §2; staff-only since FOLLOW-1335): the route delegates the
+ * staff resolution to `resolveTenantAccess`, whose own end-to-end wiring (SSR cookie, staff gate,
  * tenant existence check, RLS trap) is exercised by
  * `src/lib/__tests__/resolve-tenant-access.test.ts`. These route tests therefore
  * PARTIALLY MOCK `@/lib/session-auth` — only `resolveTenantAccess` is a spy;
@@ -71,22 +71,6 @@ const STAFF_RANK: Record<string, number> = {
   'estalara:ops': 2,
   'estalara:readonly': 1,
 };
-
-function agencyAccess(tenantId = TENANT_A): TenantAccess {
-  return {
-    via: 'agency',
-    tenantId,
-    claims: {
-      sub: 'agency-user',
-      email: 'user@agency.com',
-      tenant_id: tenantId,
-      agency_role: 'agency:admin',
-      estalara_staff: false,
-      mfa_verified: false,
-    },
-    rawToken: 'agency-jwt',
-  };
-}
 
 function staffAccess(
   tenantId: string,
@@ -265,7 +249,7 @@ async function parseBody<T>(res: Response): Promise<T> {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
-  mockResolve.mockResolvedValue(agencyAccess());
+  mockResolve.mockResolvedValue(staffAccess(TENANT_A));
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -300,13 +284,14 @@ describe('GET /api/admin/intent-weights', () => {
     expect(body.error.code).toBe('db_unconfigured');
   });
 
-  it('option-wiring (FOLLOW-603 pattern): calls resolveTenantAccess with allowStaffOverride:true + minAgencyRole:agency:viewer', async () => {
+  it('option-wiring (FOLLOW-603 pattern): calls resolveTenantAccess with allowStaffOverride:true (no agency role floor since FOLLOW-1335)', async () => {
     useDb(makeMultiTenantDb({}));
     await GET(makeGet(TENANT_A));
     expect(mockResolve).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ allowStaffOverride: true, minAgencyRole: 'agency:viewer' }),
+      expect.objectContaining({ allowStaffOverride: true }),
     );
+    expect(mockResolve.mock.calls[0]?.[1]).not.toHaveProperty('minAgencyRole');
   });
 
   it('returns 500 (not fabricated weights) when the DB query throws (Rule K.2)', async () => {
@@ -353,13 +338,14 @@ describe('PUT /api/admin/intent-weights — staff write-rank gate', () => {
     expect(res.status).toBe(200);
   });
 
-  it('option-wiring (FOLLOW-603 pattern): calls resolveTenantAccess with allowStaffOverride:true + minAgencyRole:agency:admin', async () => {
+  it('option-wiring (FOLLOW-603 pattern): calls resolveTenantAccess with allowStaffOverride:true (no agency role floor since FOLLOW-1335)', async () => {
     useDb(makeMultiTenantDb());
     await PUT(makePut({ weights: {} }, TENANT_A));
     expect(mockResolve).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ allowStaffOverride: true, minAgencyRole: 'agency:admin' }),
+      expect.objectContaining({ allowStaffOverride: true }),
     );
+    expect(mockResolve.mock.calls[0]?.[1]).not.toHaveProperty('minAgencyRole');
   });
 });
 
@@ -405,16 +391,6 @@ describe('PUT /api/admin/intent-weights — staff audit trail + atomicity', () =
     // NO ORPHAN MUTATION — tenant A's active row is byte-unchanged; the staged
     // deactivate+insert was discarded on rollback.
     expect(db._store[TENANT_A]).toEqual(existing);
-    expect(db._auditRows).toHaveLength(0);
-  });
-
-  it('agency write does NOT audit and is not rank-gated', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
-    const db = makeMultiTenantDb();
-    useDb(db);
-
-    const res = await PUT(makePut({ weights: { behavioral_damping: 0.4 } }, TENANT_A));
-    expect(res.status).toBe(200);
     expect(db._auditRows).toHaveLength(0);
   });
 });

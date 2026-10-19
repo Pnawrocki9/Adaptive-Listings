@@ -5,8 +5,8 @@
  * rolling window plus the daily trend, as one flat `text/csv` table (columns in `lib/lift-csv`).
  * `Content-Disposition: attachment; filename="lift-<tenant>-<window>d-<date>.csv"`.
  *
- * Auth (ADR-0018 §2): `resolveTenantAccess` with `allowStaffOverride`, STAFF-ONLY (agency 403
- * `staff_only`). A read, so any staff rank including `estalara:readonly` may export; the validated
+ * Auth (ADR-0018 §2): `resolveTenantAccess` with `allowStaffOverride`, staff only (a non-staff
+ * caller is 401 since FOLLOW-1335). A read, so any staff rank including `estalara:readonly` may export; the validated
  * `?tenant_id` is the single tenant fence bound into the ClickHouse queries.
  *
  * One formula: the summary block is `buildResponseFromRaw` over `fetchLiftRaw` — the live reader's

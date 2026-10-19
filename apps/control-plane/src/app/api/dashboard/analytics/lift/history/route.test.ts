@@ -103,16 +103,13 @@ afterAll(async () => {
 });
 
 describe('GET history', () => {
-  it('no session -> 401; agency -> 403 staff_only', async () => {
+  it('no session -> 401; a refused staff caller -> 403 (resolveTenantAccess decides)', async () => {
     await freshDb(true);
     mockResolve.mockRejectedValue(new AccessError(401, 'Unauthorized'));
     expect((await GET(req())).status).toBe(401);
-    mockResolve.mockResolvedValue({
-      via: 'agency',
-      tenantId: TENANT,
-      claims: {} as never,
-      rawToken: null,
-    });
+    mockResolve.mockRejectedValue(
+      new AccessError(403, 'Unauthorized: no tenant access for this request'),
+    );
     const res = await GET(req());
     expect(res.status).toBe(403);
   });

@@ -4,7 +4,8 @@
  * Tests cover:
  *   - LiaRecordSchema validation (correct payload, missing field, short field)
  *   - GET /api/tenants/:id/lia — 404 when no LIA exists
- *   - GET /api/tenants/:id/lia — 403 when JWT tenant mismatch
+ *   - GET/POST /api/tenants/:id/lia — staff only since FOLLOW-1335: a verified token that is
+ *     not staff (the former tenant-user JWT) is 401, whatever tenant it names
  *   - POST /api/tenants/:id/lia — 401 when no auth header
  *   - POST /api/tenants/:id/lia — 201 on valid payload (mock DB)
  *   - POST /api/tenants/:id/lia — 422 on validation failure
@@ -77,12 +78,22 @@ vi.mock('drizzle-orm', () => ({
   ),
 }));
 
-// Mock @estalara/auth — controls JWT verification results.
-// Tenant JWT for TENANT_ID by default; staff JWT for staff tests.
+// Mock @estalara/auth — controls JWT verification results. A staff JWT by default (the
+// only caller since FOLLOW-1335).
 let mockAuthClaims: Record<string, unknown> | null = {
-  sub: 'user-001',
-  email: 'admin@agency.com',
-  tenant_id: TENANT_ID,
+  sub: 'staff-001',
+  email: 'ops@estalara.com',
+  tenant_id: null,
+  estalara_staff: true,
+  estalara_role: 'estalara:ops',
+  mfa_verified: true,
+};
+
+/** The tenant-user claim shape @estalara/auth issued before FOLLOW-1335. */
+const NON_STAFF_CLAIMS = {
+  sub: 'user-002',
+  email: 'other@agency.com',
+  tenant_id: OTHER_TENANT_ID,
   agency_role: 'agency:admin',
   estalara_staff: false,
   mfa_verified: false,
@@ -216,14 +227,14 @@ describe('GET /api/tenants/:id/lia', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSelectRows = [];
-    // Default: tenant JWT matching TENANT_ID
+    // Default: a staff JWT (FOLLOW-1335 — staff is the only caller)
     mockAuthClaims = {
-      sub: 'user-001',
-      email: 'admin@agency.com',
-      tenant_id: TENANT_ID,
-      agency_role: 'agency:admin',
-      estalara_staff: false,
-      mfa_verified: false,
+      sub: 'staff-001',
+      email: 'ops@estalara.com',
+      tenant_id: null,
+      estalara_staff: true,
+      estalara_role: 'estalara:ops',
+      mfa_verified: true,
     };
 
     // Set up the fluent select chain.
@@ -256,22 +267,15 @@ describe('GET /api/tenants/:id/lia', () => {
     expect(body.error).toBe('no_lia_on_file');
   });
 
-  it('returns 403 when JWT tenant does not match the URL param', async () => {
-    // Override auth to return claims for a different tenant
-    mockAuthClaims = {
-      sub: 'user-002',
-      email: 'other@agency.com',
-      tenant_id: OTHER_TENANT_ID,
-      agency_role: 'agency:admin',
-      estalara_staff: false,
-      mfa_verified: false,
-    };
+  it('returns 401 for a verified token that is not staff, even naming this tenant (FOLLOW-1335)', async () => {
+    // The former tenant-user JWT shape — no longer a caller at all.
+    mockAuthClaims = { ...NON_STAFF_CLAIMS, tenant_id: TENANT_ID };
 
     const { GET } = await import('../../app/api/tenants/[id]/lia/route.js');
     const req = makeGetRequest(`http://localhost/api/tenants/${TENANT_ID}/lia`, 'tok');
     const res = await GET(req, { params: Promise.resolve({ id: TENANT_ID }) });
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(401);
   });
 
   it('returns 401 when no auth header is present', async () => {
@@ -343,14 +347,14 @@ describe('POST /api/tenants/:id/lia', () => {
       updatedAt: new Date(),
     };
 
-    // Default: matching tenant JWT
+    // Default: a staff JWT (FOLLOW-1335 — staff is the only caller)
     mockAuthClaims = {
-      sub: 'user-001',
-      email: 'admin@agency.com',
-      tenant_id: TENANT_ID,
-      agency_role: 'agency:admin',
-      estalara_staff: false,
-      mfa_verified: false,
+      sub: 'staff-001',
+      email: 'ops@estalara.com',
+      tenant_id: null,
+      estalara_staff: true,
+      estalara_role: 'estalara:ops',
+      mfa_verified: true,
     };
 
     // Set up the fluent insert chain.
@@ -403,15 +407,8 @@ describe('POST /api/tenants/:id/lia', () => {
     expect(body.details).toBeDefined();
   });
 
-  it('returns 403 when JWT tenant does not match URL param', async () => {
-    mockAuthClaims = {
-      sub: 'user-002',
-      email: 'other@agency.com',
-      tenant_id: OTHER_TENANT_ID,
-      agency_role: 'agency:admin',
-      estalara_staff: false,
-      mfa_verified: false,
-    };
+  it('returns 401 for a verified token that is not staff (FOLLOW-1335)', async () => {
+    mockAuthClaims = { ...NON_STAFF_CLAIMS };
 
     const { POST } = await import('../../app/api/tenants/[id]/lia/route.js');
     const req = makePostRequest(
@@ -421,6 +418,7 @@ describe('POST /api/tenants/:id/lia', () => {
     );
     const res = await POST(req, { params: Promise.resolve({ id: TENANT_ID }) });
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(401);
+    expect(mockDbClient.insert).not.toHaveBeenCalled();
   });
 });

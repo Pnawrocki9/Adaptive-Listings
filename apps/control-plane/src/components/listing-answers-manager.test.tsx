@@ -1,6 +1,7 @@
 /**
- * RTL tests for ListingAnswersManager — the per-listing FAQ answer UI shared by the agency page and
- * `/admin/tenants/[id]/listings/[listingId]/answers` (FOLLOW-1334).
+ * RTL tests for ListingAnswersManager — the per-listing FAQ answer UI of
+ * `/admin/tenants/[id]/listings/[listingId]/answers` (FOLLOW-1334; the agency page that also
+ * mounted it was deleted by FOLLOW-1335).
  *
  * Covers: load (list, empty, error), add, edit, delete, and that EVERY call targets the tenant
  * passed as a prop (`/api/tenants/:tenantId/answers`).

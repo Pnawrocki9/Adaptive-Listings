@@ -194,8 +194,12 @@ export async function verifyTracerAdminAuth(req: NextRequest): Promise<TracerAut
         ...staffRoleTier(role),
       };
     }
+    // Defence in depth: since FOLLOW-1335 @estalara/auth only yields staff claims, so this is
+    // unreachable by type — kept so a verified token that is not staff still gets an explicit
+    // 403 if the claim shape ever widens again.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- see comment above
     if (claims) {
-      // Tenant JWT — not allowed for admin tracer routes.
+      // A verified token that is not staff — not allowed for admin tracer routes.
       return {
         ok: false,
         status: 403,

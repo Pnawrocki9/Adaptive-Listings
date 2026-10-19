@@ -1,16 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  extractClaims,
-  isStaffClaims,
-  isTenantClaims,
-  requireAgencyRole,
-  requireStaffRole,
-} from '../jwt.js';
+import { extractClaims, isStaffClaims, requireStaffRole } from '../jwt.js';
+import type { AuthClaims } from '../jwt.js';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
-const agencyPayload = {
+/** The tenant-user payload the hook minted for agency users before FOLLOW-1335. */
+const formerAgencyPayload = {
   sub: 'user-uuid-001',
   email: 'owner@acme.com',
   tenant_id: 'tenant-uuid-001',
@@ -30,49 +26,40 @@ const staffPayload = {
 // ─── extractClaims ────────────────────────────────────────────────────────────
 
 describe('extractClaims', () => {
-  it('valid agency JWT payload → returns TenantClaims', () => {
-    const claims = extractClaims(agencyPayload);
-    expect(isTenantClaims(claims)).toBe(true);
-    expect(claims.sub).toBe('user-uuid-001');
-    expect(claims.email).toBe('owner@acme.com');
-    if (isTenantClaims(claims)) {
-      expect(claims.tenant_id).toBe('tenant-uuid-001');
-      expect(claims.agency_role).toBe('agency:owner');
-      expect(claims.estalara_staff).toBe(false);
-    }
-  });
-
   it('valid staff JWT payload → returns StaffClaims', () => {
     const claims = extractClaims(staffPayload);
     expect(isStaffClaims(claims)).toBe(true);
     expect(claims.sub).toBe('staff-uuid-001');
-    if (isStaffClaims(claims)) {
-      expect(claims.estalara_staff).toBe(true);
-      expect(claims.estalara_role).toBe('estalara:superadmin');
-      expect(claims.tenant_id).toBeNull();
-    }
+    expect(claims.estalara_staff).toBe(true);
+    expect(claims.estalara_role).toBe('estalara:superadmin');
+    expect(claims.tenant_id).toBeNull();
   });
 
-  it('non-staff payload missing tenant_id → throws', () => {
-    expect(() => extractClaims({ sub: 'u', email: 'a@b.com', estalara_staff: false })).toThrow(
-      'tenant_id',
+  it('FOLLOW-1335: a former agency payload (tenant_id + agency role, not staff) → throws', () => {
+    expect(() => extractClaims(formerAgencyPayload)).toThrow('not an Estalara staff token');
+  });
+
+  it('a payload without estalara_staff → throws (no implicit tenant-user path)', () => {
+    expect(() => extractClaims({ sub: 'u', email: 'a@b.com', tenant_id: 't' })).toThrow(
+      'not an Estalara staff token',
+    );
+  });
+
+  it('estalara_staff must be the boolean true, not a truthy string', () => {
+    expect(() => extractClaims({ ...staffPayload, estalara_staff: 'true' })).toThrow(
+      'not an Estalara staff token',
     );
   });
 
   it('missing sub → throws', () => {
     expect(() =>
-      extractClaims({ email: 'a@b.com', tenant_id: 't', agency_role: 'agency:admin' }),
+      extractClaims({ email: 'a@b.com', estalara_staff: true, estalara_role: 'estalara:ops' }),
     ).toThrow('sub');
   });
 
   it('missing email → throws', () => {
     expect(() =>
-      extractClaims({
-        sub: 'u',
-        tenant_id: 't',
-        agency_role: 'agency:viewer',
-        estalara_staff: false,
-      }),
+      extractClaims({ sub: 'u', estalara_staff: true, estalara_role: 'estalara:ops' }),
     ).toThrow('email');
   });
 
@@ -91,90 +78,27 @@ describe('extractClaims', () => {
     const claims = extractClaims({
       sub: 'u',
       email: 'a@b.com',
-      tenant_id: 't',
-      agency_role: 'agency:viewer',
-      estalara_staff: false,
+      estalara_staff: true,
+      estalara_role: 'estalara:readonly',
     });
     expect(claims.mfa_verified).toBe(false);
   });
-});
 
-// ─── Type guards ─────────────────────────────────────────────────────────────
-
-describe('isTenantClaims / isStaffClaims type guards', () => {
-  it('isTenantClaims returns true for agency claims', () => {
-    const claims = extractClaims(agencyPayload);
-    expect(isTenantClaims(claims)).toBe(true);
-    expect(isStaffClaims(claims)).toBe(false);
-  });
-
-  it('isStaffClaims returns true for staff claims', () => {
-    const claims = extractClaims(staffPayload);
-    expect(isStaffClaims(claims)).toBe(true);
-    expect(isTenantClaims(claims)).toBe(false);
+  it('a staff payload carrying a stray tenant_id still yields tenant_id null', () => {
+    const claims = extractClaims({ ...staffPayload, tenant_id: 'tenant-uuid-001' });
+    expect(claims.tenant_id).toBeNull();
   });
 });
 
-// ─── requireAgencyRole ────────────────────────────────────────────────────────
+// ─── Type guard ──────────────────────────────────────────────────────────────
 
-describe('requireAgencyRole', () => {
-  const ownerClaims = extractClaims({ ...agencyPayload, agency_role: 'agency:owner' });
-  const adminClaims = extractClaims({ ...agencyPayload, agency_role: 'agency:admin' });
-  const viewerClaims = extractClaims({ ...agencyPayload, agency_role: 'agency:viewer' });
-  const staffClaims = extractClaims(staffPayload);
-
-  it('owner passes owner check', () => {
-    expect(() => {
-      requireAgencyRole(ownerClaims, 'agency:owner');
-    }).not.toThrow();
+describe('isStaffClaims type guard', () => {
+  it('returns true for staff claims', () => {
+    expect(isStaffClaims(extractClaims(staffPayload))).toBe(true);
   });
 
-  it('owner passes admin check (higher rank satisfies lower requirement)', () => {
-    expect(() => {
-      requireAgencyRole(ownerClaims, 'agency:admin');
-    }).not.toThrow();
-  });
-
-  it('owner passes viewer check', () => {
-    expect(() => {
-      requireAgencyRole(ownerClaims, 'agency:viewer');
-    }).not.toThrow();
-  });
-
-  it('admin passes admin check', () => {
-    expect(() => {
-      requireAgencyRole(adminClaims, 'agency:admin');
-    }).not.toThrow();
-  });
-
-  it('admin passes viewer check', () => {
-    expect(() => {
-      requireAgencyRole(adminClaims, 'agency:viewer');
-    }).not.toThrow();
-  });
-
-  it('viewer fails admin check → throws', () => {
-    expect(() => {
-      requireAgencyRole(viewerClaims, 'agency:admin');
-    }).toThrow('insufficient');
-  });
-
-  it('viewer fails owner check → throws', () => {
-    expect(() => {
-      requireAgencyRole(viewerClaims, 'agency:owner');
-    }).toThrow('insufficient');
-  });
-
-  it('admin fails owner check → throws', () => {
-    expect(() => {
-      requireAgencyRole(adminClaims, 'agency:owner');
-    }).toThrow('insufficient');
-  });
-
-  it('staff claims throw with agency guard (not a tenant user)', () => {
-    expect(() => {
-      requireAgencyRole(staffClaims, 'agency:viewer');
-    }).toThrow('Estalara staff');
+  it('returns false for a non-staff object reaching it through an untyped path', () => {
+    expect(isStaffClaims(formerAgencyPayload as unknown as AuthClaims)).toBe(false);
   });
 });
 
@@ -184,7 +108,6 @@ describe('requireStaffRole', () => {
   const superadminClaims = extractClaims({ ...staffPayload, estalara_role: 'estalara:superadmin' });
   const opsClaims = extractClaims({ ...staffPayload, estalara_role: 'estalara:ops' });
   const readonlyClaims = extractClaims({ ...staffPayload, estalara_role: 'estalara:readonly' });
-  const agencyClaims = extractClaims(agencyPayload);
 
   it('superadmin passes superadmin check', () => {
     expect(() => {
@@ -234,9 +157,9 @@ describe('requireStaffRole', () => {
     }).toThrow('insufficient');
   });
 
-  it('agency claims throw with staff guard (not Estalara staff)', () => {
+  it('a non-staff object (untyped path) throws with the staff guard', () => {
     expect(() => {
-      requireStaffRole(agencyClaims, 'estalara:readonly');
-    }).toThrow('agency users');
+      requireStaffRole(formerAgencyPayload as unknown as AuthClaims, 'estalara:readonly');
+    }).toThrow('Estalara staff access required');
   });
 });

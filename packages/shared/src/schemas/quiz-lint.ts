@@ -25,6 +25,7 @@
 import { z } from 'zod';
 
 import { CANONICAL_ARCHETYPE_IDS } from '../archetypes.js';
+import { isTraitId } from '../traits.js';
 import type { QuizLanguage } from './quiz-config.js';
 import {
   QuizDefinitionSchema,
@@ -63,6 +64,12 @@ export const QUIZ_LINT_ERROR_CODES = [
   'multi_question_invalid',
   'confirm_missing_name',
   'confirm_missing_sentence',
+  'confirm_missing',
+  'confirm_alternative_unnamed',
+  'confirm_alternative_duplicate',
+  'languages_incomplete',
+  'invalid_question_kind',
+  'invalid_trait_list',
 ] as const;
 
 /** Stable codes of the lint WARNINGS (they never block a save). */
@@ -105,6 +112,38 @@ export interface QuizLintOptions {
   widgetLanguage?: QuizLanguage;
 }
 
+/**
+ * True when a cycle is reachable from the root (iterative three-colour DFS). Dangling `next`
+ * references are ignored. The serve schema already rejects a cycle; lint uses this to skip the
+ * path enumeration, which is exponential in visits on a cyclic draft.
+ */
+function hasCycleFromRoot(def: QuizDefinition): boolean {
+  const byId = new Map(def.questions.map((q) => [q.id, q]));
+  const colour = new Map<string, 1 | 2>(); // 1 = on the stack, 2 = finished
+  const stack: { id: string; next: number }[] = [];
+  if (byId.has(def.root)) stack.push({ id: def.root, next: 0 });
+  if (byId.has(def.root)) colour.set(def.root, 1);
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1];
+    if (!frame) break;
+    const answers = byId.get(frame.id)?.answers ?? [];
+    const target = answers[frame.next]?.next;
+    frame.next += 1;
+    if (frame.next > answers.length) {
+      colour.set(frame.id, 2);
+      stack.pop();
+    } else if (typeof target === 'string' && byId.has(target)) {
+      const seen = colour.get(target);
+      if (seen === 1) return true;
+      if (seen === undefined) {
+        colour.set(target, 1);
+        stack.push({ id: target, next: 0 });
+      }
+    }
+  }
+  return false;
+}
+
 /** A text bag in the definition together with where it lives. */
 interface TextRef {
   path: (string | number)[];
@@ -138,7 +177,13 @@ function collectTexts(def: QuizDefinition): TextRef[] {
  * `missing_translation` (EN or PL absent), `empty_label` (blank text in any language),
  * `label_too_long` (> 160 characters), `multi_question_invalid` (a `multi` answer with weights
  * or a `next`), `confirm_missing_name` / `confirm_missing_sentence` (a reachable non-neutral
- * archetype without a confirmation name / sentence, when `confirm` is present).
+ * archetype without a confirmation name / sentence), `confirm_missing` (no `confirm` block at
+ * all — a tenant must not be able to silently drop the confirmation and with it the accuracy
+ * metric), `confirm_alternative_unnamed` (an alternative without an EN + PL name),
+ * `confirm_alternative_duplicate`, `languages_incomplete` (`languages` lacks `en` or `pl`),
+ * `invalid_question_kind`, `invalid_trait_list` (unknown trait, more than 4, or a repeat).
+ *
+ * A cyclic draft (already rejected by the serve schema) skips every path-based check.
  *
  * Warnings: `unreachable_archetype` (outside the allow-list), `argmax_tie`,
  * `weight_out_of_range` (negative or > 10), `duplicate_label`, `neutral_terminal_answer`
@@ -226,7 +271,12 @@ export function lintQuizDefinition(
     );
   }
 
-  const { paths, truncated } = enumerateQuizPaths(def);
+  // A cyclic draft is rejected by the serve schema already; enumerating its paths would burn
+  // time (exponential visits) for nothing, so every path-based check is skipped for it.
+  const cyclic = hasCycleFromRoot(def);
+  const { paths, truncated } = cyclic
+    ? { paths: [] as ReturnType<typeof enumerateQuizPaths>['paths'], truncated: false }
+    : enumerateQuizPaths(def);
   if (paths.length > limits.maxPaths || truncated) {
     error(
       'too_many_paths',
@@ -259,9 +309,72 @@ export function lintQuizDefinition(
     }
   }
 
+  // ── Languages, question kinds, trait lists ───────────────────────────────────
+  for (const lang of REQUIRED_QUIZ_LANGUAGES) {
+    if (!def.languages.includes(lang)) {
+      error(
+        'languages_incomplete',
+        ['languages'],
+        `"languages" must include ${lang.toUpperCase()} (EN and PL are both required)`,
+      );
+    }
+  }
+  def.questions.forEach((q, qi) => {
+    if (q.kind !== undefined && q.kind !== 'single' && q.kind !== 'multi') {
+      error(
+        'invalid_question_kind',
+        ['questions', qi, 'kind'],
+        `question "${q.id}" has kind "${q.kind}" — allowed: single, multi`,
+      );
+    }
+    q.answers.forEach((a, ai) => {
+      const traits = a.traits ?? [];
+      const unknown = traits.filter((t) => !isTraitId(t));
+      if (unknown.length > 0 || traits.length > 4 || new Set(traits).size !== traits.length) {
+        error(
+          'invalid_trait_list',
+          ['questions', qi, 'answers', ai, 'traits'],
+          unknown.length > 0
+            ? `unknown trait(s): ${unknown.join(', ')}`
+            : 'traits must be at most 4 and must not repeat',
+        );
+      }
+    });
+  });
+
   // ── Confirmation completeness ────────────────────────────────────────────────
   const reachableLeaves = new Set<string>(paths.map((p) => p.leaf));
-  if (def.confirm) {
+  if (!def.confirm) {
+    error(
+      'confirm_missing',
+      ['confirm'],
+      'a confirm block is required — every non-neutral result needs a confirmation screen',
+    );
+  } else {
+    const named = (id: string): boolean => {
+      const bag = def.confirm?.names_i18n[id];
+      return REQUIRED_QUIZ_LANGUAGES.every((lang) => (bag?.[lang] ?? '').trim() !== '');
+    };
+    for (const [id, alts] of Object.entries(def.confirm.alternatives)) {
+      const seen = new Set<string>();
+      alts.forEach((alt, i) => {
+        if (seen.has(alt)) {
+          error(
+            'confirm_alternative_duplicate',
+            ['confirm', 'alternatives', id, i],
+            `"${alt}" is listed twice in the alternatives of "${id}"`,
+          );
+        }
+        seen.add(alt);
+        if (!named(alt)) {
+          error(
+            'confirm_alternative_unnamed',
+            ['confirm', 'alternatives', id, i],
+            `alternative "${alt}" of "${id}" has no EN + PL name in confirm.names_i18n`,
+          );
+        }
+      });
+    }
     for (const id of CANONICAL_ARCHETYPE_IDS) {
       if (id === 'neutral' || !reachableLeaves.has(id)) continue;
       if (!def.confirm.names_i18n[id]) {
@@ -289,7 +402,7 @@ export function lintQuizDefinition(
   }
 
   // ── Warnings ─────────────────────────────────────────────────────────────────
-  for (const id of computeUnreachableArchetypes(def)) {
+  for (const id of cyclic ? [] : computeUnreachableArchetypes(def)) {
     warn('unreachable_archetype', ['questions'], `no path resolves to "${id}"`);
   }
 
@@ -390,7 +503,7 @@ export function lintQuizDefinition(
     });
   });
 
-  for (const amb of computeAmbiguousPaths(def)) {
+  for (const amb of cyclic ? [] : computeAmbiguousPaths(def)) {
     const lastQuestion = amb.questionIds[amb.questionIds.length - 1] ?? '';
     const qi = def.questions.findIndex((q) => q.id === lastQuestion);
     const lastAnswer = amb.answerIds[amb.answerIds.length - 1] ?? '';

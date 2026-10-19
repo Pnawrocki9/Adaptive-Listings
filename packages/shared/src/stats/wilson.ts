@@ -79,6 +79,15 @@ export function minSuccessesForLowerBound(
  * successes, `round(rate * n) / n`) already has a Wilson lower bound ≥ `bound` — how many
  * resolved runs are needed if the true accuracy turns out to be about `rate`.
  *
+ * CAVEAT — this is a FIRST-CLEAR value, NOT "n and above". Because `round(rate * n)` is an
+ * integer, the observed proportion wobbles around `rate` and the lower bound is NOT monotone
+ * in `n`: observed 95 % first clears 0.90 at n = 127 but fails again at n = 131-139 and
+ * 151-152; 94 % first clears at 204 and last fails at 228; 93 % first clears at 362 and last
+ * fails at 408; 92 % first clears at 830 and last fails at 907. A report must therefore NEVER
+ * present "n >= 127" as a sufficient sample; the sufficient statement is the exact
+ * `minSuccessesForLowerBound(n, bound)` at the n actually reached (372 of 400 for the
+ * pre-registered analysis).
+ *
  * @param rate - observed proportion in (0, 1].
  * @param bound - required lower bound (default 0.90).
  * @param z - normal quantile, default two-sided 95 %.

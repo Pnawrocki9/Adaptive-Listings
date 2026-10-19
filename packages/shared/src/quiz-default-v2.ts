@@ -15,6 +15,12 @@
  * the screen template is "Based on your answers: {name} — {sentence}. Is that right?" /
  * "Na podstawie Twoich odpowiedzi: {nazwa} — {zdanie}. Zgadza się?".
  *
+ * NOT definition content — SDK chrome (`CHROME_LABELS`, EN + PL) owned by FOLLOW-1357 / Q2: the
+ * trait screens' exclusive "None of these" / "Żadne z powyższych" option, the confirmation
+ * template above, the two buttons ("Yes, that's me" / "Not quite"; "Tak, to ja" / "Nie do
+ * końca"), the correction texts ("Which fits you better?" / "Co pasuje lepiej?") and "None of
+ * these — show me everything" / "Żadne — pokaż wszystkie oferty".
+ *
  * Consumers: the control plane serves it from `GET /api/quiz/public-config` when a tenant has
  * no active `quiz_definitions` row (FOLLOW-1358 / Q3) and the admin editor's "load built-in
  * default" action (FOLLOW-1362 / Q7). The SDK's built-in fallback stays EN-only (bundle budget,
@@ -315,7 +321,7 @@ function buildDefaultQuizDefinitionV2(): QuizDefinition {
         retiree_relocator: { en: 'Retirement move', pl: 'Przeprowadzka na emeryturę' },
         lifestyle_expat: {
           en: 'Relocating and working there',
-          pl: 'Przeprowadzka z pracą na miejscu',
+          pl: 'Przeprowadzka i praca na miejscu',
         },
         diaspora_buyer: { en: 'Moving back home', pl: 'Powrót do kraju' },
         second_home_buyer: { en: 'Holiday or second home', pl: 'Dom wakacyjny lub drugi dom' },
@@ -324,7 +330,7 @@ function buildDefaultQuizDefinitionV2(): QuizDefinition {
       sentences_i18n: {
         yield_hunter: {
           en: "you're buying to earn income from long-term tenants, and nobody in your household will live there",
-          pl: 'kupujesz, żeby zarabiać na najmie długoterminowym, a nikt z Twojego domu nie będzie tam mieszkać',
+          pl: 'kupujesz, żeby zarabiać na najmie długoterminowym, a nikt z Twoich domowników nie będzie tam mieszkać',
         },
         vacation_rental_investor: {
           en: "you're buying to earn from holiday or short-term lets, and your own stays will be occasional at most",
@@ -344,15 +350,15 @@ function buildDefaultQuizDefinitionV2(): QuizDefinition {
         },
         family_buyer: {
           en: "you've owned before and want more space or a better home",
-          pl: 'masz już za sobą własne lokum i szukasz więcej przestrzeni lub lepszego domu',
+          pl: 'to nie Twój pierwszy własny dom i szukasz więcej przestrzeni lub lepszego domu',
         },
         downsizer: {
           en: "you've owned before and now want something smaller and easier to look after",
-          pl: 'masz już za sobą własne lokum i teraz chcesz czegoś mniejszego i łatwiejszego w utrzymaniu',
+          pl: 'to nie Twój pierwszy własny dom i teraz chcesz czegoś mniejszego i łatwiejszego w utrzymaniu',
         },
         retiree_relocator: {
           en: "you're moving to a new country to make it your main home, and you're retired or about to retire",
-          pl: 'przeprowadzasz się do innego kraju, by zamieszkać tam na stałe, a Ty jesteś na emeryturze lub wkrótce na nią przechodzisz',
+          pl: 'przeprowadzasz się do innego kraju, by zamieszkać tam na stałe, i jesteś na emeryturze lub wkrótce na nią przechodzisz',
         },
         lifestyle_expat: {
           en: "you're moving to a new country to make it your main home, and you'll keep working there",

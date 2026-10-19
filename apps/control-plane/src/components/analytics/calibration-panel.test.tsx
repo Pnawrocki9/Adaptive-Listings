@@ -1,6 +1,6 @@
 /**
- * RTL tests for CalibrationSection — the Calibration + Conversion Aggregates panel shared by the
- * agency labels page and the staff labels page (FOLLOW-173/FOLLOW-174; staff port FOLLOW-1334).
+ * RTL tests for CalibrationSection — the Calibration + Conversion Aggregates panel of the staff
+ * labels page (FOLLOW-173/FOLLOW-174; staff port FOLLOW-1334; agency page deleted by FOLLOW-1335).
  *
  * Covers: loading skeleton → rendered tables; empty state; HTTP 500 → visible error banner and NO
  * numbers (Rule K.2); `data_source !== 'clickhouse'` → MOCK DATA badge; window selector re-fetches;
@@ -131,7 +131,7 @@ describe('CalibrationSection', () => {
     });
   });
 
-  it('without a tenantId prop the URL is byte-identical to the agency page’s; the window re-fetches', async () => {
+  it('without a tenantId prop no tenant_id is sent; the window re-fetches', async () => {
     const fetchMock = stubFetch({ ok: true, status: 200, body: DATA });
 
     render(<CalibrationSection />);

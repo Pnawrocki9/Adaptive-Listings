@@ -6,8 +6,8 @@
  *
  * Authorization — STAFF-ONLY (ADR-0018 §3, FOLLOW-599):
  *   Uses `resolveTenantAccess(req, { allowStaffOverride: true, tenantId: <?tenant_id> })`.
- *   An AGENCY caller is rejected with 403 — agency audit read is an explicitly
- *   deferred Phase-2 item (ADR-0018 §3), OUT OF SCOPE here. A staff caller MUST
+ *   (The 403 for an AGENCY caller went with the agency roles, FOLLOW-1335: a non-staff
+ *   caller is now 401 inside the helper.) A staff caller MUST
  *   supply `?tenant_id=<uuid>`, which the helper validates against the `tenants`
  *   table (invariant 4); that validated id becomes the SINGLE tenant fence.
  *
@@ -206,7 +206,7 @@ async function fetchAuditEntries(
  *
  * @returns 200 AuditResponse on success (`data_source: 'real' | 'mock'`).
  * @returns 400 when staff supplies no `tenant_id`, or query params fail Zod.
- * @returns 401 when unauthenticated; 403 for an agency caller (deferred Phase-2).
+ * @returns 401 when there is no staff caller.
  * @returns 404 when the staff-supplied `tenant_id` is unknown/soft-deleted.
  * @returns 500 when the DB is configured but the query throws (Rule K.2).
  */
@@ -223,20 +223,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     });
   } catch (err) {
     return accessErrorToResponse(err);
-  }
-
-  // STAFF-ONLY: agency audit read is a deferred Phase-2 item (ADR-0018 §3).
-  if (access.via === 'agency') {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'forbidden',
-          message:
-            'Audit log read is Estalara-staff-only (ADR-0018 §3); agency audit access is a deferred Phase-2 item.',
-        },
-      },
-      { status: 403 },
-    );
   }
 
   const tenantId = access.tenantId;

@@ -160,12 +160,11 @@ function buildMockSummary(tenantId: string): {
 /**
  * GET /api/dashboard/analytics/summary
  *
- * Auth (ADR-0018 §2, FOLLOW-594): `resolveTenantAccess` with `allowStaffOverride`.
- * The agency path is unchanged (tenant from the session claim). An Estalara staff
- * caller may read any tenant by supplying an explicit `?tenant_id=<uuid>` — which
- * is validated against the `tenants` table — and that validated id becomes the
- * SINGLE tenant fence bound into the ClickHouse query (no session-claim tenant on
- * the staff path). Staff calls without `?tenant_id` are rejected (400).
+ * Auth (ADR-0018 §2, FOLLOW-594; staff-only since FOLLOW-1335): `resolveTenantAccess`
+ * with `allowStaffOverride`. An Estalara staff caller (any rank) reads a tenant by
+ * supplying an explicit `?tenant_id=<uuid>` — which is validated against the `tenants`
+ * table — and that validated id becomes the SINGLE tenant fence bound into the
+ * ClickHouse query. Calls without `?tenant_id` are rejected (400).
  *
  * Identity caveat (RETRO-187): `resolveTenantAccess` REJECTS the headless
  * `ADMIN_API_SECRET` Bearer path for staff (403 — a shared secret is not
@@ -175,17 +174,15 @@ function buildMockSummary(tenantId: string): {
  * @returns 200 SummaryResponse on success.
  * @returns 400 when a staff caller omits `?tenant_id`.
  * @returns 401 when no valid session is present.
- * @returns 403 when the caller is not permitted (e.g. agency acting on a foreign tenant).
+ * @returns 403 when the caller is not permitted.
  * @returns 404 when a staff caller supplies an unknown tenant id.
  * @returns 500 when CLICKHOUSE_URL is set but the ClickHouse query fails
  *   (Rule K.2 — fail loud; never silently fall back to mock data when a real
  *   ClickHouse is configured).
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  // One auth path for agency + staff (ADR-0018 invariant 5): `access.tenantId` is
-  // the ONLY tenant fence — bound into the ClickHouse query as param_tenant_id for
-  // BOTH paths. The agency branch sources it from the session claim; the staff
-  // branch from the validated `?tenant_id`.
+  // ADR-0018 invariant 5: `access.tenantId` (the validated `?tenant_id`) is the ONLY
+  // tenant fence — bound into the ClickHouse query as param_tenant_id.
   const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
   let access: TenantAccess;
   try {
@@ -194,7 +191,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       // exactOptionalPropertyTypes: omit the key when absent rather than passing
       // `undefined`, so a staff caller without ?tenant_id still reaches resolve's 400.
       ...(tenantIdParam ? { tenantId: tenantIdParam } : {}),
-      minAgencyRole: 'agency:viewer',
     });
   } catch (err) {
     return accessErrorToResponse(err);

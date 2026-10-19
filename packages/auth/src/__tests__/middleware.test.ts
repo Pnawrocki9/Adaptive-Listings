@@ -11,7 +11,7 @@ import { createHmac } from 'node:crypto';
 import { describe, expect, it, vi, afterEach } from 'vitest';
 
 import { getAuthClaims } from '../middleware.js';
-import { isTenantClaims, isStaffClaims } from '../jwt.js';
+import { isStaffClaims } from '../jwt.js';
 
 // ─── JWT test helper ──────────────────────────────────────────────────────────
 
@@ -52,7 +52,8 @@ function signJwtTampered(payload: Record<string, unknown>): string {
 
 const TEST_SECRET = 'super-test-secret-32-chars-long!!';
 
-const tenantPayload = {
+/** The tenant-user payload the hook minted for agency users before FOLLOW-1335. */
+const formerAgencyPayload = {
   sub: 'user-uuid-001',
   email: 'owner@acme.com',
   tenant_id: 'tenant-uuid-001',
@@ -85,20 +86,11 @@ afterEach(() => {
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('getAuthClaims — JWT signature verification (TICKET-FIX-013)', () => {
-  it('valid TenantClaims token with correct secret → returns TenantClaims', async () => {
+  it('FOLLOW-1335: a validly signed former agency token → null (not a caller any more)', async () => {
     vi.stubEnv('SUPABASE_JWT_SECRET', TEST_SECRET);
-    const token = signJwt(tenantPayload, TEST_SECRET);
-    const req = makeRequest(token);
-    const claims = await getAuthClaims(req);
-    expect(claims).not.toBeNull();
-    expect(claims?.sub).toBe('user-uuid-001');
-    expect(claims?.email).toBe('owner@acme.com');
-    // Narrow to TenantClaims via type guard
-    if (!claims || !isTenantClaims(claims)) {
-      throw new Error('Expected TenantClaims');
-    }
-    expect(claims.tenant_id).toBe('tenant-uuid-001');
-    expect(claims.agency_role).toBe('agency:owner');
+    const token = signJwt(formerAgencyPayload, TEST_SECRET);
+    const claims = await getAuthClaims(makeRequest(token));
+    expect(claims).toBeNull();
   });
 
   it('valid StaffClaims token with correct secret → returns StaffClaims', async () => {
@@ -118,7 +110,9 @@ describe('getAuthClaims — JWT signature verification (TICKET-FIX-013)', () => 
 
   it('tampered signature → returns null', async () => {
     vi.stubEnv('SUPABASE_JWT_SECRET', TEST_SECRET);
-    const token = signJwtTampered(tenantPayload);
+    // A staff payload: it would be accepted if the signature were valid, so a null proves the
+    // signature check (a non-staff payload is null for another reason since FOLLOW-1335).
+    const token = signJwtTampered(staffPayload);
     const req = makeRequest(token);
     const claims = await getAuthClaims(req);
     expect(claims).toBeNull();
@@ -126,8 +120,8 @@ describe('getAuthClaims — JWT signature verification (TICKET-FIX-013)', () => 
 
   it('missing SUPABASE_JWT_SECRET → returns null (fail-secure)', async () => {
     vi.stubEnv('SUPABASE_JWT_SECRET', '');
-    // Generate a valid-looking token; it should still be rejected.
-    const token = signJwt(tenantPayload, TEST_SECRET);
+    // Generate a valid-looking staff token; it should still be rejected.
+    const token = signJwt(staffPayload, TEST_SECRET);
     const req = makeRequest(token);
     const claims = await getAuthClaims(req);
     expect(claims).toBeNull();
@@ -157,7 +151,7 @@ describe('getAuthClaims — JWT signature verification (TICKET-FIX-013)', () => 
   it('expired token — signature still valid → returns claims (expiry not checked here)', async () => {
     vi.stubEnv('SUPABASE_JWT_SECRET', TEST_SECRET);
     const expiredPayload = {
-      ...tenantPayload,
+      ...staffPayload,
       // iat/exp well in the past
       iat: 1000000000,
       exp: 1000000001,
@@ -167,7 +161,7 @@ describe('getAuthClaims — JWT signature verification (TICKET-FIX-013)', () => 
     // Signature verification does not enforce expiry — that is the caller's job.
     const claims = await getAuthClaims(req);
     expect(claims).not.toBeNull();
-    expect(claims?.sub).toBe('user-uuid-001');
+    expect(claims?.sub).toBe('staff-uuid-001');
   });
 
   it('no Authorization header and no cookie → returns null', async () => {
@@ -179,12 +173,12 @@ describe('getAuthClaims — JWT signature verification (TICKET-FIX-013)', () => 
 
   it('token delivered via sb-access-token cookie → verified and returned', async () => {
     vi.stubEnv('SUPABASE_JWT_SECRET', TEST_SECRET);
-    const token = signJwt(tenantPayload, TEST_SECRET);
+    const token = signJwt(staffPayload, TEST_SECRET);
     const req = new Request('https://example.com/api/test', {
       headers: { cookie: `sb-access-token=${token}; other=value` },
     });
     const claims = await getAuthClaims(req);
     expect(claims).not.toBeNull();
-    expect(claims?.sub).toBe('user-uuid-001');
+    expect(claims?.sub).toBe('staff-uuid-001');
   });
 });

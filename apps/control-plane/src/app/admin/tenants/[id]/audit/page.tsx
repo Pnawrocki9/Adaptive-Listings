@@ -13,8 +13,8 @@
  * audited (CEO Q4) — this surface never mutates `staff_audit_log`.
  *
  * Staff gating: the existing `/admin/*` middleware already requires a valid staff
- * session for this route — no new middleware is added here. Agency audit read is a
- * deferred Phase-2 item (rejected 403 in the route, ADR-0018 §3).
+ * session for this route — no new middleware is added here. (The agency audit read
+ * ADR-0018 §3 deferred never shipped; the agency roles were removed by FOLLOW-1335.)
  *
  * @module apps/control-plane/src/app/admin/tenants/[id]/audit/page
  */

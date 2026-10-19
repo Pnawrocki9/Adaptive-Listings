@@ -9,15 +9,16 @@
  * widget renders (FOLLOW-271 — the `enabled` key was stripped from the JSONB blob);
  * it is consumed at runtime by `GET /api/quiz/public-config`. Until now its only
  * human write path was the AGENCY dashboard toggle (`PATCH /api/tenants/:id` from
- * `/dashboard/quiz`) — staff had no port, a gap the staff quiz-config editor
+ * `/dashboard/quiz`, a page FOLLOW-1335 deleted) — staff had no port, a gap the staff
+ * quiz-config editor
  * (`admin/tenants/[id]/quiz/quiz-config-editor.tsx`) explicitly documented as a
  * planned follow-up. This route closes it, mirroring the `al-state` sibling
  * (FOLLOW-633) rather than staff-porting `PATCH /api/tenants/:id`, whose surface
  * (name/domain/status) is much wider than this one boolean.
  *
  * Auth (ADR-0018 §2): `resolveTenantAccess` with `allowStaffOverride`.
- *   STAFF-ONLY — a resolved agency session is rejected 403 (`staff_only`); the
- *   agency's own toggle lives at `PATCH /api/tenants/:id` and is unaffected. An
+ *   STAFF-ONLY — a non-staff caller is 401 in `resolveTenantAccess` (FOLLOW-1335 removed
+ *   the agency path and this route's 403). An
  *   Estalara staff caller targets a tenant via `?tenant_id=<uuid>`, validated
  *   against the `tenants` table (invariant 4); that validated id is the SINGLE
  *   tenant fence bound into every query (invariant 5). This route uses
@@ -76,39 +77,21 @@ function requestIp(req: NextRequest): string | null {
   return req.headers.get('x-real-ip');
 }
 
-/** Resolve access shared by GET + PUT, then enforce STAFF-ONLY (no agency path). */
+/** Resolve the staff caller's access, shared by GET + PUT. */
 async function resolveStaffAccess(
   req: NextRequest,
-): Promise<{ access: Extract<TenantAccess, { via: 'staff' }> } | { error: NextResponse }> {
+): Promise<{ access: TenantAccess } | { error: NextResponse }> {
   const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
   let access: TenantAccess;
   try {
     access = await resolveTenantAccess(req, {
       allowStaffOverride: true,
-      // Lowest agency floor: a resolved agency session is allowed THROUGH the role
-      // check only to be rejected below with a clear staff-only 403 (rather than an
-      // ambiguous role error). The agency's own quiz toggle lives on the dashboard.
-      minAgencyRole: 'agency:viewer',
       // exactOptionalPropertyTypes (RETRO-189): omit the key when absent so a staff
       // caller without ?tenant_id reaches resolve's 400.
       ...(tenantIdParam ? { tenantId: tenantIdParam } : {}),
     });
   } catch (err) {
     return { error: accessErrorToResponse(err) };
-  }
-
-  if (access.via !== 'staff') {
-    return {
-      error: NextResponse.json(
-        {
-          error: {
-            code: 'staff_only',
-            message: 'This quiz on/off port is staff-only — agencies use the dashboard quiz toggle',
-          },
-        },
-        { status: 403 },
-      ),
-    };
   }
 
   return { access };

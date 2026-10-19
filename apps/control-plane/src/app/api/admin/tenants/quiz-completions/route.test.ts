@@ -14,7 +14,8 @@
  *     aggregates, mapped to snake_case with ISO timestamps.
  *   - Every query carries the resolved tenant fence.
  *   - limit is clamped to MAX (200); bad/negative params fall back to defaults.
- *   - Agency session → 403 staff_only.
+ *   - (FOLLOW-1335: the agency-session 403 `staff_only` case is gone with the agency path;
+ *     a non-staff caller is refused inside resolveTenantAccess.)
  *   - Rule K.2: a thrown DB query → 500, never an empty list.
  *
  * @module apps/control-plane/src/app/api/admin/tenants/quiz-completions/route.test
@@ -99,22 +100,6 @@ function staffAccess(
     role,
     canWrite: rank >= 2,
     isSuperadmin: rank >= 3,
-  };
-}
-
-function agencyAccess(tenantId: string): TenantAccess {
-  return {
-    via: 'agency',
-    tenantId,
-    claims: {
-      sub: 'user-uuid',
-      email: 'user@agency.com',
-      tenant_id: tenantId,
-      agency_role: 'agency:admin',
-      estalara_staff: false,
-      mfa_verified: true,
-    },
-    rawToken: 'agency-jwt',
   };
 }
 
@@ -278,15 +263,6 @@ describe('GET /api/admin/tenants/quiz-completions', () => {
     expect(body.offset).toBe(0); // fallback
     expect(db.limits).toEqual([200]);
     expect(db.offsets).toEqual([0]);
-  });
-
-  it('agency → 403 staff_only', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
-    makeDb([[], [{ cnt: 0 }], [], [], [{ cnt: 0 }]]);
-    const res = await GET(makeRequest({ tenant_id: TENANT_A }));
-    expect(res.status).toBe(403);
-    const body = (await res.json()) as { error: { code: string } };
-    expect(body.error.code).toBe('staff_only');
   });
 
   // ─── FOLLOW-1020 ──────────────────────────────────────────────────────────

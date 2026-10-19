@@ -1,7 +1,7 @@
 /**
  * Tests for GET /api/dashboard/analytics/summary
  *
- * Auth model (ADR-0018 §2, FOLLOW-594): the route delegates the entire agency +
+ * Auth model (ADR-0018 §2, FOLLOW-594; staff-only since FOLLOW-1335): the route delegates the
  * staff resolution to `resolveTenantAccess`, whose own end-to-end wiring (SSR
  * cookie, staff gate, tenant existence check, RLS trap) is exercised by
  * `src/lib/__tests__/resolve-tenant-access.test.ts` (17 cases). These route tests
@@ -49,23 +49,6 @@ vi.mock('@sentry/nextjs', () => ({
 const TENANT_A = '550e8400-e29b-41d4-a716-446655440001';
 const TENANT_B = '550e8400-e29b-41d4-a716-4466554400b2';
 
-/** A resolved agency access (tenant from the session claim). */
-function agencyAccess(tenantId = TENANT_A): TenantAccess {
-  return {
-    via: 'agency',
-    tenantId,
-    claims: {
-      sub: 'user-uuid',
-      email: 'user@agency.com',
-      tenant_id: tenantId,
-      agency_role: 'agency:admin',
-      estalara_staff: false,
-      mfa_verified: true,
-    },
-    rawToken: 'agency-jwt',
-  };
-}
-
 /** A resolved Estalara-staff access acting on an explicit, validated tenant. */
 function staffAccess(tenantId: string): TenantAccess {
   return {
@@ -105,8 +88,8 @@ async function parseBody<T>(res: Response): Promise<T> {
 describe('GET /api/dashboard/analytics/summary', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default: agency caller on their own tenant (byte-unchanged behavior).
-    mockResolve.mockResolvedValue(agencyAccess());
+    // Default: a staff caller on tenant A.
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     delete process.env.CLICKHOUSE_URL;
   });
 
@@ -128,9 +111,9 @@ describe('GET /api/dashboard/analytics/summary', () => {
     expect(body.error.code).toBe('unauthorized');
   });
 
-  it('returns 403 when resolveTenantAccess throws AccessError(403) (agency foreign tenant)', async () => {
+  it('returns 403 when resolveTenantAccess throws AccessError(403)', async () => {
     mockResolve.mockRejectedValue(
-      new AccessError(403, 'Access denied: agency session cannot act on a foreign tenant'),
+      new AccessError(403, 'Unauthorized: no tenant access for this request'),
     );
 
     const { GET } = await import('./route.js');
@@ -141,10 +124,10 @@ describe('GET /api/dashboard/analytics/summary', () => {
     expect(body.error.code).toBe('forbidden');
   });
 
-  // ─── Rule K.2: CLICKHOUSE_URL unset → mock path (agency) ─────────────────────
+  // ─── Rule K.2: CLICKHOUSE_URL unset → mock path ──────────────────────────────
 
   it('returns 200 with data_source: mock when CLICKHOUSE_URL is not set', async () => {
-    // CLICKHOUSE_URL deleted in beforeEach; agency access from beforeEach.
+    // CLICKHOUSE_URL deleted in beforeEach; staff access from beforeEach.
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest());
 
@@ -259,7 +242,7 @@ describe('GET /api/dashboard/analytics/summary', () => {
 
   // ─── Existing shape / invariant tests (mock path) ─────────────────────────────
 
-  it('returns 200 with correct shape for valid agency session', async () => {
+  it('returns 200 with correct shape for a valid staff session', async () => {
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest());
 

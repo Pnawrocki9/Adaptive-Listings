@@ -6,39 +6,34 @@
  * There is NO per-tenant override for this setting (locked CEO decision 2026-06-01).
  *
  * Auth:
- *   GET — Estalara staff (any tier — read-only view of a platform setting), OR
- *         agency:admin / agency:owner (global admin setting, not viewer-visible).
- *         The staff path was added for the /admin/settings page (Phase 0 of the
- *         superadmin-access work, 2026-07-20): staff sessions carry no agency_role,
- *         so the original agency-only GET returned 401 for the very accounts that
- *         are the ONLY ones allowed to PUT — leaving the selector readable by
- *         accounts that cannot write and unreadable by the account that can.
+ *   GET — Estalara staff (any tier — read-only view of a platform setting). The
+ *         agency admin/owner read (the deleted /dashboard/settings page) was
+ *         removed with the agency roles by FOLLOW-1335.
  *   PUT — Estalara platform staff ONLY (FOLLOW-456 / audit F-13). This setting is
  *         PLATFORM-GLOBAL (no per-tenant override — locked CEO decision 2026-06-01),
- *         so a tenant's own `agency:admin`/`agency:owner` role must NOT be sufficient
- *         to mutate it: that would let any tenant's admin change the model every other
- *         tenant is generated with. Gated via `verifyTracerAdminAuth` (same staff gate
+ *         so only an identified Estalara superadmin may mutate it. Gated via
+ *         `verifyTracerAdminAuth` (same staff gate
  *         as the K.3.6 tracer admin routes / FOLLOW-267) and then on `isSuperadmin`
  *         (FOLLOW-598; ADR-0018 #3). Since FOLLOW-1321 the Bearer <ADMIN_API_SECRET>
  *         path is 403 here too: it carries no identity, and every write appends a
  *         `staff_audit_log` row attributed to the acting superadmin.
  *
  * Auth mechanism:
- *   - GET: requireTenantSessionAccess() accepts a Bearer JWT / legacy cookie OR the
- *     @supabase/ssr browser session (FOLLOW-555), verifies it, extracts agency_role
- *     from the resolved claims, and throws on invalid/expired/absent auth.
+ *   - GET: verifyTracerAdminAuth() must return ok (ADMIN_API_SECRET Bearer, a staff
+ *     JWT, or a staff @supabase/ssr browser session); anything else is 401.
  *   - PUT: verifyTracerAdminAuth() must return `kind: 'staff'` (a verified Supabase
  *     JWT/session whose app_metadata/claims carry `estalara_staff: true`) with
- *     `isSuperadmin`. Tenant `agency:admin` JWTs are rejected (403) by the guard, ops /
- *     readonly staff and the ADMIN_API_SECRET Bearer are rejected (403) by the rank check.
+ *     `isSuperadmin`. Ops / readonly staff and the ADMIN_API_SECRET Bearer are rejected
+ *     (403) by the rank check.
  *   - The PUT body carries only the new model value; all authorization comes from
  *     the verified staff auth above, never from the request body.
  *
- * Replay defence:
- *   - Supabase JWTs carry an `exp` claim (HMAC-signed). Both requireTenantSessionAccess and
- *     verifyTracerAdminAuth's JWT path verify expiry on every call. Replaying an
- *     expired token fails. Replaying a live one re-sets the same model (idempotent
- *     state-wise) and appends one more attributed audit row.
+ * Replay defence — PARTIAL:
+ *   - The SSR session path validates the token with Supabase (`getUser()`, expiry included).
+ *     The Bearer / legacy-cookie JWT path does NOT check `exp` today (`getAuthClaims` verifies
+ *     the HMAC signature only), so an expired staff token is still accepted there until
+ *     FOLLOW-1307 (plan Phase 6 S1) adds the check. Replaying a live token re-sets the same
+ *     model (idempotent state-wise) and appends one more attributed audit row.
  *
  * Audit (ADR-0018 §3/§3a, FOLLOW-1321): the `app_config` upsert and one
  * `staff_audit_log` row (`generation_model.update`) commit in ONE `db.transaction()`.
@@ -65,10 +60,8 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
-// FOLLOW-555 (A3-F-04): GET is called by the settings dashboard page, so it must accept
-// the @supabase/ssr browser session (not just Bearer/legacy cookie). PUT stays on
-// verifyTracerAdminAuth (staff-only, already session-aware, carries the role rank).
-import { requireTenantSessionAccess } from '@/lib/session-auth';
+// GET and PUT both use verifyTracerAdminAuth (staff-only, session-aware, carries the role rank);
+// the agency read via requireTenantSessionAccess went with FOLLOW-1335.
 import { verifyTracerAdminAuth } from '@/lib/tracer-auth';
 import {
   getGlobalGenerationModel,
@@ -131,34 +124,15 @@ async function readConfigRow(): Promise<{
  *
  * Returns the current global generation model configuration.
  * Accepts Estalara staff auth (ADMIN_API_SECRET / staff JWT / staff SSR session —
- * the /admin/settings page path) OR an agency:admin / agency:owner session (the
- * legacy /dashboard/settings page path). Read-only in both cases; PUT below
- * stays staff-only.
+ * the /admin/settings page path). Read-only; PUT below needs a superadmin.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  // Staff path first (additive — cannot loosen the agency gate below: a non-staff
-  // agency session fails verifyTracerAdminAuth and falls through to the original
-  // agency:admin check unchanged).
   const staffAuth = await verifyTracerAdminAuth(req);
   if (!staffAuth.ok) {
-    let claims;
-    try {
-      claims = await requireTenantSessionAccess(req, 'agency:admin');
-    } catch {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'unauthorized',
-            message:
-              'Estalara staff auth, or a valid JWT with agency:admin or agency:owner role, is required',
-          },
-        },
-        { status: 401 },
-      );
-    }
-
-    // Suppress unused warning — claims are required for auth gating even if not used in body.
-    void claims;
+    return NextResponse.json(
+      { error: { code: 'unauthorized', message: 'Estalara staff auth is required' } },
+      { status: 401 },
+    );
   }
 
   try {
@@ -191,8 +165,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
  * Updates the global default LLM generation model.
  *
  * Estalara platform staff ONLY (FOLLOW-456 / audit F-13) — this is a
- * platform-global setting with no per-tenant override, so a tenant's own
- * agency:admin/agency:owner role must not authorize the write. See
+ * platform-global setting with no per-tenant override. See
  * `verifyTracerAdminAuth` (`@/lib/tracer-auth`) for the accepted auth paths.
  *
  * Tightened (RETRO-187 §4a LG-2 / CEO Q3, FOLLOW-598): staff callers must hold the

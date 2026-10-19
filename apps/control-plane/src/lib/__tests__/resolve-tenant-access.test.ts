@@ -1,15 +1,15 @@
 /**
- * Security-invariant test suite for `resolveTenantAccess` (ADR-0018 §2 / FOLLOW-592).
+ * Security-invariant test suite for `resolveTenantAccess` (ADR-0018 §2 / FOLLOW-592;
+ * staff-only since FOLLOW-1335 removed the agency path).
  *
- * The ADR names five security invariants; each maps to a real foot-gun in the
- * current code and gets at least one dedicated test here. Plus the CEO Q3 write
- * tier matrix (readonly / ops / superadmin).
+ * The ADR names five security invariants; INV-1/INV-2 governed the agency path and
+ * are replaced by AGENCY-GONE-* (a former agency caller gets NO access). Plus the
+ * CEO Q3 write tier matrix (readonly / ops / superadmin).
  *
  * Invariant → test mapping:
- *   INV-1  Agency path byte-unchanged (allowStaffOverride absent/false)  → AGENCY-1, AGENCY-DEFAULT
- *   INV-2  Agency session can NEVER act on a foreign tenant              → AGENCY-FOREIGN
- *   INV-3  Staff path needs verified estalara_staff + explicit opt-in;   → STAFF-READ, STAFF-NO-OPTIN,
- *          non-staff with opt-in falls through to agency unchanged          STAFF-NONSTAFF-FALLTHROUGH,
+ *   (was INV-1/2) A former agency session/JWT gets no tenant access   → AGENCY-GONE-SSR,
+ *                                                                            AGENCY-GONE-JWT
+ *   INV-3  Staff path needs verified estalara_staff + explicit opt-in   → STAFF-READ, STAFF-NO-OPTIN,
  *                                                                            STAFF-SECRET-REJECTED
  *   INV-4  Staff tenantId validated against the tenants table            → STAFF-UNKNOWN-TENANT,
  *                                                                            STAFF-MALFORMED-TENANT,
@@ -31,23 +31,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@estalara/auth', () => ({
   getAuthClaims: vi.fn(),
-  requireTenantAccess: vi.fn(),
-  requireAgencyRole: vi.fn(),
-  isTenantClaims: vi.fn(
-    (claims: { estalara_staff: boolean; tenant_id: unknown }) =>
-      !claims.estalara_staff && typeof claims.tenant_id === 'string',
-  ),
-  isStaffClaims: vi.fn((claims: { estalara_staff: boolean }) => claims.estalara_staff),
+  isStaffClaims: vi.fn((claims: { estalara_staff: unknown }) => claims.estalara_staff === true),
 }));
 
-// ─── Mock @supabase/ssr (drives getSessionAuth's SSR fallback) ────────────────
+// ─── Mock @supabase/ssr (drives getSessionAuthClaims' SSR fallback) ───────────
 
 const mockGetUser = vi.fn();
-const mockGetSession = vi.fn();
 
 vi.mock('@supabase/ssr', () => ({
   createServerClient: vi.fn().mockImplementation(() => ({
-    auth: { getUser: mockGetUser, getSession: mockGetSession },
+    auth: { getUser: mockGetUser },
   })),
 }));
 
@@ -77,23 +70,23 @@ vi.mock('drizzle-orm', () => ({
   isNull: (a: unknown) => ({ isNull: a }),
 }));
 
-import { getAuthClaims, requireAgencyRole } from '@estalara/auth';
+import { getAuthClaims } from '@estalara/auth';
 import { verifyTracerAdminAuth } from '@/lib/tracer-auth';
 import { resolveTenantAccess, AccessError } from '@/lib/session-auth';
 
 const mockGetAuthClaims = vi.mocked(getAuthClaims);
-const mockRequireAgencyRole = vi.mocked(requireAgencyRole);
 const mockVerifyTracer = vi.mocked(verifyTracerAdminAuth);
 
 const TENANT_A = '11111111-1111-4111-8111-111111111111';
 const TENANT_B = '22222222-2222-4222-8222-222222222222';
 
-const AGENCY_CLAIMS = {
+/** The claim shape @estalara/auth issued for agency users before FOLLOW-1335. */
+const FORMER_AGENCY_CLAIMS = {
   sub: 'agency-user',
   email: 'user@agency.com',
   tenant_id: TENANT_A,
-  agency_role: 'agency:admin' as const,
-  estalara_staff: false as const,
+  agency_role: 'agency:admin',
+  estalara_staff: false,
   mfa_verified: true,
 };
 
@@ -128,7 +121,7 @@ async function expectStatus(p: Promise<unknown>, status: number) {
   });
 }
 
-// staffSession(): make getSessionAuth resolve to a staff SSR session + make the
+// staffSession(): make getSessionAuthClaims resolve to a staff SSR session + make the
 // tracer gate approve it.
 function staffSession(role: 'estalara:superadmin' | 'estalara:ops' | 'estalara:readonly') {
   mockGetAuthClaims.mockResolvedValue(null);
@@ -143,10 +136,6 @@ function staffSession(role: 'estalara:superadmin' | 'estalara:ops' | 'estalara:r
         created_at: '2026-01-01T00:00:00Z',
       },
     },
-    error: null,
-  });
-  mockGetSession.mockResolvedValue({
-    data: { session: { access_token: 'staff-jwt' } },
     error: null,
   });
   mockVerifyTracer.mockResolvedValue({
@@ -166,63 +155,53 @@ beforeEach(() => {
   vi.unstubAllEnvs();
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://project.supabase.co');
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'anon-key-test');
-  mockRequireAgencyRole.mockImplementation(() => undefined);
   tenantsTableReturns([TENANT_A, TENANT_B]);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// INVARIANT 1 — Agency path byte-unchanged
+// (was INVARIANTS 1/2) — the agency path is gone: a former agency caller gets nothing
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('INV-1: agency path byte-unchanged', () => {
-  it('AGENCY-1: agency session, no staff opt-in → via:agency, tenantId from claim only', async () => {
-    mockGetAuthClaims.mockResolvedValue(AGENCY_CLAIMS);
-
-    const result = await resolveTenantAccess(req({ Authorization: 'Bearer jwt' }));
-
-    expect(result.via).toBe('agency');
-    if (result.via !== 'agency') throw new Error('unreachable');
-    expect(result.tenantId).toBe(TENANT_A);
-    expect(result.claims).toEqual(AGENCY_CLAIMS);
-    expect(result.rawToken).toBe('jwt');
-    // Staff gate is never consulted on the agency path.
-    expect(mockVerifyTracer).not.toHaveBeenCalled();
-  });
-
-  it('AGENCY-DEFAULT: enforces minAgencyRole exactly like requireTenantSessionAccess', async () => {
-    mockGetAuthClaims.mockResolvedValue(AGENCY_CLAIMS);
-    mockRequireAgencyRole.mockImplementation(() => {
-      throw new Error("role 'agency:admin' is insufficient");
+describe('FOLLOW-1335: a former agency caller gets no tenant access', () => {
+  it('AGENCY-GONE-SSR: SSR session with tenant_id + agency_role (no staff flag) → 401, even on its own tenant', async () => {
+    mockGetAuthClaims.mockResolvedValue(null);
+    mockGetUser.mockResolvedValue({
+      data: {
+        user: {
+          id: 'agency-user',
+          email: 'user@agency.com',
+          app_metadata: { tenant_id: TENANT_A, agency_role: 'agency:owner' },
+          user_metadata: {},
+          aud: 'authenticated',
+          created_at: '2026-01-01T00:00:00Z',
+        },
+      },
+      error: null,
     });
+    mockVerifyTracer.mockResolvedValue({ ok: false, status: 403, message: 'not staff' });
 
-    await expectStatus(resolveTenantAccess(req(), { minAgencyRole: 'agency:owner' }), 403);
-    expect(mockRequireAgencyRole).toHaveBeenCalledWith(AGENCY_CLAIMS, 'agency:owner');
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// INVARIANT 2 — Agency session can NEVER act on a foreign tenant
-// ═══════════════════════════════════════════════════════════════════════════
-
-describe('INV-2: agency cannot act on a foreign tenant', () => {
-  it('AGENCY-FOREIGN: agency session + mismatched tenantId param → 403, param never overrides', async () => {
-    mockGetAuthClaims.mockResolvedValue(AGENCY_CLAIMS); // tenant_id = TENANT_A
-
-    // Even with allowStaffOverride true, an agency user is handled on the agency
-    // path and the foreign tenantId is rejected — not silently honored.
     await expectStatus(
-      resolveTenantAccess(req(), { tenantId: TENANT_B, allowStaffOverride: true }),
-      403,
+      resolveTenantAccess(req(), { allowStaffOverride: true, tenantId: TENANT_A }),
+      401,
     );
-    expect(mockVerifyTracer).not.toHaveBeenCalled();
+    await expectStatus(resolveTenantAccess(req(), { tenantId: TENANT_A }), 401);
   });
 
-  it('AGENCY-MATCH: agency session + matching tenantId param → allowed, tenantId is the claim', async () => {
-    mockGetAuthClaims.mockResolvedValue(AGENCY_CLAIMS);
+  it('AGENCY-GONE-JWT: a verified non-staff JWT shape is never honoured → 401, tenant never taken from it', async () => {
+    mockGetAuthClaims.mockResolvedValue(
+      FORMER_AGENCY_CLAIMS as unknown as Awaited<ReturnType<typeof getAuthClaims>>,
+    );
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+    mockVerifyTracer.mockResolvedValue({ ok: false, status: 403, message: 'not staff' });
 
-    const result = await resolveTenantAccess(req(), { tenantId: TENANT_A });
-    expect(result.via).toBe('agency');
-    expect(result.tenantId).toBe(TENANT_A);
+    await expectStatus(
+      resolveTenantAccess(req({ Authorization: 'Bearer jwt' }), {
+        allowStaffOverride: true,
+        tenantId: TENANT_A,
+      }),
+      401,
+    );
+    expect(mockCreateAdminClient).not.toHaveBeenCalled();
   });
 });
 
@@ -240,7 +219,6 @@ describe('INV-3: staff path requires verified staff + explicit opt-in', () => {
     });
 
     expect(result.via).toBe('staff');
-    if (result.via !== 'staff') throw new Error('unreachable');
     expect(result.tenantId).toBe(TENANT_A);
     expect(result.staff.sub).toBe('staff-estalara:ops');
     expect(mockVerifyTracer).toHaveBeenCalledOnce();
@@ -251,19 +229,6 @@ describe('INV-3: staff path requires verified staff + explicit opt-in', () => {
 
     // No opt-in → staff gets zero tenant access, even the superadmin.
     await expectStatus(resolveTenantAccess(req(), { tenantId: TENANT_A }), 403);
-    expect(mockVerifyTracer).not.toHaveBeenCalled();
-  });
-
-  it('STAFF-NONSTAFF-FALLTHROUGH: agency user + allowStaffOverride → agency path, unchanged', async () => {
-    mockGetAuthClaims.mockResolvedValue(AGENCY_CLAIMS);
-
-    const result = await resolveTenantAccess(req(), {
-      allowStaffOverride: true,
-      tenantId: TENANT_A,
-    });
-
-    expect(result.via).toBe('agency');
-    // The staff gate is never reached for a valid agency caller.
     expect(mockVerifyTracer).not.toHaveBeenCalled();
   });
 
@@ -356,7 +321,6 @@ describe('INV-5: RLS trap — returned tenantId is the only tenant fence', () =>
       tenantId: TENANT_A,
     });
     expect(access.via).toBe('staff');
-    if (access.via !== 'staff') throw new Error('unreachable');
 
     // Simulate the service-role (RLS-bypassed) world the staff path runs in: a
     // table holding rows for MULTIPLE tenants, with no DB-level fence.
@@ -389,7 +353,6 @@ describe('Q3: staff write tier matrix', () => {
       allowStaffOverride: true,
       tenantId: TENANT_A,
     });
-    if (result.via !== 'staff') throw new Error('unreachable');
     expect(result.canWrite).toBe(false);
     expect(result.isSuperadmin).toBe(false);
   });
@@ -401,7 +364,6 @@ describe('Q3: staff write tier matrix', () => {
       allowStaffOverride: true,
       tenantId: TENANT_A,
     });
-    if (result.via !== 'staff') throw new Error('unreachable');
     expect(result.canWrite).toBe(true);
     expect(result.isSuperadmin).toBe(false);
   });
@@ -413,7 +375,6 @@ describe('Q3: staff write tier matrix', () => {
       allowStaffOverride: true,
       tenantId: TENANT_A,
     });
-    if (result.via !== 'staff') throw new Error('unreachable');
     expect(result.canWrite).toBe(true);
     expect(result.isSuperadmin).toBe(true);
   });

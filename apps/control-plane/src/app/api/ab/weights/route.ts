@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return --
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access --
  * @estalara/auth and @estalara/db are workspace packages not built locally.
  * TypeScript sees their return types as `any` until packages are built.
  * CI builds packages before lint so these errors don't appear in CI.
@@ -13,7 +13,7 @@
  *
  * Used by the TICKET-AB-004 analytics dashboard (Anomaly feed panel).
  *
- * Auth: Bearer JWT required. tenant_id extracted from verified JWT claims — NOT from header.
+ * Auth: an Estalara staff session/JWT; the tenant is the validated `?tenant_id` — NOT a header.
  *
  * Query params:
  *   archetype: filter by archetype label (optional)
@@ -31,7 +31,7 @@ import type { NextRequest } from 'next/server';
 import { resolveTenantAccess, type TenantAccess } from '@/lib/session-auth';
 import { accessErrorToResponse } from '@/lib/access-error-response';
 import { banditDisabledResponse, isBanditEnabled } from '@/lib/bandit-flag';
-import { createTenantClient, createAdminClient } from '@estalara/db';
+import { createAdminClient } from '@estalara/db';
 import { abBanditWeights } from '@estalara/db';
 import { eq, and } from 'drizzle-orm';
 
@@ -82,12 +82,12 @@ export interface AbWeightsResponse {
 /**
  * GET /api/ab/weights
  *
- * Auth (ADR-0018 §2, FOLLOW-594): `resolveTenantAccess` with `allowStaffOverride`.
- * Agency path unchanged (tenant from the session claim, RLS-enforced). Estalara
- * staff may read any tenant's weights via an explicit `?tenant_id=<uuid>`
- * validated against the `tenants` table; that validated id is the SINGLE tenant
- * fence. The staff path uses a service-role client (RLS BYPASSED), so the explicit
- * `WHERE tenant_id` filter is the only isolation (ADR-0018 invariant 5).
+ * Auth (ADR-0018 §2, FOLLOW-594; staff-only since FOLLOW-1335 removed the agency path,
+ * which read through an RLS client): `resolveTenantAccess` with `allowStaffOverride`.
+ * Estalara staff read a tenant's weights via an explicit `?tenant_id=<uuid>` validated
+ * against the `tenants` table; that validated id is the SINGLE tenant fence. The read
+ * uses a service-role client (RLS BYPASSED), so the explicit `WHERE tenant_id` filter
+ * is the only isolation (ADR-0018 invariant 5).
  *
  * Identity caveat (RETRO-187): `resolveTenantAccess` REJECTS the headless
  * `ADMIN_API_SECRET` Bearer path for staff (403 — a shared secret is not
@@ -98,7 +98,7 @@ export interface AbWeightsResponse {
  * @returns 404 `details.reason: 'bandit_disabled'` while BANDIT_ENABLED is off (FOLLOW-1286).
  * @returns 400 when a staff caller omits `?tenant_id`.
  * @returns 401 when no valid session is present.
- * @returns 403 when the caller is not permitted (e.g. agency acting on a foreign tenant).
+ * @returns 403 when the caller is not permitted.
  * @returns 404 when a staff caller supplies an unknown tenant id.
  * @returns 500 on DB error.
  */
@@ -106,8 +106,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // FOLLOW-1286 (D3): frozen bandit — the dashboards read this 404 as "hide the arms panel".
   if (!isBanditEnabled()) return banditDisabledResponse();
 
-  // Auth: tenant_id from verified claims / validated staff param — NEVER from an
-  // x-tenant-id header (TICKET-FIX-014). `access.tenantId` is the single fence.
+  // Auth: tenant_id from the validated staff param — NEVER from an x-tenant-id
+  // header (TICKET-FIX-014). `access.tenantId` is the single fence.
   const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
   let access: TenantAccess;
   try {
@@ -116,7 +116,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       // exactOptionalPropertyTypes: omit the key when absent rather than passing
       // `undefined`, so a staff caller without ?tenant_id still reaches resolve's 400.
       ...(tenantIdParam ? { tenantId: tenantIdParam } : {}),
-      minAgencyRole: 'agency:viewer',
     });
   } catch (err) {
     return accessErrorToResponse(err);
@@ -125,9 +124,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const tenantId: string = access.tenantId;
   const archetypeFilter = req.nextUrl.searchParams.get('archetype') ?? undefined;
 
-  // Shared WHERE fence — built once, applied identically on BOTH paths. For the
-  // staff (service-role) path it is the ONLY tenant isolation (invariant 5); for
-  // the agency path it is defense-in-depth on top of RLS.
+  // The WHERE fence — on this service-role read it is the ONLY tenant isolation
+  // (invariant 5).
   const buildWhere = () => {
     const conditions = [eq(abBanditWeights.tenantId, tenantId)];
     if (archetypeFilter) {
@@ -137,32 +135,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   };
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- package types not compiled; the tenant fence (buildWhere) is applied explicitly on every path
-    let dbRows: any[];
-
-    if (access.via === 'agency') {
-      // DATABASE_URL may not be set in dev/CI — graceful empty response.
-      if (!process.env.DATABASE_URL) {
-        const response: AbWeightsResponse = {
-          tenant_id: tenantId,
-          rows: [],
-          total: 0,
-          generated_at: new Date().toISOString(),
-          // No rows → vacuously "still at the prior" → paused, regardless of env.
-          learning_state: 'paused',
-        };
-        return NextResponse.json(response, { status: 200 });
-      }
-      // rawToken → RLS enforced (FOLLOW-454 SSR + programmatic callers).
-      const db = createTenantClient(access.rawToken ?? undefined);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tx is the uncompiled package Database type
-      dbRows = await db.rls((tx: any) => tx.select().from(abBanditWeights).where(buildWhere()));
-    } else {
-      // Staff path: service-role client, RLS BYPASSED. The explicit
-      // WHERE tenant_id = access.tenantId (buildWhere) is the ONLY fence.
-      const db = createAdminClient();
-      dbRows = await db.select().from(abBanditWeights).where(buildWhere());
-    }
+    // Service-role client, RLS BYPASSED. The explicit WHERE tenant_id =
+    // access.tenantId (buildWhere) is the ONLY fence.
+    const db = createAdminClient();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- package types not compiled; the tenant fence (buildWhere) is applied explicitly
+    const dbRows: any[] = await db.select().from(abBanditWeights).where(buildWhere());
 
     const rows: BanditWeightRow[] = dbRows.map((r) => ({
       tenant_id: r.tenantId as string,

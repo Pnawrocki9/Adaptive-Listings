@@ -3,7 +3,7 @@
  *
  * Coverage:
  *   AC2.1: 401 when no Authorization header
- *   AC2.2: 403 when JWT is agency-tenant (not staff)
+ *   AC2.2: 403 when JWT is verified but not staff (former agency shape)
  *   AC2.3: 400 when session id is empty string
  *   AC2.4: 200 with data_source: 'mock' when DATABASE_URL_ADMIN unset
  *   AC2.5: 404 when DB configured and session not found
@@ -142,15 +142,17 @@ describe('GET /api/admin/tracer/sessions/[id] — auth', () => {
     expect(body.error.code).toBe('unauthorized');
   });
 
-  it('AC2.2: returns 403 when JWT is agency-tenant (not staff)', async () => {
+  it('AC2.2: returns 403 when JWT is verified but not staff (former agency shape)', async () => {
+    // A verified token that is not staff (the former agency shape): @estalara/auth no longer
+    // issues it since FOLLOW-1335; the guard's 403 stays as defence in depth.
     mockGetAuthClaims.mockResolvedValue({
       sub: 'user-uuid',
       email: 'user@agency.com',
       tenant_id: TENANT_ID,
-      agency_role: 'agency:owner' as const,
-      estalara_staff: false as const,
+      agency_role: 'agency:owner',
+      estalara_staff: false,
       mfa_verified: true,
-    });
+    } as unknown as Awaited<ReturnType<typeof getAuthClaims>>);
     mockIsStaffClaims.mockReturnValue(false);
 
     const res = await GET(makeRequest({ bearer: 'some-jwt-token' }), { params: makeParams() });

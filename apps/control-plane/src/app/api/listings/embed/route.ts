@@ -11,11 +11,11 @@
  * the adapt route reads from `listing_embeddings` to compute real cosine
  * archetype-listing affinity (FOLLOW-019).
  *
- * Auth:
- *   - Bearer JWT via `getAuthClaims()` — tenant in JWT must match body
- *     `tenant_id` (cross-tenant writes forbidden). OR
- *   - `x-internal-api-secret: <INTERNAL_API_SECRET>` header for service-to-
- *     service callers (Modal ingest, demo seed scripts).
+ * Auth: `x-internal-api-secret: <INTERNAL_API_SECRET>` header for service-to-service
+ *   callers (Modal ingest, `pnpm seed:listings`, the activation embedding seed), compared in
+ *   constant time. FOLLOW-1335 removed the tenant-JWT path (a JWT whose `tenant_id` matched
+ *   the body): agency (tenant-user) claims no longer exist, and a staff JWT carries no tenant,
+ *   so that path could no longer authorise anyone.
  *
  * Body:
  *   {
@@ -25,27 +25,24 @@
  *   }
  *
  * Responses:
- *   200 { ok: true, listing_id } — upserted successfully (tenant-JWT caller)
- *   200 { ok: true, listing_id, database: { host, port, name } } — internal-secret
- *       caller: names the database the upsert went to (FOLLOW-1193). Additive; the
- *       Modal consumer only reads the status. Credentials are never included, and
- *       tenant-JWT callers do not get the internal host.
+ *   200 { ok: true, listing_id, database: { host, port, name } } — upserted; names the
+ *       database the upsert went to (FOLLOW-1193). Additive; the Modal consumer only reads
+ *       the status. Credentials are never included.
  *   400 — validation error / invalid JSON
- *   401 — missing / invalid auth
- *   403 — JWT tenant mismatch
+ *   401 — missing / invalid internal secret
  *   500 — DB write failed
  *   503 — OPENAI_API_KEY not configured or OpenAI call failed
  *
  * @module apps/control-plane/src/app/api/listings/embed/route
  */
 
+import { timingSafeEqual } from 'crypto';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { sql } from 'drizzle-orm';
 
 import { createAdminClient, describeAdminDatabase, listingEmbeddings } from '@estalara/db';
-import { getAuthClaims } from '@estalara/auth';
 import { embedTextWithDimensions } from '@/lib/openai-client';
 import { fetchListingTextFields } from '@/lib/listing-details';
 
@@ -88,40 +85,29 @@ const PostBodySchema = z.object({
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
 /**
- * Validate the request authentication. Accepts either:
- *   - Bearer JWT whose `tenant_id` claim matches the body tenant_id, OR
- *   - `x-internal-api-secret` header equal to process.env.INTERNAL_API_SECRET.
- *
- * Returns `{ ok: true, internal }` on success (`internal` is true for the
- * shared-secret path), or a NextResponse with the appropriate error status.
- * Never throws.
+ * Validate the service-to-service shared secret (`x-internal-api-secret` equal to
+ * `INTERNAL_API_SECRET`), compared in constant time. Returns `null` on success or the 401
+ * response. Never throws.
  */
-async function authenticate(
-  req: NextRequest,
-  bodyTenantId: string,
-): Promise<{ ok: true; internal: boolean } | NextResponse> {
-  // Service-to-service path: shared secret in a header.
+function authenticate(req: NextRequest): NextResponse | null {
   const internalSecret = process.env.INTERNAL_API_SECRET;
   const providedSecret =
     req.headers.get('x-internal-api-secret') ?? req.headers.get('X-Internal-Api-Secret');
-  if (internalSecret && providedSecret && providedSecret === internalSecret) {
-    return { ok: true, internal: true };
+  if (internalSecret && providedSecret) {
+    const expected = Buffer.from(internalSecret, 'utf8');
+    const provided = Buffer.from(providedSecret, 'utf8');
+    if (expected.length === provided.length && timingSafeEqual(expected, provided)) return null;
   }
-
-  // JWT path.
-  const claims = await getAuthClaims(req);
-  if (!claims) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  if (!claims.tenant_id || claims.tenant_id !== bodyTenantId) {
-    return NextResponse.json({ error: 'Forbidden: tenant mismatch' }, { status: 403 });
-  }
-  return { ok: true, internal: false };
+  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 }
 
 // ─── POST handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // Auth first: an unauthenticated caller never sees a body-validation error (FOLLOW-1335 review).
+  const unauthorized = authenticate(req);
+  if (unauthorized) return unauthorized;
+
   let rawBody: unknown;
   try {
     rawBody = await req.json();
@@ -139,14 +125,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const { tenant_id: tenantId, listing_id: listingId } = parsed.data;
 
-  // Auth — must come after body parse so we know the body's tenant_id.
-  const authResult = await authenticate(req, tenantId);
-  if (authResult instanceof NextResponse) return authResult;
-
   // FOLLOW-567: the Modal embed-seed path sends only { tenant_id, listing_id }.
   // Self-fetch the listing's text from the Estalara backend when text_fields is
   // absent, matching the contract the Modal consumer always assumed. Direct
-  // callers (demo seed scripts, JWT clients) still pass explicit text_fields.
+  // callers (demo seed scripts) still pass explicit text_fields.
   let textFields = parsed.data.text_fields;
   if (!textFields) {
     const fetched = await fetchListingTextFields(listingId, parsed.data.locale ?? 'en');
@@ -236,13 +218,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // FOLLOW-1193: `pnpm seed:listings` has no database of its own — its rows land
   // wherever THIS process's admin URL points. Name that database (host/port/name,
   // from the same resolver createAdminClient() used above) so a split-brain is
-  // visible in the seeder's output. Service callers only: a tenant JWT does not
-  // get the internal database host.
-  if (authResult.internal) {
-    return NextResponse.json(
-      { ok: true, listing_id: listingId, database: describeAdminDatabase() },
-      { status: 200 },
-    );
-  }
-  return NextResponse.json({ ok: true, listing_id: listingId }, { status: 200 });
+  // visible in the seeder's output. Every caller is a service caller (shared secret).
+  return NextResponse.json(
+    { ok: true, listing_id: listingId, database: describeAdminDatabase() },
+    { status: 200 },
+  );
 }

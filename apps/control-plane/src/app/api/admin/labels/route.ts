@@ -4,9 +4,8 @@
  * Filtered joined table of `conversion_labels` (Postgres) ⋈ `adaptation_decisions`
  * (ClickHouse) on `prediction_id = adapt_decision_id` (FOLLOW-174, MASTER_DESIGN §T.5).
  *
- * Query params (all optional):
- *   tenant_id    — filter by tenant UUID (staff can query any tenant; agency users are
- *                  pinned to their own tenant_id from JWT — this param is ignored for them)
+ * Query params (all optional except tenant_id):
+ *   tenant_id    — the tenant UUID to read (required; the single tenant fence)
  *   outcome_class — one of ConversionOutcomeClass values
  *   model_version — exact-match filter on ClickHouse model_version (substring match on
  *                  the offline/mock path). Restricted to [\w. -]+ (400 otherwise) and
@@ -16,14 +15,12 @@
  *   page          — 1-based page number (default: 1)
  *   page_size     — rows per page (default: 25, max: 100)
  *
- * Auth (ADR-0018 §2, FOLLOW-597): `resolveTenantAccess` with `allowStaffOverride`.
- *   The agency path is byte-unchanged (tenant sourced ONLY from the session claim; any
- *   supplied tenant_id query param is a cross-check only — a foreign tenant is 403,
- *   matching the pre-existing "the JWT claim wins" behavior). An Estalara staff caller
- *   may read any tenant by supplying an explicit `?tenant_id=<uuid>` — which is
+ * Auth (ADR-0018 §2, FOLLOW-597; staff-only since FOLLOW-1335 removed the agency path, whose
+ *   tenant came from the session claim): `resolveTenantAccess` with `allowStaffOverride`.
+ *   An Estalara staff caller reads a tenant by supplying an explicit `?tenant_id=<uuid>` — which is
  *   validated against the `tenants` table (invariant 4) — and that validated id becomes
  *   the SINGLE tenant fence bound into every query (invariant 5). This route uses
- *   `createAdminClient()` (service-role, RLS BYPASSED) on the staff path, so the
+ *   `createAdminClient()` (service-role, RLS BYPASSED), so the
  *   explicit `eq(conversionLabels.tenantId, access.tenantId)` fence in `fetchLabels` is
  *   the ONLY tenant boundary.
  *

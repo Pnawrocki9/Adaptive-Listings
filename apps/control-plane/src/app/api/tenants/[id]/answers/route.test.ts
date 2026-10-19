@@ -37,7 +37,7 @@ vi.mock('@estalara/db', () => ({
   },
 }));
 
-// Auth (ADR-0018 §2, FOLLOW-1334): the routes delegate agency + staff resolution to
+// Auth (ADR-0018 §2, FOLLOW-1334; staff-only since FOLLOW-1335): the routes delegate staff resolution to
 // `resolveTenantAccess` (via `lib/answers-access.ts`), whose own wiring is exercised by
 // `src/lib/__tests__/resolve-tenant-access.test.ts`. Only `resolveTenantAccess` is a spy here;
 // `AccessError` stays real so the legacy `{ error }` mapping runs for real.
@@ -73,22 +73,6 @@ const { POST, GET } = await import('./route');
 const TENANT_A = '11111111-1111-1111-1111-111111111111';
 const LISTING_ID = 'listing-001';
 
-function agencyAccess(tenantId: string): TenantAccess {
-  return {
-    via: 'agency',
-    tenantId,
-    claims: {
-      sub: 'user-a',
-      email: 'a@test.com',
-      tenant_id: tenantId,
-      agency_role: 'agency:viewer',
-      estalara_staff: false,
-      mfa_verified: true,
-    },
-    rawToken: 'agency-jwt',
-  };
-}
-
 /** A resolved Estalara-staff access acting on an explicit, validated tenant. */
 function staffAccess(tenantId: string, canWrite = true): TenantAccess {
   const role = canWrite ? 'estalara:ops' : 'estalara:readonly';
@@ -109,10 +93,7 @@ function staffAccess(tenantId: string, canWrite = true): TenantAccess {
   };
 }
 
-const FOREIGN_TENANT_403 = new AccessError(
-  403,
-  'Access denied: agency session cannot act on a foreign tenant',
-);
+const FORBIDDEN_403 = new AccessError(403, 'Unauthorized: no tenant access for this request');
 
 const MOCK_ANSWER_ROW = {
   id: 'answer-uuid-001',
@@ -178,9 +159,9 @@ beforeEach(() => {
 
 describe('POST /api/tenants/:id/answers', () => {
   it('returns 201 and created row on valid body', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     vi.mocked(createAdminClient).mockReturnValue(
-      makeDbMock({}) as unknown as ReturnType<typeof createAdminClient>,
+      makeStaffDb().db as unknown as ReturnType<typeof createAdminClient>,
     );
 
     const req = makePostRequest(TENANT_A, {
@@ -211,8 +192,8 @@ describe('POST /api/tenants/:id/answers', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns 403 when tenant in JWT does not match URL param', async () => {
-    mockResolve.mockRejectedValue(FOREIGN_TENANT_403); // tenant B
+  it('returns 403 when resolveTenantAccess refuses', async () => {
+    mockResolve.mockRejectedValue(FORBIDDEN_403);
 
     const req = makePostRequest(TENANT_A, {
       // posting to tenant A's endpoint
@@ -227,7 +208,7 @@ describe('POST /api/tenants/:id/answers', () => {
   });
 
   it('returns 400 on invalid body (missing listing_id)', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
 
     const req = makePostRequest(TENANT_A, { question: 'Q?', answer: 'A.' });
 
@@ -236,7 +217,7 @@ describe('POST /api/tenants/:id/answers', () => {
   });
 
   it('returns 503 when embedding call fails', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     mockEmbedText.mockRejectedValueOnce(new Error('OpenAI rate limit'));
 
     const req = makePostRequest(TENANT_A, {
@@ -252,7 +233,7 @@ describe('POST /api/tenants/:id/answers', () => {
 
 describe('GET /api/tenants/:id/answers', () => {
   it('returns 200 and array of rows (without embedding)', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A, false));
     vi.mocked(createAdminClient).mockReturnValue(
       makeDbMock({ selectResult: [MOCK_ANSWER_ROW] }) as unknown as ReturnType<
         typeof createAdminClient
@@ -272,7 +253,7 @@ describe('GET /api/tenants/:id/answers', () => {
   });
 
   it('returns 400 when listing_id query param is missing', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
 
     const req = new NextRequest(`http://localhost/api/tenants/${TENANT_A}/answers`, {
       method: 'GET',
@@ -283,8 +264,8 @@ describe('GET /api/tenants/:id/answers', () => {
     expect(res.status).toBe(400);
   });
 
-  it('returns 403 when tenant B tries to access tenant A answers', async () => {
-    mockResolve.mockRejectedValue(FOREIGN_TENANT_403);
+  it('returns 403 when resolveTenantAccess refuses (GET)', async () => {
+    mockResolve.mockRejectedValue(FORBIDDEN_403);
 
     const req = makeGetRequest(TENANT_A, LISTING_ID); // tenant A's endpoint
     const res = await GET(req, { params: Promise.resolve({ id: TENANT_A }) });
@@ -403,23 +384,6 @@ describe('POST /api/tenants/:id/answers — staff override', () => {
     const json = await parseBody<{ code: string }>(res);
     expect(json.code).toBe('audit_write_failed');
     expect(mockCaptureException).toHaveBeenCalledOnce();
-  });
-
-  it('agency path stays un-audited: plain insert, no transaction', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
-    const dbMock = makeDbMock({});
-    const withTx = { ...dbMock, transaction: vi.fn() };
-    vi.mocked(createAdminClient).mockReturnValue(
-      withTx as unknown as ReturnType<typeof createAdminClient>,
-    );
-
-    const res = await POST(makePostRequest(TENANT_A, body), {
-      params: Promise.resolve({ id: TENANT_A }),
-    });
-
-    expect(res.status).toBe(201);
-    expect(withTx.transaction).not.toHaveBeenCalled();
-    expect(dbMock.insert).toHaveBeenCalledOnce();
   });
 });
 

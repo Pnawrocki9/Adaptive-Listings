@@ -3,27 +3,21 @@
  * PUT  /api/demo/override — set the DEMO MODE override (enable/disable, archetype, model)
  *
  * Auth (ADR-0018 §2, FOLLOW-596): `resolveTenantAccess` with `allowStaffOverride`.
- *   The agency path is byte-unchanged from the pre-596 behaviour — the tenant id is
- *   sourced ONLY from the session claim, GET requires `agency:viewer`+, PUT requires
- *   `agency:admin`+ (mutating), and agency writes are NOT audited. An Estalara staff
- *   caller may read/write ANY tenant by supplying an explicit `?tenant_id=<uuid>`,
- *   which is validated against the `tenants` table; that validated id becomes the
- *   SINGLE tenant fence bound into every query (ADR-0018 §2 invariant 5). This route
- *   uses `createAdminClient()` (service-role, RLS BYPASSED) on the staff write path,
- *   so the explicit `eq(demoOverrides.tenantId, access.tenantId)` fence is the ONLY
- *   tenant boundary.
+ *   An Estalara staff caller reads/writes a tenant by supplying an explicit
+ *   `?tenant_id=<uuid>`, which is validated against the `tenants` table; that validated id
+ *   becomes the SINGLE tenant fence bound into every query (ADR-0018 §2 invariant 5). This
+ *   route uses `createAdminClient()` (service-role, RLS BYPASSED) on the write path, so the
+ *   explicit `eq(demoOverrides.tenantId, access.tenantId)` fence is the ONLY tenant
+ *   boundary. FOLLOW-1335 removed the agency path (agency roles no longer exist).
  *
- *   GET  — agency `agency:viewer`+ or staff (read). Fails LOUD on a configured-but-
- *     failed DB dependency (Rule K.2): a thrown query returns HTTP 500, never an
- *     "enabled=false" default that would silently tell the dashboard DEMO MODE is off
- *     when we do not actually know the tenant's real state.
- *   PUT  — write. Agency: `agency:admin`+ (UNCHANGED — viewer may NOT write here,
- *     unlike quiz/config). Staff: additionally gated on `access.canWrite`
- *     (rank ≥ `estalara:ops`, CEO Q3) — a staff caller below ops rank
- *     (`estalara:readonly`) is 403. Every successful STAFF write appends one
- *     `staff_audit_log` row (`action: 'demo_override.update'`, ADR-0018 §3); agency
- *     writes are NOT audited.
- *     ATOMICITY (FOLLOW-605/607, ADR-0018 §3a): on the staff path the demo-override
+ *   GET  — any staff rank (read). Fails LOUD on a configured-but-failed DB dependency
+ *     (Rule K.2): a thrown query returns HTTP 500, never an "enabled=false" default that
+ *     would silently tell the simulator DEMO MODE is off when we do not actually know the
+ *     tenant's real state.
+ *   PUT  — write, gated on `access.canWrite` (rank ≥ `estalara:ops`, CEO Q3) — a staff
+ *     caller below ops rank (`estalara:readonly`) is 403. Every successful write appends
+ *     one `staff_audit_log` row (`action: 'demo_override.update'`, ADR-0018 §3).
+ *     ATOMICITY (FOLLOW-605/607, ADR-0018 §3a): the demo-override
  *     upsert and the `staff_audit_log` insert commit-or-roll-back TOGETHER in ONE
  *     `db.transaction()`, so an override mutation can never outlive a missing audit
  *     row (RETRO-190 §4a). Any failure inside the tx rolls BOTH back → 500
@@ -32,7 +26,7 @@
  *
  *   Transaction-plumbing choice (FOLLOW-609, supersedes the FOLLOW-596 caveat): the
  *   staff write now DELEGATES to `upsertDemoOverride(tenantId, patch, updatedBy, tx)` —
- *   the same helper the agency path uses — passing the route's own
+ *   the shared store helper — passing the route's own
  *   `db.transaction(async (tx) => { ... })` handle as the optional 4th argument, so the
  *   upsert and the `staff_audit_log` insert commit/roll back together in ONE
  *   transaction. This eliminates the byte-duplicated inline upsert RETRO-193 flagged
@@ -121,8 +115,7 @@ function requestIp(req: NextRequest): string | null {
  * GET /api/demo/override
  *
  * Returns the current DEMO MODE override state for the resolved tenant.
- * Agency: `agency:viewer`+ on its own tenant. Staff: read any tenant via
- * `?tenant_id=<uuid>` (validated).
+ * Staff (any rank): read the tenant named by `?tenant_id=<uuid>` (validated).
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   // FOLLOW-1288: demo tooling exists only under DEMO_MODE=1 (lib/demo/demo-mode.ts).
@@ -133,7 +126,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     access = await resolveTenantAccess(req, {
       allowStaffOverride: true,
-      minAgencyRole: 'agency:viewer',
       // exactOptionalPropertyTypes (RETRO-189): omit the key when absent rather than
       // passing `undefined`, so a staff caller without ?tenant_id reaches resolve's 400.
       ...(tenantIdParam ? { tenantId: tenantIdParam } : {}),
@@ -146,7 +138,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   try {
     // Fenced on access.tenantId inside the store query (invariant 5) — for a staff
-    // caller this is the validated ?tenant_id, for an agency caller the session claim.
+    // caller this is the validated ?tenant_id.
     const override = await getDemoOverride(tenantId);
     return NextResponse.json({
       tenant_id: tenantId,
@@ -174,8 +166,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
  * PUT /api/demo/override
  *
  * Creates or replaces the DEMO MODE override for the resolved tenant.
- * Agency: `agency:admin`+ on its own tenant (UNCHANGED). Staff: write any tenant via
- * `?tenant_id=<uuid>`, gated on `access.canWrite` (rank ≥ `estalara:ops`), audited.
+ * Staff: write the tenant named by `?tenant_id=<uuid>`, gated on `access.canWrite`
+ * (rank ≥ `estalara:ops`), audited.
  *
  * Validation:
  *   - enabled=true requires override_archetype to be set (non-null).
@@ -191,8 +183,6 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
   try {
     access = await resolveTenantAccess(req, {
       allowStaffOverride: true,
-      // AGENCY WRITE semantics UNCHANGED: admin+ only (viewer may NOT write demo mode).
-      minAgencyRole: 'agency:admin',
       ...(tenantIdParam ? { tenantId: tenantIdParam } : {}),
     });
   } catch (err) {
@@ -200,8 +190,8 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
   }
 
   // Write-rank gate (CEO Q3, ADR-0018 §4): staff below `estalara:ops` (rank < 2) is
-  // view-only. Agency writes are gated by `minAgencyRole: 'agency:admin'` above.
-  if (access.via === 'staff' && !access.canWrite) {
+  // view-only.
+  if (!access.canWrite) {
     return NextResponse.json(
       { error: { code: 'forbidden', message: 'Staff write requires estalara:ops or higher' } },
       { status: 403 },
@@ -255,27 +245,7 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
     overrideModel: body.override_model,
   };
 
-  if (access.via === 'staff') {
-    return putStaff(req, access, tenantId, patch);
-  }
-
-  // ── Agency self-service write — UNCHANGED and NOT audited (§3 audits STAFF only). ──
-  try {
-    const row = await upsertDemoOverride(tenantId, patch, access.claims.sub);
-    return NextResponse.json({
-      tenant_id: tenantId,
-      enabled: row.enabled,
-      override_archetype: row.overrideArchetype,
-      override_model: row.overrideModel,
-      updated_at: row.updatedAt.toISOString(),
-    });
-  } catch (err: unknown) {
-    console.error('[demo/override PUT] DB write failed:', err instanceof Error ? err.message : err);
-    return NextResponse.json(
-      { error: { code: 'internal_error', message: 'Failed to save demo override' } },
-      { status: 500 },
-    );
-  }
+  return putStaff(req, access, tenantId, patch);
 }
 
 /**
@@ -283,18 +253,18 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
  * `staff_audit_log` row commit-or-roll-back TOGETHER in one `db.transaction()`.
  *
  * The upsert DELEGATES to `upsertDemoOverride(tenantId, patch, updatedBy, tx)`
- * (FOLLOW-609) — the same helper the agency path uses — passing this
+ * (FOLLOW-609) — the shared store helper — passing this
  * transaction's `tx` handle so the write participates in it. See the module
  * doc-comment for why this no longer needs to be inlined.
  *
  * @param req      - The incoming request (for audit IP / user-agent).
- * @param access   - The resolved STAFF access (narrowed; carries `staff.sub`).
+ * @param access   - The resolved staff access (carries `staff.sub`).
  * @param tenantId - The validated tenant fence (invariant 5).
  * @param patch    - The validated override fields to persist.
  */
 async function putStaff(
   req: NextRequest,
-  access: Extract<TenantAccess, { via: 'staff' }>,
+  access: TenantAccess,
   tenantId: string,
   patch: { enabled: boolean; overrideArchetype: string | null; overrideModel: string },
 ): Promise<NextResponse> {

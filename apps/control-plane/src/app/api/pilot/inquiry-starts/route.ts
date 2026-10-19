@@ -19,8 +19,8 @@
  *   generated_at           string   (ISO)
  *   data_source            'clickhouse' | 'mock'
  *
- * Auth (ADR-0018 §2, FOLLOW-1334): `resolveTenantAccess` with `allowStaffOverride`. Agency path:
- * tenant from the session claim (unchanged). Estalara staff may read the tenant named by an
+ * Auth (ADR-0018 §2, FOLLOW-1334; staff-only since FOLLOW-1335 removed the agency path):
+ * `resolveTenantAccess` with `allowStaffOverride`. Estalara staff read the tenant named by an
  * explicit `?tenant_id=<uuid>`, validated against the `tenants` table; that validated id is the
  * SINGLE tenant fence bound into the ClickHouse queries. Staff calls without `?tenant_id` are
  * rejected (400); the headless `ADMIN_API_SECRET` Bearer is not attributable and is rejected (403).
@@ -335,15 +335,15 @@ function buildMockResponse(tenantId: string, windowDays: number): InquiryStartsR
  * @returns 200 InquiryStartsResponse on success.
  * @returns 400 when a staff caller omits `?tenant_id`.
  * @returns 401 when no valid session is present.
- * @returns 403 when the caller is not permitted (e.g. agency acting on a foreign tenant).
+ * @returns 403 when the caller is not permitted.
  * @returns 404 when a staff caller supplies an unknown tenant id.
  * @returns 500 when CLICKHOUSE_URL is set but the ClickHouse query fails
  *   (Rule K.2 — fail loud; never silently fall back to mock when a real
  *   ClickHouse is configured).
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  // One auth path for agency + staff (ADR-0018 invariant 5): `access.tenantId` is the ONLY tenant
-  // fence — bound into both ClickHouse queries as param_tenant_id for BOTH paths.
+  // ADR-0018 invariant 5: `access.tenantId` (the validated `?tenant_id`) is the ONLY tenant
+  // fence — bound into both ClickHouse queries as param_tenant_id.
   const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
   let access: TenantAccess;
   try {

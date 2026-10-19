@@ -36,7 +36,7 @@ vi.mock('@estalara/db', () => ({
   },
 }));
 
-// Auth (ADR-0018 §2, FOLLOW-1334): the routes delegate agency + staff resolution to
+// Auth (ADR-0018 §2, FOLLOW-1334; staff-only since FOLLOW-1335): the routes delegate staff resolution to
 // `resolveTenantAccess` (via `lib/answers-access.ts`), whose own wiring is exercised by
 // `src/lib/__tests__/resolve-tenant-access.test.ts`. Only `resolveTenantAccess` is a spy here;
 // `AccessError` stays real so the legacy `{ error }` mapping runs for real.
@@ -73,22 +73,6 @@ const TENANT_A = '11111111-1111-1111-1111-111111111111';
 const ANSWER_ID = '33333333-3333-4333-8333-333333333333';
 const FOREIGN_ANSWER_ID = '44444444-4444-4444-8444-444444444444';
 
-function agencyAccess(tenantId: string): TenantAccess {
-  return {
-    via: 'agency',
-    tenantId,
-    claims: {
-      sub: 'user-a',
-      email: 'a@test.com',
-      tenant_id: tenantId,
-      agency_role: 'agency:viewer',
-      estalara_staff: false,
-      mfa_verified: true,
-    },
-    rawToken: 'agency-jwt',
-  };
-}
-
 /** A resolved Estalara-staff access acting on an explicit, validated tenant. */
 function staffAccess(tenantId: string, canWrite = true): TenantAccess {
   const role = canWrite ? 'estalara:ops' : 'estalara:readonly';
@@ -109,10 +93,7 @@ function staffAccess(tenantId: string, canWrite = true): TenantAccess {
   };
 }
 
-const FOREIGN_TENANT_403 = new AccessError(
-  403,
-  'Access denied: agency session cannot act on a foreign tenant',
-);
+const FORBIDDEN_403 = new AccessError(403, 'Unauthorized: no tenant access for this request');
 
 const EXISTING_ROW = {
   id: ANSWER_ID,
@@ -197,9 +178,9 @@ beforeEach(() => {
 
 describe('PATCH /api/tenants/:id/answers/:answerId', () => {
   it('returns 200 with updated row when both question and answer change', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     vi.mocked(createAdminClient).mockReturnValue(
-      makeDbMock({}) as unknown as ReturnType<typeof createAdminClient>,
+      makeStaffDb().db as unknown as ReturnType<typeof createAdminClient>,
     );
 
     const req = makePatchRequest(TENANT_A, ANSWER_ID, {
@@ -219,22 +200,12 @@ describe('PATCH /api/tenants/:id/answers/:answerId', () => {
   });
 
   it('does NOT call embedText when only answer changes', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     vi.mocked(createAdminClient).mockReturnValue(
-      makeDbMock({
-        existingRows: [{ id: ANSWER_ID, question: 'Same question text' }],
-        updateResult: [
-          {
-            id: ANSWER_ID,
-            tenantId: TENANT_A,
-            listingId: 'listing-001',
-            question: 'Same question text',
-            answer: 'New answer only',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-        ],
-      }) as unknown as ReturnType<typeof createAdminClient>,
+      makeStaffDb({
+        outerRows: [{ id: ANSWER_ID, question: 'Same question text' }],
+        lockedRows: [{ ...EXISTING_ROW, question: 'Same question text' }],
+      }).db as unknown as ReturnType<typeof createAdminClient>,
     );
 
     const req = makePatchRequest(TENANT_A, ANSWER_ID, { answer: 'New answer only' });
@@ -247,11 +218,12 @@ describe('PATCH /api/tenants/:id/answers/:answerId', () => {
   });
 
   it('does NOT call embedText when question text is unchanged', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     vi.mocked(createAdminClient).mockReturnValue(
-      makeDbMock({
-        existingRows: [{ id: ANSWER_ID, question: 'Same exact question' }],
-      }) as unknown as ReturnType<typeof createAdminClient>,
+      makeStaffDb({
+        outerRows: [{ id: ANSWER_ID, question: 'Same exact question' }],
+        lockedRows: [{ ...EXISTING_ROW, question: 'Same exact question' }],
+      }).db as unknown as ReturnType<typeof createAdminClient>,
     );
 
     const req = makePatchRequest(TENANT_A, ANSWER_ID, {
@@ -267,9 +239,9 @@ describe('PATCH /api/tenants/:id/answers/:answerId', () => {
   });
 
   it('returns 404 when answer not found for this tenant', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     vi.mocked(createAdminClient).mockReturnValue(
-      makeDbMock({ existingRows: [] }) as unknown as ReturnType<typeof createAdminClient>,
+      makeStaffDb({ outerRows: [] }).db as unknown as ReturnType<typeof createAdminClient>,
     );
 
     const req = makePatchRequest(TENANT_A, ANSWER_ID, { answer: 'new answer' });
@@ -280,8 +252,8 @@ describe('PATCH /api/tenants/:id/answers/:answerId', () => {
     expect(res.status).toBe(404);
   });
 
-  it('returns 403 when tenant B tries to update tenant A answer', async () => {
-    mockResolve.mockRejectedValue(FOREIGN_TENANT_403);
+  it('returns 403 when resolveTenantAccess refuses (mapped to the legacy { error } body)', async () => {
+    mockResolve.mockRejectedValue(FORBIDDEN_403);
 
     const req = makePatchRequest(TENANT_A, ANSWER_ID, { answer: 'hacked' });
 
@@ -310,9 +282,9 @@ describe('PATCH /api/tenants/:id/answers/:answerId', () => {
 
 describe('DELETE /api/tenants/:id/answers/:answerId', () => {
   it('returns 204 on successful delete', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     vi.mocked(createAdminClient).mockReturnValue(
-      makeDbMock({}) as unknown as ReturnType<typeof createAdminClient>,
+      makeStaffDb().db as unknown as ReturnType<typeof createAdminClient>,
     );
 
     const req = makeDeleteRequest(TENANT_A, ANSWER_ID);
@@ -323,9 +295,9 @@ describe('DELETE /api/tenants/:id/answers/:answerId', () => {
   });
 
   it('returns 404 when answer not found', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     vi.mocked(createAdminClient).mockReturnValue(
-      makeDbMock({ deleteResult: [] }) as unknown as ReturnType<typeof createAdminClient>,
+      makeStaffDb({ deleteResult: [] }).db as unknown as ReturnType<typeof createAdminClient>,
     );
 
     const req = makeDeleteRequest(TENANT_A, ANSWER_ID);
@@ -335,8 +307,8 @@ describe('DELETE /api/tenants/:id/answers/:answerId', () => {
     expect(res.status).toBe(404);
   });
 
-  it('returns 403 when tenant B tries to delete tenant A answer', async () => {
-    mockResolve.mockRejectedValue(FOREIGN_TENANT_403);
+  it('returns 403 when resolveTenantAccess refuses', async () => {
+    mockResolve.mockRejectedValue(FORBIDDEN_403);
 
     const req = makeDeleteRequest(TENANT_A, ANSWER_ID);
     const res = await DELETE(req, {
@@ -464,23 +436,6 @@ describe('PATCH /api/tenants/:id/answers/:answerId — staff override', () => {
     expect((await parseBody<{ code: string }>(res)).code).toBe('audit_write_failed');
     expect(mockCaptureException).toHaveBeenCalledOnce();
   });
-
-  it('agency path stays un-audited: plain update, no transaction', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
-    const base = makeDbMock({});
-    const withTx = { ...base, transaction: vi.fn() };
-    vi.mocked(createAdminClient).mockReturnValue(
-      withTx as unknown as ReturnType<typeof createAdminClient>,
-    );
-
-    const res = await PATCH(makePatchRequest(TENANT_A, ANSWER_ID, { answer: 'x' }), {
-      params: Promise.resolve({ id: TENANT_A, answerId: ANSWER_ID }),
-    });
-
-    expect(res.status).toBe(200);
-    expect(withTx.transaction).not.toHaveBeenCalled();
-    expect(base.update).toHaveBeenCalledOnce();
-  });
 });
 
 describe('DELETE /api/tenants/:id/answers/:answerId — staff override', () => {
@@ -557,23 +512,6 @@ describe('DELETE /api/tenants/:id/answers/:answerId — staff override', () => {
     expect((await parseBody<{ code: string }>(res)).code).toBe('audit_write_failed');
     expect(mockCaptureException).toHaveBeenCalledOnce();
   });
-
-  it('agency path stays un-audited: plain delete, no transaction', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
-    const base = makeDbMock({});
-    const withTx = { ...base, transaction: vi.fn() };
-    vi.mocked(createAdminClient).mockReturnValue(
-      withTx as unknown as ReturnType<typeof createAdminClient>,
-    );
-
-    const res = await DELETE(makeDeleteRequest(TENANT_A, ANSWER_ID), {
-      params: Promise.resolve({ id: TENANT_A, answerId: ANSWER_ID }),
-    });
-
-    expect(res.status).toBe(204);
-    expect(withTx.transaction).not.toHaveBeenCalled();
-    expect(base.delete).toHaveBeenCalledOnce();
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -618,26 +556,6 @@ describe('malformed answer id (RC-1)', () => {
       expect(mockCaptureException).not.toHaveBeenCalled();
     });
   }
-
-  it('agency PATCH and DELETE with a malformed id -> 404 before any query', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
-    const base = makeDbMock({});
-    vi.mocked(createAdminClient).mockReturnValue(
-      base as unknown as ReturnType<typeof createAdminClient>,
-    );
-
-    const p = await PATCH(makePatchRequest(TENANT_A, 'nope', { answer: 'x' }), {
-      params: Promise.resolve({ id: TENANT_A, answerId: 'nope' }),
-    });
-    const d = await DELETE(makeDeleteRequest(TENANT_A, 'nope'), {
-      params: Promise.resolve({ id: TENANT_A, answerId: 'nope' }),
-    });
-
-    expect([p.status, d.status]).toEqual([404, 404]);
-    expect(base.select).not.toHaveBeenCalled();
-    expect(base.update).not.toHaveBeenCalled();
-    expect(base.delete).not.toHaveBeenCalled();
-  });
 });
 
 describe('staff PATCH — audited `before` is read under a row lock', () => {

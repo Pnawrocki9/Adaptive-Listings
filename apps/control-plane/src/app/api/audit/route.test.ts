@@ -3,8 +3,9 @@
  * (FOLLOW-599, ADR-0018 §3).
  *
  * Coverage:
- *   - Auth: 401 (AccessError), 400 (staff no tenant_id), agency caller → 403
- *     (deferred Phase-2, out of scope), option-wiring (allowStaffOverride:true).
+ *   - Auth: 401 (AccessError), 400 (staff no tenant_id); the agency-caller 403 went with the
+ *     agency path (FOLLOW-1335);
+ *     option-wiring (allowStaffOverride:true).
  *   - Mock fallback (data_source: 'mock') when the admin DB is absent (Rule K.2).
  *   - Real path (data_source: 'real') when configured + query succeeds.
  *   - Fail-loud: 500 + Sentry when Postgres configured-but-throws (Rule K.2).
@@ -76,22 +77,6 @@ const mockCaptureException = vi.mocked(Sentry.captureException);
 const mockResolve = vi.mocked(resolveTenantAccess);
 
 // ─── Access fixtures ──────────────────────────────────────────────────────────
-
-function agencyAccess(tenantId = TENANT_ID): TenantAccess {
-  return {
-    via: 'agency',
-    tenantId,
-    claims: {
-      sub: 'user-uuid',
-      email: 'user@agency.com',
-      tenant_id: tenantId,
-      agency_role: 'agency:viewer',
-      estalara_staff: false,
-      mfa_verified: true,
-    },
-    rawToken: 'agency-jwt',
-  };
-}
 
 function staffAccess(tenantId: string): TenantAccess {
   return {
@@ -204,15 +189,6 @@ describe('GET /api/audit', () => {
     expect(res.status).toBe(400);
     const body = await parseBody<{ error: { code: string } }>(res);
     expect(body.error.code).toBe('bad_request');
-  });
-
-  it('rejects an AGENCY caller with 403 (agency audit read is a deferred Phase-2 item)', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_ID));
-    const { GET } = await import('./route.js');
-    const res = await GET(makeRequest({ tenant_id: TENANT_ID }));
-    expect(res.status).toBe(403);
-    const body = await parseBody<{ error: { code: string } }>(res);
-    expect(body.error.code).toBe('forbidden');
   });
 
   it('option-wiring: calls resolveTenantAccess with allowStaffOverride:true', async () => {

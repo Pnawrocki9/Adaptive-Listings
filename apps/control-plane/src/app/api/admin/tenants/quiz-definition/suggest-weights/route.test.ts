@@ -12,7 +12,8 @@
  *     weights are clamped to [0, 1].
  *   - Markdown-fenced reply is tolerated; garbage reply → 502 (K.2 fail-loud).
  *   - Anthropic API throw → 502; missing ANTHROPIC_API_KEY → 503.
- *   - Agency → 403 staff_only; readonly staff → 403 (write-rank gate).
+ *   - Readonly staff → 403 (write-rank gate). (FOLLOW-1335: the agency 403 case went with the
+ *     agency path.)
  *   - Invalid body / invalid definition → 400.
  *   - ARCHETYPE_DESCRIPTORS covers EXACTLY CANONICAL_ARCHETYPE_IDS (drift guard).
  *
@@ -74,22 +75,6 @@ function staffAccess(
     role,
     canWrite: rank >= 2,
     isSuperadmin: rank >= 3,
-  };
-}
-
-function agencyAccess(tenantId: string): TenantAccess {
-  return {
-    via: 'agency',
-    tenantId,
-    claims: {
-      sub: 'user-uuid',
-      email: 'user@agency.com',
-      tenant_id: tenantId,
-      agency_role: 'agency:admin',
-      estalara_staff: false,
-      mfa_verified: true,
-    },
-    rawToken: 'agency-jwt',
   };
 }
 
@@ -238,11 +223,7 @@ describe('POST /api/admin/tenants/quiz-definition/suggest-weights', () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
-  it('agency → 403 staff_only; readonly staff → 403; neither reaches the model', async () => {
-    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
-    const res1 = await POST(makeRequest({ definition: DEFINITION }, { tenant_id: TENANT_A }));
-    expect(res1.status).toBe(403);
-
+  it('readonly staff → 403; it never reaches the model', async () => {
     mockResolve.mockResolvedValue(staffAccess(TENANT_A, 'estalara:readonly'));
     const res2 = await POST(makeRequest({ definition: DEFINITION }, { tenant_id: TENANT_A }));
     expect(res2.status).toBe(403);

@@ -26,11 +26,10 @@
  * FOLLOW-1000, not silently faked here. Lift belongs to the A/B surfaces
  * (`/api/analytics/lift`), not the quiz page.
  *
- * Auth (ADR-0018 invariant 5, same shape as GET /api/quiz/config): ONE path for
- * agency + staff via `resolveTenantAccess` with `allowStaffOverride` —
- * `access.tenantId` is the ONLY tenant fence, bound into every query. The
- * agency branch sources it from the session claim; the staff branch from the
- * validated `?tenant_id`.
+ * Auth (ADR-0018 invariant 5, same shape as GET /api/quiz/config): Estalara staff
+ * via `resolveTenantAccess` with `allowStaffOverride` (the agency path went with
+ * FOLLOW-1335) — `access.tenantId`, the validated `?tenant_id`, is the ONLY
+ * tenant fence, bound into every query.
  *
  * Rule K.2 — fail loud: a configured-but-failed query returns 500, never
  * zeroes fabricated as "no quiz activity".

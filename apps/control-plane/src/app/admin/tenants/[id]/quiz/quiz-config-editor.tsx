@@ -5,7 +5,7 @@
  * configuration (ADR-0018 §6 Phase 2 / FOLLOW-595).
  *
  * SURFACE DECISION (ticket FOLLOW-595): the agency editor
- * (`apps/control-plane/src/app/dashboard/quiz/page.tsx`) is NOT extracted into a
+ * (`app/dashboard/quiz/page.tsx`, deleted by FOLLOW-1335) was NOT extracted into a
  * shared `tenantId`-prop component the way FOLLOW-594 did with `AnalyticsView`.
  * Reason: that page is tightly coupled to the agency session AND its quiz ON/OFF
  * toggle writes through a DIFFERENT route (`PATCH /api/tenants/:id`) that has no

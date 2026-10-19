@@ -2,7 +2,7 @@
  * GET /api/dashboard/analytics/lift/export (FOLLOW-1338, ruling D-K).
  *
  * Pinned: staff 200 with the attachment headers and the panel's columns; readonly staff allowed
- * (a read); no session 401; an agency session 403 `staff_only`; a foreign / unknown tenant is
+ * (a read); no session 401 (a non-staff caller is no caller since FOLLOW-1335); a foreign / unknown tenant is
  * whatever `resolveTenantAccess` throws (404); an unknown window 400; a failing ClickHouse is a JSON
  * 500 + Sentry, never a CSV of zeros; the unconfigured mock is tagged in every row; a cell that
  * starts with a formula character is neutralised while a negative number stays a number.
@@ -99,16 +99,13 @@ describe('auth', () => {
     );
   });
 
-  it('an agency session is refused 403 staff_only', async () => {
-    mockResolve.mockResolvedValue({
-      via: 'agency',
-      tenantId: TENANT,
-      claims: {} as never,
-      rawToken: null,
-    });
+  it('an unattributable staff caller is refused 403 (resolveTenantAccess decides)', async () => {
+    mockResolve.mockRejectedValue(
+      new AccessError(403, 'Unauthorized: no tenant access for this request'),
+    );
     const res = await GET(req());
     expect(res.status).toBe(403);
-    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('staff_only');
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('forbidden');
   });
 
   it('read-only staff may export (it is a read)', async () => {

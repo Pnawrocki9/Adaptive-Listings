@@ -13,7 +13,7 @@
  * tenant's completions, not just the visible page.
  *
  * Auth (ADR-0018 §2): `resolveTenantAccess` with `allowStaffOverride`, STAFF-ONLY
- *   — a resolved agency session is rejected 403 (`staff_only`). Read-only: any
+ *   — a non-staff caller is 401 there (FOLLOW-1335). Read-only: any
  *   staff rank (including `estalara:readonly`) may call it, mirroring the
  *   `al-state`/`quiz-state` GETs; there is no write here to rank-gate. The
  *   validated `?tenant_id` is the SINGLE tenant fence (invariant 5) bound into
@@ -104,36 +104,21 @@ function intParam(raw: string | null, fallback: number): number {
   return n;
 }
 
-/** Resolve access, then enforce STAFF-ONLY (no agency path — mirrors quiz-state). */
+/** Resolve the staff caller's access (mirrors quiz-state). */
 async function resolveStaffAccess(
   req: NextRequest,
-): Promise<{ access: Extract<TenantAccess, { via: 'staff' }> } | { error: NextResponse }> {
+): Promise<{ access: TenantAccess } | { error: NextResponse }> {
   const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
   let access: TenantAccess;
   try {
     access = await resolveTenantAccess(req, {
       allowStaffOverride: true,
-      minAgencyRole: 'agency:viewer',
       // exactOptionalPropertyTypes (RETRO-189): omit the key when absent so a staff
       // caller without ?tenant_id reaches resolve's 400.
       ...(tenantIdParam ? { tenantId: tenantIdParam } : {}),
     });
   } catch (err) {
     return { error: accessErrorToResponse(err) };
-  }
-
-  if (access.via !== 'staff') {
-    return {
-      error: NextResponse.json(
-        {
-          error: {
-            code: 'staff_only',
-            message: 'The quiz completions viewer is an Estalara staff surface',
-          },
-        },
-        { status: 403 },
-      ),
-    };
   }
 
   return { access };

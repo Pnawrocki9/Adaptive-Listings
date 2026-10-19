@@ -7,7 +7,9 @@
  *       (hop 0 = `/admin` and the page its landing `redirect()` resolves to), or is listed in
  *       HIDDEN_BY_DESIGN with a one-line reason;
  *   (b) every `/admin` nav href points at a page that exists in the inventory;
- *   (c) no nav href still carries the legacy pilot tenant (`cbc51cfa…` / `PILOT_TENANT_ID`).
+ *   (c) no nav href still carries the legacy pilot tenant (`cbc51cfa…` / `PILOT_TENANT_ID`);
+ *   (d) every `/dashboard/*` redirect (FOLLOW-1335, `lib/dashboard-redirects.ts`) lands on an
+ *       existing `/admin` page, for every route the deleted agency dashboard had.
  *
  * Nothing here is hand-authored: the page inventory is a filesystem walk, and the edges are the
  * `href` / `redirect()` literals of the real source files. Edges:
@@ -29,6 +31,10 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
+
+import { dashboardRedirectPath } from '@/lib/dashboard-redirects';
+import { ESTALARA_TENANT_ID } from '@/lib/estalara-tenant';
+import { parseAnalyticsTab } from '../tenants/[id]/analytics/analytics-tabs';
 
 const ADMIN_DIR = join(__dirname, '..');
 const MAX_HOPS = 2;
@@ -217,5 +223,53 @@ describe('FOLLOW-1343 N2 — /admin navigation reachability (built from source)'
     const scoped = raw.filter((h) => h.startsWith('/admin/tenants/$'));
     expect(scoped.length).toBeGreaterThan(0);
     for (const h of scoped) expect(h).toMatch(/^\/admin\/tenants\/\$\{ESTALARA_TENANT_ID\}(\/|$)/);
+  });
+});
+
+/**
+ * Every route the agency dashboard served before FOLLOW-1335 deleted `app/dashboard/**` (its eight
+ * `page.tsx` routes plus the zone root), with the query strings its own links used. A redirect
+ * target is a CONCRETE path; it matches an inventory route when the segment counts agree and every
+ * segment is equal or the route's `[id]`.
+ */
+const FORMER_DASHBOARD_URLS = [
+  '/dashboard',
+  '/dashboard/analytics',
+  '/dashboard/analytics?tab=pilot',
+  '/dashboard/analytics/labels',
+  '/dashboard/pilot',
+  '/dashboard/quiz',
+  '/dashboard/quiz/analytics',
+  '/dashboard/demo/override',
+  '/dashboard/settings',
+  '/dashboard/listings/listing-42/answers',
+  '/dashboard/no-such-page',
+];
+
+function inventoryRouteFor(path: string): string | undefined {
+  const segs = path.split('/');
+  return [...inventory].find((route) => {
+    const r = route.split('/');
+    return r.length === segs.length && r.every((seg, i) => seg === '[id]' || seg === segs[i]);
+  });
+}
+
+describe('FOLLOW-1335 (K3) — every /dashboard/* redirect has an existing /admin target', () => {
+  it.each(FORMER_DASHBOARD_URLS)('%s', (url) => {
+    const parsed = new URL(url, 'http://localhost');
+    const target = dashboardRedirectPath(parsed.pathname, parsed.searchParams);
+    expect(target).not.toBeNull();
+    const [path = '', query = ''] = (target ?? '').split('?');
+
+    expect(inventoryRouteFor(path), `${url} -> ${String(target)}`).toBeDefined();
+    // A tenant-scoped target is the Estalara tenant, never another id.
+    if (path.startsWith('/admin/tenants/')) expect(path.split('/')[3]).toBe(ESTALARA_TENANT_ID);
+    // A carried-over tab is one the analytics page actually opens (not a silent fall-back).
+    const tab = new URLSearchParams(query).get('tab');
+    if (tab !== null) expect(parseAnalyticsTab(tab)).toBe(tab);
+  });
+
+  it('the old /dashboard tree is gone (no page left behind a redirect)', () => {
+    expect(() => statSync(join(ADMIN_DIR, '..', 'dashboard'))).toThrow();
   });
 });

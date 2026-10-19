@@ -95,17 +95,8 @@ const DEFAULT_SCAN_ROOTS = ['apps/control-plane/src/app', 'apps/control-plane/sr
 // ─── Explicit, annotated allow-list (read-only surfaces, never saved back) ──────
 // Each entry exempts ONLY a swallow whose handler text contains `marker`, in `file`.
 const ALLOWLIST = [
-  {
-    file: 'apps/control-plane/src/app/dashboard/analytics/page.tsx',
-    marker: 'Panel shows empty state',
-    reason:
-      'read-only bandit-weights display panel; state is rendered, never POSTed back — a failed load cannot clobber config.',
-  },
-  {
-    file: 'apps/control-plane/src/app/dashboard/analytics/page.tsx',
-    marker: 'Resume failed silently',
-    reason: 'per-archetype resume affordance (user can retry); does not save loaded config back.',
-  },
+  // FOLLOW-1335 deleted `app/dashboard/analytics/page.tsx` and its two entries; the shared
+  // `analytics-view.tsx` below carries the same two read-only shapes.
   {
     file: 'apps/control-plane/src/components/analytics/analytics-view.tsx',
     marker: 'Panel shows empty state',

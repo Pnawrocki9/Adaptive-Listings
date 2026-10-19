@@ -2,12 +2,12 @@
  * POST /api/tenants/:id/answers — create an FAQ answer for a listing.
  * GET  /api/tenants/:id/answers?listing_id=X — list answers (without embeddings).
  *
- * Auth (ADR-0018 §2, FOLLOW-1334): `resolveTenantAccess` with `allowStaffOverride` via
- * `resolveAnswersAccess` (`lib/answers-access.ts`). Agency path (unchanged): Bearer JWT or Supabase
- * SSR browser session; the tenant in the claims must match the `:id` param — 401 for missing/invalid
- * session, 403 for mismatched tenant. Staff path: an Estalara staff session may act on any
- * `:id` that exists in `tenants` (404 otherwise); a staff POST needs `estalara:ops`+ (403 below) and
- * commits the insert and its `staff_audit_log` row in ONE transaction (ADR-0018 §3a).
+ * Auth (ADR-0018 §2, FOLLOW-1334; staff-only since FOLLOW-1335 removed the agency path):
+ * `resolveTenantAccess` with `allowStaffOverride` via `resolveAnswersAccess`
+ * (`lib/answers-access.ts`). An Estalara staff session (Bearer JWT or Supabase SSR cookie) may act
+ * on any `:id` that exists in `tenants` (404 otherwise; 401 without a staff session); a POST needs
+ * `estalara:ops`+ (403 below) and commits the insert and its `staff_audit_log` row in ONE
+ * transaction (ADR-0018 §3a).
  *
  * POST body:
  *   listing_id  — string, required
@@ -94,69 +94,43 @@ export async function POST(
     updatedAt: answers.updatedAt,
   };
 
-  if (access.via === 'staff') {
-    // ── Atomic staff write (ADR-0018 §3a / FOLLOW-605 reference impl) ─────────────────────────
-    // The insert and its staff_audit_log row commit-or-roll-back TOGETHER, so an answer can never
-    // outlive a missing audit row. Fenced on access.tenantId (validated against `tenants`).
-    try {
-      const db = createAdminClient();
-      const row = await db.transaction(async (tx) => {
-        const inserted = await tx
-          .insert(answers)
-          .values({ tenantId, listingId: listing_id, question, answer, questionEmbedding })
-          .returning(returningColumns);
-        const created = inserted[0];
-        if (!created) throw new Error('answers insert returned no row');
-        await tx.insert(staffAuditLog).values({
-          adminUserId: access.staff.sub,
-          action: 'listing_answer.create',
-          targetTenantId: tenantId,
-          payload: { answer_id: created.id, listing_id, question, answer },
-          ipAddress: requestIp(req),
-          userAgent: req.headers.get('user-agent'),
-        });
-        return created;
-      });
-      return NextResponse.json(row, { status: 201 });
-    } catch (err) {
-      Sentry.captureException(err, {
-        tags: { route: 'tenants/answers', staff_audit_error: 'true' },
-        extra: { tenant_id: tenantId, admin_user_id: access.staff.sub },
-      });
-      return NextResponse.json(
-        {
-          error:
-            'The answer could not be recorded atomically with its staff audit row; ' +
-            'nothing was saved. Retry the action.',
-          code: 'audit_write_failed',
-        },
-        { status: 500 },
-      );
-    }
-  }
-
+  // ── Atomic staff write (ADR-0018 §3a / FOLLOW-605 reference impl) ─────────────────────────
+  // The insert and its staff_audit_log row commit-or-roll-back TOGETHER, so an answer can never
+  // outlive a missing audit row. Fenced on access.tenantId (validated against `tenants`).
   try {
     const db = createAdminClient();
-    const inserted = await db
-      .insert(answers)
-      .values({
-        tenantId,
-        listingId: listing_id,
-        question,
-        answer,
-        questionEmbedding,
-      })
-      .returning(returningColumns);
-
-    const row = inserted[0];
-    if (!row) {
-      return NextResponse.json({ error: 'Insert failed' }, { status: 500 });
-    }
-
+    const row = await db.transaction(async (tx) => {
+      const inserted = await tx
+        .insert(answers)
+        .values({ tenantId, listingId: listing_id, question, answer, questionEmbedding })
+        .returning(returningColumns);
+      const created = inserted[0];
+      if (!created) throw new Error('answers insert returned no row');
+      await tx.insert(staffAuditLog).values({
+        adminUserId: access.staff.sub,
+        action: 'listing_answer.create',
+        targetTenantId: tenantId,
+        payload: { answer_id: created.id, listing_id, question, answer },
+        ipAddress: requestIp(req),
+        userAgent: req.headers.get('user-agent'),
+      });
+      return created;
+    });
     return NextResponse.json(row, { status: 201 });
   } catch (err) {
-    console.error('[answers POST] DB insert failed:', err instanceof Error ? err.message : err);
-    return NextResponse.json({ error: 'Failed to create answer' }, { status: 500 });
+    Sentry.captureException(err, {
+      tags: { route: 'tenants/answers', staff_audit_error: 'true' },
+      extra: { tenant_id: tenantId, admin_user_id: access.staff.sub },
+    });
+    return NextResponse.json(
+      {
+        error:
+          'The answer could not be recorded atomically with its staff audit row; ' +
+          'nothing was saved. Retry the action.',
+        code: 'audit_write_failed',
+      },
+      { status: 500 },
+    );
   }
 }
 

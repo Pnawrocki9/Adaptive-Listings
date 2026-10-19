@@ -5,8 +5,9 @@
  * global LLM generation-model selector via the shared GenerationModelSettings
  * panel (FOLLOW-161). Staff are the ONLY accounts authorized to PUT this
  * setting (FOLLOW-456) — until this page existed, the selector lived solely in
- * the agency zone (/dashboard/settings), which staff sessions cannot reach
- * (middleware blocks estalara_staff from /dashboard/*), leaving the setting
+ * the agency zone (/dashboard/settings), which staff sessions could not reach
+ * (middleware blocked estalara_staff from /dashboard/*; the zone itself was
+ * deleted by FOLLOW-1335), leaving the setting
  * writable by no reachable UI. Phase 0 of the superadmin-access work
  * (2026-07-20); per-tenant settings surfaces are designed in the
  * superadmin-tenant-access ADR (Phase 1).

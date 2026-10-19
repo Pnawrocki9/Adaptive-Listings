@@ -1,5 +1,5 @@
 /**
- * JWT claim extraction and tenant context helpers.
+ * JWT claim extraction and RBAC guards.
  *
  * Supabase Auth embeds custom claims in the JWT via a Postgres function hook
  * (see supabase-hook.sql). This module provides type-safe extractors and RBAC
@@ -9,31 +9,29 @@
  *   {
  *     sub: string,                    // user UUID (Supabase auth.users.id)
  *     email: string,
- *     tenant_id?: string,             // UUID — agency users only
- *     agency_role?: AgencyRole,       // agency users only
  *     estalara_staff?: boolean,       // true for Estalara employees
  *     estalara_role?: EstalaraRole,   // staff only
+ *     tenant_id?: null,               // staff carry no tenant affiliation
  *     mfa_verified?: boolean,         // whether MFA was completed this session
  *   }
+ *
+ * FOLLOW-1335 (ESC-085, decision D-B): Adaptive Listings is single-tenant with one staff
+ * backoffice, so the only claim shape is Estalara STAFF (ranks readonly < ops < superadmin).
+ * The agency (tenant-user) shape — a `tenant_id` plus an agency role — and its type, type
+ * guard and role guard are removed: `extractClaims` rejects any non-staff payload, so
+ * `getAuthClaims` returns `null` for it. A token the hook still mints with agency claims (for a
+ * non-staff `users` row with `tenant_id` set — `supabase-hook.sql`) is therefore rejected by the
+ * CONTROL PLANE only. Supabase itself still honours it: the RLS policies granted to
+ * `authenticated` (`packages/db/migrations/0012_rls_policies.sql`, 0004, 0006) match the JWT
+ * `tenant_id`, so such a user signing in with the public anon key could read/write `tenants`,
+ * `api_keys`, `answers`, `ab_bandit_weights` through Supabase REST. Closing that is a production
+ * step (CTO handover §4: verify zero such rows, drop the hook's agency branch, NULL the columns).
  *
  * @module @estalara/auth/jwt
  */
 
-/** Agency user role within a tenant. Hierarchy: owner > admin > viewer. */
-export type AgencyRole = 'agency:owner' | 'agency:admin' | 'agency:viewer';
-
 /** Estalara staff role. Hierarchy: superadmin > ops > readonly. */
 export type EstalaraRole = 'estalara:superadmin' | 'estalara:ops' | 'estalara:readonly';
-
-/** JWT claims for an agency user (belongs to a specific tenant). */
-export interface TenantClaims {
-  sub: string;
-  email: string;
-  tenant_id: string;
-  agency_role: AgencyRole;
-  estalara_staff: false;
-  mfa_verified: boolean;
-}
 
 /** JWT claims for an Estalara staff member (no tenant affiliation). */
 export interface StaffClaims {
@@ -45,16 +43,10 @@ export interface StaffClaims {
   mfa_verified: boolean;
 }
 
-/** Discriminated union of all valid claim shapes. */
-export type AuthClaims = TenantClaims | StaffClaims;
+/** Every valid claim shape — only Estalara staff since FOLLOW-1335. */
+export type AuthClaims = StaffClaims;
 
-// ─── Role hierarchy maps ───────────────────────────────────────────────────
-
-const AGENCY_ROLE_RANK: Record<AgencyRole, number> = {
-  'agency:owner': 3,
-  'agency:admin': 2,
-  'agency:viewer': 1,
-};
+// ─── Role hierarchy map ────────────────────────────────────────────────────
 
 const STAFF_ROLE_RANK: Record<EstalaraRole, number> = {
   'estalara:superadmin': 3,
@@ -64,14 +56,15 @@ const STAFF_ROLE_RANK: Record<EstalaraRole, number> = {
 
 // ─── Type guards ───────────────────────────────────────────────────────────
 
-/** Returns true if claims belong to an agency user (has tenant_id, not staff). */
-export function isTenantClaims(claims: AuthClaims): claims is TenantClaims {
-  return !claims.estalara_staff && typeof claims.tenant_id === 'string';
-}
-
-/** Returns true if claims belong to an Estalara staff member. */
+/**
+ * Returns true if claims belong to an Estalara staff member. Every verified claim set is
+ * staff since FOLLOW-1335; the guard stays as the runtime check for claims that reach a
+ * caller through an untyped path (mocks, reconstructed session metadata).
+ */
 export function isStaffClaims(claims: AuthClaims): claims is StaffClaims {
-  return claims.estalara_staff;
+  // Strict: a truthy non-boolean (`'true'`, `1`) arriving through an untyped path is not staff.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare, @typescript-eslint/no-unnecessary-condition -- runtime guard for untyped input (see above)
+  return claims.estalara_staff === true;
 }
 
 // ─── Claim extraction ──────────────────────────────────────────────────────
@@ -82,7 +75,8 @@ export function isStaffClaims(claims: AuthClaims): claims is StaffClaims {
  * The JWT signature is verified by Supabase before it reaches application code.
  * This function only handles structural extraction and validation.
  *
- * @throws {Error} if the payload is structurally invalid or missing required fields
+ * @throws {Error} if the payload is structurally invalid, missing required fields, or not an
+ *   Estalara staff token (FOLLOW-1335 — there is no other caller identity)
  */
 export function extractClaims(jwtPayload: Record<string, unknown>): AuthClaims {
   const sub = jwtPayload.sub;
@@ -96,65 +90,25 @@ export function extractClaims(jwtPayload: Record<string, unknown>): AuthClaims {
   if (typeof email !== 'string' || email.length === 0) {
     throw new Error('JWT missing required field: email');
   }
-
-  // Staff path
-  if (estalaraStaff === true) {
-    const estalaraRole = jwtPayload.estalara_role;
-    if (!isEstalaraRole(estalaraRole)) {
-      throw new Error(`JWT has invalid estalara_role: ${String(estalaraRole)}`);
-    }
-    return {
-      sub,
-      email,
-      tenant_id: null,
-      estalara_staff: true,
-      estalara_role: estalaraRole,
-      mfa_verified: mfaVerified === true,
-    };
+  if (estalaraStaff !== true) {
+    throw new Error('JWT is not an Estalara staff token (estalara_staff is not true)');
   }
 
-  // Agency user path
-  const tenantId = jwtPayload.tenant_id;
-  const agencyRole = jwtPayload.agency_role;
-
-  if (typeof tenantId !== 'string' || tenantId.length === 0) {
-    throw new Error('JWT missing required field: tenant_id (required for non-staff users)');
+  const estalaraRole = jwtPayload.estalara_role;
+  if (!isEstalaraRole(estalaraRole)) {
+    throw new Error(`JWT has invalid estalara_role: ${String(estalaraRole)}`);
   }
-  if (!isAgencyRole(agencyRole)) {
-    throw new Error(`JWT has invalid agency_role: ${String(agencyRole)}`);
-  }
-
   return {
     sub,
     email,
-    tenant_id: tenantId,
-    agency_role: agencyRole,
-    estalara_staff: false,
+    tenant_id: null,
+    estalara_staff: true,
+    estalara_role: estalaraRole,
     mfa_verified: mfaVerified === true,
   };
 }
 
-// ─── RBAC guards ──────────────────────────────────────────────────────────
-
-/**
- * Assert that the caller is an agency user with at least the given role.
- *
- * Role hierarchy (high → low): owner > admin > viewer.
- *
- * @throws {Error} if claims are not agency claims, or role is insufficient
- */
-export function requireAgencyRole(claims: AuthClaims, minimum: AgencyRole): void {
-  if (!isTenantClaims(claims)) {
-    throw new Error('Access denied: Estalara staff cannot access tenant resources via this guard');
-  }
-  const actual = AGENCY_ROLE_RANK[claims.agency_role];
-  const required = AGENCY_ROLE_RANK[minimum];
-  if (actual < required) {
-    throw new Error(
-      `Access denied: role '${claims.agency_role}' is insufficient — '${minimum}' or higher required`,
-    );
-  }
-}
+// ─── RBAC guard ───────────────────────────────────────────────────────────
 
 /**
  * Assert that the caller is Estalara staff with at least the given role.
@@ -165,7 +119,7 @@ export function requireAgencyRole(claims: AuthClaims, minimum: AgencyRole): void
  */
 export function requireStaffRole(claims: AuthClaims, minimum: EstalaraRole): void {
   if (!isStaffClaims(claims)) {
-    throw new Error('Access denied: agency users cannot access staff resources');
+    throw new Error('Access denied: Estalara staff access required');
   }
   const actual = STAFF_ROLE_RANK[claims.estalara_role];
   const required = STAFF_ROLE_RANK[minimum];
@@ -177,10 +131,6 @@ export function requireStaffRole(claims: AuthClaims, minimum: EstalaraRole): voi
 }
 
 // ─── Internal validators ───────────────────────────────────────────────────
-
-function isAgencyRole(value: unknown): value is AgencyRole {
-  return value === 'agency:owner' || value === 'agency:admin' || value === 'agency:viewer';
-}
 
 function isEstalaraRole(value: unknown): value is EstalaraRole {
   return (

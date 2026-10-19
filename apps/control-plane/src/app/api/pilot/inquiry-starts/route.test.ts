@@ -2,7 +2,7 @@
  * Tests for GET /api/pilot/inquiry-starts
  *
  * ClickHouse absent in CI → mock data path.
- * Auth (ADR-0018 §2, FOLLOW-1334): the route delegates agency + staff resolution to
+ * Auth (ADR-0018 §2, FOLLOW-1334; staff-only since FOLLOW-1335): the route delegates staff resolution to
  * `resolveTenantAccess`, whose own end-to-end wiring is exercised by
  * `src/lib/__tests__/resolve-tenant-access.test.ts`. These tests PARTIALLY MOCK
  * `@/lib/session-auth` — only `resolveTenantAccess` is a spy; `AccessError` stays real so
@@ -65,20 +65,8 @@ async function parseBody<T>(res: Response): Promise<T> {
   return raw as T;
 }
 
-function authAsTenant(): void {
-  mockResolve.mockResolvedValue({
-    via: 'agency',
-    tenantId: TENANT_ID,
-    claims: {
-      sub: 'user-uuid',
-      email: 'user@agency.com',
-      tenant_id: TENANT_ID,
-      agency_role: 'agency:admin',
-      estalara_staff: false,
-      mfa_verified: true,
-    },
-    rawToken: 'agency-jwt',
-  });
+function authAsStaff(): void {
+  mockResolve.mockResolvedValue(staffAccess(TENANT_ID));
 }
 
 /** A resolved Estalara-staff access acting on an explicit, validated tenant (readonly rank). */
@@ -125,35 +113,10 @@ describe('GET /api/pilot/inquiry-starts', () => {
     expect(body.error.code).toBe('unauthorized');
   });
 
-  it('returns 403 when an agency session names a foreign tenant_id', async () => {
-    mockResolve.mockRejectedValue(
-      new AccessError(403, 'Access denied: agency session cannot act on a foreign tenant'),
-    );
-
-    const { GET } = await import('./route.js');
-    const res = await GET(makeRequest({ queryTenantId: OTHER_TENANT_ID }));
-
-    expect(res.status).toBe(403);
-  });
-
-  it('agency path: no ?tenant_id is passed to resolveTenantAccess (tenant from the claim)', async () => {
-    authAsTenant();
-
-    const { GET } = await import('./route.js');
-    const res = await GET(makeRequest({ tenantId: TENANT_ID }));
-
-    expect(res.status).toBe(200);
-    expect(mockResolve).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ allowStaffOverride: true }),
-    );
-    expect(mockResolve.mock.calls[0]?.[1]).not.toHaveProperty('tenantId');
-  });
-
   // ─── Rule K.2: CLICKHOUSE_URL unset → mock path ─────────────────────────────
 
   it('returns 200 with data_source: mock when CLICKHOUSE_URL is not set', async () => {
-    authAsTenant();
+    authAsStaff();
     // CLICKHOUSE_URL is deleted in beforeEach — no need to set it again.
 
     const { GET } = await import('./route.js');
@@ -170,7 +133,7 @@ describe('GET /api/pilot/inquiry-starts', () => {
   // ─── Rule K.2: CLICKHOUSE_URL set + query fails → 500 + Sentry ───────────────
 
   it('returns 500 and calls Sentry.captureException when CLICKHOUSE_URL is set but agg query fails', async () => {
-    authAsTenant();
+    authAsStaff();
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
 
     vi.stubGlobal(
@@ -195,7 +158,7 @@ describe('GET /api/pilot/inquiry-starts', () => {
   });
 
   it('returns 500 when CLICKHOUSE_URL is set and fetch throws (network error)', async () => {
-    authAsTenant();
+    authAsStaff();
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
 
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
@@ -210,7 +173,7 @@ describe('GET /api/pilot/inquiry-starts', () => {
   });
 
   it('does NOT fall back to mock when CLICKHOUSE_URL is set and query fails', async () => {
-    authAsTenant();
+    authAsStaff();
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
 
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('boom', { status: 503 })));
@@ -225,7 +188,7 @@ describe('GET /api/pilot/inquiry-starts', () => {
   // ─── ClickHouse success path ──────────────────────────────────────────────────
 
   it('returns 200 with data_source: clickhouse when ClickHouse responds successfully', async () => {
-    authAsTenant();
+    authAsStaff();
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
 
     const aggRows = [
@@ -255,7 +218,7 @@ describe('GET /api/pilot/inquiry-starts', () => {
   // ─── Existing shape / invariant tests ────────────────────────────────────────
 
   it('returns 200 with correct top-level shape (mock path)', async () => {
-    authAsTenant();
+    authAsStaff();
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest({ tenantId: TENANT_ID }));
@@ -276,7 +239,7 @@ describe('GET /api/pilot/inquiry-starts', () => {
   });
 
   it('daily_breakdown rows have date, adapted, holdout fields', async () => {
-    authAsTenant();
+    authAsStaff();
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest({ tenantId: TENANT_ID, windowDays: 7 }));
@@ -296,7 +259,7 @@ describe('GET /api/pilot/inquiry-starts', () => {
   });
 
   it('lift_pct is null or a number', async () => {
-    authAsTenant();
+    authAsStaff();
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest({ tenantId: TENANT_ID }));
@@ -308,7 +271,7 @@ describe('GET /api/pilot/inquiry-starts', () => {
   });
 
   it('total_inquiry_starts equals adapted_count + holdout_count', async () => {
-    authAsTenant();
+    authAsStaff();
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest({ tenantId: TENANT_ID }));
@@ -319,7 +282,7 @@ describe('GET /api/pilot/inquiry-starts', () => {
   });
 
   it('window_days defaults to 30 when not provided', async () => {
-    authAsTenant();
+    authAsStaff();
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest({ tenantId: TENANT_ID }));
@@ -330,7 +293,7 @@ describe('GET /api/pilot/inquiry-starts', () => {
   });
 
   it('mock data is deterministic for same tenant_id', async () => {
-    authAsTenant();
+    authAsStaff();
 
     const { GET } = await import('./route.js');
     const res1 = await GET(makeRequest({ tenantId: TENANT_ID }));
@@ -348,7 +311,7 @@ describe('GET /api/pilot/inquiry-starts', () => {
   // ─── Query guard: ts not assigned_at (FOLLOW-440) ────────────────────────────
 
   it('inquiry-starts queries use ts not assigned_at on adaptation_decisions (guard against phantom column regression)', async () => {
-    authAsTenant();
+    authAsStaff();
     process.env.CLICKHOUSE_URL = 'http://clickhouse.test';
 
     const capturedSqls: string[] = [];

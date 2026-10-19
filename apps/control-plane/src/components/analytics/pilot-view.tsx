@@ -1,7 +1,8 @@
 'use client';
 
 /**
- * Pilot view — the "Pilot" tab of /dashboard/analytics (FOLLOW-1289; was /dashboard/pilot)
+ * Pilot view — the "Pilot" tab of /admin/tenants/[id]/analytics (FOLLOW-1334; FOLLOW-1289 had made
+ * it a tab of the agency /dashboard/analytics, which FOLLOW-1335 deleted)
  *
  * Four panels displaying adapted vs holdout group performance for the
  * app.estalara.com pilot:
@@ -29,10 +30,9 @@
  * link fetches `lift/export` for the selected window; a History panel lists the daily snapshots.
  *
  * ADR-0018 §1 (FOLLOW-594/FOLLOW-1334): like `AnalyticsView`, the view takes `tenantId` as a PROP.
- * `/dashboard/analytics` (agency) renders it without one — the URLs are byte-identical to what the
- * agency dashboard has always sent. `/admin/tenants/[id]/analytics` (Estalara staff) renders it
- * with `tenantId={id}`, so both GETs carry `&tenant_id=<id>` and the staff-override routes fence
- * their ClickHouse queries to that tenant.
+ * `/admin/tenants/[id]/analytics` (Estalara staff) renders it with `tenantId={id}`, so both GETs
+ * carry `&tenant_id=<id>` and the staff-override routes fence their ClickHouse queries to that
+ * tenant.
  *
  * FOLLOW-122: Honest rendering — surfaces data_source badge and HTTP 500 errors.
  *
@@ -644,7 +644,7 @@ function ArchetypePanel({ state }: { state: FetchState<LiftResponse> }) {
 const WINDOW_OPTIONS = [7, 14, 30, 90] as const;
 
 interface PilotViewProps {
-  /** Staff only: the tenant to read (sent as `&tenant_id=`). Absent → session-scoped agency read. */
+  /** The tenant to read (sent as `&tenant_id=`). Absent → no `tenant_id` is sent, which the staff-only route answers 400 since FOLLOW-1335. */
   tenantId?: string;
 }
 

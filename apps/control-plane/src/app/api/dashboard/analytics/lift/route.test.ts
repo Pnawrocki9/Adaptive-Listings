@@ -1,7 +1,7 @@
 /**
  * Tests for GET /api/dashboard/analytics/lift
  *
- * Auth model (ADR-0018 §2, FOLLOW-594): the route delegates agency + staff
+ * Auth model (ADR-0018 §2, FOLLOW-594; staff-only since FOLLOW-1335): the route delegates
  * resolution to `resolveTenantAccess`. Its end-to-end wiring is covered by
  * `src/lib/__tests__/resolve-tenant-access.test.ts`; here we PARTIALLY MOCK
  * `@/lib/session-auth` — only `resolveTenantAccess` is a spy, `AccessError` and
@@ -44,22 +44,6 @@ vi.mock('@sentry/nextjs', () => ({
 
 const TENANT_A = '550e8400-e29b-41d4-a716-446655440002';
 const TENANT_B = '550e8400-e29b-41d4-a716-4466554400c3';
-
-function agencyAccess(tenantId = TENANT_A): TenantAccess {
-  return {
-    via: 'agency',
-    tenantId,
-    claims: {
-      sub: 'user-uuid',
-      email: 'user@agency.com',
-      tenant_id: tenantId,
-      agency_role: 'agency:admin',
-      estalara_staff: false,
-      mfa_verified: true,
-    },
-    rawToken: 'agency-jwt',
-  };
-}
 
 function staffAccess(tenantId: string): TenantAccess {
   return {
@@ -162,8 +146,8 @@ afterEach(() => {
 describe('GET /api/dashboard/analytics/lift', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default: agency caller on their own tenant (byte-unchanged behavior).
-    mockResolve.mockResolvedValue(agencyAccess());
+    // Default: a staff caller on tenant A.
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     delete process.env.CLICKHOUSE_URL;
   });
 
@@ -184,7 +168,9 @@ describe('GET /api/dashboard/analytics/lift', () => {
   });
 
   it('returns 403 when resolveTenantAccess throws AccessError(403)', async () => {
-    mockResolve.mockRejectedValue(new AccessError(403, 'Access denied: insufficient agency role'));
+    mockResolve.mockRejectedValue(
+      new AccessError(403, 'Unauthorized: no tenant access for this request'),
+    );
 
     const { GET } = await import('./route.js');
     const res = await GET(makeRequest());
@@ -369,7 +355,7 @@ describe('GET /api/dashboard/analytics/lift', () => {
 describe('GET /api/dashboard/analytics/lift — pilot summary, funnel and window (FOLLOW-1289)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockResolve.mockResolvedValue(agencyAccess());
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     delete process.env.CLICKHOUSE_URL;
   });
 

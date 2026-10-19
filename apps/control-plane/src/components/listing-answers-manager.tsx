@@ -7,11 +7,11 @@
  * and retrieved via cosine similarity RAG at adapt time to populate `listingContext` in the LLM
  * prompt.
  *
- * Shared by `/dashboard/listings/[id]/answers` (agency) and
- * `/admin/tenants/[id]/listings/[listingId]/answers` (Estalara staff — FOLLOW-1334). ADR-0018 §1:
- * the tenant is a PROP, never sourced here. Every call goes to `/api/tenants/:tenantId/answers`,
- * whose path segment is the explicit tenant — the route cross-checks it against the agency session
- * or validates it for a staff session (`resolveTenantAccess`), and audits staff writes.
+ * Mounted by `/admin/tenants/[id]/listings/[listingId]/answers` (Estalara staff — FOLLOW-1334; the
+ * agency `/dashboard/listings/[id]/answers` page was deleted by FOLLOW-1335). ADR-0018 §1: the
+ * tenant is a PROP, never sourced here. Every call goes to `/api/tenants/:tenantId/answers`, whose
+ * path segment is the explicit tenant — the route validates it for the staff session
+ * (`resolveTenantAccess`) and audits the writes.
  *
  * @module apps/control-plane/src/components/listing-answers-manager
  */

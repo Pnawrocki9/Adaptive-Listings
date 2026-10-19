@@ -19,18 +19,14 @@
 
 import {
   extractClaims,
-  requireAgencyRole,
   requireStaffRole,
   isStaffClaims,
-  isTenantClaims,
-  type AgencyRole,
   type AuthClaims,
   type EstalaraRole,
   type StaffClaims,
-  type TenantClaims,
 } from './jwt.js';
 
-export type { AuthClaims, TenantClaims, StaffClaims };
+export type { AuthClaims, StaffClaims };
 
 // ─── Token extraction ──────────────────────────────────────────────────────
 
@@ -133,7 +129,8 @@ async function verifyAndDecodeJwtPayload(token: string): Promise<Record<string, 
  *
  * The JWT signature is verified with HMAC-SHA-256 against `SUPABASE_JWT_SECRET`.
  * Returns `null` if no valid token is found, the signature is invalid, or
- * the claims cannot be parsed.
+ * the claims cannot be parsed — including a validly signed token that is not
+ * Estalara staff (the only claim shape since FOLLOW-1335).
  */
 export async function getAuthClaims(req: Request): Promise<AuthClaims | null> {
   const token = extractRawToken(req);
@@ -173,23 +170,6 @@ export async function requireStaffAccess(
   requireStaffRole(claims, minimum);
   if (!isStaffClaims(claims)) {
     throw new Error('Access denied: staff access required');
-  }
-  return claims;
-}
-
-/**
- * Require an agency user with at least the specified role within their tenant.
- *
- * @throws {Error} if not authenticated, not an agency user, or insufficient role
- */
-export async function requireTenantAccess(
-  req: Request,
-  minimum: AgencyRole,
-): Promise<TenantClaims> {
-  const claims = await requireAuth(req);
-  requireAgencyRole(claims, minimum);
-  if (!isTenantClaims(claims)) {
-    throw new Error('Access denied: tenant user access required');
   }
   return claims;
 }

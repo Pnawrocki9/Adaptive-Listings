@@ -1,7 +1,7 @@
 /**
  * Load-failure guard tests for GenerationModelSettings (FOLLOW-630, RETRO-206).
  *
- * Shared panel rendered by BOTH /admin/settings and /dashboard/settings. It
+ * Panel rendered by /admin/settings (the /dashboard/settings wrapper went with FOLLOW-1335). It
  * previously had NO `!r.ok` guard, so a non-2xx body was parsed as config and
  * the `claude-sonnet-4-6` default rendered as if it were the real stored global
  * model. A staff Save from that state would PUT the default, resetting the

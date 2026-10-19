@@ -6,10 +6,10 @@
  * single lift computation in `@/lib/pilot-stats` — see `./route-helpers.ts`. The former
  * `/api/pilot/cta-lift` route now answers 410 and names this path.
  *
- *   GET /api/dashboard/analytics/lift?window_days=<7|14|30|90>[&tenant_id=<uuid>  (staff only)]
+ *   GET /api/dashboard/analytics/lift?window_days=<7|14|30|90>&tenant_id=<uuid>
  *
- * Auth (ADR-0018 §2, FOLLOW-594): `resolveTenantAccess` with `allowStaffOverride`. Agency path:
- * tenant from the session claim. Estalara staff may read any tenant via an explicit
+ * Auth (ADR-0018 §2, FOLLOW-594; staff-only since FOLLOW-1335): `resolveTenantAccess` with
+ * `allowStaffOverride`. Estalara staff (any rank) read a tenant via an explicit
  * `?tenant_id=<uuid>` validated against the `tenants` table; that validated id is the SINGLE tenant
  * fence bound into the ClickHouse queries. Staff calls without `?tenant_id` are rejected (400).
  *
@@ -45,16 +45,15 @@ import {
  * @returns 200 LiftResponse on success.
  * @returns 400 when a staff caller omits `?tenant_id`.
  * @returns 401 when no valid session is present.
- * @returns 403 when the caller is not permitted (e.g. agency acting on a foreign tenant).
+ * @returns 403 when the caller is not permitted.
  * @returns 404 when a staff caller supplies an unknown tenant id.
  * @returns 500 when CLICKHOUSE_URL is set but the ClickHouse query fails
  *   (Rule K.2 — fail loud; never silently fall back to mock data when a real
  *   ClickHouse is configured).
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  // One auth path for agency + staff (ADR-0018 invariant 5): `access.tenantId` is
-  // the ONLY tenant fence — bound into the ClickHouse query as param_tenant_id for
-  // BOTH paths.
+  // ADR-0018 invariant 5: `access.tenantId` (the validated `?tenant_id`) is the ONLY
+  // tenant fence — bound into the ClickHouse query as param_tenant_id.
   const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
   let access: TenantAccess;
   try {
@@ -63,7 +62,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       // exactOptionalPropertyTypes: omit the key when absent rather than passing
       // `undefined`, so a staff caller without ?tenant_id still reaches resolve's 400.
       ...(tenantIdParam ? { tenantId: tenantIdParam } : {}),
-      minAgencyRole: 'agency:viewer',
     });
   } catch (err) {
     return accessErrorToResponse(err);

@@ -37,7 +37,7 @@
  *   - Weights are clamped to [0, 1].
  *
  * Auth (ADR-0018): staff-only via `resolveTenantAccess` + `allowStaffOverride`
- * (agency 403 `staff_only`), and gated at `estalara:ops` write rank — this is an
+ * (a non-staff caller is 401 there since FOLLOW-1335), and gated at `estalara:ops` write rank — this is an
  * authoring aid that spends LLM budget, so it takes the same rank as the save it
  * feeds. `?tenant_id` is validated (invariant 4); no DB query is made here (the
  * draft arrives in the request body), so there is no query to fence — the
@@ -170,32 +170,17 @@ function buildPrompt(definition: QuizDefinition): string {
 
 async function resolveStaffAccess(
   req: NextRequest,
-): Promise<{ access: Extract<TenantAccess, { via: 'staff' }> } | { error: NextResponse }> {
+): Promise<{ access: TenantAccess } | { error: NextResponse }> {
   const tenantIdParam = req.nextUrl.searchParams.get('tenant_id');
   let access: TenantAccess;
   try {
     access = await resolveTenantAccess(req, {
       allowStaffOverride: true,
-      minAgencyRole: 'agency:viewer',
       // exactOptionalPropertyTypes (RETRO-189): omit the key when absent.
       ...(tenantIdParam ? { tenantId: tenantIdParam } : {}),
     });
   } catch (err) {
     return { error: accessErrorToResponse(err) };
-  }
-
-  if (access.via !== 'staff') {
-    return {
-      error: NextResponse.json(
-        {
-          error: {
-            code: 'staff_only',
-            message: 'Quiz weight suggestions are an Estalara staff authoring aid',
-          },
-        },
-        { status: 403 },
-      ),
-    };
   }
 
   return { access };

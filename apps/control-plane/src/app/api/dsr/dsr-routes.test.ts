@@ -3,7 +3,7 @@
  *
  * All external dependencies are mocked:
  *   - @estalara/db  — createAdminClient, table symbols
- *   - @estalara/auth — getAuthClaims, isTenantClaims
+ *   - @estalara/auth — getAuthClaims
  *   - @/lib/dsr-otp — generateOtp, hashOtp
  *   - @/lib/email/resend — sendEmail
  *   - ./_clickhouse — writeDsrAuditLog
@@ -57,7 +57,6 @@ const {
   mockSendEmail,
   mockWriteDsrAuditLog,
   mockGetAuthClaims,
-  mockIsTenantClaims,
   mockHashOtp,
   mockVerifyAndConsumeOtp,
   mockCheckInitiateRateLimit,
@@ -70,7 +69,6 @@ const {
   mockSendEmail: vi.fn(),
   mockWriteDsrAuditLog: vi.fn().mockResolvedValue(undefined),
   mockGetAuthClaims: vi.fn(),
-  mockIsTenantClaims: vi.fn(),
   mockHashOtp: vi.fn().mockImplementation((otp: string) => `hash_of_${otp}`),
   // FOLLOW-455: request-scoped OTP verification is extracted into its own
   // module so route tests don't need to fabricate the full select/update
@@ -149,7 +147,6 @@ vi.mock('@estalara/db', () => ({
 
 vi.mock('@estalara/auth', () => ({
   getAuthClaims: mockGetAuthClaims,
-  isTenantClaims: mockIsTenantClaims,
 }));
 
 // FOLLOW-1332: /api/dsr/initiate no longer captures to Sentry (the FOLLOW-659 external-brand
@@ -266,12 +263,27 @@ function buildChain(rows: unknown[]) {
 
 // ─── Shared fixtures ──────────────────────────────────────────────────────────
 
+/**
+ * A claim set that carries a tenant. Since FOLLOW-1335 no verifier issues one (every verified
+ * JWT is Estalara staff, `tenant_id: null`), so `/api/dsr/initiate` refuses every real caller
+ * until FOLLOW-1279 defines the single-tenant initiator. The post-auth path stays pinned with
+ * this shape so that redesign starts from tested code.
+ */
 const TENANT_CLAIMS = {
   sub: 'user-001',
   email: 'admin@agency.com',
   tenant_id: 'tenant-uuid-001',
-  agency_role: 'agency:admin' as const,
-  estalara_staff: false as const,
+  estalara_staff: false,
+  mfa_verified: true,
+};
+
+/** The only claim shape @estalara/auth verifies since FOLLOW-1335. */
+const STAFF_CLAIMS = {
+  sub: 'staff-001',
+  email: 'ops@estalara.com',
+  tenant_id: null,
+  estalara_staff: true,
+  estalara_role: 'estalara:ops',
   mfa_verified: true,
 };
 
@@ -314,7 +326,6 @@ describe('POST /api/dsr/initiate', () => {
     mockSendEmail.mockResolvedValue(undefined);
     mockWriteDsrAuditLog.mockResolvedValue(undefined);
     mockGetAuthClaims.mockResolvedValue(TENANT_CLAIMS);
-    mockIsTenantClaims.mockReturnValue(true);
     mockCheckInitiateRateLimit.mockResolvedValue({ allowed: true, count: 0 });
   });
 
@@ -332,8 +343,8 @@ describe('POST /api/dsr/initiate', () => {
     expect(body.error.code).toBe('AUTH_REQUIRED');
   });
 
-  it('returns 403 when authenticated user is not a tenant user (staff)', async () => {
-    mockIsTenantClaims.mockReturnValueOnce(false);
+  it('returns 403 for a verified staff JWT — it carries no tenant (fails closed, FOLLOW-1335/1279)', async () => {
+    mockGetAuthClaims.mockResolvedValueOnce(STAFF_CLAIMS);
 
     const { POST } = await import('./initiate/route.js');
     const req = makeRequest('POST', '/api/dsr/initiate', {
@@ -937,7 +948,6 @@ describe('FOLLOW-431: writeDsrAuditLog registered via after() in DSR initiate ro
     mockWriteDsrAuditLog.mockResolvedValue(undefined);
     mockSendEmail.mockResolvedValue(undefined);
     mockGetAuthClaims.mockResolvedValue(TENANT_CLAIMS);
-    mockIsTenantClaims.mockReturnValue(true);
   });
 
   it('FOLLOW-431: POST /api/dsr/initiate registers writeDsrAuditLog via after()', async () => {

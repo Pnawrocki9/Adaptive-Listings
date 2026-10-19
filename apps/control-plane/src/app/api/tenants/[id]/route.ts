@@ -3,10 +3,10 @@
  *
  * Currently supports: quiz_enabled (boolean).
  *
- * Auth (ADR-0018 §2, FOLLOW-657): `resolveTenantAccess` with `allowStaffOverride`.
- * The agency path is byte-unchanged — tenant sourced from the session claim,
- * must match the `:id` param (401 for missing/invalid session, 403 for
- * mismatched tenant). An Estalara staff caller may act on any tenant: the `:id`
+ * Auth (ADR-0018 §2, FOLLOW-657; staff-only since FOLLOW-1335 removed the agency path,
+ * whose tenant came from the session claim): `resolveTenantAccess` with
+ * `allowStaffOverride` (401 without a staff session). An Estalara staff caller acts on a
+ * tenant: the `:id`
  * path segment itself IS the explicit tenant id (URL-scoped, per the ADR's own
  * `/admin/tenants/[id]/*` precedent — no separate `?tenant_id=` query param is
  * needed since this route already carries the target tenant in its path), and
@@ -18,10 +18,9 @@
  * RLS: the update is scoped to the resolved tenant's own row (WHERE id = tenantId).
  * Only columns listed in the Zod schema are ever written — no other columns are touched.
  *
- * Staff write atomicity (ADR-0018 §3a, FOLLOW-657): a staff PATCH and its
+ * Staff write atomicity (ADR-0018 §3a, FOLLOW-657): a PATCH and its
  * `staff_audit_log` row commit-or-roll-back TOGETHER in ONE `db.transaction()`.
- * Any failure inside the tx rolls BOTH back → 500 (no orphan mutation). The
- * agency path is unchanged and NOT audited (ADR-0018 §3).
+ * Any failure inside the tx rolls BOTH back → 500 (no orphan mutation).
  *
  * FOLLOW-102 (AC2): Adds quiz_enabled toggle. Default true — pilot tenant
  * behavior is unchanged. Sprint 13b freeze rule: no pilot-tenant data is modified.
@@ -68,9 +67,8 @@ function requestIp(req: NextRequest): string | null {
  *
  * @returns 200 `{ id, quiz_enabled }` on success.
  * @returns 400 on validation failure or when no updatable fields are supplied.
- * @returns 401 if auth token is missing or invalid.
- * @returns 403 if the authenticated tenant does not match the `:id` param, or a
- *   staff caller is below `estalara:ops` / not identifiable.
+ * @returns 401 if there is no valid staff session/JWT.
+ * @returns 403 if the staff caller is below `estalara:ops` or not identifiable.
  * @returns 404 if the tenant row is not found (e.g. deleted).
  * @returns 500 on unexpected DB error.
  */
@@ -80,30 +78,24 @@ export async function PATCH(
 ): Promise<NextResponse> {
   const { id: tenantId } = await params;
 
-  // ── Auth: agency session (byte-unchanged, must match :id) OR Estalara staff
-  // override (ADR-0018 §2, FOLLOW-657). `:id` doubles as the explicit staff
+  // ── Auth: Estalara staff (ADR-0018 §2, FOLLOW-657). `:id` is the explicit
   // tenant param — validated against `tenants` before any query runs.
   let access: TenantAccess;
   try {
     access = await resolveTenantAccess(req, { allowStaffOverride: true, tenantId });
   } catch (err) {
     if (err instanceof AccessError) {
-      // Preserves the pre-FOLLOW-657 body shape for the two agency-facing statuses
-      // (401 'Unauthorized' / 403 'Forbidden: tenant mismatch'); other statuses
-      // (400/404/500, only reachable via the new staff path) surface err.message.
-      const message =
-        err.status === 401
-          ? 'Unauthorized'
-          : err.status === 403
-            ? 'Forbidden: tenant mismatch'
-            : err.message;
+      // 401 keeps the legacy 'Unauthorized' body; every other status surfaces
+      // err.message (the 403 'Forbidden: tenant mismatch' body was the agency
+      // cross-tenant answer, gone with the agency path — FOLLOW-1335).
+      const message = err.status === 401 ? 'Unauthorized' : err.message;
       return NextResponse.json({ error: message }, { status: err.status });
     }
     throw err;
   }
 
   // Write-rank gate (CEO Q3, ADR-0018 §4): staff below `estalara:ops` is view-only.
-  if (access.via === 'staff' && !access.canWrite) {
+  if (!access.canWrite) {
     return NextResponse.json(
       { error: 'Forbidden: staff write requires estalara:ops or higher' },
       { status: 403 },
@@ -149,78 +141,42 @@ export async function PATCH(
   }
 
   // ── STAFF write — atomic update + audit (ADR-0018 §3a, FOLLOW-657) ────────
-  if (access.via === 'staff') {
-    try {
-      const db = createAdminClient();
-      let row: { id: string; quizEnabled: boolean } | undefined;
-      await db.transaction(async (tx) => {
-        const updated = await tx
-          .update(tenants)
-          .set({ quizEnabled: body.quiz_enabled, updatedAt: new Date() })
-          .where(eq(tenants.id, tenantId))
-          .returning({ id: tenants.id, quizEnabled: tenants.quizEnabled });
-        row = updated[0];
-        if (!row) return; // tenant vanished mid-request; audit skipped, handled below.
-        await tx.insert(staffAuditLog).values({
-          adminUserId: access.staff.sub,
-          action: 'tenant.quiz_enabled_update',
-          targetTenantId: tenantId,
-          payload: { quiz_enabled: body.quiz_enabled },
-          ipAddress: requestIp(req),
-          userAgent: req.headers.get('user-agent'),
-        });
-      });
-      if (!row) {
-        return NextResponse.json({ error: 'Tenant not found' }, { status: 404 });
-      }
-      return NextResponse.json({ id: row.id, quiz_enabled: row.quizEnabled }, { status: 200 });
-    } catch (err: unknown) {
-      Sentry.captureException(err, {
-        tags: { route: 'tenants/[id]', staff_audit_error: 'true' },
-        extra: { tenant_id: tenantId, admin_user_id: access.staff.sub },
-      });
-      return NextResponse.json(
-        {
-          error:
-            'The tenant update could not be recorded atomically with its staff audit row; ' +
-            'the change was rolled back and NOT applied. Retry the action.',
-        },
-        { status: 500 },
-      );
-    }
-  }
-
-  // ── AGENCY write — UNCHANGED, non-transactional, NOT audited (ADR-0018 §3) ─
   try {
     const db = createAdminClient();
-
-    const updated = await db
-      .update(tenants)
-      .set({
-        quizEnabled: body.quiz_enabled,
-        updatedAt: new Date(),
-      })
-      .where(eq(tenants.id, tenantId))
-      .returning({
-        id: tenants.id,
-        quizEnabled: tenants.quizEnabled,
+    let row: { id: string; quizEnabled: boolean } | undefined;
+    await db.transaction(async (tx) => {
+      const updated = await tx
+        .update(tenants)
+        .set({ quizEnabled: body.quiz_enabled, updatedAt: new Date() })
+        .where(eq(tenants.id, tenantId))
+        .returning({ id: tenants.id, quizEnabled: tenants.quizEnabled });
+      row = updated[0];
+      if (!row) return; // tenant vanished mid-request; audit skipped, handled below.
+      await tx.insert(staffAuditLog).values({
+        adminUserId: access.staff.sub,
+        action: 'tenant.quiz_enabled_update',
+        targetTenantId: tenantId,
+        payload: { quiz_enabled: body.quiz_enabled },
+        ipAddress: requestIp(req),
+        userAgent: req.headers.get('user-agent'),
       });
-
-    const row = updated[0];
+    });
     if (!row) {
       return NextResponse.json({ error: 'Tenant not found' }, { status: 404 });
     }
-
+    return NextResponse.json({ id: row.id, quiz_enabled: row.quizEnabled }, { status: 200 });
+  } catch (err: unknown) {
+    Sentry.captureException(err, {
+      tags: { route: 'tenants/[id]', staff_audit_error: 'true' },
+      extra: { tenant_id: tenantId, admin_user_id: access.staff.sub },
+    });
     return NextResponse.json(
       {
-        id: row.id,
-        quiz_enabled: row.quizEnabled,
+        error:
+          'The tenant update could not be recorded atomically with its staff audit row; ' +
+          'the change was rolled back and NOT applied. Retry the action.',
       },
-      { status: 200 },
+      { status: 500 },
     );
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[tenants/[id] PATCH] DB error:', msg);
-    return NextResponse.json({ error: 'Failed to update tenant' }, { status: 500 });
   }
 }

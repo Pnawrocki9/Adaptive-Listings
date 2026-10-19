@@ -2752,3 +2752,20 @@ The premise was wrong here and would have produced a probe that cannot fail.
   Guardrail: _a new Next convention file name (`global-error`, `template`, `default`) should be
   added to the Rule I exemption list in the same PR, and the Supabase redirect-URL allowlist entry
   belongs in the handover table the moment the route exists_.
+- **2026-10-19 / FOLLOW-1334** · M1: ported the dashboard-only surfaces into `/admin/tenants/[id]`
+  (Pilot + Quiz tabs on analytics, calibration panel on labels, listings index + per-listing FAQ
+  answers manager); moved each UI into a shared component taking `tenantId` as a prop and left a
+  thin `/dashboard` wrapper for M2 to delete; staff path added to `pilot/inquiry-starts`,
+  `pilot/calibration` and `tenants/[id]/answers[/answerId]` (staff writes: `canWrite` gate + audit
+  row in the same transaction). · Risks weighed: `summary`/`lift`/`quiz/analytics` already had the
+  staff path (FOLLOW-594/1000) — the ticket text was stale, so the first move was to read the
+  routes, not edit them; the answers routes returned `{ error: string }`, not the
+  `accessErrorToResponse` envelope, and the UI reads `body.error` as a string, so the legacy shape
+  is kept; N1's `id_agency_roles` greps the literal `agency:viewer`, so a new route passing
+  `minAgencyRole: 'agency:viewer'` (the default anyway) ratcheted it 68 → 71 — omit the default;
+  Rule I counts `export interface FooProps` that only its own file uses as a NEW violation; moving a
+  component's tests exposed that a failed load rendered the "no answers yet" empty state next to the
+  error banner (K.2) — fixed in the move; the nav-reachability graph counts a drill-down needing a
+  listing id as 3 clicks, so it is a `HIDDEN_BY_DESIGN` row, not a hub hack. · Guardrail: _before
+  porting a route's auth, read it — and grep the ratchet counters' literals
+  (`scripts/check-single-tenant.sh`) before writing a new auth call_.

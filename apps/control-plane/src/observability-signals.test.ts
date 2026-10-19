@@ -176,6 +176,13 @@
  *
  * FOLLOW-1336 added `app/global-error.tsx` (1 site, the Sentry advisory's root boundary): it is now
  * **96 in 56**.
+ *
+ * FOLLOW-1334 (M1, plan Phase 3) ported the agency FAQ-answers surface to `/admin`: the staff path
+ * of `app/api/tenants/[id]/answers/route.ts` (1 site — the answer insert or its `staff_audit_log`
+ * row failing, rolled back together) and `app/api/tenants/[id]/answers/[answerId]/route.ts` (2 —
+ * the same for the staff update and the staff delete) are new rows, and
+ * `app/admin/tenants/[id]/listings/data.ts` (1 — the listings-with-answers lookup failing) is the
+ * listings index read. No existing row moved or changed. Counted on top of FOLLOW-1336 (96 in 56): it is now **100 in 59**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -189,7 +196,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 96;
+const TOTAL_SITES = 100;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -225,6 +232,13 @@ const REGISTER: CaptureSiteGroup[] = [
     sites: 1,
     meaning:
       'The ROOT layout threw while rendering and the browser fell back to the global error boundary (FOLLOW-1336); `captureException` carries the error, the page showed only a fixed message and a digest.',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'app/admin/tenants/[id]/listings/data.ts',
+    sites: 1,
+    meaning:
+      'The staff listings index could not read which listings carry FAQ answers — the page shows its K.2 error banner instead of an empty list (FOLLOW-1334).',
     consumer: NO_CHANNEL,
   },
   {
@@ -510,6 +524,20 @@ const REGISTER: CaptureSiteGroup[] = [
     file: 'app/api/quiz/config/route.ts',
     sites: 1,
     meaning: 'The quiz configuration could not be served.',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'app/api/tenants/[id]/answers/[answerId]/route.ts',
+    sites: 2,
+    meaning:
+      'A STAFF answer update or delete failed inside its transaction — the mutation and its staff_audit_log row roll back together and the caller gets 500 audit_write_failed (FOLLOW-1334; the agency path is unaudited and captures nothing).',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'app/api/tenants/[id]/answers/route.ts',
+    sites: 1,
+    meaning:
+      'A STAFF answer insert failed inside its transaction — the insert and its staff_audit_log row roll back together and the caller gets 500 audit_write_failed (FOLLOW-1334).',
     consumer: NO_CHANNEL,
   },
   {

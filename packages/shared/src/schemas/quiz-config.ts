@@ -33,7 +33,8 @@
  * Importers:
  *   - apps/control-plane/src/app/api/quiz/config/route.ts
  *   - apps/control-plane/src/app/api/quiz/public-config/route.ts  ← FOLLOW-275
- *   - apps/control-plane/src/app/dashboard/quiz/page.tsx
+ *   - apps/control-plane/src/app/admin/tenants/[id]/quiz/quiz-config-editor.tsx (the agency
+ *     `dashboard/quiz/page.tsx` it replaced was deleted by FOLLOW-1335)
  *
  * @module @estalara/shared/schemas/quiz-config
  */

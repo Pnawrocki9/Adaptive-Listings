@@ -2,9 +2,10 @@
  * The DEMO MODE switch (FOLLOW-1288, WP-2.3) — the ONE place `DEMO_MODE` is read.
  *
  * Demo tooling (the demo-JWT and ops-caller auth variants and the archetype override on
- * `POST /api/adapt`, `api/demo/*`, `dashboard/demo/*`) exists only when the control plane is started
- * with `DEMO_MODE=1`. Any other value, or no value, means OFF: the core decision route behaves as if
- * the demo code did not exist, `api/demo/*` answers 404 and `dashboard/demo/*` renders Next's 404.
+ * `POST /api/adapt`, `api/demo/*`) exists only when the control plane is started with `DEMO_MODE=1`.
+ * Any other value, or no value, means OFF: the core decision route behaves as if the demo code did
+ * not exist and `api/demo/*` answers 404. (The agency `dashboard/demo/*` pages, gated the same way,
+ * were deleted by FOLLOW-1335; the simulator lives at `/admin/tenants/[id]/demo`.)
  *
  * Who sets it: `scripts/dev/localhost-up.sh` (the FOLLOW-819 harness forces its control arm with the
  * ops caller — `tests/e2e/follow-819/README.md` §3). `.github/workflows/demo-integration.yml` also

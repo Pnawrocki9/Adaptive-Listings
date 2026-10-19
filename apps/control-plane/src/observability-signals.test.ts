@@ -173,6 +173,9 @@
  * `app/api/dsr/initiate/route.ts` (1 -> 0, row retired) and the four external-brand captures in
  * `app/api/v1/consent/platform-registration/route.ts` (5 -> 1, the grace-window warning stays).
  * Counted against `main` after FOLLOW-1328 and FOLLOW-1347 (102): it is now **95 in 55**.
+ *
+ * FOLLOW-1336 added `app/global-error.tsx` (1 site, the Sentry advisory's root boundary): it is now
+ * **96 in 56**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -186,7 +189,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 95;
+const TOTAL_SITES = 96;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -215,6 +218,13 @@ const REGISTER: CaptureSiteGroup[] = [
     file: 'app/admin/tenants/[id]/data.ts',
     sites: 1,
     meaning: 'The admin tenant hub lookup (`getTenantById`) failed against Postgres.',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'app/global-error.tsx',
+    sites: 1,
+    meaning:
+      'The ROOT layout threw while rendering and the browser fell back to the global error boundary (FOLLOW-1336); `captureException` carries the error, the page showed only a fixed message and a digest.',
     consumer: NO_CHANNEL,
   },
   {

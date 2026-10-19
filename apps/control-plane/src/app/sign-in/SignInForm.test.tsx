@@ -20,6 +20,7 @@
  * @module apps/control-plane/src/app/sign-in/SignInForm.test
  */
 
+import type React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -27,9 +28,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // useRouter is called inside SignInForm to push to /admin on success.
 
 const mockRouterPush = vi.fn();
+const mockRouterReplace = vi.fn();
 
 vi.mock('next/navigation', () => ({
-  useRouter: vi.fn(() => ({ push: mockRouterPush })),
+  useRouter: vi.fn(() => ({ push: mockRouterPush, replace: mockRouterReplace })),
+}));
+
+// next/link needs the App Router context, absent in jsdom — render a plain anchor.
+vi.mock('next/link', () => ({
+  default: ({ href, children }: { href: string; children: React.ReactNode }) => (
+    <a href={href}>{children}</a>
+  ),
 }));
 
 // ─── Mock @/lib/supabase/client ───────────────────────────────────────────────
@@ -38,11 +47,18 @@ vi.mock('next/navigation', () => ({
 // createClient() → supabase.auth.signInWithPassword() on submit — no bypass.
 
 const mockSignInWithPassword = vi.fn();
+const mockUnsubscribe = vi.fn();
+let authStateListener: ((event: string) => void) | null = null;
+const mockOnAuthStateChange = vi.fn((cb: (event: string) => void) => {
+  authStateListener = cb;
+  return { data: { subscription: { unsubscribe: mockUnsubscribe } } };
+});
 
 vi.mock('@/lib/supabase/client', () => ({
   createClient: vi.fn(() => ({
     auth: {
       signInWithPassword: mockSignInWithPassword,
+      onAuthStateChange: mockOnAuthStateChange,
     },
   })),
 }));
@@ -50,6 +66,7 @@ vi.mock('@/lib/supabase/client', () => ({
 // ─── Import after mocks ───────────────────────────────────────────────────────
 // vi.mock calls are hoisted; the import must come after the mock declarations.
 
+import { createClient } from '@/lib/supabase/client';
 import SignInForm from './SignInForm';
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -58,6 +75,8 @@ describe('SignInForm (FOLLOW-336)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRouterPush.mockReset();
+    mockRouterReplace.mockReset();
+    authStateListener = null;
   });
 
   it('SIGN-IN-1: signInWithPassword success → router.push("/admin") called', async () => {
@@ -142,5 +161,43 @@ describe('SignInForm (FOLLOW-336)', () => {
 
     expect(screen.getByRole('alert').textContent).toMatch(/invalid email or password/i);
     expect(mockRouterPush).not.toHaveBeenCalled();
+  });
+  it('RESET-1 (FOLLOW-1336): the browser client is created once on mount and reused by submit', async () => {
+    mockSignInWithPassword.mockResolvedValue({ data: {}, error: null });
+    vi.mocked(createClient).mockClear();
+
+    render(<SignInForm />);
+    expect(createClient).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'staff@estalara.com' } });
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'pw' } });
+    fireEvent.submit(screen.getByLabelText(/email/i).closest('form')!);
+
+    await waitFor(() => {
+      expect(mockRouterPush).toHaveBeenCalledWith('/admin');
+    });
+    expect(createClient).toHaveBeenCalledTimes(1);
+  });
+
+  it('RESET-2 (FOLLOW-1336): a PASSWORD_RECOVERY auth event sends the user to /reset-password', () => {
+    render(<SignInForm />);
+    expect(authStateListener).not.toBeNull();
+
+    act(() => {
+      authStateListener?.('SIGNED_OUT');
+    });
+    expect(mockRouterReplace).not.toHaveBeenCalled();
+
+    act(() => {
+      authStateListener?.('PASSWORD_RECOVERY');
+    });
+    expect(mockRouterReplace).toHaveBeenCalledWith('/reset-password');
+  });
+
+  it('RESET-3 (FOLLOW-1336): "Forgot password?" links to /forgot-password', () => {
+    render(<SignInForm />);
+    expect(screen.getByText('Forgot password?').closest('a')?.getAttribute('href')).toBe(
+      '/forgot-password',
+    );
   });
 });

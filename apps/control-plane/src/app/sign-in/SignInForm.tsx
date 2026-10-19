@@ -3,16 +3,22 @@
 /**
  * SignInForm — client component that handles Supabase email/password sign-in.
  *
- * Uses the browser Supabase client (`createClient`) to call signInWithPassword().
+ * Uses the browser Supabase client (`createClient`) to call signInWithPassword(). The client is
+ * created ONCE per mounted form (FOLLOW-1336) — on mount, not only inside the submit handler — so
+ * a session handed back in the URL (a recovery link that landed here instead of /auth/callback) is
+ * picked up and a PASSWORD_RECOVERY event sends the user to /reset-password rather than leaving
+ * them on a dead-end form.
  * On success, redirects to /admin via Next.js router.
  * On failure, surfaces the error inline and retains field values.
  *
  * @module apps/control-plane/src/app/sign-in/SignInForm
  */
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SyntheticEvent } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -25,14 +31,34 @@ export default function SignInForm() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const supabaseRef = useRef<SupabaseClient | null>(null);
+
+  /** The form's single browser client; throws when Supabase is unconfigured (see createClient). */
+  const getSupabase = useCallback((): SupabaseClient => {
+    supabaseRef.current ??= createClient();
+    return supabaseRef.current;
+  }, []);
+
+  useEffect(() => {
+    try {
+      const { data } = getSupabase().auth.onAuthStateChange((event) => {
+        if (event === 'PASSWORD_RECOVERY') router.replace('/reset-password');
+      });
+      return () => {
+        data.subscription.unsubscribe();
+      };
+    } catch {
+      // Supabase is not configured in this environment; submitting the form surfaces the error.
+      return undefined;
+    }
+  }, [getSupabase, router]);
 
   async function doSignIn() {
     setError(null);
     setIsLoading(true);
 
     try {
-      const supabase = createClient();
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const { error: signInError } = await getSupabase().auth.signInWithPassword({
         email,
         password,
       });
@@ -98,6 +124,12 @@ export default function SignInForm() {
       <Button type="submit" className="w-full" disabled={isLoading}>
         {isLoading ? 'Signing in…' : 'Sign in'}
       </Button>
+
+      <p className="text-center text-sm">
+        <Link href="/forgot-password" className="text-gray-500 underline-offset-4 hover:underline">
+          Forgot password?
+        </Link>
+      </p>
     </form>
   );
 }

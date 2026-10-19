@@ -5,7 +5,7 @@
  *   /admin/*      → Estalara staff only (estalara:readonly minimum)
  *   /dashboard/*  → Agency tenant users only (agency:viewer minimum)
  *   /             → public (redirects to /sign-in)
- *   /sign-in      → public
+ *   /sign-in, /forgot-password, /auth/callback, /reset-password → public (FOLLOW-1336)
  *   /api/health   → public
  *   everything else → public (no auth gate at middleware level)
  *
@@ -112,8 +112,22 @@ function sdkCorsPreflightResponse(requestOrigin: string | null): NextResponse {
   return res;
 }
 
-/** Routes that require no authentication. */
-const PUBLIC_PREFIXES = ['/', '/sign-in', '/api/health'];
+/**
+ * Routes that require no authentication.
+ *
+ * FOLLOW-1336 — the password-recovery path is reachable WITHOUT a staff session, because it is how
+ * a locked-out user gets one: `/forgot-password` (request the e-mail), `/auth/callback` (exchange
+ * the e-mail's code for a session) and `/reset-password` (reachable here; its Server Component
+ * requires the session the callback created). Nothing under `/admin` is widened.
+ */
+const PUBLIC_PREFIXES = [
+  '/',
+  '/sign-in',
+  '/forgot-password',
+  '/auth/callback',
+  '/reset-password',
+  '/api/health',
+];
 
 function isPublicRoute(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(prefix + '/'));

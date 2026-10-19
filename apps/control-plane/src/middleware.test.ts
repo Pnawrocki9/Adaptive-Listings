@@ -429,6 +429,23 @@ describe('Admin gate — /admin/* routes via checkAdminSession (FOLLOW-336)', ()
     expect(res.headers.get('location')).toBeNull();
   });
 
+  it.each(['/forgot-password', '/auth/callback', '/reset-password'])(
+    'RECOVERY-PUBLIC (FOLLOW-1336): GET %s → reachable without a staff session (no redirect, no Supabase lookup)',
+    async (path) => {
+      const res = await middleware(makeRequest(path));
+
+      expect(res.headers.get('location')).toBeNull();
+      expect(mockGetUser).not.toHaveBeenCalled();
+    },
+  );
+
+  it('RECOVERY-PUBLIC-NARROW (FOLLOW-1336): /admin is still gated — a lookalike path does not ride the public prefixes', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null } });
+    const res = await middleware(makeAdminRequest('/admin/reset-password'));
+
+    expect(res.headers.get('location')).toContain('/sign-in');
+  });
+
   it('ADMIN-5: GET /admin/dashboard — Supabase env vars absent → redirect to /sign-in', async () => {
     // When NEXT_PUBLIC_SUPABASE_URL / ANON_KEY are unset, checkAdminSession
     // returns early with { authorized: false } — same redirect outcome as no session.

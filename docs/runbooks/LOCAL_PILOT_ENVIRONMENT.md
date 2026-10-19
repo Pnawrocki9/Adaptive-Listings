@@ -928,6 +928,35 @@ Leave the Estalara-app tree's `app.html` restored per §4.
 
 ---
 
+## 11. Backoffice password recovery [FOLLOW-1336]
+
+The control plane (`:3000`, `admin.estalara.com`) has a self-service reset for a forgotten staff
+password. No new vendor, env var or local auth bypass: it is Supabase Auth's own recovery e-mail.
+
+1. `/sign-in` -> **Forgot password?** -> `/forgot-password`. The page calls
+   `supabase.auth.resetPasswordForEmail(email, { redirectTo: <origin>/auth/callback?next=/reset-password })`
+   and shows the SAME confirmation for every address (no account enumeration).
+2. The e-mail link returns to **`/auth/callback?code=…&next=/reset-password`**. The route exchanges
+   the code for a session (`exchangeCodeForSession`, PKCE; the verifier cookie was written by the
+   browser that asked for the e-mail, so open the link in the SAME browser) and redirects to `next`
+   only when it is a same-origin relative path (an absolute URL, `//host` or a backslash falls back
+   to `/admin`). Any failure goes to `/sign-in?error=invalid_link`.
+3. `/reset-password` requires that session (checked server-side with `getUser()`; none ->
+   `/sign-in`). The form sets the new password (minimum 12 characters), signs out the user's OTHER
+   sessions and goes to `/admin`.
+
+**On localhost the e-mail comes from the PRODUCTION Supabase project** (the localhost stack runs no
+Supabase Auth of its own; `NEXT_PUBLIC_SUPABASE_URL` is the hosted project), and its link carries
+`redirectTo`. Supabase only honours a `redirectTo` on its Redirect URLs allowlist, otherwise it
+falls back to the Site URL (`https://admin.estalara.com`) — so a local test needs
+`http://localhost:3000/auth/callback**` added to the production allowlist first. That is a
+production configuration step for the CEO or the CTO (`docs/handover/CTO_HANDOVER.md` §4 row 11); an
+agent must not do it. Until it is done, the local flow can be exercised up to the e-mail request
+only; the callback and the reset page are covered by unit tests
+(`src/app/auth/callback/route.test.ts`, `src/app/reset-password/page.test.tsx`).
+
+---
+
 ## Cross-references
 
 ESC-020 · FOLLOW-818 (feedback flip — **local-only**, re-scoped from staging by ESC-052; corrected

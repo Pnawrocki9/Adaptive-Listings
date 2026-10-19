@@ -39,12 +39,14 @@ export const CANONICAL_TRAIT_IDS = [
 /** Union of the canonical trait ids. */
 export type TraitId = (typeof CANONICAL_TRAIT_IDS)[number];
 
-/** Zod enum over the canonical trait ids (validates `QuizAnswerSchema.traits` entries). */
-export const TraitIdSchema = z.enum(CANONICAL_TRAIT_IDS);
-
-const TRAIT_ID_SET: ReadonlySet<string> = new Set<string>(CANONICAL_TRAIT_IDS);
+/**
+ * Zod enum over the canonical trait ids. Used by the AUTHORING schema only (`quiz-lint.ts`);
+ * the serve schema keeps trait entries as plain strings for forward compatibility. `@__PURE__`
+ * so the SDK bundle drops it.
+ */
+export const TraitIdSchema = /* @__PURE__ */ z.enum(CANONICAL_TRAIT_IDS);
 
 /** Type guard: is `value` one of the canonical trait ids? */
 export function isTraitId(value: unknown): value is TraitId {
-  return typeof value === 'string' && TRAIT_ID_SET.has(value);
+  return typeof value === 'string' && (CANONICAL_TRAIT_IDS as readonly string[]).includes(value);
 }

@@ -27,7 +27,7 @@
 import { z } from 'zod';
 
 import { CANONICAL_ARCHETYPE_IDS } from '../archetypes.js';
-import { TraitIdSchema, type TraitId } from '../traits.js';
+import { isTraitId, type TraitId } from '../traits.js';
 import { QuizLanguageSchema, QuizPublicConfigResponseSchema } from './quiz-config.js';
 import { WidgetPlacementSchema } from './widget-placement.js';
 
@@ -124,21 +124,18 @@ export type OptOutWidgetConfig = z.infer<typeof OptOutWidgetConfigSchema>;
  *     object contributes nothing (used for pure branch/gate answers).
  *   - `next`    — the id of the next question, or `null` for a leaf (ends the walk).
  *   - `traits`  — optional buyer traits this answer records (MASTER_DESIGN §E.4.2 v3.0,
- *     FOLLOW-1356): at most 4, canonical ids, no duplicates. Traits never change the resolved
- *     archetype; they ride alongside it (`resolveQuizOutcome` in `quiz-walk.ts`).
+ *     FOLLOW-1356). Traits never change the resolved archetype; they ride alongside it
+ *     (`resolveQuizOutcome` in `quiz-walk.ts`). At SERVE time the entries are plain strings, so
+ *     a trait added to `CANONICAL_TRAIT_IDS` later cannot make an older cached SDK reject the
+ *     whole presentation config; the walker drops anything that is not a canonical trait
+ *     (`isTraitId`). The authoring schema enforces canonical ids, at most 4, no duplicates.
  */
 export const QuizAnswerSchema = z.object({
   id: z.string().min(1),
   label_i18n: LabelI18nSchema,
   weights: z.record(z.string(), z.number()),
   next: z.string().min(1).nullable(),
-  traits: z
-    .array(TraitIdSchema)
-    .max(4)
-    .refine((traits) => new Set(traits).size === traits.length, {
-      message: 'traits must not contain duplicates',
-    })
-    .optional(),
+  traits: z.array(z.string()).optional(),
 });
 
 /** TypeScript type for one quiz answer. */
@@ -150,14 +147,16 @@ export type QuizAnswer = z.infer<typeof QuizAnswerSchema>;
  * `kind` (FOLLOW-1356, MASTER_DESIGN §E.4.2 v3.0): `'single'` (the default when absent — one
  * answer, then follow its `next`) or `'multi'` (a tick-all-that-apply trait screen: the buyer
  * selects zero or more answers). The hard rule that a `multi` question's answers carry empty
- * `weights` and `next: null` is an AUTHORING rule (`QuizDefinitionAuthoringSchema`), not a
- * serve rule — see `quiz-lint.ts`.
+ * `weights` and `next: null`, and that `kind` is one of the two values, are AUTHORING rules
+ * (`QuizDefinitionAuthoringSchema`), not serve rules — see `quiz-lint.ts`. At serve time `kind`
+ * is a plain string (forward compatibility, like `traits`) and the walker treats anything but
+ * `'multi'` as `'single'`.
  */
 export const QuizQuestionSchema = z.object({
   id: z.string().min(1),
   prompt_i18n: LabelI18nSchema,
   answers: z.array(QuizAnswerSchema).min(2),
-  kind: z.enum(['single', 'multi']).optional(),
+  kind: z.string().optional(),
 });
 
 /** TypeScript type for one quiz question. */
@@ -445,26 +444,39 @@ export const DEFAULT_MAX_QUIZ_PATHS = 20_000;
  * Depth-first, in question/answer declaration order. A path ends at an answer with
  * `next: null` or a dangling `next` (draft-safe), or at a `multi` question (a trait screen is
  * always last and carries no weights, so it is recorded once with an empty selection instead
- * of branching over its answers). Cycle-safe: a per-path visited guard drops a path that
- * re-enters a question. Bounded by `maxPaths`.
+ * of branching over its answers; the weights and traits of a `multi` question's answers are
+ * ignored here, exactly as `replayPath` in `quiz-walk.ts` ignores their weights — authoring
+ * forbids weights on them). Traits that are not canonical are dropped, as in the walker.
+ *
+ * Cycle-safe AND bounded: a per-path visited guard drops a path that re-enters a question, and
+ * a dropped re-entry marks the result `truncated` (the enumeration is not exhaustive). Both the
+ * number of emitted paths (`maxPaths`) and the number of question visits (`stepBudget`) are
+ * capped, because a cycle low in the tree makes the number of VISITS exponential while emitting
+ * no path at all.
  *
  * @param def - the quiz definition (validated or a draft under edit).
  * @param visit - called once per complete path.
  * @param maxPaths - stop after this many paths.
- * @returns `{ truncated }` — true when the cap stopped the walk before it was exhaustive.
+ * @returns `{ truncated, steps }` — `truncated` is true when a cap or a cycle stopped the walk
+ *   before it was exhaustive; `steps` is the number of question visits made (at most
+ *   `quizWalkStepBudget(maxPaths)`).
  */
 export function walkQuizPaths(
   def: QuizDefinition,
   visit: (path: RawQuizPath) => void,
   maxPaths: number = DEFAULT_MAX_QUIZ_PATHS,
-): { truncated: boolean } {
+): { truncated: boolean; steps: number } {
   const byId = new Map<string, QuizQuestion>(def.questions.map((q) => [q.id, q]));
-  let pathCount = 0;
-  const state = { truncated: false };
-  const stopped = (): boolean => state.truncated;
+  const budget = quizWalkStepBudget(maxPaths);
+  const state = { truncated: false, stop: false, steps: 0, paths: 0 };
+  const stopped = (): boolean => state.stop;
+  const halt = (): void => {
+    state.truncated = true;
+    state.stop = true;
+  };
 
   const emit = (steps: RawQuizPathStep[], weights: Record<string, number>, traits: TraitId[]) => {
-    pathCount += 1;
+    state.paths += 1;
     visit({ steps, weights, traits });
   };
 
@@ -477,9 +489,18 @@ export function walkQuizPaths(
   ): void => {
     if (stopped()) return;
     const q = byId.get(qid);
-    if (!q || seen.has(qid)) return;
-    if (pathCount >= maxPaths) {
-      state.truncated = true;
+    if (!q) return;
+    if (state.steps >= budget) {
+      halt();
+      return;
+    }
+    state.steps += 1;
+    if (seen.has(qid)) {
+      state.truncated = true; // a re-entry (cycle): the paths through it are not enumerated
+      return;
+    }
+    if (state.paths >= maxPaths) {
+      halt();
       return;
     }
     const nextSeen = new Set(seen);
@@ -496,11 +517,11 @@ export function walkQuizPaths(
       for (const [archetypeId, weight] of Object.entries(ans.weights)) {
         merged[archetypeId] = (merged[archetypeId] ?? 0) + weight;
       }
-      const nextTraits = ans.traits ? [...traits, ...ans.traits] : traits;
+      const nextTraits = ans.traits ? [...traits, ...ans.traits.filter(isTraitId)] : traits;
       const nextSteps = [...steps, { question: q, answerIndex: ai }];
       if (ans.next === null || !byId.has(ans.next)) {
-        if (pathCount >= maxPaths) {
-          state.truncated = true;
+        if (state.paths >= maxPaths) {
+          halt();
           return;
         }
         emit(nextSteps, merged, nextTraits);
@@ -510,7 +531,17 @@ export function walkQuizPaths(
     }
   };
   walk(def.root, [], {}, [], new Set<string>());
-  return state;
+  return { truncated: state.truncated, steps: state.steps };
+}
+
+/**
+ * Upper bound on the question visits `walkQuizPaths` makes for a given `maxPaths`. A valid
+ * tree needs at most (paths x depth) visits; the factor of 10 leaves room for the deepest
+ * allowed tree (6 questions) many times over while still cutting a cyclic draft off in
+ * milliseconds (the authoring lint walks the tree several times).
+ */
+export function quizWalkStepBudget(maxPaths: number): number {
+  return maxPaths * 10;
 }
 
 /** A root→leaf path that adds weight to more than one archetype. */

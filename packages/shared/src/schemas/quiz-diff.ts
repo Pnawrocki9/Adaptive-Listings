@@ -9,20 +9,20 @@
  * @module @estalara/shared/schemas/quiz-diff
  */
 
-import type { TraitId } from '../traits.js';
 import type { LabelI18n, QuizAnswer, QuizDefinition, QuizQuestion } from './presentation-config.js';
 
 /** One difference between two quiz definitions. Texts are `null` when absent on that side. */
 export type QuizChange =
   | { type: 'root_changed'; before: string; after: string }
+  | { type: 'languages_changed'; before: string[]; after: string[] }
   | { type: 'question_added'; questionId: string; index: number }
   | { type: 'question_removed'; questionId: string; index: number }
   | { type: 'question_reordered'; questionId: string; from: number; to: number }
   | {
       type: 'question_kind_changed';
       questionId: string;
-      before: 'single' | 'multi';
-      after: 'single' | 'multi';
+      before: string;
+      after: string;
     }
   | {
       type: 'prompt_changed';
@@ -66,8 +66,8 @@ export type QuizChange =
       type: 'traits_changed';
       questionId: string;
       answerId: string;
-      before: TraitId[];
-      after: TraitId[];
+      before: string[];
+      after: string[];
     }
   | {
       type: 'confirm_text_changed';
@@ -231,7 +231,7 @@ function diffConfirm(a: QuizDefinition, b: QuizDefinition, out: QuizChange[]): v
 }
 
 /**
- * Diff two quiz definitions into an ordered, typed change list: root, then question
+ * Diff two quiz definitions into an ordered, typed change list: root, `languages` (as a set), then question
  * add / remove / reorder, then per question (in `b` order) kind, prompt texts and answer
  * changes, then the confirmation block. Identical definitions give `[]`. A moved item is
  * reported once (minimal-move reorder), not once per item it shifted.
@@ -242,6 +242,9 @@ function diffConfirm(a: QuizDefinition, b: QuizDefinition, out: QuizChange[]): v
 export function diffQuizDefinitions(a: QuizDefinition, b: QuizDefinition): QuizChange[] {
   const out: QuizChange[] = [];
   if (a.root !== b.root) out.push({ type: 'root_changed', before: a.root, after: b.root });
+  if (!sameList([...a.languages].sort(), [...b.languages].sort())) {
+    out.push({ type: 'languages_changed', before: a.languages, after: b.languages });
+  }
 
   const idsA = a.questions.map((q) => q.id);
   const idsB = b.questions.map((q) => q.id);

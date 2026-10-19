@@ -21,7 +21,7 @@
  * @module @estalara/shared/schemas/quiz-walk
  */
 
-import { CANONICAL_TRAIT_IDS, type TraitId } from '../traits.js';
+import { CANONICAL_TRAIT_IDS, isTraitId, type TraitId } from '../traits.js';
 import type { QuizLanguage } from './quiz-config.js';
 import {
   DEFAULT_MAX_QUIZ_PATHS,
@@ -75,17 +75,21 @@ function replayPath(def: QuizDefinition, path: readonly QuizPathStep[]): Replaye
     const q: QuizQuestion | undefined = currentId === null ? undefined : byId.get(currentId);
     if (!q) break;
     const multi: boolean = q.kind === 'multi';
-    const picked: QuizAnswer[] = (
-      multi ? [step].flat() : [Array.isArray(step) ? step[0] : step]
-    ).flatMap((i): QuizAnswer[] => {
+    // a multi step selects each index at most once ([1, 1] is the same tick twice)
+    const indexes = new Set(multi ? [step].flat() : [Array.isArray(step) ? step[0] : step]);
+    const picked: QuizAnswer[] = [...indexes].flatMap((i): QuizAnswer[] => {
       const ans = i === undefined ? undefined : q.answers[i];
       return ans ? [ans] : [];
     });
     if (!multi && picked.length === 0) break; // invalid selection: still pending on q
     for (const ans of picked) {
-      for (const [id, weight] of Object.entries(ans.weights))
-        weights[id] = (weights[id] ?? 0) + weight;
-      for (const trait of ans.traits ?? []) traits.add(trait);
+      // a trait screen carries no weights (authoring forbids them), so they are ignored here,
+      // exactly as walkQuizPaths ignores them
+      if (!multi) {
+        for (const [id, weight] of Object.entries(ans.weights))
+          weights[id] = (weights[id] ?? 0) + weight;
+      }
+      for (const trait of ans.traits ?? []) if (isTraitId(trait)) traits.add(trait);
     }
     currentId = multi ? null : (picked[0]?.next ?? null); // a trait screen is always last
   }
@@ -174,10 +178,11 @@ export type QuizNextStep =
  *
  *   - `question` — the walk has not ended: show `questionId` (re-asked when the last
  *     selection was invalid);
- *   - `confirm`  — the walk ended, `def.confirm` exists, the leaf is not `neutral` and the
- *     confirmation has not been resolved yet;
- *   - `done`     — nothing more to ask (no `confirm` block, a `neutral` leaf, or the
- *     confirmation is resolved).
+ *   - `confirm`  — the walk ended, `def.confirm` has BOTH a name and a sentence for the leaf
+ *     (the screen needs both), the leaf is not `neutral` and the confirmation has not been
+ *     resolved yet;
+ *   - `done`     — nothing more to ask (no `confirm` block or no name / sentence for the
+ *     leaf, a `neutral` leaf, or the confirmation is resolved).
  *
  * @param def - the quiz definition.
  * @param state - the buyer's progress.
@@ -189,7 +194,13 @@ export function nextStep(def: QuizDefinition, state: QuizWalkState): QuizNextSte
   }
   const leaf = reduceWeightsToArchetype(replayed.weights);
   const traits = orderTraits(replayed.traits);
-  if (def.confirm && leaf !== 'neutral' && !state.confirmationResolved) {
+  const confirm = def.confirm;
+  if (
+    confirm?.names_i18n[leaf] &&
+    confirm.sentences_i18n[leaf] &&
+    leaf !== 'neutral' &&
+    !state.confirmationResolved
+  ) {
     return { kind: 'confirm', leaf, traits };
   }
   return { kind: 'done', leaf, traits };

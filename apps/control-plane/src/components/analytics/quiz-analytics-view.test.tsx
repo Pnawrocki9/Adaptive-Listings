@@ -1,6 +1,6 @@
 /**
- * Tests for the real quiz analytics dashboard page (FOLLOW-1000; Rule K.2
- * consumer-side clause).
+ * Tests for the real quiz analytics view (FOLLOW-1000; Rule K.2 consumer-side clause), shared by
+ * the agency page and the staff "Quiz" tab (FOLLOW-1334).
  *
  * Replaces the deleted mock-data suite (`quiz.test.ts`), whose only subject was
  * the fabricated QUIZ_STATS/DAILY_COMPLETIONS constants. This suite drives the
@@ -10,14 +10,14 @@
  *     fabrications anywhere in the output
  *   - zero-day gap filling → the daily chart always renders the full window
  *
- * @module apps/control-plane/src/app/dashboard/quiz/analytics/page.test
+ * @module apps/control-plane/src/components/analytics/quiz-analytics-view.test
  */
 
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import QuizAnalyticsPage from './page';
+import { QuizAnalyticsView } from './quiz-analytics-view';
 
 function isoDaysAgo(n: number): string {
   return new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -49,7 +49,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('QuizAnalyticsPage (real data, FOLLOW-1000)', () => {
+describe('QuizAnalyticsView (real data, FOLLOW-1000)', () => {
   it('failed GET → error alert + Retry, never zeroes rendered as data (Rule K.2)', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
@@ -58,7 +58,7 @@ describe('QuizAnalyticsPage (real data, FOLLOW-1000)', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<QuizAnalyticsPage />);
+    render(<QuizAnalyticsView />);
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeDefined();
     });
@@ -78,7 +78,7 @@ describe('QuizAnalyticsPage (real data, FOLLOW-1000)', () => {
       .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve(SAMPLE) });
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<QuizAnalyticsPage />);
+    render(<QuizAnalyticsView />);
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeDefined();
     });
@@ -94,7 +94,7 @@ describe('QuizAnalyticsPage (real data, FOLLOW-1000)', () => {
       vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(SAMPLE) }),
     );
 
-    render(<QuizAnalyticsPage />);
+    render(<QuizAnalyticsView />);
     await waitFor(() => {
       expect(screen.getByText('89')).toBeDefined();
     });
@@ -117,7 +117,7 @@ describe('QuizAnalyticsPage (real data, FOLLOW-1000)', () => {
       vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(SAMPLE) }),
     );
 
-    render(<QuizAnalyticsPage />);
+    render(<QuizAnalyticsView />);
     await waitFor(() => {
       expect(screen.getByText(/Daily Completions/)).toBeDefined();
     });
@@ -125,5 +125,35 @@ describe('QuizAnalyticsPage (real data, FOLLOW-1000)', () => {
     // each column carries its day as a title attribute.
     const columns = document.querySelectorAll('[title]');
     expect(columns.length).toBe(14);
+  });
+});
+
+describe('QuizAnalyticsView — tenant scoping (ADR-0018, FOLLOW-1334)', () => {
+  const TENANT = '550e8400-e29b-41d4-a716-446655440001';
+
+  it('with a tenantId prop the GET carries ?tenant_id (staff-override route)', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(SAMPLE) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<QuizAnalyticsView tenantId={TENANT} />);
+    await waitFor(() => {
+      expect(screen.getByText('Completions (all time)')).toBeDefined();
+    });
+    expect(fetchMock).toHaveBeenCalledWith(`/api/quiz/analytics?tenant_id=${TENANT}`);
+  });
+
+  it('without a tenantId prop the URL is byte-identical to the agency page’s', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(SAMPLE) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<QuizAnalyticsView />);
+    await waitFor(() => {
+      expect(screen.getByText('Completions (all time)')).toBeDefined();
+    });
+    expect(fetchMock).toHaveBeenCalledWith('/api/quiz/analytics');
   });
 });

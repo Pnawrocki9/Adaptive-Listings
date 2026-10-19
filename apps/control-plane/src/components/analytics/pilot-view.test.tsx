@@ -294,3 +294,41 @@ describe('PilotView — clean render (data_source=clickhouse)', () => {
     });
   });
 });
+
+describe('PilotView — tenant scoping (ADR-0018, FOLLOW-1334)', () => {
+  const TENANT = '550e8400-e29b-41d4-a716-446655440001';
+
+  it('with a tenantId prop, BOTH GETs carry &tenant_id (staff-override routes)', async () => {
+    const fetchMock = makeFetchMock(
+      { ok: true, status: 200, body: MOCK_CTA_CLICKHOUSE },
+      { ok: true, status: 200, body: MOCK_INQUIRY_CLICKHOUSE },
+    );
+
+    render(<PilotView tenantId={TENANT} />);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls).toContain(`/api/dashboard/analytics/lift?window_days=7&tenant_id=${TENANT}`);
+    expect(urls).toContain(`/api/pilot/inquiry-starts?window_days=7&tenant_id=${TENANT}`);
+  });
+
+  it('without a tenantId prop the URLs are byte-identical to the agency dashboard’s', async () => {
+    const fetchMock = makeFetchMock(
+      { ok: true, status: 200, body: MOCK_CTA_CLICKHOUSE },
+      { ok: true, status: 200, body: MOCK_INQUIRY_CLICKHOUSE },
+    );
+
+    render(<PilotView />);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls).toEqual([
+      '/api/dashboard/analytics/lift?window_days=7',
+      '/api/pilot/inquiry-starts?window_days=7',
+    ]);
+  });
+});

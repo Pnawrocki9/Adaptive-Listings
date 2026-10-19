@@ -1242,6 +1242,101 @@ export function deriveChatRefreshBudget({ indexSrc, slackMs = CHAT_ARM_SLACK_MS 
   };
 }
 
+/**
+ * FOLLOW-1352: which request is "the SDK's follow-up after the carrier" for hops 6 and 11.
+ *
+ * The first version took the first call whose `seq` exceeded the carrier's — the next request by SEQUENCE.
+ * `seq` is assigned when a request goes OUT, so a request sent while the carrier was still in flight
+ * (a second chat-refresh chain; K3 run 2: #11 sent 1889 ms before #10 was answered) has a higher
+ * `seq` and was graded as the follow-up although it carried the PRE-fold confidence (0.367) while
+ * the SDK's own state had already folded to 0.664. A follow-up is a request the SDK sent once it
+ * HAD folded the carrier's intent, so a request is eligible only when it was sent
+ *   (a) at or after the carrier was ANSWERED, and
+ *   (b) at or after the SDK's persisted intent state first showed `chatPriorAppliedAt === <the
+ *       carrier's stamp>` (`foldSeenMono`).
+ * (b) matters because a fold is dropped when a newer request supersedes the carrier (latest-wins,
+ * adapt-loop.ts), and then (a) alone would admit a request that still carries the old state.
+ *
+ * Both clocks are MONOTONIC (`performance.now()`: `requestedMono` / `receivedMono` on each call,
+ * `foldSeenMono` from the harness poll) — the wall-clock `requestedAt` / `receivedAt` stamps stay as
+ * evidence only, because this machine's wall clock steps (FOLLOW-1255; README §5.18 run 3).
+ * `foldSeenMono` is the poll that FIRST saw the stamp, so a request sent in the one poll interval
+ * (250 ms) before it is conservatively not graded; the real follow-up is at least one chat-refresh
+ * debounce (`CHAT_REFRESH_DEBOUNCE_MS`, adapt-loop.ts:35) after the fold.
+ *
+ * Pure: returns `next: null` plus a `reason` naming the timing rather than guessing, so the hop is
+ * BROKEN with the cause, never a silent pass on the wrong request.
+ *
+ * @param {{calls: Array<{seq: number, requestedMono?: number|null}>,
+ *   carrier: {seq: number, receivedMono?: number|null}|null,
+ *   foldSeenMono: number|null|undefined}} args
+ * @returns {{next: object|null, reason: 'no_carrier'|'carrier_answer_time_unknown'|
+ *   'fold_not_observed'|'none_sent_after_fold'|null, notGradedSeqs: number[],
+ *   floorMono: number|null}}
+ */
+export function pickFollowUpAfterCarrier({ calls, carrier, foldSeenMono }) {
+  if (!carrier) return { next: null, reason: 'no_carrier', notGradedSeqs: [], floorMono: null };
+  if (typeof carrier.receivedMono !== 'number') {
+    return {
+      next: null,
+      reason: 'carrier_answer_time_unknown',
+      notGradedSeqs: [],
+      floorMono: null,
+    };
+  }
+  if (typeof foldSeenMono !== 'number') {
+    return { next: null, reason: 'fold_not_observed', notGradedSeqs: [], floorMono: null };
+  }
+  const floorMono = Math.max(carrier.receivedMono, foldSeenMono);
+  const later = calls.filter((c) => c.seq > carrier.seq);
+  const eligible = later.filter(
+    (c) => typeof c.requestedMono === 'number' && c.requestedMono >= floorMono,
+  );
+  const notGradedSeqs = later.filter((c) => !eligible.includes(c)).map((c) => c.seq);
+  return {
+    next: eligible[0] ?? null,
+    reason: eligible.length > 0 ? null : 'none_sent_after_fold',
+    notGradedSeqs,
+    floorMono,
+  };
+}
+
+/**
+ * The BROKEN-hop text for "no follow-up was graded" (hops 6 and 11): names the timing so a red run
+ * says WHICH wait failed — never the bare "no request was issued" when a request WAS issued, just
+ * too early to be the follow-up (FOLLOW-1352). Falls back to `legacy` when the run recorded no
+ * `followUp` evidence (older artefacts, hand-built observations).
+ *
+ * @param {{reason?: string|null, notGradedSeqs?: number[], foldWaitMs?: number|null,
+ *   windowMs?: number|null, stamp?: string|null}|null|undefined} followUp
+ * @param {string} legacy
+ * @returns {string}
+ */
+function noFollowUpDetail(followUp, legacy) {
+  if (!followUp || !followUp.reason) return legacy;
+  const early =
+    Array.isArray(followUp.notGradedSeqs) && followUp.notGradedSeqs.length > 0
+      ? ` Request(s) #${followUp.notGradedSeqs.join(', #')} went out before the carrier was answered ` +
+        'or before the SDK had applied its fold, so they carried pre-fold state and are not graded.'
+      : '';
+  switch (followUp.reason) {
+    case 'fold_not_observed':
+      return (
+        `TIMING: the SDK's persisted state never showed chatPriorAppliedAt === ` +
+        `${String(followUp.stamp ?? null)} within ${String(followUp.foldWaitMs ?? null)} ms of ` +
+        `the carrier being answered, so no request can be shown to follow the fold.${early}`
+      );
+    case 'none_sent_after_fold':
+      return (
+        `TIMING: no /api/adapt request was sent after the SDK applied its fold (chatPriorAppliedAt ` +
+        `=== ${String(followUp.stamp ?? null)}) within ${String(followUp.windowMs ?? null)} ms ` +
+        `(the chat-refresh debounce plus slack).${early}`
+      );
+    default:
+      return `TIMING: the follow-up could not be selected (${followUp.reason}).${early}`;
+  }
+}
+
 const is2xx = (status) => typeof status === 'number' && status >= 200 && status < 300;
 
 /**
@@ -1359,7 +1454,10 @@ export function evaluateAc8(obs, serverGate) {
         p.next != null
           ? `request #${String(p.next.requestSeq)} archetype_hint ${String(p.next.archetypeHint)}` +
             (p.next.sameSession === true ? '' : ' — under a DIFFERENT session_id')
-          : 'no /api/adapt request was issued after the response that carried the chat intent',
+          : noFollowUpDetail(
+              p.followUp,
+              'no /api/adapt request was issued after the response that carried the chat intent',
+            ),
     },
     {
       hop: 7,
@@ -1545,8 +1643,11 @@ function secondMessageHops(obs, serverGate) {
           ? `request #${String(s.next.requestSeq)} sent archetype_hint ${String(s.next.archetypeHint)} ` +
             `confidence ${String(s.next.confidenceSent)} (gate > ${String(gate)})` +
             (s.next.sameSession === true ? '' : ' — under a DIFFERENT session_id')
-          : 'no /api/adapt request was issued after the response that carried the second ' +
-            "message's intent — the fold did not change a decision input (hint or the gate side)",
+          : noFollowUpDetail(
+              s.followUp,
+              'no /api/adapt request was issued after the response that carried the second ' +
+                "message's intent — the fold did not change a decision input (hint or the gate side)",
+            ),
     },
     {
       hop: 12,
@@ -1673,6 +1774,10 @@ async function pollUntil(fn, budgetMs, pollMs = 250) {
  * (FOLLOW-1255's phenomenon), the already-answered carrier satisfied "requested at or after the
  * reload", and hop 6 graded the carrier's own `archetype_hint: neutral` — a false RED over a
  * session whose real next request sent and received `yield_hunter`. The stamps stay as evidence.
+ * FOLLOW-1352 refines the follow-up pick (hops 6 and 11): "the request after the carrier" is not
+ * "the next `seq`" — a parallel chain's request sent while the carrier was in flight has a higher
+ * `seq` but pre-fold state — so it is the first request SENT after the carrier was answered and the
+ * fold applied, on MONOTONIC stamps (`pickFollowUpAfterCarrier()`), never the wall clock.
  *
  * @param {import('playwright').Browser} browser
  * @returns {Promise<object>}
@@ -1698,11 +1803,13 @@ async function driveChatArm(browser) {
       const entry = {
         seq: calls.length + 1,
         requestedAt: Date.now(),
+        requestedMono: performance.now(),
         sessionId: sent?.session_id ?? null,
         archetypeHint: sent?.archetype_hint ?? null,
         confidence: sent?.confidence ?? null,
         status: null,
         receivedAt: null,
+        receivedMono: null,
         body: null,
         failure: null,
       };
@@ -1740,10 +1847,12 @@ async function driveChatArm(browser) {
             call.failure = `non-JSON body: ${t.slice(0, 200)}`;
           }
           call.receivedAt = Date.now();
+          call.receivedMono = performance.now();
         },
         (e) => {
           call.failure = String(e);
           call.receivedAt = Date.now();
+          call.receivedMono = performance.now();
         },
       ),
     );
@@ -1801,10 +1910,54 @@ async function driveChatArm(browser) {
   const answered = () => calls.filter((c) => c.body !== null);
   const firstAnswered = (pred, budgetMs) =>
     pollUntil(() => answered().find(pred) ?? null, budgetMs);
+  /**
+   * FOLLOW-1352: wait until the SDK's own persisted state shows the carrier's stamp as applied
+   * (`chatPriorAppliedAt === stamp`) and return the monotonic time of the poll that saw it, or null.
+   */
+  const waitForFold = async (sid, stamp, budgetMs) => {
+    const hit = await pollUntil(async () => {
+      const st = await readSdkIntent(sid);
+      return st?.chatPriorAppliedAt === stamp ? { mono: performance.now() } : null;
+    }, budgetMs);
+    return hit?.mono ?? null;
+  };
+  /**
+   * The follow-up the SDK sent AFTER the fold, graded by `pickFollowUpAfterCarrier()` (FOLLOW-1352).
+   * The page stays open for `debounceMs + slackMs` measured from the fold — the real follow-up is
+   * drawn one chat-refresh debounce (adapt-loop.ts:35) after it, so a wait that started at the
+   * carrier's answer could close the page before the call it exists to observe.
+   */
+  const followUpAfterFold = async (carrier, stamp, sid) => {
+    const foldWaitMs = budget.budgetMs;
+    const foldSeenMono = await waitForFold(sid, stamp, foldWaitMs);
+    const windowMs = budget.debounceMs + budget.slackMs;
+    const found = await pollUntil(
+      () => pickFollowUpAfterCarrier({ calls, carrier, foldSeenMono }).next,
+      foldSeenMono === null ? 0 : windowMs,
+    );
+    const picked = pickFollowUpAfterCarrier({ calls, carrier, foldSeenMono });
+    return {
+      next: found ?? null,
+      followUp: {
+        stamp,
+        reason: found ? null : picked.reason,
+        notGradedSeqs: picked.notGradedSeqs,
+        foldWaitMs,
+        windowMs,
+        foldSeenMono,
+        foldSeenAfterCarrierMs:
+          foldSeenMono !== null && typeof carrier.receivedMono === 'number'
+            ? Math.round(foldSeenMono - carrier.receivedMono)
+            : null,
+      },
+    };
+  };
   const summarize = (c) => ({
     seq: c.seq,
     requestedAt: c.requestedAt,
     receivedAt: c.receivedAt,
+    requestedMono: c.requestedMono,
+    receivedMono: c.receivedMono,
     sessionId: c.sessionId,
     archetypeHint: c.archetypeHint,
     confidenceSent: c.confidence,
@@ -1948,12 +2101,11 @@ async function driveChatArm(browser) {
     // "The NEXT /api/adapt" is the first request the SDK issues after the carrier, on the same page
     // (FOLLOW-1301: the fold schedules it one chat-refresh debounce later). No reload, no harness
     // trigger: if the SDK draws no call, hop 6 reads "no /api/adapt request was issued".
-    const nextSent = carrier
-      ? await pollUntil(
-          () => calls.find((c) => c.seq > carrier.seq) ?? null,
-          budget.debounceMs + budget.slackMs,
-        )
-      : null;
+    // FOLLOW-1352: "after" means SENT after the carrier was answered AND the fold was applied —
+    // not "the next sequence number" (a parallel chain's request can sit between them).
+    const { next: nextSent, followUp: firstFollowUp } = carrier
+      ? await followUpAfterFold(carrier, stamp, sessionId)
+      : { next: null, followUp: null };
     if (nextSent) {
       await pollUntil(
         () => nextSent.body !== null || nextSent.failure !== null,
@@ -1992,6 +2144,7 @@ async function driveChatArm(browser) {
             responseArchetype: next.body?.archetype ?? null,
           }
         : null,
+      followUp: firstFollowUp,
     };
     obs.sdkIntent.afterFirst = await readSdkIntent(sessionId);
 
@@ -2027,12 +2180,9 @@ async function driveChatArm(browser) {
       : null;
     // The SDK's own follow-up (FOLLOW-1306: drawn when the fold crosses the directive gate). Its
     // response is where the model-written copy arrives, so it gets the page budget twice over.
-    const sNext = sCarrier
-      ? await pollUntil(
-          () => calls.find((c) => c.seq > sCarrier.seq) ?? null,
-          budget.debounceMs + budget.slackMs,
-        )
-      : null;
+    const { next: sNext, followUp: secondFollowUp } = sCarrier
+      ? await followUpAfterFold(sCarrier, sStamp, sessionId)
+      : { next: null, followUp: null };
     if (sNext) {
       await pollUntil(
         () => sNext.body !== null || sNext.failure !== null,
@@ -2071,6 +2221,7 @@ async function driveChatArm(browser) {
             responseArchetype: sNext.body?.archetype ?? null,
           }
         : null,
+      followUp: secondFollowUp,
       // Every answered call issued after the carrier: hop 12 runs `isAdaptedResponse()` over these.
       responsesAfterCarrier: sCarrier
         ? answered()

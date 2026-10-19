@@ -2736,3 +2736,19 @@ The premise was wrong here and would have produced a probe that cannot fail.
   Guardrail: _when a decision collapses to a constant, delete the registries that encoded its
   variants (here the reflect/platform-only map) rather than keep them answering a question that no
   longer has two answers_.
+
+- **2026-10-19 / FOLLOW-1336** · `app/not-found.tsx`, `error.tsx`, `global-error.tsx` (the one new
+  Sentry site, register 95 -> 96 in 56); password recovery on the existing Supabase project:
+  `/forgot-password` (browser client, same confirmation for every outcome), `/auth/callback`
+  (`exchangeCodeForSession`, `next` through `safeRedirectPath`), `/reset-password` (server
+  `getUser()` gate + `updateUser` + `signOut({scope:'others'})`); `SignInForm` client now created
+  once on mount. · Risks weighed: `next` is an open-redirect vector in a link an attacker can craft
+  (reject `//`, any backslash, control chars the URL parser strips, then re-check the origin); a
+  provider-reported `?error=` arrives with no `code`, so the missing-code branch covers it; the
+  failure redirect carries a fixed code, never Supabase's text; PKCE needs the verifier cookie the
+  REQUESTING browser wrote, so the reset request is client-side; `check-rule-i.sh` exempts Next
+  convention files by name and did not know `global-error.tsx`; a test that roots React at
+  `document` (for `<html>`) must live in its own file or later clicks never reach React. ·
+  Guardrail: _a new Next convention file name (`global-error`, `template`, `default`) should be
+  added to the Rule I exemption list in the same PR, and the Supabase redirect-URL allowlist entry
+  belongs in the handover table the moment the route exists_.

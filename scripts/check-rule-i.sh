@@ -341,6 +341,7 @@ mapfile -t source_files < <(
     ! -name "layout.tsx" \
     ! -name "loading.tsx" \
     ! -name "error.tsx" \
+    ! -name "global-error.tsx" \
     ! -name "not-found.tsx" \
     ! -name "route.ts" \
     2>/dev/null | sort

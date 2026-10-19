@@ -232,7 +232,7 @@ while IFS= read -r f; do
 done < <(
   grep -rl "gh-pr-checks-verified" \
     --include=*.md --include=*.sh --include=*.yml --include=*.yaml --include=*.json . \
-    | grep -v '/node_modules/' | LC_ALL=C sort
+    | grep -v '/node_modules/' | grep -v '/\.claude/worktrees/' | LC_ALL=C sort
 )
 
 echo ""

@@ -2,8 +2,9 @@
  * Server-side data access for `/admin/tenants/[id]/listings` (FOLLOW-1334): which of the tenant's
  * listings already carry FAQ answers (the RAG corpus `answers` table), newest edit first.
  *
- * Rule K.2: a configured-but-failing DB is a real error — it returns `{ ok: false }` (and captures
- * to Sentry) so the page renders a visible error, never an empty list that reads as "no listings".
+ * Rule K.2: a configured-but-failing DB is a real error — it returns `{ ok: false }` with a generic
+ * message (the DB error text stays out of the page) and captures to Sentry, so the page renders a
+ * visible error, never an empty list that reads as "no listings".
  * The tenant fence is the `WHERE tenant_id = $1` in the query itself: this runs on the service-role
  * client (RLS bypassed), and the page has already validated `tenantId` with `tenantExists`
  * (ADR-0018 §2 invariant 5).
@@ -56,6 +57,11 @@ export async function getListingAnswerSummaries(tenantId: string): Promise<Listi
       tags: { route: 'admin/tenants/listings' },
       extra: { tenant_id: tenantId },
     });
-    return { ok: false, error: err instanceof Error ? err.message : 'listing lookup failed' };
+    // Generic on purpose: a drizzle error message carries the SQL and its params. The detail is in
+    // the Sentry event above.
+    return {
+      ok: false,
+      error: 'The listing lookup failed. Try again; if it persists, check Sentry.',
+    };
   }
 }

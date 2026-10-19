@@ -39,6 +39,9 @@ const PatchAnswerSchema = z
     message: 'At least one of question or answer must be provided',
   });
 
+/** `answers.id` is a uuid column: any other shape can never match a row (and would make the query throw). */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // ---------------------------------------------------------------------------
 // PATCH — update answer
 // ---------------------------------------------------------------------------
@@ -53,6 +56,12 @@ export async function PATCH(
   if (!auth.ok) return auth.response;
   const { access } = auth;
   const tenantId = access.tenantId;
+
+  // A malformed id matches no row. 404 it here, before any query or transaction: otherwise the
+  // uuid cast throws and a staff write reports a false `audit_write_failed` (+ Sentry).
+  if (!UUID_RE.test(answerId)) {
+    return NextResponse.json({ error: 'Answer not found' }, { status: 404 });
+  }
 
   let body: unknown;
   try {
@@ -128,9 +137,31 @@ export async function PATCH(
     // ── Atomic staff write (ADR-0018 §3a / FOLLOW-605 reference impl) ─────────────────────────
     // The update and its staff_audit_log row commit-or-roll-back TOGETHER. Fenced on
     // access.tenantId (validated against `tenants`) AND the answer id.
-    const before = existing[0];
     try {
-      const row = await db.transaction(async (tx) => {
+      const outcome = await db.transaction(async (tx) => {
+        // Re-read the row UNDER A LOCK so the audited `before` is exactly what the UPDATE replaces
+        // (a concurrent edit waits; a concurrent delete is a plain 404, not an audit failure).
+        const locked = await tx
+          .select({
+            listingId: answers.listingId,
+            question: answers.question,
+            answer: answers.answer,
+          })
+          .from(answers)
+          .where(and(eq(answers.id, answerId), eq(answers.tenantId, tenantId)))
+          .limit(1)
+          .for('update');
+        const before = locked[0];
+        if (!before) return 'not_found' as const;
+        // The embedding above was decided from the unlocked read; if the question moved under us
+        // the vector would not match the stored text — refuse instead of writing it.
+        if (
+          newQuestion !== undefined &&
+          newQuestion !== before.question &&
+          updateValues.questionEmbedding === undefined
+        ) {
+          return 'conflict' as const;
+        }
         const updated = await tx
           .update(answers)
           .set(updateValues)
@@ -144,8 +175,8 @@ export async function PATCH(
           targetTenantId: tenantId,
           payload: {
             answer_id: answerId,
-            listing_id: before?.listingId ?? null,
-            before: { question: before?.question ?? null, answer: before?.answer ?? null },
+            listing_id: before.listingId,
+            before: { question: before.question, answer: before.answer },
             after: { question: changed.question, answer: changed.answer },
           },
           ipAddress: requestIp(req),
@@ -153,6 +184,16 @@ export async function PATCH(
         });
         return changed;
       });
+      if (outcome === 'not_found') {
+        return NextResponse.json({ error: 'Answer not found' }, { status: 404 });
+      }
+      if (outcome === 'conflict') {
+        return NextResponse.json(
+          { error: 'The answer was changed by someone else meanwhile. Reload and retry.' },
+          { status: 409 },
+        );
+      }
+      const row = outcome;
       return NextResponse.json(row, { status: 200 });
     } catch (err) {
       Sentry.captureException(err, {
@@ -204,6 +245,12 @@ export async function DELETE(
   if (!auth.ok) return auth.response;
   const { access } = auth;
   const tenantId = access.tenantId;
+
+  // A malformed id matches no row. 404 it here, before any query or transaction: otherwise the
+  // uuid cast throws and a staff write reports a false `audit_write_failed` (+ Sentry).
+  if (!UUID_RE.test(answerId)) {
+    return NextResponse.json({ error: 'Answer not found' }, { status: 404 });
+  }
 
   if (access.via === 'staff') {
     // ── Atomic staff write (ADR-0018 §3a / FOLLOW-605 reference impl) ─────────────────────────

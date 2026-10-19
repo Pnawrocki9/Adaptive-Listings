@@ -58,6 +58,7 @@ vi.mock('drizzle-orm', () => ({
 }));
 
 import { createAdminClient, staffAuditLog } from '@estalara/db';
+import { eq } from 'drizzle-orm';
 import { resolveTenantAccess, AccessError, type TenantAccess } from '@/lib/session-auth';
 
 const mockResolve = vi.mocked(resolveTenantAccess);
@@ -69,7 +70,8 @@ const { PATCH, DELETE } = await import('./route');
 // ---------------------------------------------------------------------------
 
 const TENANT_A = '11111111-1111-1111-1111-111111111111';
-const ANSWER_ID = 'answer-uuid-001';
+const ANSWER_ID = '33333333-3333-4333-8333-333333333333';
+const FOREIGN_ANSWER_ID = '44444444-4444-4444-8444-444444444444';
 
 function agencyAccess(tenantId: string): TenantAccess {
   return {
@@ -349,8 +351,15 @@ describe('DELETE /api/tenants/:id/answers/:answerId', () => {
 // ---------------------------------------------------------------------------
 
 /** A db whose `transaction` hands the callback a tx with update/delete + audit insert spies. */
-function makeStaffDb(opts: { auditFails?: boolean; deleteResult?: unknown[] } = {}) {
-  const base = makeDbMock({});
+function makeStaffDb(
+  opts: {
+    auditFails?: boolean;
+    deleteResult?: unknown[];
+    lockedRows?: unknown[];
+    outerRows?: unknown[];
+  } = {},
+) {
+  const base = makeDbMock(opts.outerRows === undefined ? {} : { existingRows: opts.outerRows });
   const auditValues = vi
     .fn()
     .mockImplementation(() =>
@@ -370,10 +379,17 @@ function makeStaffDb(opts: { auditFails?: boolean; deleteResult?: unknown[] } = 
   const txDelete = vi
     .fn()
     .mockReturnValue({ where: vi.fn().mockReturnValue({ returning: txDeleteReturning }) });
+  // tx.select().from().where().limit().for('update') -> the locked re-read of `before`.
+  const txFor = vi.fn().mockResolvedValue(opts.lockedRows ?? [EXISTING_ROW]);
+  const txSelect = vi.fn().mockReturnValue({
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({ limit: vi.fn().mockReturnValue({ for: txFor }) }),
+    }),
+  });
   const transaction = vi.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
-    cb({ insert: txInsert, update: txUpdate, delete: txDelete }),
+    cb({ insert: txInsert, update: txUpdate, delete: txDelete, select: txSelect }),
   );
-  return { db: { ...base, transaction }, auditValues, txUpdate, txDelete };
+  return { db: { ...base, transaction }, auditValues, txUpdate, txDelete, txFor };
 }
 
 describe('PATCH /api/tenants/:id/answers/:answerId — staff override', () => {
@@ -557,5 +573,177 @@ describe('DELETE /api/tenants/:id/answers/:answerId — staff override', () => {
     expect(res.status).toBe(204);
     expect(withTx.transaction).not.toHaveBeenCalled();
     expect(base.delete).toHaveBeenCalledOnce();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Security review follow-ups (FOLLOW-1334: RC-1, locked `before`, cross-tenant answer id)
+// ---------------------------------------------------------------------------
+
+describe('malformed answer id (RC-1)', () => {
+  for (const bad of ['answer-uuid-001', '123', 'not-a-uuid', "1'; DROP TABLE answers;--"]) {
+    it(`staff PATCH ${JSON.stringify(bad)} -> 404, no query, no transaction, no Sentry`, async () => {
+      mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+      const { db } = makeStaffDb();
+      vi.mocked(createAdminClient).mockReturnValue(
+        db as unknown as ReturnType<typeof createAdminClient>,
+      );
+
+      const res = await PATCH(makePatchRequest(TENANT_A, bad, { answer: 'x' }), {
+        params: Promise.resolve({ id: TENANT_A, answerId: bad }),
+      });
+
+      expect(res.status).toBe(404);
+      expect(db.select).not.toHaveBeenCalled();
+      expect(db.transaction).not.toHaveBeenCalled();
+      expect(mockEmbedText).not.toHaveBeenCalled();
+      expect(mockCaptureException).not.toHaveBeenCalled();
+    });
+
+    it(`staff DELETE ${JSON.stringify(bad)} -> 404, no transaction, no audit_write_failed, no Sentry`, async () => {
+      mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+      const { db, auditValues } = makeStaffDb();
+      vi.mocked(createAdminClient).mockReturnValue(
+        db as unknown as ReturnType<typeof createAdminClient>,
+      );
+
+      const res = await DELETE(makeDeleteRequest(TENANT_A, bad), {
+        params: Promise.resolve({ id: TENANT_A, answerId: bad }),
+      });
+
+      expect(res.status).toBe(404);
+      expect(await parseBody<{ error: string }>(res)).toEqual({ error: 'Answer not found' });
+      expect(db.transaction).not.toHaveBeenCalled();
+      expect(auditValues).not.toHaveBeenCalled();
+      expect(mockCaptureException).not.toHaveBeenCalled();
+    });
+  }
+
+  it('agency PATCH and DELETE with a malformed id -> 404 before any query', async () => {
+    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
+    const base = makeDbMock({});
+    vi.mocked(createAdminClient).mockReturnValue(
+      base as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    const p = await PATCH(makePatchRequest(TENANT_A, 'nope', { answer: 'x' }), {
+      params: Promise.resolve({ id: TENANT_A, answerId: 'nope' }),
+    });
+    const d = await DELETE(makeDeleteRequest(TENANT_A, 'nope'), {
+      params: Promise.resolve({ id: TENANT_A, answerId: 'nope' }),
+    });
+
+    expect([p.status, d.status]).toEqual([404, 404]);
+    expect(base.select).not.toHaveBeenCalled();
+    expect(base.update).not.toHaveBeenCalled();
+    expect(base.delete).not.toHaveBeenCalled();
+  });
+});
+
+describe('staff PATCH — audited `before` is read under a row lock', () => {
+  it('re-reads the row inside the transaction with FOR UPDATE and audits THAT as `before`', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    const { db, auditValues, txFor } = makeStaffDb({
+      // A concurrent edit landed after the unlocked pre-read: the locked row is the truth.
+      lockedRows: [
+        { listingId: 'listing-001', question: 'Original question', answer: 'Edited by B' },
+      ],
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      db as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    const res = await PATCH(makePatchRequest(TENANT_A, ANSWER_ID, { answer: 'Updated answer' }), {
+      params: Promise.resolve({ id: TENANT_A, answerId: ANSWER_ID }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(txFor).toHaveBeenCalledWith('update');
+    expect(auditValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          before: { question: 'Original question', answer: 'Edited by B' },
+        }),
+      }),
+    );
+  });
+
+  it('a row deleted between the pre-read and the lock -> 404, no update, no audit row, no Sentry', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    const { db, auditValues, txUpdate } = makeStaffDb({ lockedRows: [] });
+    vi.mocked(createAdminClient).mockReturnValue(
+      db as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    const res = await PATCH(makePatchRequest(TENANT_A, ANSWER_ID, { answer: 'x' }), {
+      params: Promise.resolve({ id: TENANT_A, answerId: ANSWER_ID }),
+    });
+
+    expect(res.status).toBe(404);
+    expect(txUpdate).not.toHaveBeenCalled();
+    expect(auditValues).not.toHaveBeenCalled();
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it('the question changed under us after the embedding was skipped -> 409, nothing written', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    // Unlocked pre-read says the question already equals the new one (no embedding computed) ...
+    const { db, auditValues, txUpdate } = makeStaffDb({
+      outerRows: [{ id: ANSWER_ID, question: 'Q-new' }],
+      // ... but by the time the lock is taken another editor had changed it.
+      lockedRows: [{ listingId: 'listing-001', question: 'Q-other', answer: 'A' }],
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      db as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    const res = await PATCH(makePatchRequest(TENANT_A, ANSWER_ID, { question: 'Q-new' }), {
+      params: Promise.resolve({ id: TENANT_A, answerId: ANSWER_ID }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(txUpdate).not.toHaveBeenCalled();
+    expect(auditValues).not.toHaveBeenCalled();
+  });
+});
+
+describe('staff + an answer id that belongs to ANOTHER tenant', () => {
+  it('PATCH -> 404; nothing locked, written or audited; every lookup is fenced on tenant A', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    // The row exists, but under tenant B: the two-column WHERE matches nothing for tenant A.
+    const { db, auditValues, txUpdate } = makeStaffDb({ outerRows: [], lockedRows: [] });
+    vi.mocked(createAdminClient).mockReturnValue(
+      db as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    const res = await PATCH(makePatchRequest(TENANT_A, FOREIGN_ANSWER_ID, { answer: 'x' }), {
+      params: Promise.resolve({ id: TENANT_A, answerId: FOREIGN_ANSWER_ID }),
+    });
+
+    expect(res.status).toBe(404);
+    expect(db.transaction).not.toHaveBeenCalled();
+    expect(txUpdate).not.toHaveBeenCalled();
+    expect(auditValues).not.toHaveBeenCalled();
+    expect(mockEmbedText).not.toHaveBeenCalled();
+    expect(vi.mocked(eq)).toHaveBeenCalledWith('tenant_id', TENANT_A);
+    expect(vi.mocked(eq)).toHaveBeenCalledWith('id', FOREIGN_ANSWER_ID);
+  });
+
+  it('DELETE -> 404; nothing deleted, no audit row, no Sentry; fenced on tenant A', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    const { db, auditValues } = makeStaffDb({ deleteResult: [] });
+    vi.mocked(createAdminClient).mockReturnValue(
+      db as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    const res = await DELETE(makeDeleteRequest(TENANT_A, FOREIGN_ANSWER_ID), {
+      params: Promise.resolve({ id: TENANT_A, answerId: FOREIGN_ANSWER_ID }),
+    });
+
+    expect(res.status).toBe(404);
+    expect(auditValues).not.toHaveBeenCalled();
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(vi.mocked(eq)).toHaveBeenCalledWith('tenant_id', TENANT_A);
+    expect(vi.mocked(eq)).toHaveBeenCalledWith('id', FOREIGN_ANSWER_ID);
   });
 });

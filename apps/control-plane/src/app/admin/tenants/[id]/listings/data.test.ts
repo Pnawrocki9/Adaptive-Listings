@@ -74,7 +74,10 @@ describe('getListingAnswerSummaries', () => {
 
     const result = await getListingAnswerSummaries(TENANT);
 
-    expect(result).toEqual({ ok: false, error: 'connection refused' });
+    expect(result.ok).toBe(false);
+    // The raw DB error (SQL + params for drizzle) never reaches the page.
+    expect(JSON.stringify(result)).not.toContain('connection refused');
+    expect(JSON.stringify(result)).toContain('listing lookup failed');
     expect(mockCapture).toHaveBeenCalledOnce();
   });
 

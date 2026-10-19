@@ -6,7 +6,7 @@
  * single lift computation in `@/lib/pilot-stats` — see `./route-helpers.ts`. The former
  * `/api/pilot/cta-lift` route now answers 410 and names this path.
  *
- *   GET /api/dashboard/analytics/lift?window_days=<7|14|30>[&tenant_id=<uuid>  (staff only)]
+ *   GET /api/dashboard/analytics/lift?window_days=<7|14|30|90>[&tenant_id=<uuid>  (staff only)]
  *
  * Auth (ADR-0018 §2, FOLLOW-594): `resolveTenantAccess` with `allowStaffOverride`. Agency path:
  * tenant from the session claim. Estalara staff may read any tenant via an explicit

@@ -120,6 +120,25 @@ interface ArmConversionReport {
  */
 export type ConversionSource = 'signed_events' | 'disabled' | 'mock';
 
+/**
+ * One arm of the CEO lift definition (ruling D-J, FOLLOW-1338): the combined conversion beside its
+ * two parts. All three rates are per session, in [0, 1], over the arm's distinct sessions. A session
+ * that did BOTH counts once in `conversions` and once in each part — the parts may sum to more than
+ * the combined figure. A part is `null` when its per-type count was not read (never a fabricated 0).
+ */
+export interface ArmBreakdown {
+  sessions: number;
+  /** Sessions with a server-confirmed `live.signup` OR `inquiry.completed` — the lift numerator. */
+  conversions: number;
+  conversion_rate: number;
+  /** Sessions with a server-confirmed `live.signup` (LIVE / webinar registration). */
+  live_signups: number | null;
+  live_signup_rate: number | null;
+  /** Sessions with a server-confirmed `inquiry.completed` (contact with the selling agent). */
+  agent_contacts: number | null;
+  agent_contact_rate: number | null;
+}
+
 export interface LiftResponse {
   tenant_id: string;
   window_days: number;
@@ -131,6 +150,11 @@ export interface LiftResponse {
   /** Per-arm conversion counts by class (FOLLOW-1203). */
   conversions: { adapted: ArmConversionReport; holdout: ArmConversionReport };
   conversion_source: ConversionSource;
+  /**
+   * FOLLOW-1338 (additive): the D-J split of the combined conversion into its two events, per arm.
+   * `null` exactly when `summary` is `null` (conversion_source 'disabled').
+   */
+  conversion_breakdown: { adapted: ArmBreakdown; holdout: ArmBreakdown } | null;
   /** Conversion funnel by arm. */
   funnel: FunnelRow[];
   /** Per-archetype breakdown, pilot shape (null lift when holdout rate is 0). */
@@ -200,20 +224,38 @@ const CONVERSION_TYPE_PREDICATE = `type IN ('inquiry.completed', 'live.signup')`
  * @param opts.callerClass - false → the column is not named; only `cta_clicks` is produced.
  * @param opts.tenantFence - a predicate over `events` fencing one tenant, or null (staff rollup).
  * @param opts.windowDays - SQL for the window length (a bound parameter or a literal integer).
+ * @param opts.since - FOLLOW-1338: instead of a rolling window, SQL for the instant events are read
+ *   from (the per-day snapshot reader). Exactly one of `windowDays` / `since`.
+ * @param opts.byType - FOLLOW-1338: also produce the per-event signed counts and last-received
+ *   times (`live.signup`, `inquiry.completed`) the D-J breakdown needs. Off by default so the staff
+ *   rollup's SQL is byte-identical to what it was.
  */
-export function conversionEventsSubquery(opts: {
-  callerClass: boolean;
-  tenantFence: string | null;
-  windowDays: string;
-}): string {
+export function conversionEventsSubquery(
+  opts: {
+    callerClass: boolean;
+    tenantFence: string | null;
+    byType?: boolean;
+  } & ({ windowDays: string; since?: never } | { since: string; windowDays?: never }),
+): string {
   const signed = `${CONVERSION_TYPE_PREDICATE} AND caller_signed = 1`;
+  const signedLive = `type = 'live.signup' AND caller_signed = 1`;
+  const signedAgent = `type = 'inquiry.completed' AND caller_signed = 1`;
+  const typeColumns =
+    opts.callerClass && opts.byType === true
+      ? `,
+        countIf(${signedLive}) AS signed_live_signups,
+        maxIf(ingest_received_at, ${signedLive}) AS last_signed_live_signup_at,
+        countIf(${signedAgent}) AS signed_agent_contacts,
+        maxIf(ingest_received_at, ${signedAgent}) AS last_signed_agent_contact_at`
+      : '';
   const classColumns = opts.callerClass
     ? `,
         countIf(${signed}) AS signed_conversions,
         maxIf(ingest_received_at, ${signed}) AS last_signed_conversion_at,
-        countIf(${CONVERSION_TYPE_PREDICATE} AND caller_signed = 0) AS unsigned_conversions`
+        countIf(${CONVERSION_TYPE_PREDICATE} AND caller_signed = 0) AS unsigned_conversions${typeColumns}`
     : '';
   const fence = opts.tenantFence === null ? '' : `${opts.tenantFence} AND `;
+  const lowerBound = opts.since ?? `now() - toIntervalDay(${opts.windowDays})`;
   return `
       SELECT
         tenant_id,
@@ -221,7 +263,7 @@ export function conversionEventsSubquery(opts: {
         countIf(type = 'cta.clicked') AS cta_clicks${classColumns}
       FROM events
       WHERE ${fence}type IN ('cta.clicked', 'inquiry.completed', 'live.signup')
-        AND ingest_received_at >= now() - toIntervalDay(${opts.windowDays})
+        AND ingest_received_at >= ${lowerBound}
       GROUP BY tenant_id, session_id`;
 }
 
@@ -249,6 +291,8 @@ export function conversionCountColumns(opts: {
   callerClass: boolean;
   prefix: string;
   arm: string | null;
+  /** FOLLOW-1338: also count the two parts (needs the subquery's `byType`). */
+  byType?: boolean;
 }): string {
   const when = (predicate: string): string =>
     opts.arm === null ? predicate : `${opts.arm} AND ${predicate}`;
@@ -261,6 +305,19 @@ export function conversionCountColumns(opts: {
       col('ev.signed_conversions > 0', 'signed_conversion_sessions'),
       col('ev.unsigned_conversions > 0', 'unsigned_conversion_sessions'),
     );
+    if (opts.byType === true) {
+      // The same attribution rule as the combined count, applied to each event on its own.
+      columns.push(
+        col(
+          'ev.signed_live_signups > 0 AND ev.last_signed_live_signup_at >= ad.ts',
+          'live_signup_sessions',
+        ),
+        col(
+          'ev.signed_agent_contacts > 0 AND ev.last_signed_agent_contact_at >= ad.ts',
+          'agent_contact_sessions',
+        ),
+      );
+    }
   }
   return columns.join(',\n      ');
 }
@@ -274,6 +331,12 @@ export interface ConversionCounts {
   /** Signed-converting sessions the attribution rule excluded. */
   pre_exposure_conversions: number | null;
   unsigned_conversions: number | null;
+  /**
+   * FOLLOW-1338: sessions with an attributed signed `live.signup` / `inquiry.completed`. Present only
+   * when the query asked for {@link conversionCountColumns}`.byType`; the rollup never does.
+   */
+  live_signups?: number | null;
+  agent_contacts?: number | null;
 }
 
 /** Parse the columns {@link conversionCountColumns} produced out of one ClickHouse row. */
@@ -281,6 +344,7 @@ export function readConversionCounts(
   row: Record<string, unknown>,
   prefix: string,
   callerClass: boolean,
+  byType = false,
 ): ConversionCounts {
   const n = (name: string): number => Number(row[`${prefix}${name}`] ?? 0);
   if (!callerClass) {
@@ -298,12 +362,15 @@ export function readConversionCounts(
     // Attributed sessions are a subset of signed-converting ones; the rest converted pre-exposure.
     pre_exposure_conversions: Math.max(0, n('signed_conversion_sessions') - conversions),
     unsigned_conversions: n('unsigned_conversion_sessions'),
+    ...(byType
+      ? { live_signups: n('live_signup_sessions'), agent_contacts: n('agent_contact_sessions') }
+      : {}),
   };
 }
 
 // ─── Query param parsing ─────────────────────────────────────────────────────
 
-const ALLOWED_WINDOWS = [7, 14, 30] as const;
+const ALLOWED_WINDOWS = [7, 14, 30, 90] as const;
 type WindowDays = (typeof ALLOWED_WINDOWS)[number];
 
 /** Parse window_days; defaults to 7 when missing or out of the allowed set. */
@@ -375,6 +442,23 @@ export function buildResponseFromRaw(
       confidence: total.confidence,
     };
   }
+
+  // FOLLOW-1338: the D-J split. Same rows, same sessions denominator as `summary`.
+  const armBreakdown = (g: ChGroupCounts | undefined): ArmBreakdown => {
+    const sessions = g?.sessions ?? 0;
+    const conversions = g?.conversions ?? 0;
+    const rate = (count: number | null | undefined): number | null =>
+      count === undefined || count === null ? null : round4(sessions > 0 ? count / sessions : 0);
+    return {
+      sessions,
+      conversions,
+      conversion_rate: round4(sessions > 0 ? conversions / sessions : 0),
+      live_signups: g?.live_signups ?? null,
+      live_signup_rate: rate(g?.live_signups),
+      agent_contacts: g?.agent_contacts ?? null,
+      agent_contact_rate: rate(g?.agent_contacts),
+    };
+  };
 
   const armReport = (g: ChGroupCounts | undefined): ArmConversionReport => ({
     cta_clicked_sessions: g?.cta_sessions ?? 0,
@@ -450,6 +534,9 @@ export function buildResponseFromRaw(
     conversions: { adapted: armReport(adaptedGroup), holdout: armReport(holdoutGroup) },
     conversion_source:
       dataSource === 'mock' ? 'mock' : raw.callerClass ? 'signed_events' : 'disabled',
+    conversion_breakdown: raw.callerClass
+      ? { adapted: armBreakdown(adaptedGroup), holdout: armBreakdown(holdoutGroup) }
+      : null,
     funnel,
     by_archetype: byArchetype,
     rows,
@@ -534,11 +621,17 @@ export async function fetchLiftRaw(
   const password = process.env.CLICKHOUSE_PASSWORD ?? '';
   const params = { tenant_id: tenantId, window_days: String(windowDays) };
   const callerClass = callerSignedColumnEnabled();
-  const countColumns = conversionCountColumns({ callerClass, prefix: '', arm: null });
+  const countColumns = conversionCountColumns({
+    callerClass,
+    prefix: '',
+    arm: null,
+    byType: true,
+  });
   const evSubquery = conversionEventsSubquery({
     callerClass,
     tenantFence: 'tenant_id = {tenant_id:String}',
     windowDays: '{window_days:UInt16}',
+    byType: true,
   });
 
   // FOLLOW-1201 AC(4): every `events` predicate below buckets on `ingest_received_at` (stamped by
@@ -613,7 +706,7 @@ export async function fetchLiftRaw(
       (r): ChGroupCounts => ({
         holdout: Number(r.holdout ?? 0),
         sessions: Number(r.sessions ?? 0),
-        ...readConversionCounts(r, '', callerClass),
+        ...readConversionCounts(r, '', callerClass, true),
       }),
     ),
     archetypes: archetypesRaw.map(
@@ -622,7 +715,7 @@ export async function fetchLiftRaw(
         archetype: String(r.archetype ?? ''),
         holdout: Number(r.holdout ?? 0),
         sessions: Number(r.sessions ?? 0),
-        ...readConversionCounts(r, '', callerClass),
+        ...readConversionCounts(r, '', callerClass, true),
       }),
     ),
     funnel: funnelRaw.map(
@@ -635,6 +728,176 @@ export async function fetchLiftRaw(
     ),
     callerClass,
   };
+}
+
+// ─── FOLLOW-1338: per-day, per-arm counts (the snapshot cron and the CSV export) ─────────────
+
+/** The two arms, in the order every per-day surface lists them. */
+export type LiftArm = 'adapted' | 'holdout';
+
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** `YYYY-MM-DD` of an instant in UTC. */
+export function utcDay(at: Date): string {
+  return at.toISOString().slice(0, 10);
+}
+
+/** The `count` UTC days ending at (and including) `end`, oldest first, as `YYYY-MM-DD`. */
+export function utcDaysEndingAt(end: Date, count: number): string[] {
+  const days: string[] = [];
+  for (let i = count - 1; i >= 0; i--) {
+    days.push(utcDay(new Date(end.getTime() - i * 86_400_000)));
+  }
+  return days;
+}
+
+/** One (UTC day, arm) cell of ClickHouse counts. `holdout` is 0 (adapted) or 1. */
+interface ChDayCounts {
+  day: string;
+  holdout: number;
+  sessions: number;
+  conversions: number;
+  live_signups: number;
+  agent_contacts: number;
+}
+
+interface ChDailyRaw {
+  rows: ChDayCounts[];
+  /** False when `events.caller_signed` is unavailable: no per-day lift is derivable. */
+  callerClass: boolean;
+}
+
+/**
+ * Per-(UTC day, arm) counts for `fromDay..toDay` inclusive — the SAME definition of a conversion as
+ * {@link fetchLiftRaw} (the shared subquery / count columns, the same clean-holdout predicate, the
+ * same attribution rule), only grouped by the UTC day of the session's decision instead of one
+ * rolling window. A session with decisions on two days is in both days' cohorts; on each day it is
+ * judged against that day's first decision. Conversions are read from the start of `fromDay` up to
+ * now, so a day's figures can still grow after the day ends (they are "as known at read time").
+ *
+ * Returns null when CLICKHOUSE_URL is unset (dev / CI). Throws when it is set and a query fails
+ * (Rule K.2 — the caller must not fall back to anything).
+ */
+export async function fetchLiftDaily(
+  tenantId: string,
+  fromDay: string,
+  toDay: string,
+): Promise<ChDailyRaw | null> {
+  const baseUrl = process.env.CLICKHOUSE_URL;
+  if (!baseUrl) return null;
+  if (!DAY_RE.test(fromDay) || !DAY_RE.test(toDay)) {
+    throw new Error('fetchLiftDaily: days must be YYYY-MM-DD');
+  }
+  const callerClass = callerSignedColumnEnabled();
+  if (!callerClass) return { rows: [], callerClass: false };
+
+  const user = process.env.CLICKHOUSE_USER ?? 'default';
+  const password = process.env.CLICKHOUSE_PASSWORD ?? '';
+  const countColumns = conversionCountColumns({
+    callerClass,
+    prefix: '',
+    arm: null,
+    byType: true,
+  });
+  const evSubquery = conversionEventsSubquery({
+    callerClass,
+    tenantFence: 'tenant_id = {tenant_id:String}',
+    since: `toDateTime({from_day:Date}, 'UTC')`,
+    byType: true,
+  });
+  const sql = `
+    SELECT
+      toString(toDate(ad.ts, 'UTC')) AS day_utc,
+      ad.holdout_group AS holdout,
+      countDistinct(ad.session_id) AS sessions,
+      ${countColumns}
+    FROM adaptation_decisions AS ad
+    LEFT JOIN (${evSubquery}
+    ) AS ev
+      ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
+    WHERE ad.tenant_id = {tenant_id:String}
+      AND ad.ts >= toDateTime({from_day:Date}, 'UTC')
+      AND ad.ts < toDateTime({to_day:Date}, 'UTC') + toIntervalDay(1)
+      AND ${CLEAN_HOLDOUT_PREDICATE}
+    GROUP BY day_utc, ad.holdout_group
+    ORDER BY day_utc ASC
+  `;
+  const raw = await chQuery<Record<string, unknown>>(baseUrl, user, password, sql, {
+    tenant_id: tenantId,
+    from_day: fromDay,
+    to_day: toDay,
+  });
+  return {
+    rows: raw.map((r): ChDayCounts => {
+      const counts = readConversionCounts(r, '', callerClass, true);
+      return {
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- primitive JSON value coerced safely
+        day: String(r.day_utc ?? ''),
+        holdout: Number(r.holdout ?? 0),
+        sessions: Number(r.sessions ?? 0),
+        conversions: counts.conversions ?? 0,
+        live_signups: counts.live_signups ?? 0,
+        agent_contacts: counts.agent_contacts ?? 0,
+      };
+    }),
+    callerClass,
+  };
+}
+
+/** One (day, arm) row of the daily report — the shape of `lift_daily_snapshots`. */
+export interface LiftDayRow {
+  day: string;
+  arm: LiftArm;
+  sessions: number;
+  conversions: number;
+  live_signups: number;
+  agent_contacts: number;
+  /** The day's adapted-vs-holdout lift, carried on BOTH arm rows. null when the holdout rate is 0. */
+  relative_lift_pct: number | null;
+  p_value: number;
+  confidence: PilotConfidence;
+}
+
+/**
+ * Two {@link LiftDayRow}s (adapted, holdout) for every day in `days`, in that order. A day with no
+ * sessions in an arm is a truthful zero row, not a missing one. The lift comes from
+ * {@link computeArmLift} — the same single computation as the rolling-window summary.
+ */
+export function buildLiftDayRows(
+  cells: readonly ChDayCounts[],
+  days: readonly string[],
+): LiftDayRow[] {
+  const out: LiftDayRow[] = [];
+  for (const day of days) {
+    const a = cells.find((c) => c.day === day && c.holdout === 0);
+    const h = cells.find((c) => c.day === day && c.holdout !== 0);
+    const lift = computeArmLift({
+      adaptedN: a?.sessions ?? 0,
+      adaptedConversions: a?.conversions ?? 0,
+      holdoutN: h?.sessions ?? 0,
+      holdoutConversions: h?.conversions ?? 0,
+    });
+    const shared = {
+      relative_lift_pct: lift.relativeLiftPct === null ? null : round2(lift.relativeLiftPct),
+      p_value: round4(lift.pValue),
+      confidence: lift.confidence,
+    };
+    for (const [arm, cell] of [
+      ['adapted', a],
+      ['holdout', h],
+    ] as const) {
+      out.push({
+        day,
+        arm,
+        sessions: cell?.sessions ?? 0,
+        conversions: cell?.conversions ?? 0,
+        live_signups: cell?.live_signups ?? 0,
+        agent_contacts: cell?.agent_contacts ?? 0,
+        ...shared,
+      });
+    }
+  }
+  return out;
 }
 
 // ─── Mock data (dev / CI fallback) ───────────────────────────────────────────
@@ -704,6 +967,8 @@ export function buildMockRaw(tenantId: string, windowDays: number): ChRawData {
     conversions: sum(h, (r) => r.conversions ?? 0),
     pre_exposure_conversions: sum(h, (r) => r.pre_exposure_conversions ?? 0),
     unsigned_conversions: sum(h, (r) => r.unsigned_conversions ?? 0),
+    live_signups: sum(h, (r) => r.live_signups ?? 0),
+    agent_contacts: sum(h, (r) => r.agent_contacts ?? 0),
   });
 
   const adaptedSessions = sumSessions(0);
@@ -756,7 +1021,11 @@ export function buildMockRaw(tenantId: string, windowDays: number): ChRawData {
  */
 function mockArmCounts(sessions: number, rate: number): ConversionCounts {
   const conversions = Math.round(sessions * rate);
+  // Mock split of the combined conversion into its two events (no session has both here).
+  const liveSignups = Math.round(conversions * 0.4);
   return {
+    live_signups: liveSignups,
+    agent_contacts: conversions - liveSignups,
     cta_sessions: Math.min(sessions, conversions * 2),
     conversions,
     pre_exposure_conversions: Math.round(conversions * 0.05),

@@ -2769,3 +2769,23 @@ The premise was wrong here and would have produced a probe that cannot fail.
   listing id as 3 clicks, so it is a `HIDDEN_BY_DESIGN` row, not a hub hack. · Guardrail: _before
   porting a route's auth, read it — and grep the ratchet counters' literals
   (`scripts/check-single-tenant.sh`) before writing a new auth call_.
+- **2026-10-19 / FOLLOW-1338** · M5: lift report. Reader gains `conversion_breakdown` (LIVE signup
+  and agent contact per arm, additive) and window 90; a per-day reader (`fetchLiftDaily` +
+  `buildLiftDayRows`) feeds BOTH the snapshot cron and the CSV export (one formula,
+  `computeArmLift`); `api/cron/lift-snapshot` (`CRON_SECRET`, `secretEquals`), `lift/export`,
+  `lift/history`; the `lift_daily_snapshots` DDL lives in `docs/handover/migrations/H001_*.sql`, NOT
+  `packages/db/migrations/` (CEO 2026-10-19), applied locally by `localhost-up.sh`, handover row 15;
+  Sentry 100 -> 103 in 62, N1 `routes_inventory` 94 -> 97. · Risks weighed: a drizzle schema file
+  without a migration would claim a table prod lacks, so a typed `sql` helper instead; 42P01
+  detection walks the `cause` chain and also needs the table name in a message; mock data is never
+  persisted; new SQL columns are opt-in so the rollup SQL is byte-identical; CSV numbers never get
+  the formula prefix; raw `db.execute` returns timestamptz as Date on postgres-js but a string on
+  PGlite, so format it in SQL; one PGlite engine per file is ~10x faster than one per test. Review
+  fixes: the control plane deploys on EVERY merge to main, so a cron's first production run is not
+  "after the CTO step" - it is gated by `CALLER_SIGNED_COLUMN_ENABLED` (answers 200 `disabled`), and
+  the handover row must say "before or together with that flip"; a handover SQL file takes an `H001`
+  number so it cannot collide with the next drizzle `00NN`; a history limit must cover the longest
+  window the reader offers (90 days x 2 arms = 180). The per-day ClickHouse SQL is tested against a
+  fetch stand-in only. · Guardrail: a ticket that adds a table outside `packages/db/migrations/`
+  should require a test that applies the SQL file itself (PGlite), and its handover row should be
+  written against the deploy trigger, not against a person's step.

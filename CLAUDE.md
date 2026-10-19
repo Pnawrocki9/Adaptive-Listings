@@ -37,7 +37,10 @@ Founders: Piotr Nawrocki (CEO), Rafał Palak PhD (CTO), Krystian Wojtkiewicz PhD
 the CEO-approved 2026-10-17 plan (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`: phases
 0–7, checkpoints K0–K7); the definition of done is K7, then the CTO handover package. The critical
 path is now C → R5 → R6 → R10 → R11 → M2 → S → H (FOLLOW-1321/1322, 1327, 1328, 1332, 1333, 1335,
-1307–1310, 1346). The rest of this section is kept as history.
+1307–1310, 1346). **Update 2026-10-19.** The CEO inserted **Faza Q** (quiz with ≥ 90 % archetype
+accuracy and full backoffice quiz management, `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md`,
+FOLLOW-1355…1363, checkpoints KQ1–KQ3) between K3 (GREEN, `docs/checkpoints/K3.md`) and Phase 4;
+Phase 4 follows KQ2. The rest of this section is kept as history.
 
 **The final version of Adaptive Listings is tested to completion on localhost before any production
 step.** Piotr's standing ruling (reaffirming 2026-06-10 localhost-first and ESC-052 option 2 — there

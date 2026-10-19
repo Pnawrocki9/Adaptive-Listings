@@ -188,6 +188,11 @@ export function createAdaptLoop(
   // `refreshDirectives()` reads it (FOLLOW-1301) and its first call runs from `start()`.
   let chatRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   let chatRefreshAttempt = 0;
+  // FOLLOW-1351: one chain at a time. Each schedule (or teardown) bumps the generation, and a run
+  // whose generation moved stops; a run due while another is in flight waits for it.
+  let chatRefreshGen = 0;
+  let chatRefreshBusy = false;
+  let chatRefreshDue = false;
   /** FOLLOW-1301 — the chat stamp whose folded hint already has its follow-up call (Rule R). */
   let chatFollowUpStamp: string | null = null;
 
@@ -270,7 +275,8 @@ export function createAdaptLoop(
           currentIntentState.confidence > DECISION_CONFIDENCE_GATE !== sentAboveGate) &&
         stamp !== chatFollowUpStamp &&
         !ctx.optedOut &&
-        chatRefreshTimer === null
+        chatRefreshTimer === null &&
+        !chatRefreshDue
       ) {
         chatFollowUpStamp = stamp;
         scheduleChatRefresh(true);
@@ -456,27 +462,46 @@ export function createAdaptLoop(
   function scheduleChatRefresh(followUp = false): void {
     // FOLLOW-1306 (F-24): an async chat handler or a fold still in flight at teardown.
     if (lifetime.signal.aborted) return;
+    chatRefreshGen += 1;
+    chatRefreshDue = false;
     chatRefreshAttempt = followUp ? CHAT_REFRESH_MAX_ATTEMPTS - 1 : 0;
+    armChatRefresh(CHAT_REFRESH_DEBOUNCE_MS);
+  }
+
+  /** The only place a chat-refresh timer is armed: the previous handle is always cleared. */
+  function armChatRefresh(ms: number): void {
     if (chatRefreshTimer !== null) clearTimeout(chatRefreshTimer);
-    chatRefreshTimer = setTimeout(() => void runChatRefresh(), CHAT_REFRESH_DEBOUNCE_MS);
+    chatRefreshTimer = setTimeout(() => void runChatRefresh(), ms);
   }
 
   async function runChatRefresh(): Promise<void> {
     chatRefreshTimer = null;
+    // Single flight [FOLLOW-1351]: the run in flight starts this one when it returns.
+    if (chatRefreshBusy) {
+      chatRefreshDue = true;
+      return;
+    }
+    chatRefreshBusy = true;
+    const gen = chatRefreshGen;
     const before = ctx.state.chatPriorAppliedAt;
-    const followUpBefore = chatFollowUpStamp;
     try {
       await flush();
-      await refreshDirectives();
+      if (gen === chatRefreshGen) await refreshDirectives();
     } catch {
       // A refresh must never break the host page; the retry below still applies.
     }
-    // FOLLOW-1301: a fold during that call scheduled its follow-up, which supersedes a retry.
-    if (chatFollowUpStamp !== followUpBefore) return;
+    chatRefreshBusy = false;
+    if (chatRefreshDue) {
+      chatRefreshDue = false;
+      void runChatRefresh();
+      return;
+    }
+    // A newer message, a fold's follow-up (FOLLOW-1301) or teardown owns the chain now.
+    if (gen !== chatRefreshGen) return;
     chatRefreshAttempt += 1;
     const moved = ctx.state.chatPriorAppliedAt !== before;
     if (!moved && chatRefreshAttempt < CHAT_REFRESH_MAX_ATTEMPTS) {
-      chatRefreshTimer = setTimeout(() => void runChatRefresh(), CHAT_REFRESH_RETRY_MS);
+      armChatRefresh(CHAT_REFRESH_RETRY_MS);
     } else if (config.debug) {
       console.log(
         `[Estalara] chat refresh ${moved ? 'folded new chat evidence' : 'gave up'} after ` +
@@ -624,6 +649,9 @@ export function createAdaptLoop(
     stop: () => {
       // FOLLOW-1026: a pending chat refresh would otherwise fire against a torn-down session.
       if (chatRefreshTimer !== null) clearTimeout(chatRefreshTimer);
+      // FOLLOW-1351: and stop a chat refresh still in flight from arming its retry.
+      chatRefreshGen += 1;
+      chatRefreshDue = false;
       // FOLLOW-1306 (F-24): invalidate the current generation so a reply still in flight
       // cannot apply to a torn-down page.
       latestRefreshId++;

@@ -3,8 +3,10 @@
  * POST /api/tenants/:id/lia — create a new LIA record (old records retained for audit trail).
  *
  * Auth:
- *   GET  — Estalara staff (Bearer JWT or SSR session).
- *   POST — Estalara staff (Bearer JWT or SSR session).
+ *   GET  — Estalara staff, any rank (Bearer JWT or SSR session).
+ *   POST — `resolveLiaWriteAccess` (`lib/lia-access.ts`): identified staff with rank ≥
+ *     `estalara:ops`, on a tenant that exists (FOLLOW-1335 review F3, ADR-0018 #3). The insert
+ *     and its `staff_audit_log` row (`lia.create`) commit in ONE transaction.
  *   FOLLOW-1335 removed the tenant-user path (JWT `tenant_id` matching `:id`) with the
  *   agency roles.
  *
@@ -15,11 +17,12 @@
  *   403 { error: "Forbidden" }          — the caller is not Estalara staff.
  *
  * POST responses:
- *   201 { lia: TenantComplianceRecord } — record created.
- *   401 { error: "Unauthorized" }        — missing or invalid JWT.
- *   403 { error: "Forbidden" }           — the caller is not Estalara staff.
+ *   201 { lia: TenantComplianceRecord } — record created (and audited).
+ *   401 { error: "Unauthorized" }        — no staff session/JWT.
+ *   403 { error: "..." }                 — readonly staff, or the unattributable ADMIN_API_SECRET.
+ *   404 { error: "Unknown tenant" }      — `:id` is not a live tenant.
  *   422 { error: "Validation failed", details: ... } — Zod validation failure.
- *   500 { error: "Failed to create LIA record" }     — DB error.
+ *   500 { error: "...", code: "audit_write_failed" } — insert or audit row failed; nothing kept.
  *
  * TICKET-GDPR-003
  *
@@ -31,9 +34,13 @@ import { NextResponse } from 'next/server';
 import { desc, eq, and, isNull, or } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 
-import { createAdminClient, tenantComplianceRecords } from '@estalara/db';
+import * as Sentry from '@sentry/nextjs';
+
+import { createAdminClient, staffAuditLog, tenantComplianceRecords } from '@estalara/db';
 import { isStaffClaims } from '@estalara/auth';
 import { getSessionAuthClaims } from '@/lib/session-auth';
+import { resolveLiaWriteAccess } from '@/lib/lia-access';
+import { requestIp } from '@/lib/answers-access';
 import { LiaRecordSchema } from '@estalara/shared';
 
 // ---------------------------------------------------------------------------
@@ -121,6 +128,9 @@ export async function GET(
  * Inserts a new LIA record. Old records are NOT updated or removed — they are
  * retained for audit trail purposes. The new record becomes the "latest" record.
  *
+ * The `staff_audit_log` payload carries the record id, type, version and `signed_at` only — not
+ * the signer's name/e-mail nor the free-text statements (personal data stays in the record).
+ *
  * @returns 201 `{ lia }` on success.
  * @returns 422 on Zod validation failure.
  */
@@ -130,8 +140,9 @@ export async function POST(
 ): Promise<NextResponse> {
   const { id: tenantId } = await params;
 
-  const authResult = await validateLiaAuth(req);
-  if (authResult instanceof NextResponse) return authResult;
+  const auth = await resolveLiaWriteAccess(req, tenantId);
+  if (!auth.ok) return auth.response;
+  const { access } = auth;
 
   let rawBody: unknown;
   try {
@@ -150,34 +161,59 @@ export async function POST(
 
   const body = parsed.data;
 
+  // ── Atomic staff write (ADR-0018 §3a) ──────────────────────────────────────────────────────
+  // The insert and its staff_audit_log row commit-or-roll-back TOGETHER, fenced on the
+  // existence-checked access.tenantId.
   try {
     const db = createAdminClient();
-
-    const inserted = await db
-      .insert(tenantComplianceRecords)
-      .values({
-        tenantId,
-        recordType: 'lia',
-        version: 'lia-v1.0',
-        purposeStatement: body.purpose_statement,
-        necessityJustification: body.necessity_justification,
-        balancingConclusion: body.balancing_conclusion,
-        optoutMechanism: body.optout_mechanism,
-        signedByName: body.signed_by_name,
-        signedByEmail: body.signed_by_email,
-        signedAt: new Date(body.signed_at),
-        metadata: {},
-      })
-      .returning();
-
-    const lia = inserted[0];
-    if (!lia) {
-      return NextResponse.json({ error: 'Failed to create LIA record' }, { status: 500 });
-    }
-
+    const lia = await db.transaction(async (tx) => {
+      const inserted = await tx
+        .insert(tenantComplianceRecords)
+        .values({
+          tenantId: access.tenantId,
+          recordType: 'lia',
+          version: 'lia-v1.0',
+          purposeStatement: body.purpose_statement,
+          necessityJustification: body.necessity_justification,
+          balancingConclusion: body.balancing_conclusion,
+          optoutMechanism: body.optout_mechanism,
+          signedByName: body.signed_by_name,
+          signedByEmail: body.signed_by_email,
+          signedAt: new Date(body.signed_at),
+          metadata: {},
+        })
+        .returning();
+      const created = inserted[0];
+      if (!created) throw new Error('tenant_compliance_records insert returned no row');
+      await tx.insert(staffAuditLog).values({
+        adminUserId: access.staff.sub,
+        action: 'lia.create',
+        targetTenantId: access.tenantId,
+        payload: {
+          record_id: created.id,
+          record_type: 'lia',
+          version: created.version,
+          signed_at: created.signedAt.toISOString(),
+        },
+        ipAddress: requestIp(req),
+        userAgent: req.headers.get('user-agent'),
+      });
+      return created;
+    });
     return NextResponse.json({ lia }, { status: 201 });
   } catch (err) {
-    console.error('[lia POST] DB insert failed:', err instanceof Error ? err.message : err);
-    return NextResponse.json({ error: 'Failed to create LIA record' }, { status: 500 });
+    Sentry.captureException(err, {
+      tags: { route: 'tenants/lia', staff_audit_error: 'true' },
+      extra: { tenant_id: access.tenantId, admin_user_id: access.staff.sub },
+    });
+    return NextResponse.json(
+      {
+        error:
+          'The LIA record could not be recorded atomically with its staff audit row; ' +
+          'nothing was saved. Retry the action.',
+        code: 'audit_write_failed',
+      },
+      { status: 500 },
+    );
   }
 }

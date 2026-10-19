@@ -6,9 +6,11 @@
  *   - GET /api/tenants/:id/lia — 404 when no LIA exists
  *   - GET/POST /api/tenants/:id/lia — staff only since FOLLOW-1335: a verified token that is
  *     not staff (the former tenant-user JWT) is 401, whatever tenant it names
- *   - POST /api/tenants/:id/lia — 401 when no auth header
- *   - POST /api/tenants/:id/lia — 201 on valid payload (mock DB)
- *   - POST /api/tenants/:id/lia — 422 on validation failure
+ *   - POST /api/tenants/:id/lia — 401 when no auth header; 422 on validation failure
+ *   - POST + DELETE (FOLLOW-1335 review F3, ADR-0018 #3) drive the REAL resolveTenantAccess:
+ *     readonly staff 403 before any read/write; ops 201/200 with the mutation and ONE
+ *     staff_audit_log row in the same transaction; audit failure → 500 audit_write_failed and
+ *     nothing kept; unknown tenant 404; the ADMIN_API_SECRET Bearer 403 (not attributable)
  *
  * Database is mocked throughout — no real Postgres required.
  *
@@ -32,21 +34,28 @@ const OTHER_TENANT_ID = '00000000-0000-0000-0000-000000000099';
 // Mock DB rows returned by the select query (GET).
 // Initially empty — tests can override via mockSelectRows.
 let mockSelectRows: unknown[] = [];
-// Mock insert return value.
-let mockInsertRow: unknown = null;
 
-const { mockDbClient, mockCreateAdminClient } = vi.hoisted(() => {
+const { mockDbClient, mockCreateAdminClient, mockCaptureException } = vi.hoisted(() => {
   const mockDbClient = {
     select: vi.fn(),
     insert: vi.fn(),
     update: vi.fn(),
+    transaction: vi.fn(),
   };
   const mockCreateAdminClient = vi.fn(() => mockDbClient);
-  return { mockDbClient, mockCreateAdminClient };
+  const mockCaptureException = vi.fn();
+  return { mockDbClient, mockCreateAdminClient, mockCaptureException };
 });
+
+vi.mock('@sentry/nextjs', () => ({
+  captureException: mockCaptureException,
+  captureMessage: vi.fn(),
+}));
 
 vi.mock('@estalara/db', () => ({
   createAdminClient: mockCreateAdminClient,
+  tenants: { id: 'tenants.id', deletedAt: 'tenants.deleted_at' },
+  staffAuditLog: { __table: 'staff_audit_log' },
   tenantComplianceRecords: {
     id: 'id',
     tenantId: 'tenant_id',
@@ -327,26 +336,232 @@ describe('GET /api/tenants/:id/lia', () => {
 // POST /api/tenants/:id/lia
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Writes — POST + DELETE (FOLLOW-1335 review F3, ADR-0018 #3)
+// ---------------------------------------------------------------------------
+
+const STAFF = (role: 'estalara:readonly' | 'estalara:ops' | 'estalara:superadmin') => ({
+  sub: `staff-${role}`,
+  email: 'staff@estalara.com',
+  tenant_id: null,
+  estalara_staff: true,
+  estalara_role: role,
+  mfa_verified: true,
+});
+
+/**
+ * Wire the fake admin client: `select().from().where().limit()` answers resolveTenantAccess's
+ * tenantExists() lookup; `transaction(cb)` hands the route a tx whose writes are STAGED and only
+ * committed when the callback resolves (a rejection discards them — the rollback).
+ */
+function wireWriteDb(
+  opts: { tenantExists?: boolean; failAudit?: boolean; rowFound?: boolean } = {},
+) {
+  const committed = {
+    records: [] as Record<string, unknown>[],
+    audit: [] as Record<string, unknown>[],
+    updates: 0,
+  };
+  mockDbClient.select.mockReturnValue({
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue(opts.tenantExists === false ? [] : [{ id: TENANT_ID }]),
+      }),
+    }),
+  });
+  mockDbClient.transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
+    const staged = {
+      records: [] as Record<string, unknown>[],
+      audit: [] as Record<string, unknown>[],
+      updates: 0,
+    };
+    const tx = {
+      insert: vi.fn((table: unknown) => ({
+        values: vi.fn((v: Record<string, unknown>) => {
+          if ((table as { __table?: string }).__table === 'staff_audit_log') {
+            if (opts.failAudit) return Promise.reject(new Error('audit sink down'));
+            staged.audit.push(v);
+            return Promise.resolve([]);
+          }
+          staged.records.push(v);
+          return {
+            returning: vi.fn().mockResolvedValue([
+              {
+                ...v,
+                id: RECORD_ID,
+                version: 'lia-v1.0',
+                signedAt: new Date(VALID_LIA_BODY.signed_at),
+              },
+            ]),
+          };
+        }),
+      })),
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({
+          where: vi.fn(() => ({
+            returning: vi.fn(() => {
+              staged.updates += 1;
+              return Promise.resolve(opts.rowFound === false ? [] : [{ id: RECORD_ID }]);
+            }),
+          })),
+        })),
+      })),
+    };
+    const out = await cb(tx);
+    committed.records.push(...staged.records);
+    committed.audit.push(...staged.audit);
+    committed.updates += staged.updates;
+    return out;
+  });
+  return committed;
+}
+
+function makeDeleteRequest(bearer = 'staff-jwt'): NextRequest {
+  return new NextRequest(`http://localhost/api/tenants/${TENANT_ID}/lia/${RECORD_ID}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${bearer}` },
+  });
+}
+
+describe('LIA writes — staff rank, tenant existence, audited in ONE transaction', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    mockAuthClaims = STAFF('estalara:ops');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const post = async () => {
+    const { POST } = await import('../../app/api/tenants/[id]/lia/route.js');
+    return POST(
+      makePostRequest(`http://localhost/api/tenants/${TENANT_ID}/lia`, VALID_LIA_BODY, 'staff-jwt'),
+      { params: Promise.resolve({ id: TENANT_ID }) },
+    );
+  };
+  const del = async (bearer?: string) => {
+    const { DELETE } = await import('../../app/api/tenants/[id]/lia/[recordId]/route.js');
+    return DELETE(makeDeleteRequest(bearer), {
+      params: Promise.resolve({ id: TENANT_ID, recordId: RECORD_ID }),
+    });
+  };
+
+  it('readonly staff → 403 on POST and DELETE, before any read or write', async () => {
+    mockAuthClaims = STAFF('estalara:readonly');
+    const db = wireWriteDb();
+
+    expect((await post()).status).toBe(403);
+    expect((await del()).status).toBe(403);
+    expect(mockDbClient.transaction).not.toHaveBeenCalled();
+    expect(db.records).toHaveLength(0);
+    expect(db.updates).toBe(0);
+  });
+
+  it('ops POST → 201; the record and ONE lia.create audit row commit together (no personal data in the payload)', async () => {
+    const db = wireWriteDb();
+
+    const res = await post();
+
+    expect(res.status).toBe(201);
+    expect(mockDbClient.transaction).toHaveBeenCalledOnce();
+    expect(db.records).toHaveLength(1);
+    expect(db.records[0]?.tenantId).toBe(TENANT_ID);
+    expect(db.audit).toHaveLength(1);
+    expect(db.audit[0]).toMatchObject({
+      adminUserId: 'staff-estalara:ops',
+      action: 'lia.create',
+      targetTenantId: TENANT_ID,
+      payload: { record_id: RECORD_ID, record_type: 'lia', version: 'lia-v1.0' },
+    });
+    const payload = JSON.stringify(db.audit[0]?.payload);
+    expect(payload).not.toContain(VALID_LIA_BODY.signed_by_email);
+    expect(payload).not.toContain(VALID_LIA_BODY.signed_by_name);
+    expect(payload).not.toContain(VALID_LIA_BODY.purpose_statement);
+  });
+
+  it('ops DELETE → 200; the soft-delete and ONE lia.delete audit row commit together', async () => {
+    const db = wireWriteDb();
+
+    const res = await del();
+
+    expect(res.status).toBe(200);
+    expect(await parseBody<{ deleted: boolean }>(res)).toEqual({ deleted: true });
+    expect(db.updates).toBe(1);
+    expect(db.audit).toEqual([
+      expect.objectContaining({
+        action: 'lia.delete',
+        targetTenantId: TENANT_ID,
+        payload: { record_id: RECORD_ID },
+      }),
+    ]);
+  });
+
+  it('DELETE of a record that is not this tenant’s → 404, no audit row', async () => {
+    const db = wireWriteDb({ rowFound: false });
+
+    expect((await del()).status).toBe(404);
+    expect(db.audit).toHaveLength(0);
+  });
+
+  it('audit insert fails → 500 audit_write_failed, nothing committed, Sentry once (POST and DELETE)', async () => {
+    const db = wireWriteDb({ failAudit: true });
+
+    const p = await post();
+    expect(p.status).toBe(500);
+    expect((await parseBody<{ code: string }>(p)).code).toBe('audit_write_failed');
+    const d = await del();
+    expect(d.status).toBe(500);
+    expect((await parseBody<{ code: string }>(d)).code).toBe('audit_write_failed');
+
+    expect(db.records).toHaveLength(0);
+    expect(db.updates).toBe(0);
+    expect(db.audit).toHaveLength(0);
+    expect(mockCaptureException).toHaveBeenCalledTimes(2);
+  });
+
+  it('unknown tenant → 404 on POST and DELETE, no transaction', async () => {
+    wireWriteDb({ tenantExists: false });
+
+    expect((await post()).status).toBe(404);
+    expect((await del()).status).toBe(404);
+    expect(mockDbClient.transaction).not.toHaveBeenCalled();
+  });
+
+  it('the ADMIN_API_SECRET Bearer → 403 (no identity to audit), no transaction', async () => {
+    vi.stubEnv('ADMIN_API_SECRET', 'shared-admin-secret-value');
+    mockAuthClaims = null;
+    wireWriteDb();
+
+    expect((await del('shared-admin-secret-value')).status).toBe(403);
+    const { POST } = await import('../../app/api/tenants/[id]/lia/route.js');
+    const res = await POST(
+      makePostRequest(
+        `http://localhost/api/tenants/${TENANT_ID}/lia`,
+        VALID_LIA_BODY,
+        'shared-admin-secret-value',
+      ),
+      { params: Promise.resolve({ id: TENANT_ID }) },
+    );
+    expect(res.status).toBe(403);
+    expect(mockDbClient.transaction).not.toHaveBeenCalled();
+  });
+
+  it('DELETE with a malformed record id → 404 before any transaction', async () => {
+    wireWriteDb();
+    const { DELETE } = await import('../../app/api/tenants/[id]/lia/[recordId]/route.js');
+    const res = await DELETE(makeDeleteRequest(), {
+      params: Promise.resolve({ id: TENANT_ID, recordId: 'not-a-uuid' }),
+    });
+    expect(res.status).toBe(404);
+    expect(mockDbClient.transaction).not.toHaveBeenCalled();
+  });
+});
+
 describe('POST /api/tenants/:id/lia', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockInsertRow = {
-      id: RECORD_ID,
-      tenantId: TENANT_ID,
-      recordType: 'lia',
-      version: 'lia-v1.0',
-      purposeStatement: VALID_LIA_BODY.purpose_statement,
-      necessityJustification: VALID_LIA_BODY.necessity_justification,
-      balancingConclusion: VALID_LIA_BODY.balancing_conclusion,
-      optoutMechanism: VALID_LIA_BODY.optout_mechanism,
-      signedByName: VALID_LIA_BODY.signed_by_name,
-      signedByEmail: VALID_LIA_BODY.signed_by_email,
-      signedAt: new Date(VALID_LIA_BODY.signed_at),
-      metadata: {},
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
     // Default: a staff JWT (FOLLOW-1335 — staff is the only caller)
     mockAuthClaims = {
       sub: 'staff-001',
@@ -357,10 +572,8 @@ describe('POST /api/tenants/:id/lia', () => {
       mfa_verified: true,
     };
 
-    // Set up the fluent insert chain.
-    const returningFn = vi.fn().mockResolvedValue([mockInsertRow]);
-    const valuesFn = vi.fn().mockReturnValue({ returning: returningFn });
-    mockDbClient.insert.mockReturnValue({ values: valuesFn });
+    // resolveTenantAccess's tenantExists() lookup + the audited transaction.
+    wireWriteDb();
   });
 
   afterEach(() => {
@@ -375,21 +588,6 @@ describe('POST /api/tenants/:id/lia', () => {
     const res = await POST(req, { params: Promise.resolve({ id: TENANT_ID }) });
 
     expect(res.status).toBe(401);
-  });
-
-  it('returns 201 with the created LIA record on valid payload', async () => {
-    const { POST } = await import('../../app/api/tenants/[id]/lia/route.js');
-    const req = makePostRequest(
-      `http://localhost/api/tenants/${TENANT_ID}/lia`,
-      VALID_LIA_BODY,
-      'valid-token',
-    );
-    const res = await POST(req, { params: Promise.resolve({ id: TENANT_ID }) });
-
-    expect(res.status).toBe(201);
-    const body = await parseBody<{ lia: Record<string, unknown> }>(res);
-    expect(body.lia).toBeDefined();
-    expect(body.lia.id).toBe(RECORD_ID);
   });
 
   it('returns 422 on Zod validation failure (short purpose_statement)', async () => {
@@ -419,6 +617,6 @@ describe('POST /api/tenants/:id/lia', () => {
     const res = await POST(req, { params: Promise.resolve({ id: TENANT_ID }) });
 
     expect(res.status).toBe(401);
-    expect(mockDbClient.insert).not.toHaveBeenCalled();
+    expect(mockDbClient.transaction).not.toHaveBeenCalled();
   });
 });

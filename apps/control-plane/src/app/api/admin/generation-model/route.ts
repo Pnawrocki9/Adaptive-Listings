@@ -28,11 +28,12 @@
  *   - The PUT body carries only the new model value; all authorization comes from
  *     the verified staff auth above, never from the request body.
  *
- * Replay defence:
- *   - Supabase JWTs carry an `exp` claim (HMAC-signed). verifyTracerAdminAuth's JWT and
- *     session paths verify the token on every call. Replaying an
- *     expired token fails. Replaying a live one re-sets the same model (idempotent
- *     state-wise) and appends one more attributed audit row.
+ * Replay defence — PARTIAL:
+ *   - The SSR session path validates the token with Supabase (`getUser()`, expiry included).
+ *     The Bearer / legacy-cookie JWT path does NOT check `exp` today (`getAuthClaims` verifies
+ *     the HMAC signature only), so an expired staff token is still accepted there until
+ *     FOLLOW-1307 (plan Phase 6 S1) adds the check. Replaying a live token re-sets the same
+ *     model (idempotent state-wise) and appends one more attributed audit row.
  *
  * Audit (ADR-0018 §3/§3a, FOLLOW-1321): the `app_config` upsert and one
  * `staff_audit_log` row (`generation_model.update`) commit in ONE `db.transaction()`.

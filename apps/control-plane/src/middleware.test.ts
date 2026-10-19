@@ -482,6 +482,24 @@ describe('Dashboard redirects — /dashboard/* → /admin (FOLLOW-1335)', () => 
     expect(mockGetUser).not.toHaveBeenCalled();
   });
 
+  it.each([
+    '/dashboard/listings/%2F%2Fevil.com/answers',
+    '/dashboard/listings/%5Cevil.com/answers',
+    '/dashboard/listings/%5C%5Cevil.com/answers',
+    '/dashboard/listings/%2e%2e/answers',
+    '/dashboard/listings/../answers',
+    '/dashboard/listings/..%2F..%2Fsign-in/answers',
+    '/dashboard/listings/https:%2F%2Fevil.com/answers',
+  ])('REDIRECT-HOSTILE: listing id in %s never leaves /admin on the same origin', async (from) => {
+    const res = await middleware(makeAdminRequest(from));
+
+    expect(res.status).toBe(307);
+    const location = new URL(res.headers.get('location') ?? '', 'http://unparseable.invalid');
+    expect(location.origin).toBe('http://localhost:3000');
+    expect(location.pathname.startsWith('/admin/') || location.pathname === '/admin').toBe(true);
+    expect(mockGetUser).not.toHaveBeenCalled();
+  });
+
   it('REDIRECT-PREFIX: a lookalike path (/dashboards) is not redirected', async () => {
     const res = await middleware(makeRequest('/dashboards'));
 

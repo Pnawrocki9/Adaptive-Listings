@@ -23,8 +23,11 @@
  *   - HMAC-signed Supabase JWT verified via crypto.subtle (SUPABASE_JWT_SECRET).
  *   - Tenant ID sourced from the label row itself, never from request body.
  *   - `getAuthClaims` verifies the HMAC signature via `crypto.subtle.verify`.
- *   - Replay defence: Supabase JWTs carry `exp`; verifyAndDecodeJwtPayload rejects
- *     expired tokens on every call (see packages/auth/src/middleware.ts).
+ *   - Replay defence — PARTIAL: the SSR session path validates the token with Supabase
+ *     (`getUser()`, expiry included), but the Bearer / legacy-cookie path does NOT check `exp`
+ *     today (`verifyAndDecodeJwtPayload` in packages/auth/src/middleware.ts verifies the
+ *     signature only), so a leaked staff access token stays usable until the secret rotates.
+ *     FOLLOW-1307 (plan Phase 6 S1) adds the expiry check.
  *   - The label's tenant_id is re-read from the DB and is the only tenant written.
  *
  * Staff audit trail + atomicity (ADR-0018 §3/§3a, FOLLOW-597): a staff reclassification

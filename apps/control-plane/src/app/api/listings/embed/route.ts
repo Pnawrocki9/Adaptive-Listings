@@ -104,6 +104,10 @@ function authenticate(req: NextRequest): NextResponse | null {
 // ─── POST handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // Auth first: an unauthenticated caller never sees a body-validation error (FOLLOW-1335 review).
+  const unauthorized = authenticate(req);
+  if (unauthorized) return unauthorized;
+
   let rawBody: unknown;
   try {
     rawBody = await req.json();
@@ -120,9 +124,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const { tenant_id: tenantId, listing_id: listingId } = parsed.data;
-
-  const unauthorized = authenticate(req);
-  if (unauthorized) return unauthorized;
 
   // FOLLOW-567: the Modal embed-seed path sends only { tenant_id, listing_id }.
   // Self-fetch the listing's text from the Estalara backend when text_fields is

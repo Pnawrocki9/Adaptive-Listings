@@ -246,6 +246,23 @@ describe('POST /api/listings/embed — auth', () => {
     expect(res.status).toBe(401);
   });
 
+  it.each([
+    ['invalid JSON', 'not-json'],
+    ['a body failing validation', JSON.stringify({ listing_id: LISTING_ID })],
+  ])(
+    'auth runs before the body: no secret + %s → 401, never a 400 validation detail',
+    async (_label, rawBody) => {
+      const req = new NextRequest('http://localhost/api/listings/embed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: rawBody,
+      });
+      const res = await POST(req);
+      expect(res.status).toBe(401);
+      expect(JSON.stringify(await res.json())).not.toContain('details');
+    },
+  );
+
   it('FOLLOW-1335: a Bearer JWT is not a credential here (the tenant-JWT path is gone) → 401', async () => {
     const req = makeRequest({ body: VALID_BODY, authHeader: 'Bearer some-staff-or-tenant-jwt' });
     const res = await POST(req);
@@ -269,7 +286,7 @@ describe('POST /api/listings/embed — validation', () => {
   it('returns 400 when JSON body is invalid', async () => {
     const req = new NextRequest('http://localhost/api/listings/embed', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-token' },
+      headers: { 'Content-Type': 'application/json', 'x-internal-api-secret': SECRET },
       body: '{not json',
     });
     const res = await POST(req);

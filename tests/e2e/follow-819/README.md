@@ -3130,6 +3130,46 @@ the 19 runs of §5.25–§5.29. After R11 the origin gate admits `http://localho
 production build (`packages/shared/src/browser-origins.ts`), which is what let the fixture page and
 the real app through here. The caveats of §5.23 (a)–(d) apply.
 
+### 5.31 — 2026-10-19 (checkpoint K3 series at `main` HEAD `434b2513`, EXECUTED ×7 after a RED pair at `3952ac29`) — **three `run=GREEN` with `total=7` (runs 1, 5, 7), each `[FRESH]` as an ancestor of HEAD; runs 2, 4, 6 `run=UNMEASURED` (the chat session drew holdout), run 3 `run=UNMEASURED` (the adapted session drew holdout) — checkpoint K3 control I1 of the localhost-completion plan; Phase 3 (M1–M5) complete**
+
+**MANUAL, run by the PM.** Two series on one day. First, at `3952ac29` (M1 #1042, M3 #1041, M5
+#1043, M2 #1044, N2 full #1045 since §5.30), full `scripts/dev/localhost-up.sh` from a clean `main`
+checkout: runs 1 and 2 both `TALLY green=6 red=1 … run=RED` on **AC(8) hop 11** (the request after
+the second chat message carried confidence 0.30570 and 0.36684 against the 0.6641488145588295 of
+every green run since §5.26). Per the plan's STOP rule (RED twice → bisect) a read-only forensic
+(Opus, `scratchpad/k3/forensic-ac8.md`) settled it from the 16 run JSONs without re-running: no
+commit in `1de62758..3952ac29` touched `packages/sdk` or the harness; run 2 was an **SDK race** (two
+chat-refresh timer chains in flight at once, the harness grading a request issued 1889 ms before the
+carrier was answered, so it still carried the pre-fold confidence), run 1 was the cold-shim shape of
+K2b run 1 (hop 3 BROKEN, a dwell tick stripping the ×1.2 chat bonus). Fixes: #1046 (FOLLOW-1352:
+hops 6 and 11 grade the first request sent after the SDK's persisted `chatPriorAppliedAt` equals the
+fold's stamp, the page stays open for the follow-up) and #1047 (FOLLOW-1351: one chat-refresh chain
+at a time). Second, at `434b2513`, the same bring-up from a clean checkout; the shim and ingest
+answered `/health` before run 1; one control plane, never restarted; artefact copied after every
+run, `--check-staleness` on each copy; `pnpm run test:backoffice` (N2) on the same stack after run 7
+(`docs/checkpoints/K3.md` control I4); `scripts/dev/localhost-down.sh` after.
+
+| Run | Started (UTC)            | `TALLY`                                                   | `--check-staleness`                                                                                                                                                      |
+| --- | ------------------------ | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | 2026-10-19T11:42:52.932Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`      | `[FRESH] run1.json: harnessSha 434b2513… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-19T11:42:52.932Z` |
+| 2   | 2026-10-19T11:46:00.951Z | `TALLY green=6 red=0 unmeasured=1 total=7 run=UNMEASURED` | `[FRESH] run2.json: … startedAt 2026-10-19T11:46:00.951Z` — AC(8) `UNMEASURED:holdout` (the chat session drew holdout), neutral per §P.0                                 |
+| 3   | 2026-10-19T11:47:25.296Z | `TALLY green=2 red=0 unmeasured=5 total=7 run=UNMEASURED` | `[FRESH] run3.json: … startedAt 2026-10-19T11:47:25.296Z` — the adapted session drew holdout (`holdout_pct` 1): AC(1)/(2)/(3)/(5)/(8) `UNMEASURED`, neutral per §P.0     |
+| 4   | 2026-10-19T11:49:26.305Z | `TALLY green=6 red=0 unmeasured=1 total=7 run=UNMEASURED` | `[FRESH] run4.json: … startedAt 2026-10-19T11:49:26.305Z` — AC(8) `UNMEASURED:holdout`, neutral                                                                          |
+| 5   | 2026-10-19T11:51:06.968Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`      | `[FRESH] run5.json: harnessSha 434b2513… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-19T11:51:06.968Z` |
+| 6   | 2026-10-19T11:53:20.591Z | `TALLY green=6 red=0 unmeasured=1 total=7 run=UNMEASURED` | `[FRESH] run6.json: … startedAt 2026-10-19T11:53:20.591Z` — AC(8) `UNMEASURED:holdout`, neutral                                                                          |
+| 7   | 2026-10-19T11:55:25.840Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`      | `[FRESH] run7.json: harnessSha 434b2513… is an ancestor of HEAD, commitsBehind=0, measuredPathsChanged=0… clean tree, run completed; startedAt 2026-10-19T11:55:25.840Z` |
+
+Hop 11 read 0.6641488145588295 on runs 1, 5 and 7 (request #9 / #10 / #9 ADAPTED `llm_full`, 3
+non-reorder directives, no reload). Four UNMEASURED draws in seven runs is the 1-in-2 holdout of the
+local fixture tenant doing its job, not a defect; a `run=UNMEASURED` run neither counts nor resets
+the streak (§P.0, CEO 2026-09-22). **Residual after #1046 (recorded, not fixed):** the negative
+control's wait (`sentAt + cycleMs + 3000`) can end with the neutral chain still in flight — the runs
+counted 2 or 3 neutral responses; the predicate is correct, the count is loose. It is re-cut
+together with AC(10) in Faza Q package Q6. **Design note** (superseded by Faza Q): the gate at hop
+11 is crossed only through the chat ×1.2 bonus (`intent.ts:866`), and a dwell or behavioural
+recompute strips it; the quiz plan (`docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` §B) keeps that scale for
+chat-without-quiz only and anchors a confirmed quiz leaf. The caveats of §5.23 (a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

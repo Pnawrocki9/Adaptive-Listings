@@ -143,6 +143,22 @@ let gradeRun: (
   },
 ) => Grade;
 let deriveChatRefreshBudget: (args: { indexSrc: string; slackMs?: number }) => Budget;
+interface PickCall {
+  seq: number;
+  requestedMono?: number | null;
+}
+interface Pick {
+  next: PickCall | null;
+  reason: string | null;
+  notGradedSeqs: number[];
+  floorMono: number | null;
+}
+let pickFollowUpAfterCarrier: (args: {
+  calls: PickCall[];
+  carrier: { seq: number; receivedMono?: number | null } | null;
+  foldSeenMono: number | null | undefined;
+}) => Pick;
+let harnessSrc: string;
 let script: {
   eventName: string;
   neutralMessage: string;
@@ -160,11 +176,14 @@ beforeAll(async () => {
     deriveChatRefreshBudget: typeof deriveChatRefreshBudget;
     readServerConfidenceGate: () => Promise<Gate>;
     CHAT_ARM_SCRIPT: typeof script;
+    pickFollowUpAfterCarrier: typeof pickFollowUpAfterCarrier;
   };
   evaluateAc8Raw = mod.evaluateAc8;
   GATE = await mod.readServerConfidenceGate();
   gradeRun = mod.gradeRun;
   deriveChatRefreshBudget = mod.deriveChatRefreshBudget;
+  pickFollowUpAfterCarrier = mod.pickFollowUpAfterCarrier;
+  harnessSrc = await readFile(new URL('./differentiator-e2e.mjs', import.meta.url), 'utf8');
   script = mod.CHAT_ARM_SCRIPT;
   // FOLLOW-1296: the chat bridge, the follow-up predicate and the chat-refresh schedule moved
   // with `refreshDirectives()` from `index.ts` into `core/adapt-loop.ts`; the pins read them there.
@@ -894,5 +913,173 @@ describe('FOLLOW-1299 — the chat arm’s script and its wait budget come from 
         indexSrc: sdkIndexSrc.replace(/const CHAT_REFRESH_MAX_ATTEMPTS = [0-9_]+;/, ''),
       }),
     ).toThrow(/CHAT_REFRESH_MAX_ATTEMPTS/);
+  });
+});
+
+/**
+ * FOLLOW-1352 — hops 6 and 11 grade the first request SENT AFTER the carrier was answered and the
+ * SDK's fold applied, not "the next sequence number".
+ *
+ * Fixture = K3 run 2 (forensic report, main 3952ac29), monotonic ms from the first call: carrier #10
+ * requested 45165, #11 requested 45564 (while #10 was in flight), #10 answered 47453, #11 answered
+ * 48150, SDK state showed the fold at 48250. #11 carried the PRE-fold confidence (0.367) although the
+ * SDK had folded to 0.664 — and the old predicate (`calls.find((c) => c.seq > carrier.seq)`) graded it.
+ */
+describe('FOLLOW-1352 — the follow-up is the first request sent after the carrier was answered', () => {
+  const carrier = { seq: 10, requestedMono: 45165, receivedMono: 47453 };
+  const parallel = { seq: 11, requestedMono: 45564 };
+  const FOLD_SEEN = 48250;
+  const realFollowUp = { seq: 12, requestedMono: 50700 };
+  const setSecond = (o: ChatObs, f: (s: NonNullable<ChatObs['second']>) => void) => {
+    if (o.second) f(o.second);
+  };
+
+  /** The predicate this ticket replaced — kept executable to prove the fixture catches it. */
+  const legacyNextBySeq = (calls: PickCall[], c: { seq: number }) =>
+    calls.find((x) => x.seq > c.seq) ?? null;
+
+  it('K3 run 2: the next-by-seq request precedes the carrier’s answer and is NOT graded', () => {
+    const calls = [carrier, parallel];
+    expect(legacyNextBySeq(calls, carrier)?.seq).toBe(11);
+    const r = pickFollowUpAfterCarrier({ calls, carrier, foldSeenMono: FOLD_SEEN });
+    expect(r.next).toBeNull();
+    expect(r.reason).toBe('none_sent_after_fold');
+    expect(r.notGradedSeqs).toEqual([11]);
+  });
+
+  it('the first request sent after the carrier’s answer and the fold is graded, not #11', () => {
+    const calls = [carrier, parallel, realFollowUp, { seq: 13, requestedMono: 56700 }];
+    const r = pickFollowUpAfterCarrier({ calls, carrier, foldSeenMono: FOLD_SEEN });
+    expect(r.next?.seq).toBe(12);
+    expect(r.reason).toBeNull();
+    expect(r.notGradedSeqs).toEqual([11]);
+  });
+
+  it('a request sent AFTER the answer but BEFORE the fold is applied is not graded either', () => {
+    // latest-wins can drop the carrier's fold; a request in that gap still carries the old state
+    const gap = { seq: 11, requestedMono: 47600 };
+    const r = pickFollowUpAfterCarrier({
+      calls: [carrier, gap, realFollowUp],
+      carrier,
+      foldSeenMono: FOLD_SEEN,
+    });
+    expect(r.next?.seq).toBe(12);
+    expect(r.notGradedSeqs).toEqual([11]);
+  });
+
+  it('the boundary is inclusive: a request sent exactly at the floor is graded', () => {
+    const r = pickFollowUpAfterCarrier({
+      calls: [carrier, { seq: 11, requestedMono: FOLD_SEEN }],
+      carrier,
+      foldSeenMono: FOLD_SEEN,
+    });
+    expect(r.next?.seq).toBe(11);
+  });
+
+  it('in the ordinary serial case it is the carrier’s immediate successor, as before', () => {
+    const serial = { seq: 11, requestedMono: 50000 };
+    const r = pickFollowUpAfterCarrier({ calls: [carrier, serial], carrier, foldSeenMono: 47500 });
+    expect(r.next?.seq).toBe(11);
+    expect(r.notGradedSeqs).toEqual([]);
+  });
+
+  it.each<[string, Parameters<typeof pickFollowUpAfterCarrier>[0], string]>([
+    [
+      'the fold never showed in the SDK state',
+      { calls: [carrier, realFollowUp], carrier, foldSeenMono: null },
+      'fold_not_observed',
+    ],
+    [
+      'the carrier has no monotonic answer time',
+      {
+        calls: [carrier, realFollowUp],
+        carrier: { seq: 10, receivedMono: null },
+        foldSeenMono: FOLD_SEEN,
+      },
+      'carrier_answer_time_unknown',
+    ],
+    [
+      'there is no carrier',
+      { calls: [carrier, realFollowUp], carrier: null, foldSeenMono: FOLD_SEEN },
+      'no_carrier',
+    ],
+  ])('returns no follow-up and names why: %s', (_label, args, reason) => {
+    const r = pickFollowUpAfterCarrier(args);
+    expect(r.next).toBeNull();
+    expect(r.reason).toBe(reason);
+  });
+
+  it('a call with no monotonic request stamp is never graded (no silent wall-clock guess)', () => {
+    const r = pickFollowUpAfterCarrier({
+      calls: [carrier, { seq: 11 }],
+      carrier,
+      foldSeenMono: FOLD_SEEN,
+    });
+    expect(r.next).toBeNull();
+    expect(r.notGradedSeqs).toEqual([11]);
+  });
+
+  describe('the verdict names the timing instead of passing or reading “no request was issued”', () => {
+    const followUp = (stamp: string, over: Record<string, unknown> = {}) => ({
+      stamp,
+      reason: 'none_sent_after_fold',
+      notGradedSeqs: [11],
+      foldWaitMs: 34500,
+      windowMs: 22500,
+      ...over,
+    });
+
+    it('hop 11 is BROKEN with a TIMING reason naming the early request', () => {
+      const obs = greenObs();
+      setSecond(obs, (s) => {
+        s.next = null;
+        s.responsesAfterCarrier = [];
+        (s as Record<string, unknown>).followUp = followUp(STAMP2);
+      });
+      const v = evaluateAc8(obs);
+      expect(v.ok).toBe(false);
+      expect(v.brokenHop).toBe('11:sdk_drew_follow_up_above_gate');
+      const detail = v.evidence.hops?.find((h) => h.hop === 11)?.detail ?? '';
+      expect(detail).toMatch(/^TIMING: no \/api\/adapt request was sent after the SDK applied/);
+      expect(detail).toContain('#11');
+      expect(detail).toContain(STAMP2);
+    });
+
+    it('hop 6 is BROKEN with a TIMING reason when the fold was never observed', () => {
+      const obs = greenObs();
+      if (obs.positive) {
+        obs.positive.next = null;
+        (obs.positive as Record<string, unknown>).followUp = followUp(STAMP, {
+          reason: 'fold_not_observed',
+          notGradedSeqs: [],
+        });
+      }
+      const v = evaluateAc8(obs);
+      expect(v.ok).toBe(false);
+      expect(v.brokenHop).toBe('6:sdk_sent_folded_archetype_hint');
+      const detail = v.evidence.hops?.find((h) => h.hop === 6)?.detail ?? '';
+      expect(detail).toMatch(/^TIMING: the SDK's persisted state never showed chatPriorAppliedAt/);
+    });
+
+    it('keeps the pre-FOLLOW-1352 text when the run recorded no follow-up evidence', () => {
+      const obs = greenObs();
+      setSecond(obs, (s) => {
+        s.next = null;
+        s.responsesAfterCarrier = [];
+      });
+      const detail = evaluateAc8(obs).evidence.hops?.find((h) => h.hop === 11)?.detail ?? '';
+      expect(detail).toMatch(/^no \/api\/adapt request was issued after the response/);
+    });
+  });
+
+  it('the driver no longer picks the follow-up by sequence number alone', () => {
+    expect(harnessSrc).not.toMatch(/calls\.find\(\(c\) => c\.seq > (carrier|sCarrier)\.seq\)/);
+    expect(harnessSrc).toContain('pickFollowUpAfterCarrier({ calls, carrier, foldSeenMono })');
+  });
+
+  it('the page-open window is the SDK’s own debounce plus slack (read from adapt-loop.ts)', () => {
+    const b = deriveChatRefreshBudget({ indexSrc: sdkIndexSrc, slackMs: 20000 });
+    expect(b.debounceMs).toBeGreaterThan(0);
+    expect(harnessSrc).toContain('const windowMs = budget.debounceMs + budget.slackMs;');
   });
 });

@@ -100,6 +100,14 @@ describe('isStaffClaims type guard', () => {
   it('returns false for a non-staff object reaching it through an untyped path', () => {
     expect(isStaffClaims(formerAgencyPayload as unknown as AuthClaims)).toBe(false);
   });
+
+  it.each([['true'], [1], ['yes'], [{}]])(
+    'returns false for a truthy non-boolean estalara_staff (%j) — strict === true',
+    (value) => {
+      const claims = { ...extractClaims(staffPayload), estalara_staff: value };
+      expect(isStaffClaims(claims as unknown as AuthClaims)).toBe(false);
+    },
+  );
 });
 
 // ─── requireStaffRole ─────────────────────────────────────────────────────────

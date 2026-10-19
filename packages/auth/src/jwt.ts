@@ -19,8 +19,13 @@
  * backoffice, so the only claim shape is Estalara STAFF (ranks readonly < ops < superadmin).
  * The agency (tenant-user) shape — a `tenant_id` plus an agency role — and its type, type
  * guard and role guard are removed: `extractClaims` rejects any non-staff payload, so
- * `getAuthClaims` returns `null` for it. A token the hook still mints with agency claims
- * (for a user whose metadata carries them) therefore authenticates nobody.
+ * `getAuthClaims` returns `null` for it. A token the hook still mints with agency claims (for a
+ * non-staff `users` row with `tenant_id` set — `supabase-hook.sql`) is therefore rejected by the
+ * CONTROL PLANE only. Supabase itself still honours it: the RLS policies granted to
+ * `authenticated` (`packages/db/migrations/0012_rls_policies.sql`, 0004, 0006) match the JWT
+ * `tenant_id`, so such a user signing in with the public anon key could read/write `tenants`,
+ * `api_keys`, `answers`, `ab_bandit_weights` through Supabase REST. Closing that is a production
+ * step (CTO handover §4: verify zero such rows, drop the hook's agency branch, NULL the columns).
  *
  * @module @estalara/auth/jwt
  */
@@ -57,7 +62,9 @@ const STAFF_ROLE_RANK: Record<EstalaraRole, number> = {
  * caller through an untyped path (mocks, reconstructed session metadata).
  */
 export function isStaffClaims(claims: AuthClaims): claims is StaffClaims {
-  return claims.estalara_staff;
+  // Strict: a truthy non-boolean (`'true'`, `1`) arriving through an untyped path is not staff.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare, @typescript-eslint/no-unnecessary-condition -- runtime guard for untyped input (see above)
+  return claims.estalara_staff === true;
 }
 
 // ─── Claim extraction ──────────────────────────────────────────────────────

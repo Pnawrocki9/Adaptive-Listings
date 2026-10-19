@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 180 (2026-10-19) — **Checkpoint K3 GREEN at `main` `434b2513` (`docs/checkpoints/K3.md`, README §5.31, tag `k3-green` on this ledger's merge): Phase 3 M1 #1042, M2 #1044, M3 #1041, M5 #1043, N2 full #1045 DONE; N1 `--final` reads 0. A RED pair at `3952ac29` was bisected by a read-only forensic (not a Phase 3 regression) → FOLLOW-1352 #1046 (harness predicate) + FOLLOW-1351 #1047 (SDK single-flight chat refresh). **CEO ruling 2026-10-19: Faza Q — the quiz must identify one archetype with ≥ 90 % accuracy (buyer self-confirmation as ground truth, EN + PL mandatory, buyer-side language switcher, 12 results + neutral + traits) and the backoffice must manage the quiz end to end — is INSERTED between K3 and Phase 4.** Plan approved in plan mode (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, copied to `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` by the Q0 PR); packages Q0 docs → Q1 shared → Q2 SDK ∥ Q3 recording ∥ Q7 editor → Q4 fold → Q5 traits → Q6 harness (AC(10), TALLY 8) → Q8 report; checkpoints KQ1 (localhost 3× GREEN 8/8), KQ2 (CEO walkthrough — absorbs the K3 'moment CEO'), KQ3 (production, CTO: ≥ 400 decided runs, pre-registered Wilson bound). Phase 4 (P1–P7) follows KQ2. New stubs: FOLLOW-1353 (Sentry drizzle params, P2), FOLLOW-1354 (SDK adapt fetch timeout, P2); amendments 1307, 1233/1246, 1350. Retro batch owed (weekly): #1042, #1043, #1044, #1047. Next free: FOLLOW-1355 (Q0), RETRO-368, ESC-086.**
+## ▶️ START HERE — session 180 (2026-10-19) — **Checkpoint K3 GREEN at `main` `434b2513` (`docs/checkpoints/K3.md`, README §5.31, tag `k3-green` on this ledger's merge): Phase 3 M1 #1042, M2 #1044, M3 #1041, M5 #1043, N2 full #1045 DONE; N1 `--final` reads 0. A RED pair at `3952ac29` was bisected by a read-only forensic (not a Phase 3 regression) → FOLLOW-1352 #1046 (harness predicate) + FOLLOW-1351 #1047 (SDK single-flight chat refresh). **CEO ruling 2026-10-19: Faza Q — the quiz must identify one archetype with ≥ 90 % accuracy (buyer self-confirmation as ground truth, EN + PL mandatory, buyer-side language switcher, 12 results + neutral + traits) and the backoffice must manage the quiz end to end — is INSERTED between K3 and Phase 4.** Plan approved in plan mode (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, copied to `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` by the Q0 PR); packages Q0 docs → Q1 shared → Q2 SDK ∥ Q3 recording ∥ Q7 editor → Q4 fold → Q5 traits → Q6 harness (AC(10), TALLY 8) → Q8 report; checkpoints KQ1 (localhost 3× GREEN 8/8), KQ2 (CEO walkthrough — absorbs the K3 'moment CEO'), KQ3 (production, CTO: ≥ 400 decided runs, pre-registered Wilson bound). Phase 4 (P1–P7) follows KQ2. New stubs: FOLLOW-1353 (Sentry drizzle params, P2), FOLLOW-1354 (SDK adapt fetch timeout, P2); amendments 1307, 1233/1246, 1350. Retro batch owed (weekly): #1042, #1043, #1044, #1047. Next free: FOLLOW-1364, RETRO-368, ESC-087.**
 
 ### Dispatch record (session 180)
 
@@ -17,7 +17,23 @@
   note. K3 ledger finding 1.
 - **FOLLOW-1354** — status: BACKLOG # P2 sdk. `/api/adapt` fetch has no per-request timeout (only
   the lifetime signal) — bounded timeout + retry budget. K3 ledger finding 2.
-- Faza Q tickets (FOLLOW-1355…) are allocated by the Q0 PR.
+- **FOLLOW-1355** — status: IN_PROGRESS # Faza Q Q0 docs: this PR (plan copy, research record,
+  PREREG, ESC-086, tickets) + the architect's MASTER_DESIGN 4.28 §E.4 v3 PR.
+- **FOLLOW-1356** — status: READY # Faza Q Q1 shared (traits, schema additions, quiz-walk/lint/diff,
+  Wilson, default v2 EN+PL). Sonnet. NEXT after Q0.
+- **FOLLOW-1357** — status: BACKLOG # Faza Q Q2 SDK widget (multi step, confirmation + correction,
+  EN|PL switcher, run id, pings). Opus. After Q1; series.
+- **FOLLOW-1358** — status: BACKLOG # Faza Q Q3 recording (H002 `quiz_runs`, `POST /api/quiz/run`,
+  CORS, DSR, consent, default v2 served). Opus + compliance review gate. After Q1.
+- **FOLLOW-1359** — status: BACKLOG # Faza Q Q4 fold (0.72/0.90, chat-only scale, confirmed-leaf
+  anchor, τ, drift guards). Opus. After Q2 + Q3; series.
+- **FOLLOW-1360** — status: BACKLOG # Faza Q Q5 traits → copy (playbook merges, trait rules/slots).
+  Sonnet + Opus grounding review. After Q1; series.
+- **FOLLOW-1361** — status: BACKLOG # Faza Q Q6 harness AC(10), AC(1) re-pin, TALLY 8. Opus. After
+  Q2/Q3/Q4 → KQ1 (3× GREEN 8/8).
+- **FOLLOW-1362** — status: BACKLOG # Faza Q Q7 editor C1 (Opus) → C2/C3/C4 (Sonnet). After Q1.
+- **FOLLOW-1363** — status: BACKLOG # Faza Q Q8 accuracy report + cron. Sonnet, Opus stats review.
+  After Q3 → KQ2 (CEO walkthrough).
 
 ## ▶️ Previous banner — session 179 (2026-10-18) — **The CEO approved the closing plan (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, 2026-10-17): Adaptive Listings is SINGLE-TENANT (app.estalara.com only) — ESC-085 reverses ADR-0018 §Decision 0 (FOLLOW-1319). FOLLOW-820 GO stays DEFERRED; the definition of done is K7, then the CTO handover package (`docs/handover/CTO_HANDOVER.md`). The D8 moratorium on new P2/P3 stubs and new Rules is LIFTED (ESC-085). Phases and checkpoints: Phase 0 housekeeping (K0 baseline) → Phase 1 C1 ∥ C2 (K1) → Phase 2 removals R1..R11 (K2a/K2b/K2c) → Phase 3 one backoffice M1..M5 (K3, CEO review 1) → Phase 4 buyer path P1..P7 (K4a/K4b) → Phase 5 Estalara app X1..X4 (K5, CEO review 2) → Phase 6 security S1..S4 (K6) → Phase 7 proof and handover (K7, CEO review 3). Tickets: FOLLOW-1319 (docs, IN_PROGRESS), 1320 (this bookkeeping + N1 gate), 1321/1322 (C1/C2), 1323..1333 (R1..R11), 1334..1338 (M1..M5), 1339..1342 (X1..X4), 1343 (N2), 1344 (N3), 1345 (AC(1b)/AC(9) + checkpoint ledger), 1346 (Phase 7). Reused: 1246, 1317, 1318, 1233, 1168, 1311, 1316 (Phase 4 P1..P7), 1307..1310 (Phase 6 S1..S4, re-scoped from post-GO). NEXT = K0 baseline → Phase 1 C1 ∥ C2. Next free: FOLLOW-1351, RETRO-368, ESC-086.**
 

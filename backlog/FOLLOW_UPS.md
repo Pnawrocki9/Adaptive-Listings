@@ -56404,3 +56404,332 @@ findings 2–3.
 answers routes keeps the full answer text by design (M1 security review §4, kept so a staff edit is
 reviewable); the row for `staff_audit_log` must say "may contain listing FAQ free text (possibly
 third-party contact details)". Source: `docs/checkpoints/K3.md` finding 8.
+
+## FOLLOW-1355 — Faza Q package Q0: plan copy, research record, pre-registration, ESC-086, MASTER_DESIGN §E.4 v3
+
+source_retro: — (approved plan 2026-10-19, `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md`) source_ticket: —
+recommended_agent: PM (bookkeeping) + architect (Opus, MASTER_DESIGN 4.28) priority: P1
+estimated_hours: 6 tag: docs depends_on: [FOLLOW-1345] blocks: [FOLLOW-1356] promoted_to_queue: true
+
+**What.** Docs-only. PM PR: `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` (copy of the approved plan),
+`docs/research/QUIZ-ACCURACY-RESEARCH-2026-10-19.md` (sources),
+`docs/decisions/PREREG-quiz-accuracy-2026-10.md` (the pre-registered 90 % criterion, CEO decision
+Q-J), ESC-086 (public-surface changes ruled by the plan approval), these tickets, QUEUE. Architect
+PR: MASTER_DESIGN 4.28 — §E.4 v3 (tree, traits, confirmation, EN+PL + switcher, fold masses
+0.72/0.90, drift guards, `quiz_runs` measurement, backoffice management, AC(10)/KQ1–KQ3), §D.6 note,
+§Snapshot.0/.1 brackets, §Y.2 record.
+
+AC:
+
+- [ ] Both PRs merged; §Y.2 lists every document checked and what is owed; no ticket number
+      invented.
+
+cross_ref: [plan Faza Q, ESC-086, K3 ledger]
+
+## FOLLOW-1356 — Faza Q package Q1: shared quiz model — traits, schema additions, walker/lint/diff, Wilson, default v2 EN+PL
+
+source_retro: — (plan Faza Q §A, §C) source_ticket: FOLLOW-1355 recommended_agent: sdk-engineer
+(Sonnet — well-scoped library code with pinned tests; Opus review of the schema refinements)
+priority: P1 estimated_hours: 14 tag: product depends_on: [FOLLOW-1355] blocks: [FOLLOW-1357,
+FOLLOW-1358, FOLLOW-1362] promoted_to_queue: true
+
+**What.** In `packages/shared`: (1) `src/traits.ts` —
+`CANONICAL_TRAIT_IDS = ['premium','works_from_home', 'residency_goal','buying_from_abroad','seasoned_investor','will_let','has_children']`,
+`TraitIdSchema`; (2) `schemas/presentation-config.ts` additive: `QuizAnswerSchema.traits?` (≤ 4),
+`QuizQuestionSchema.kind?: 'single'|'multi'`,
+`QuizDefinitionSchema.confirm?: {names_i18n, sentences_i18n, alternatives (2–4 canonical non-neutral ids)}`;
+hard refinements: a `multi` question's answers have `weights {}` and `next null`; `confirm` keys
+canonical; every reachable non-neutral archetype has a name and a sentence when `confirm` is
+present; **EN and PL both present and non-empty for every `prompt_i18n` / `label_i18n` / `confirm`
+text** (CEO ruling Q-D, verbatim: "Każde pytanie musi być dostępne w języku PL in EN a użytkownik
+powinien móc zmienić sobie język quizu."); `computeAmbiguousPaths` (warning);
+`computeUnreachableArchetypes` takes an allow-list of the five ids the quiz no longer assigns
+(`upsizer`, `portfolio_builder`, `luxury_buyer`, `remote_worker`, `golden_visa_buyer`); (3)
+`schemas/quiz-walk.ts` — the pure walker helpers moved from `packages/sdk/src/ui/quiz-widget.ts`
+(`resolveLabel`, `resolveArchetypeFromPath` accepting `Array<number | number[]>`,
+`longestPathFrom`), plus `enumerateQuizPaths`, `resolveLeafArchetype`,
+`resolveQuizOutcome(def, path) → {leaf, traits}`, `nextStep(def, state) → question | confirm | done`
+(the state machine the SDK and the simulator share); the SDK re-exports them so
+`quiz-widget.test.ts` and `follow-639.test.ts` keep their imports; (4) `schemas/quiz-lint.ts` —
+`QuizDefinitionAuthoringSchema` = serve schema + authoring errors (orphan question, duplicate answer
+id, > 40 questions, answers outside 2–8, depth > 6, > 2000 paths, empty or > 160-char label,
+**missing EN or PL**) and warnings (unreachable outside the allow-list, argmax ties, negative
+weights, duplicate labels, dropped unknown keys on import);
+`lintQuizDefinition(def, {widgetLanguage?})`; the serve-time schema stays lenient; (5)
+`schemas/quiz-diff.ts` — `diffQuizDefinitions(a, b)` typed change list; (6) `stats/wilson.ts` —
+`wilsonInterval(k, n, z)` with pins (372/400 PASS, 371/400 FAIL; 95 % → n ≥ 127, 94 % → 204, 93 % →
+362, 92 % → 830); (7) `DEFAULT_QUIZ_DEFINITION_V2` EN+PL (texts from the plan §A /
+`docs/MASTER_DESIGN.md` §E.4.2 v3 table, the `confirm` block for all 12 results, alternatives
+table), exported for the control plane; the SDK's built-in default stays EN-only (the v2 tree,
+bundle budget) — the SDK bundle must not grow from this package.
+
+AC:
+
+- [ ] `pnpm --filter @estalara/shared test` green with one case per lint code, the zero-error pin
+      for `DEFAULT_QUIZ_DEFINITION_V2` (and the existing `DEFAULT_QUIZ_DEFINITION`), the
+      serve-schema regression (a blob violating only authoring rules still parses),
+      `enumerateQuizPaths` parity with `resolveArchetypeFromPath` / `computeUnreachableArchetypes`,
+      Wilson pins.
+- [ ] A definition with a missing PL label fails `QuizDefinitionAuthoringSchema` (error, not
+      warning).
+- [ ] `packages/sdk` tests green unchanged (helpers re-exported); `build:check` bundle ≤ 43,136 B.
+- [ ] Rule I "0 new"; `check-mirror-files.sh` pass.
+
+- [ ] `docs/adr/ADR-0019-per-tenant-presentation-config.md` gets a dated "Amended in part
+      2026-10-19" note (three-argument `applyQuizLeaf`, the served default v2 EN+PL, the EN-only
+      bundled fallback, the additive `confirm` / `kind` / `traits` schema; the D6 budget already
+      superseded by ESC-080) — an accepted ADR is annotated, never edited (MASTER_DESIGN 4.28 §Y.2).
+
+cross_ref: [plan Faza Q §A/§C, MASTER_DESIGN §E.4 v3, ESC-086 item 3]
+
+## FOLLOW-1357 — Faza Q package Q2: SDK quiz widget v2 — multi step, confirmation + correction, language switcher, run id
+
+source_retro: — (plan Faza Q §A, §B) source_ticket: FOLLOW-1355 recommended_agent: sdk-engineer
+(**Opus** — walker state machine, harness coupling, bundle budget) priority: P1 estimated_hours: 16
+tag: product depends_on: [FOLLOW-1356] blocks: [FOLLOW-1359, FOLLOW-1361] promoted_to_queue: true
+
+**What.** `packages/sdk/src/ui/quiz-widget.ts` + `core/{intent-loop,adapt}.ts`: (1) the walker uses
+`nextStep` from shared; a `multi` step renders checkboxes, CTA always enabled, "None of these"
+exclusive, answers recorded as `number[]`; (2) at the end of the walk, when `def.confirm` exists and
+the leaf is not neutral: the result screen (`.estalara-quiz-result`, `-confirm`, `-reject`,
+`-option` — never `.estalara-quiz-answer`, the harness loop clicks that class) with name + sentence
+in the active language and two equal buttons; "Not quite" lists the 3 alternatives + "None of these
+— show me everything" (= neutral, `none_of_these`); one correction only; × on the result screen
+applies the leaf and records `unconfirmed`; (3) **language switcher EN | PL on the card** (CEO
+ruling Q-D), choice kept in sessionStorage, overrides `quiz_config.language` for the quiz and the
+confirmation texts (chrome labels already exist for en/pl/es); (4) `quiz_run_id` (random uuid when
+the card renders), `definition_hash` (sha-256 of the served definition JSON; the fallback reports
+`builtin-en-v2`), per-step `step_ms` (rounded to 100 ms, capped 600 000), `result_ms`; (5) pings to
+`POST /api/quiz/run`: `shown` on render, `dismissed` (+ `last_step`) on Skip/×, `completed` at the
+leaf, `confirmed` / `corrected` / `unconfirmed` (× or `pagehide` with `keepalive`); (6)
+`onComplete(leaf, meta, outcome)` per ESC-086 item 4; `persistResolvedArchetype` re-persists after
+confirm/correct; traits stored in the session and in `intent.snapshot`, sent in the `/api/adapt`
+body; `quiz.event` emits the new steps + `quiz_run_id` + `resolved_archetype` (schema change in
+`packages/shared/src/schemas/events/quiz.ts`, additive); (7) progress counter excludes the confirm
+step. Default tree: the EN-only built-in is replaced by the v2 tree; parity tests that assert the
+17-result tree are rewritten. Until Q4 lands, `applyQuizLeaf` is called as today (0.85) — the fold
+change is Q4.
+
+AC:
+
+- [ ] Vitest: multi step (exclusive "None"), confirm → `onComplete` outcome `confirmed`, correct →
+      `corrected` with the chosen archetype, "None" → neutral/`none_of_these`, × → `unconfirmed`,
+      language switch re-renders the current step in PL and persists across steps, every ping shape,
+      no ping without profiling consent, opt-out → no ping.
+- [ ] `build:check` ≤ 43,136 B (report the delta); `pnpm --filter @estalara/sdk test` green.
+- [ ] FOLLOW-819 series 3× GREEN `[FRESH]` on the PR SHA (the harness AC(1) loop re-pinned in Q6 may
+      be needed first — coordinate: if the confirm step breaks AC(1)'s "card disappears =
+      completion", land the Q6 loop re-pin in the same PR or gate the step behind
+      `quiz_config.confirm_step` default off for the harness tenant until Q6).
+
+cross_ref: [plan Faza Q §A/§B, ESC-086 items 1/3/4, FOLLOW-1356, FOLLOW-1361]
+
+## FOLLOW-1358 — Faza Q package Q3: `quiz_runs` recording — H002, `lib/quiz-runs.ts`, `POST /api/quiz/run`, CORS, DSR, consent, default v2 served
+
+source_retro: — (plan Faza Q §B) source_ticket: FOLLOW-1355 recommended_agent: backend-engineer
+(**Opus** — auth, privacy, DSR, state machine) + compliance-engineer review (merge gate) priority:
+P1 estimated_hours: 14 tag: product depends_on: [FOLLOW-1356] blocks: [FOLLOW-1359, FOLLOW-1363]
+promoted_to_queue: true
+
+**What.** (1) `docs/handover/migrations/H002_quiz_runs.sql` — idempotent, RLS like H001, columns:
+`id uuid PK` (from the SDK), `tenant_id`, `session_id`, `language`, `definition_hash`,
+`definition_version int null`, `sdk_version`,
+`status text CHECK (shown|dismissed|completed|confirmed|corrected|unconfirmed)`, `last_step int`,
+`resolved_archetype`, `answer_path jsonb`, `traits jsonb`, `step_ms int[]`, `result_ms int`,
+`offered jsonb`, `confirmed_archetype text` (`none_of_these` allowed;
+`CHECK (confirmed_archetype IS NULL OR status IN ('confirmed','corrected'))`), `shown_at`,
+`updated_at`; index `(tenant_id, definition_hash, status)`; rollback = `DROP TABLE`; applied locally
+by `scripts/dev/localhost-up.sh` next to H001; **never under `packages/db/migrations/`**; handover
+row appended. (2) `apps/control-plane/src/lib/quiz-runs.ts` on the `lib/lift-snapshots.ts` pattern
+(typed raw SQL, 42P01 → `quiz_runs_table_missing`). (3) `POST /api/quiz/run` per ESC-086 item 2
+(HMAC + origin as `quiz/completion`, consent-gate rule, opt-out → 204 and nothing written,
+forward-only state machine, replay = 200 no-op, 503 + Sentry when the table is missing); CORS entry
+in `middleware.ts`; `observability-signals.test.ts` rows + `TOTAL_SITES`; single-tenant route
+allowlist. (4) DSR erase/access/portability cover `quiz_runs` (42P01 tolerated only for this table).
+(5) Public-config: emit `DEFAULT_QUIZ_DEFINITION_V2` when no active row; add `definition_version`
+and `definition_hash` to the slice. (6) ROPA/DPIA rows for `quiz_runs`; privacy-notice line if the
+consent corpus gates require it.
+
+AC:
+
+- [ ] Route tests: every transition of the state machine, an illegal transition is a 200 no-op, HMAC
+      failure 401, foreign origin 403, opt-out 204 with no row, missing table 503
+      `quiz_runs_table_missing`.
+- [ ] On the local stack: `select status, count(*) from quiz_runs group by 1` shows every status
+      after one SDK walk (with Q2); DSR erase removes the session's rows.
+- [ ] `check-single-tenant.sh`, `check-staff-write-atomicity.sh`, consent corpus gates,
+      `check-rule-i.sh` 0 new; compliance-engineer review recorded in ESC-086 (APPROVE or conditions
+      closed).
+
+cross_ref: [plan Faza Q §B, ESC-086, H001 pattern, FOLLOW-1316 (review gate precedent)]
+
+## FOLLOW-1359 — Faza Q package Q4: the fold — masses 0.72/0.90, bonus only for chat-without-quiz, confirmed-leaf anchor, chat τ, drift guards
+
+source_retro: — (plan Faza Q §B "Fold") source_ticket: FOLLOW-1355 recommended_agent: ml-engineer
+(**Opus**) priority: P1 estimated_hours: 16 tag: product depends_on: [FOLLOW-1357, FOLLOW-1358]
+blocks: [FOLLOW-1361] promoted_to_queue: true
+
+**What.** `packages/sdk/src/core/intent.ts`, `intent-loop.ts`, `adapt-loop.ts`: (1)
+`applyQuizLeaf(state, leaf, evidence)` — `completed` 0.72 (0.28/17 each other), `confirmed` 0.90,
+`corrected` 0.90 on the corrected leaf; confidence = max posterior; floor 0.005 per archetype;
+`none_of_these` → the pre-quiz state + `quiz_rejected`; neutral leaf → `quiz_answered` but unpinned;
+(2) `QUIZ_CONFIDENCE_BONUS` leaves the quiz path; the ×1.2 of `applyChatIntentPrior` stays **only**
+for sessions without a quiz as `CHAT_ONLY_CONFIDENCE_SCALE` (CEO decision Q-G; AC(8) G-04 unchanged:
+0.553 × 1.2 = 0.664); (3) confirmed leaf: one helper used by every recompute site (`intent.ts`
+~635–1052) keeps the leaf's mass and renormalises the rest; chat likelihoods tempered τ = 0.5 while
+confirmed (3 contrary dimensions do not flip, 4 do); unconfirmed leaf updated normally (documented:
+two 3-bed bookmarks take 0.72 to ~0.55); (4) drift: never for a confirmed leaf, never to `neutral`
+(guards in `detectMismatch` and `adapt-loop.ts` ~384), re-pin via `applyDriftCandidate` at the
+`completed` mass with `source: 'drift'`; (5) the 117 `applyQuizLeaf` references in SDK tests:
+default `evidence = 'completed'`, numeric pins 0.85 / 1.0 → 0.72; new pins for 0.90, the corrected
+leaf, τ needing 4 dimensions, drift never to neutral, behaviour never moving a confirmed leaf;
+`follow-1306` pins that confirming draws no follow-up and correcting does. Separate tickets (not
+here): additive boosts → capped multipliers; server-side cap on client `confidence` (shadow mode).
+
+AC:
+
+- [ ] `pnpm --filter @estalara/sdk test` green; the arithmetic pins above; AC(8) smoke pins
+      untouched.
+- [ ] FOLLOW-819 series 3× GREEN `[FRESH]`; hop 11 still 0.6641488145588295 (chat-only scale kept).
+- [ ] `build:check` ≤ 43,136 B; MASTER_DESIGN §E.4.4 v3 numbers match the code (architect re-check).
+
+cross_ref: [plan Faza Q §B, K3 ledger finding 6, FOLLOW-1351, MASTER_DESIGN §E.4.4 v3]
+
+## FOLLOW-1360 — Faza Q package Q5: traits change copy — playbook merges and trait-driven rules/slots
+
+source_retro: — (plan Faza Q §A "Cechy") source_ticket: FOLLOW-1355 recommended_agent: ml-engineer
+(Sonnet; **Opus** review of grounding against ESC-076 / §E.7.0) priority: P1 estimated_hours: 10
+tag: product depends_on: [FOLLOW-1356] blocks: [] promoted_to_queue: true
+
+**What.** `packages/shared/src/playbooks/archetypes/*`,
+`apps/control-plane/src/lib/description-generator.ts`, `api/adapt`: (1) merge `upsizer` into
+`family_buyer` ("Moving up": headroom/trading-up wording and headline variants; stop assuming
+children unless `has_children`) and `portfolio_builder` into `yield_hunter` (its voice becomes the
+`seasoned_investor` add-on); narrow `diaspora_buyer`'s description to "returning to the country of
+origin"; (2) a trait attaches its source playbook's `listing_rules` and one slot/paragraph
+(`premium` ← luxury-buyer, `works_from_home` ← remote-worker, `residency_goal` ← golden-visa-buyer;
+`buying_from_abroad`, `will_let`, `has_children`, `seasoned_investor` — short rule sets, grounded in
+listing facts only; **no claim the listing cannot ground**, per ESC-076); traits reach the server in
+the `/api/adapt` body (Q2) and the description guidance; (3) description parity corpus updated (the
+98-case corpus stays 100 %); the five ids the quiz no longer assigns keep their playbooks
+(chat/behaviour can still reach them).
+
+AC:
+
+- [ ] Unit tests per trait: the rule set and slot appear only when the trait is present; grounding
+      check refuses an ungrounded trait claim (one negative case per trait).
+- [ ] `description-parity.test.ts` 98/98; FOLLOW-819 series 3× GREEN `[FRESH]`.
+
+cross_ref: [plan Faza Q §A, ESC-076, §E.7.0, FOLLOW-1311 (claim contract)]
+
+## FOLLOW-1361 — Faza Q package Q6: harness AC(10) confirmation path, AC(1) loop re-pin, TALLY 8
+
+source_retro: — (plan Faza Q §B "Harness") source_ticket: FOLLOW-1355 recommended_agent: qa-engineer
+(**Opus**) priority: P1 estimated_hours: 12 tag: measurement depends_on: [FOLLOW-1357, FOLLOW-1358,
+FOLLOW-1359] blocks: [] promoted_to_queue: true
+
+**What.** `tests/e2e/follow-819/differentiator-e2e.mjs` + `ac10-verdict.test.ts` in
+`pnpm e2e:smoke`: (1) AC(1) loop: a visible `.estalara-quiz-result` = completion (`quizCompletedAt`
+= the leaf click), then click confirm; confidence at the quiz turn 0.72 → 0.90 (artefacts and README
+text quoting 1.0 updated); (2) **AC(10)** three sub-sessions — (a) confirm: `quiz_runs` row
+`confirmed` with the leaf, non-null hash, 3 `step_ms`; SDK state at the leaf 0.90; next `/api/adapt`
+with hint 0.9 answered ADAPTED (AC(1) predicate); two injected contrary signals leave the leaf and
+its 0.90; (b) correct (fresh context): "Not quite" → pick an alternative; row `corrected` with both
+archetypes; the follow-up sent after the correction and the fold (FOLLOW-1352 rule) carries the
+corrected hint at 0.9 and is ADAPTED; (c) × on the result: `unconfirmed`, 0.72, null
+`confirmed_archetype`; pinned fixtures GREEN (a, b), RED (row missing; follow-up with the
+pre-correction hint; a confirmed leaf drifted), UNMEASURED (holdout); (3) negative-control count
+re-cut (K3 ledger finding 5); (4) `TALLY total=8`; every earlier artefact is STALE by design; README
+§5 record; `docs/checkpoints/KQ1.md` convention row.
+
+AC:
+
+- [ ] `pnpm e2e:smoke` pins; series **3× GREEN 8/8 `[FRESH]`** on one SHA (= checkpoint KQ1 control
+      I1).
+- [ ] STOP rule: AC(10)(b) not serving the corrected archetype → the correction path is broken; do
+      not merge.
+
+cross_ref: [plan Faza Q §B/KQ1, FOLLOW-1352, K3 ledger finding 5]
+
+## FOLLOW-1362 — Faza Q package Q7: backoffice quiz editor — API hardening + versions (C1), structured EN|PL editor (C2), simulator/versions UI/import-export/publish (C3), completions as text + analytics labels (C4)
+
+source_retro: — (plan Faza Q §C) source_ticket: FOLLOW-1355 recommended_agent: backend-engineer
+(**Opus** for C1 — transactions, advisory lock, audit atomicity; Sonnet for C2–C4) priority: P1
+estimated_hours: 36 tag: product depends_on: [FOLLOW-1356] blocks: [] promoted_to_queue: true
+
+**What.** Four PRs, same ticket, each ≤ ~600 lines, same page `/admin/tenants/[id]/quiz-definition`
+(no new page → no nav/inventory churn), every existing `data-testid` kept. **C1 API:** GET adds
+`can_write`, `invalid_active` (+ raw JSON) and `lint`; PUT validates with
+`QuizDefinitionAuthoringSchema`, takes `base_version` (409 `version_conflict`) and
+`source: 'editor'|'import'`, reads `max(version)` **inside** the transaction under
+`pg_advisory_xact_lock(hashtext(tenant_id))`; new `GET versions` (newest 50: version, active, date,
+author, counts, sha256; `&version=N` full row), `PUT activate` (`from_version`, `base_version`;
+copy-forward as version max+1, serve-schema parse only, audited), `PUT deactivate` (revert to the
+built-in default; 409 when nothing active); audit payloads
+`quiz_definition.{update,restore,revert_to_default}` with version pair + sha256, never the blob;
+writes ops+ (decision Q-H); route tests incl. concurrent PUTs → distinct versions; allowlist +
+observability register. **C2 editor:** `definition-ops.ts` (pure ops: add/remove/reorder questions
+and answers, `setNext`, `renameQuestionId`, `setLeafArchetype`, `setLocaleText`, `toggleLanguage`),
+`question-card.tsx` / `answer-row.tsx` with **EN | PL side by side** and a "PL n/m" meter, `next`
+dropdown (no self/ancestors), leaf picker (writes `weights {X:1}`; custom weights under "Advanced"),
+trait screen (`kind: multi`) and a "Confirmation" tab (names/sentences/alternatives EN|PL), lint
+panel (errors block Save), read-only mode on `can_write:false`, invalid-active banner instead of the
+silent STARTER load, "Load built-in default" = `DEFAULT_QUIZ_DEFINITION_V2` (STARTER retired).
+**C3:** `quiz-simulator.tsx` (walk the draft as a buyer in EN or PL through `nextStep`: breadcrumb,
+leaf, traits, confirmation screen; all-paths table), `versions-panel.tsx` (list, diff via
+`quiz-diff`, restore, revert with confirm), `publish-dialog.tsx` (diff summary + the ~6 min
+propagation notice: `max-age=300, swr=60` + sessionStorage), `use-local-draft.ts` (localStorage
+keyed by tenant + base version, unsaved-changes guard; no server drafts — decision Q-I),
+`import-export.tsx` (authoring validation, "unknown keys dropped" notice). **C4:** completions API
+returns `answer_path`; the viewer shows question and answer **text** resolved against
+`quiz_runs.definition_version` (legacy rows: current active version + "approximate" badge);
+analytics `BRANCH_LABELS` derived from the definition; per-question drop-off from the `quiz_runs`
+funnel. "Suggest weights (AI)" stays unaudited (writes nothing).
+
+AC:
+
+- [ ] Component tests listed in plan-c §3 (EN/PL columns and PL gating, `next` excludes ancestors,
+      lint blocks Save, simulator EN/PL, versions diff + restore calls `activate`, revert confirm,
+      import bad / unknown-keys, export round-trip, read-only, invalid-active banner); route tests
+      for C1; existing editor tests green unchanged.
+- [ ] `check-staff-write-atomicity.sh` pass; `check-single-tenant.sh` 0; N2 nav test green; series
+      3× GREEN `[FRESH]` after each of C1–C4 (pathspec rule) or one batch series at KQ2 if the PM
+      rules the editor files outside the measured pathspec.
+
+cross_ref: [plan Faza Q §C, ESC-086 item 5, FOLLOW-1356]
+
+## FOLLOW-1363 — Faza Q package Q8: quiz-accuracy report — API, staff tab, warning cron
+
+source_retro: — (plan Faza Q §B "Metryka") source_ticket: FOLLOW-1355 recommended_agent:
+backend-engineer (Sonnet; **Opus** review of the statistics against the PREREG) priority: P1
+estimated_hours: 10 tag: measurement depends_on: [FOLLOW-1358] blocks: [] promoted_to_queue: true
+
+**What.** `GET /api/admin/tenants/quiz-accuracy?tenant_id&from&to&definition_hash&language` (auth as
+`quiz/analytics`): `definition_hashes[]`,
+`funnel{shown, dismissed_by_step[], completed, completed_neutral, confirmed, corrected, unconfirmed}`,
+`headline{decided, correct, accuracy, wilson95{lo,hi}, verdict PASS|FAIL|FUTILE|INSUFFICIENT_N, n_required 400}`,
+`pessimistic`, `macro_recall`, `per_leaf[]` (precision, recall + CIs, `claimable` at n_true ≥ 100),
+`confusion{labels, matrix}` incl. `none_of_these`, `by_language`, `by_speed_tertile` (fast-"yes"
+flag), `monthly[]`; staff tab `/admin/tenants/[id]/quiz-accuracy` linked from the tenant hub (new
+page → nav inventory + `page.test.tsx`); optional monthly cron: Sentry warning when a month with ≥
+100 decided runs has a Wilson upper bound < 0.90 or response rate < 60 %. Staff/ops-key traffic and
+the harness tenant excluded per the PREREG.
+
+AC:
+
+- [ ] Seeded-row fixtures: 372/400 → PASS, 371/400 → FAIL, a known confusion matrix → known recall
+      and precision; `INSUFFICIENT_N` on the local synthetic data.
+- [ ] `docs/decisions/PREREG-quiz-accuracy-2026-10.md` §3–§4 and the API agree field by field (Opus
+      review); N2 nav test green; series 3× GREEN `[FRESH]` (pathspec) or batch at KQ2.
+
+cross_ref: [plan Faza Q §B/KQ2/KQ3, PREREG, FOLLOW-1358]
+
+## AMENDMENT to FOLLOW-1346 — 2026-10-19 by FOLLOW-1355: Faza Q handover rows (package H)
+
+**AMENDMENT (2026-10-19).** H2 (CTO handover v1) gains the Faza Q rows: apply `H002_quiz_runs.sql`
+(§4, appended by FOLLOW-1358); enable the confirmation step for the production tenant and freeze the
+`definition_hash`; collect ≥ 400 decided runs; run the pre-registered analysis **once**
+(`docs/decisions/PREREG-quiz-accuracy-2026-10.md`) and the ~60-run κ sample; monthly monitor via
+`/admin/tenants/[id]/quiz-accuracy`; the verdict (PASS/FAIL) goes to MASTER_DESIGN §Snapshot.0 —
+this is checkpoint **KQ3**, owned by the CTO, not the PM. Source:
+`docs/PLAN-QUIZ-ACCURACY-2026-10-19.md`.

@@ -21,6 +21,74 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## RESOLVED — ESC-086: quiz v2 public surface — `quiz.event` steps, `POST /api/quiz/run`, public-config `confirm`/`kind`/`traits`, SDK `onComplete` outcome, admin quiz routes [FOLLOW-1355]
+
+**Filed by:** pm-orchestrator (transcribing the CEO's plan approval of 2026-10-19) **Date:**
+2026-10-19 **Affects:** `packages/shared/src/schemas/events/quiz.ts` (`QuizEventPayloadSchema`),
+`packages/shared/src/schemas/presentation-config.ts` (quiz definition served by
+`GET /api/quiz/public-config`), `packages/sdk` (`renderQuizWidget` `onComplete`, `intent.snapshot`),
+`apps/control-plane` (`api/quiz/run` new,
+`api/admin/tenants/quiz-definition/{versions,activate,deactivate}` new,
+`api/admin/tenants/quiz-accuracy` new, `middleware.ts` CORS list, DSR routes), the handover table
+`quiz_runs` (`docs/handover/migrations/H002_quiz_runs.sql`) **Type:** architectural (public SDK and
+ingest surface, decision API contract adjacent, compliance posture of a new pseudonymous table)
+
+**Description:** The approved plan `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` (Faza Q) needs changes on
+surfaces the autonomy rules reserve for a human ruling: the ingest event schema, a new SDK→control
+plane endpoint, the public-config contract and the SDK's public callback. Each is additive. The CEO
+approved the plan that specifies them in plan mode on 2026-10-19, after three rounds of questions
+(decisions Q-A…Q-J recorded in the plan's table); this entry records the surface changes as the
+ruling of record so no package has to re-escalate them.
+
+**Required action:** none beyond recording; the packages Q2/Q3/Q7/Q8 implement them.
+Compliance-engineer review of package Q3 (the `quiz_runs` table, consent gating, DSR coverage,
+retention) is a merge gate, as it is for FOLLOW-1316.
+
+**Resolution:** 2026-10-19, CEO (Piotr Nawrocki), by approval of the plan. The surface changes:
+
+1. **`quiz.event` (ingest).** `step` gains the values `confirmed | corrected | unconfirmed` (the
+   schema already declares `step: z.string()`); optional fields `quiz_run_id` (uuid),
+   `resolved_archetype` (canonical id) and `definition_hash` (sha-256 hex) are added. Old SDKs are
+   unaffected; an old ingest strips the new fields. `archetype` carries the final archetype after a
+   correction.
+2. **`POST /api/quiz/run` (control plane, SDK-facing).** Same HMAC, origin gate, consent and opt-out
+   handling as `api/quiz/completion`; body `{quiz_run_id, event, …}` with
+   `event ∈ shown | dismissed | completed | confirmed | corrected | unconfirmed`; a forward-only
+   state machine (`shown → dismissed`, `shown → completed → confirmed | corrected | unconfirmed`),
+   first terminal status wins, replays answer 200 and change nothing; 503 `quiz_runs_table_missing`
+   (Sentry) while H002 is not applied. Added to the CORS list and to DSR erase/access/portability.
+3. **Public-config quiz slice (additive).** `QuizQuestionSchema.kind?: 'single' | 'multi'`,
+   `QuizAnswerSchema.traits?: TraitId[]` (≤ 4, `packages/shared/src/traits.ts`),
+   `QuizDefinitionSchema.confirm?: { names_i18n, sentences_i18n, alternatives }`, plus
+   `definition_version` and `definition_hash` in the slice; the EN+PL default v2 is served when no
+   active row exists. The serve-time schema stays lenient (an invalid stored row must not drop
+   buyers to the default); authoring rules live in `quiz-lint.ts`. Old SDKs draw a `multi` screen as
+   single-choice and ignore `confirm` — the result is still correct because weights are collected
+   before the trait screen.
+4. **SDK public callback.** `onComplete(leaf, meta, outcome)` gains
+   `outcome = { confirmation: 'confirmed' | 'corrected' | 'unconfirmed' | 'none_of_these', final_archetype, traits, quiz_run_id, definition_hash }`;
+   `intent.snapshot` and the `/api/adapt` request carry `traits`. `quiz_completions` and
+   `api/quiz/completion` are unchanged (no new columns — Drizzle inserts every column, a missing
+   production column would lose completions).
+5. **Admin API.** `GET …/quiz-definition/versions`, `PUT …/quiz-definition/activate`,
+   `PUT …/quiz-definition/deactivate`, `GET /api/admin/tenants/quiz-accuracy` — staff routes, rank
+   ops+ for writes (decision Q-H), audited in-transaction, listed in
+   `scripts/baselines/single-tenant-routes.allowlist`.
+6. **Storage.** New table `quiz_runs` by handover SQL only (`H002`, RLS like `H001`, applied locally
+   by `scripts/dev/localhost-up.sh`, production = CTO handover row); never under
+   `packages/db/migrations/` (CEO ruling 2026-10-18 "Tylko localhost, prod dla CTO").
+
+**Privacy check (to be confirmed by the compliance review of Q3):** pseudonymous only (hashed
+fingerprint `session_id`, random run uuid, answer indexes, closed-list archetype and trait ids,
+timings rounded to 100 ms and capped); no free text (`none_of_these` is an enum); no IP or user
+agent; written only under profiling consent (`consent-gate.ts` rule), suppressed on opt-out; covered
+by DSR erase/access/portability; retention equal to `quiz_completions`; ROPA/DPIA rows added by Q3.
+
+**Not changed:** the decision API request/response contract beyond the additive `traits` field; the
+canonical list of 18 archetype ids; `quiz_completions`.
+
+---
+
 ## RESOLVED — ESC-085: single tenant (app.estalara.com only) — multi-tenant functions, foreign-site onboarding/detection, `/dashboard`, registrations, demo sessions and Stripe removed; GO deferred, production = CTO handover; the lift definition D-J [FOLLOW-1319]
 
 **Filed by:** architect (transcribing the CEO's rulings of 2026-10-16/17; the PM's package 0.1 of

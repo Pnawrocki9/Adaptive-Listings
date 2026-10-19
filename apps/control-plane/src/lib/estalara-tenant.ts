@@ -2,11 +2,11 @@
  * The single Estalara tenant for the single-tenant admin (ESC-085, supersedes the
  * 2026-06-15 "pilot tenant" naming).
  *
- * Resolution order: `NEXT_PUBLIC_ESTALARA_TENANT_ID`, then the legacy
- * `NEXT_PUBLIC_PILOT_TENANT_ID` (ONE-release fallback, FOLLOW-1322 — remove next
- * release), then the baked production tenant. Localhost sets the first one to the
- * seeded tenant (`scripts/dev/localhost-up.sh`), because the production id does
- * not exist in a local database.
+ * Resolution order: `NEXT_PUBLIC_ESTALARA_TENANT_ID`, then the baked production tenant.
+ * Localhost sets the variable to the seeded tenant (`scripts/dev/localhost-up.sh`), because the
+ * production id does not exist in a local database. The legacy pilot-tenant variable's
+ * one-release fallback (FOLLOW-1322) was retired by FOLLOW-1335: the 2026-10-19 production check
+ * (ESC-085, R10 condition C2) found it absent from Vercel Production.
  *
  * FOLLOW-1332 adds the tenant's legal display identity and `isEstalaraTenant`, replacing
  * `lib/brand-identity.ts`.
@@ -23,10 +23,7 @@ function firstSet(...values: (string | undefined)[]): string {
 }
 
 /** The Estalara tenant id the admin landing and sidebar are scoped to. */
-export const ESTALARA_TENANT_ID = firstSet(
-  process.env.NEXT_PUBLIC_ESTALARA_TENANT_ID,
-  process.env.NEXT_PUBLIC_PILOT_TENANT_ID,
-);
+export const ESTALARA_TENANT_ID = firstSet(process.env.NEXT_PUBLIC_ESTALARA_TENANT_ID);
 
 /**
  * Whether `tenantId` is the Estalara tenant — the only tenant Adaptive Listings serves (ESC-085,

@@ -52,7 +52,8 @@ diagram of MASTER_DESIGN is the source).
 - **One tenant row.** `tenants` holds the Estalara tenant; its id is the constant
   `ESTALARA_TENANT_ID` (`apps/control-plane/src/lib/estalara-tenant.ts`, env
   `NEXT_PUBLIC_ESTALARA_TENANT_ID`; successor of `PILOT_TENANT_ID` / `NEXT_PUBLIC_PILOT_TENANT_ID`,
-  one release of fallback — plan Phase 1 C2). `TODO(K1)`: confirm the file and env name as merged.
+  whose one-release fallback was retired by FOLLOW-1335 — plan Phase 1 C2). `TODO(K1)`: confirm the
+  file and env name as merged.
 - **`tenant_id` stays everywhere internally.** Every event row, every RLS policy, every API key and
   every decision carries it. Nothing is re-keyed; there is simply one value. Do not "simplify" RLS
   by dropping the column — the policies are the only thing between a leaked service-role query and

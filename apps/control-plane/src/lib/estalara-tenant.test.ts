@@ -25,7 +25,9 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 const CANONICAL_ESTALARA_TENANT_ID = 'cbc51cfa-1056-40aa-b0a9-6e982b52b1de';
 
 describe('ESTALARA_TENANT_ID resolution (FOLLOW-1322)', () => {
-  const KEYS = ['NEXT_PUBLIC_ESTALARA_TENANT_ID', 'NEXT_PUBLIC_PILOT_TENANT_ID'] as const;
+  // The retired legacy variable is saved/cleared too, so the "ignored" case below is honest.
+  const LEGACY = 'NEXT_PUBLIC_PILOT_TENANT_ID';
+  const KEYS = ['NEXT_PUBLIC_ESTALARA_TENANT_ID', LEGACY] as const;
   const saved: Record<string, string | undefined> = {};
 
   beforeEach(() => {
@@ -53,13 +55,12 @@ describe('ESTALARA_TENANT_ID resolution (FOLLOW-1322)', () => {
 
   it('NEXT_PUBLIC_ESTALARA_TENANT_ID wins', async () => {
     process.env.NEXT_PUBLIC_ESTALARA_TENANT_ID = '00000000-0000-0000-0000-0000000000e2';
-    process.env.NEXT_PUBLIC_PILOT_TENANT_ID = '00000000-0000-0000-0000-0000000000aa';
     expect(await load()).toBe('00000000-0000-0000-0000-0000000000e2');
   });
 
-  it('falls back to the legacy NEXT_PUBLIC_PILOT_TENANT_ID', async () => {
-    process.env.NEXT_PUBLIC_PILOT_TENANT_ID = '00000000-0000-0000-0000-0000000000aa';
-    expect(await load()).toBe('00000000-0000-0000-0000-0000000000aa');
+  it('FOLLOW-1335: the retired legacy pilot-tenant variable is ignored (baked id wins)', async () => {
+    process.env[LEGACY] = '00000000-0000-0000-0000-0000000000aa';
+    expect(await load()).toBe(CANONICAL_ESTALARA_TENANT_ID);
   });
 
   it('treats an empty NEXT_PUBLIC_ESTALARA_TENANT_ID as unset', async () => {

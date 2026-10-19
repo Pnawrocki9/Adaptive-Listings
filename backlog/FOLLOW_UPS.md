@@ -56295,3 +56295,112 @@ AC:
       `node scripts/check-measured-premises.mjs` and the consent-sync gates unaffected.
 
 cross_ref: [FOLLOW-1331, FOLLOW-1325, FOLLOW-1348, K2c ledger finding 1]
+
+## FOLLOW-1351 — SDK: one chat-refresh chain at a time (single-flight chat refresh)
+
+source_retro: — (K3 forensic, `scratchpad/k3/forensic-ac8.md`) source_ticket: FOLLOW-1345
+recommended_agent: sdk-engineer (Opus) priority: P1 estimated_hours: 4 tag: product depends_on: []
+blocks: [] promoted_to_queue: true
+
+**Status: DONE — #1047 `434b2513`, 2026-10-19.** `scheduleChatRefresh()` reset the attempt counter
+and armed a new timer while an earlier `runChatRefresh()` was still awaiting `/api/adapt`; the
+resumed run re-armed its own retry without clearing the handle, so two chains ran in parallel, the
+latest-wins rule discarded the carrier's fold, and a buyer sending messages faster than ~15 s paid
+for duplicate concurrent `/api/adapt` calls. Fix: a generation counter captured by each run,
+early return when a newer message owns the chain, every reassignment of `chatRefreshTimer` clears
+the previous handle; vitest with fake timers and a held fetch pins "never two `/adapt` fetches in
+flight" and "the follow-up is drawn after the newest carrier's fold". Series 3× GREEN `[FRESH]`
+(README §5.31).
+
+cross_ref: [FOLLOW-1352, K3 ledger I1, README §5.31]
+
+## FOLLOW-1352 — harness: grade AC(8) hops 6 and 11 on the request sent after the fold
+
+source_retro: — (K3 forensic) source_ticket: FOLLOW-1345 recommended_agent: qa-engineer (Opus)
+priority: P1 estimated_hours: 3 tag: measurement depends_on: [] blocks: [] promoted_to_queue: true
+
+**Status: DONE — #1046 `4fa860ef`, 2026-10-19.** `differentiator-e2e.mjs` picked "the next request"
+by sequence number after the carrier, which can be a request issued before the carrier was answered
+(it then still carries the pre-fold confidence). Now "next" = the first `/api/adapt` call issued
+after the SDK's persisted state shows `chatPriorAppliedAt === stamp`, and the page stays open for
+`debounceMs + slackMs` after the fold so the real follow-up is captured. Residual (K3 ledger
+finding 5): the negative-control wait can still end with the neutral chain in flight — the count of
+neutral responses is loose (2–3); re-cut with AC(10) in Faza Q package Q6.
+
+cross_ref: [FOLLOW-1351, README §5.31, K3 ledger finding 5]
+
+## FOLLOW-1353 — Sentry receives drizzle query params on audit failures (staff routes)
+
+source_retro: — (M1 security review §7, K3 ledger finding 1) source_ticket: FOLLOW-1334
+recommended_agent: backend-engineer (Sonnet) priority: P2 estimated_hours: 3 tag: product
+depends_on: [] blocks: [] promoted_to_queue: true
+
+**What.** drizzle-orm 0.44 wraps query failures in `DrizzleQueryError` whose message is
+`Failed query: … params: …`, so `Sentry.captureException(err)` in the audit-failure branches of
+about nine staff routes (answers, quiz/config, admin/labels/[id], …) ships the audit params —
+staff UUID, FAQ free text, client IP and user agent — to Sentry. Sentry has no `beforeSend` by
+design (FOLLOW-811). Capture `err.cause ?? err` (the `PostgresError` without params) in those
+branches, keep the `staff_audit_error=true` tag, and add the sentence to DPIA §2.7.1. Also replace
+the `err.message` rendered on the staff listings page (`listings/data.ts`) with a generic message.
+
+AC:
+
+- [ ] No `Sentry.captureException` on a staff write path receives a `DrizzleQueryError` (a unit test
+      with a thrown `DrizzleQueryError` asserts the captured error has no `params:` in its message);
+      `observability-signals.test.ts` counts unchanged or amended in the same PR.
+- [ ] DPIA §2.7.1 names the audit-failure telemetry and what it excludes.
+
+cross_ref: [K3 ledger finding 1, FOLLOW-811, FOLLOW-1334]
+
+## FOLLOW-1354 — SDK `/api/adapt` fetch has no per-request timeout
+
+source_retro: — (K3 forensic, K3 ledger finding 2) source_ticket: FOLLOW-1351
+recommended_agent: sdk-engineer (Sonnet) priority: P2 estimated_hours: 3 tag: product
+depends_on: [FOLLOW-1351] blocks: [] promoted_to_queue: true
+
+**What.** `packages/sdk/src/core/adapt-loop.ts` passes only the lifetime `AbortSignal` to the
+`/api/adapt` fetch; a request that hangs holds the chat-refresh chain and the latest-wins fold for
+as long as the page lives. The K3 forensic measured a 1534 ms median on a slow dev control plane and
+the in-flight window is exactly what the FOLLOW-1351 race exploited. Add a bounded per-request
+timeout (`AbortSignal.any([lifetime, AbortSignal.timeout(N)])` or the equivalent for the SDK's
+targets) with a small retry budget, counted in the existing retry path; keep the bundle under
+43,136 B.
+
+AC:
+
+- [ ] A held fetch is aborted after N ms and the chain continues (vitest, fake timers); no second
+      request is in flight while the first is pending.
+- [ ] `build:check` passes; the FOLLOW-819 series stays GREEN.
+
+cross_ref: [FOLLOW-1351, K3 ledger finding 2]
+
+## AMENDMENT to FOLLOW-1307 — 2026-10-19 by FOLLOW-1345: auth residue from the M2 security review
+
+**AMENDMENT (2026-10-19).** Add to the Phase 6 S1 scope (pre-existing, not in the M2 diff; M2
+review F1/F3/LOW): (1) `getAuthClaims` / `verifyAndDecodeJwtPayload` never enforce `exp`/`nbf`
+(`packages/auth/src/__tests__/middleware.test.ts` pins "expired token → returns claims"), so a
+leaked staff access token stays valid on every API route until the secret rotates; enforce `exp`
+and fix the two docblocks that claim otherwise (`admin/labels/[id]/route.ts`,
+`admin/generation-model/route.ts`); (2) `tenants/[id]/lia` POST and `lia/[recordId]` DELETE have no
+rank gate and no `staff_audit_log` row (ADR-0018 #3) and LIA POST skips `tenantExists`; gate both on
+`canWrite` and audit in-transaction; (3) `POST /api/tenants` still creates tenants with
+`ADMIN_API_SECRET` (`x-admin-secret`), contradicting the read-only-secret model and the one-tenant
+ruling — remove or gate superadmin. Source: `docs/checkpoints/K3.md` finding 3.
+
+## AMENDMENT to FOLLOW-1233 and FOLLOW-1246 — 2026-10-19 by FOLLOW-1345: bring-up hygiene before a series
+
+**AMENDMENT (2026-10-19).** P1 within Phase 4 P1/P4: (1) `localhost-up.sh` waits for the chat shim
+(`:8090/health`) and ingest (`:8787/health`) before it prints "Run the harness" — a cold shim made
+run 1 RED at K1, K2b and K3 (first series); (2) `localhost-down.sh` kills the orphan `workerd`
+(by cmdline under this repo's `node_modules`, never by name) which survives every down today;
+(3) the local ClickHouse profile drift (`date_time_input_format=best_effort` persisted in
+`estalara_ch_local`) fails the ingest integration suite's negative control locally — reset it in
+the bring-up or document the container recreate. Source: `docs/checkpoints/K3.md` finding 4,
+K2c ledger findings 2–3.
+
+## AMENDMENT to FOLLOW-1350 — 2026-10-19 by FOLLOW-1345: audit payload may contain FAQ free text
+
+**AMENDMENT (2026-10-19).** Add to the ROPA/DPIA pass: the `staff_audit_log` payload of the FAQ
+answers routes keeps the full answer text by design (M1 security review §4, kept so a staff edit is
+reviewable); the row for `staff_audit_log` must say "may contain listing FAQ free text (possibly
+third-party contact details)". Source: `docs/checkpoints/K3.md` finding 8.

@@ -1,6 +1,25 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 179 (2026-10-18) — **The CEO approved the closing plan (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, 2026-10-17): Adaptive Listings is SINGLE-TENANT (app.estalara.com only) — ESC-085 reverses ADR-0018 §Decision 0 (FOLLOW-1319). FOLLOW-820 GO stays DEFERRED; the definition of done is K7, then the CTO handover package (`docs/handover/CTO_HANDOVER.md`). The D8 moratorium on new P2/P3 stubs and new Rules is LIFTED (ESC-085). Phases and checkpoints: Phase 0 housekeeping (K0 baseline) → Phase 1 C1 ∥ C2 (K1) → Phase 2 removals R1..R11 (K2a/K2b/K2c) → Phase 3 one backoffice M1..M5 (K3, CEO review 1) → Phase 4 buyer path P1..P7 (K4a/K4b) → Phase 5 Estalara app X1..X4 (K5, CEO review 2) → Phase 6 security S1..S4 (K6) → Phase 7 proof and handover (K7, CEO review 3). Tickets: FOLLOW-1319 (docs, IN_PROGRESS), 1320 (this bookkeeping + N1 gate), 1321/1322 (C1/C2), 1323..1333 (R1..R11), 1334..1338 (M1..M5), 1339..1342 (X1..X4), 1343 (N2), 1344 (N3), 1345 (AC(1b)/AC(9) + checkpoint ledger), 1346 (Phase 7). Reused: 1246, 1317, 1318, 1233, 1168, 1311, 1316 (Phase 4 P1..P7), 1307..1310 (Phase 6 S1..S4, re-scoped from post-GO). NEXT = K0 baseline → Phase 1 C1 ∥ C2. Next free: FOLLOW-1351, RETRO-368, ESC-086.**
+## ▶️ START HERE — session 180 (2026-10-19) — **Checkpoint K3 GREEN at `main` `434b2513` (`docs/checkpoints/K3.md`, README §5.31, tag `k3-green` on this ledger's merge): Phase 3 M1 #1042, M2 #1044, M3 #1041, M5 #1043, N2 full #1045 DONE; N1 `--final` reads 0. A RED pair at `3952ac29` was bisected by a read-only forensic (not a Phase 3 regression) → FOLLOW-1352 #1046 (harness predicate) + FOLLOW-1351 #1047 (SDK single-flight chat refresh). **CEO ruling 2026-10-19: Faza Q — the quiz must identify one archetype with ≥ 90 % accuracy (buyer self-confirmation as ground truth, EN + PL mandatory, buyer-side language switcher, 12 results + neutral + traits) and the backoffice must manage the quiz end to end — is INSERTED between K3 and Phase 4.** Plan approved in plan mode (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, copied to `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` by the Q0 PR); packages Q0 docs → Q1 shared → Q2 SDK ∥ Q3 recording ∥ Q7 editor → Q4 fold → Q5 traits → Q6 harness (AC(10), TALLY 8) → Q8 report; checkpoints KQ1 (localhost 3× GREEN 8/8), KQ2 (CEO walkthrough — absorbs the K3 'moment CEO'), KQ3 (production, CTO: ≥ 400 decided runs, pre-registered Wilson bound). Phase 4 (P1–P7) follows KQ2. New stubs: FOLLOW-1353 (Sentry drizzle params, P2), FOLLOW-1354 (SDK adapt fetch timeout, P2); amendments 1307, 1233/1246, 1350. Retro batch owed (weekly): #1042, #1043, #1044, #1047. Next free: FOLLOW-1355 (Q0), RETRO-368, ESC-086.**
+
+### Dispatch record (session 180)
+
+- **FOLLOW-1345** — status: IN_PROGRESS # K3 ledger = this PR (`k3-green`). Remaining: AC(1b)/AC(9)
+  at K4a/K4b; KQ1/KQ2 ledgers under Faza Q.
+- **FOLLOW-1351** — status: DONE # #1047 `434b2513`, 2026-10-19. SDK: one chat-refresh chain at a
+  time (generation counter, timer handle cleared on every reassignment); series 3× GREEN `[FRESH]`
+  (README §5.31).
+- **FOLLOW-1352** — status: DONE # #1046 `4fa860ef`, 2026-10-19. Harness: AC(8) hops 6 and 11 graded
+  on the request sent after the fold (`chatPriorAppliedAt === stamp`), page kept open for the
+  follow-up.
+- **FOLLOW-1353** — status: BACKLOG # P2 control-plane. Audit-failure `Sentry.captureException(err)`
+  sends drizzle query params (staff UUID, FAQ text, IP/UA) — capture `err.cause ?? err`; DPIA §2.7.1
+  note. K3 ledger finding 1.
+- **FOLLOW-1354** — status: BACKLOG # P2 sdk. `/api/adapt` fetch has no per-request timeout (only
+  the lifetime signal) — bounded timeout + retry budget. K3 ledger finding 2.
+- Faza Q tickets (FOLLOW-1355…) are allocated by the Q0 PR.
+
+## ▶️ Previous banner — session 179 (2026-10-18) — **The CEO approved the closing plan (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, 2026-10-17): Adaptive Listings is SINGLE-TENANT (app.estalara.com only) — ESC-085 reverses ADR-0018 §Decision 0 (FOLLOW-1319). FOLLOW-820 GO stays DEFERRED; the definition of done is K7, then the CTO handover package (`docs/handover/CTO_HANDOVER.md`). The D8 moratorium on new P2/P3 stubs and new Rules is LIFTED (ESC-085). Phases and checkpoints: Phase 0 housekeeping (K0 baseline) → Phase 1 C1 ∥ C2 (K1) → Phase 2 removals R1..R11 (K2a/K2b/K2c) → Phase 3 one backoffice M1..M5 (K3, CEO review 1) → Phase 4 buyer path P1..P7 (K4a/K4b) → Phase 5 Estalara app X1..X4 (K5, CEO review 2) → Phase 6 security S1..S4 (K6) → Phase 7 proof and handover (K7, CEO review 3). Tickets: FOLLOW-1319 (docs, IN_PROGRESS), 1320 (this bookkeeping + N1 gate), 1321/1322 (C1/C2), 1323..1333 (R1..R11), 1334..1338 (M1..M5), 1339..1342 (X1..X4), 1343 (N2), 1344 (N3), 1345 (AC(1b)/AC(9) + checkpoint ledger), 1346 (Phase 7). Reused: 1246, 1317, 1318, 1233, 1168, 1311, 1316 (Phase 4 P1..P7), 1307..1310 (Phase 6 S1..S4, re-scoped from post-GO). NEXT = K0 baseline → Phase 1 C1 ∥ C2. Next free: FOLLOW-1351, RETRO-368, ESC-086.**
 
 ## ▶️ Previous banner — session 178 (2026-10-16) — **CEO ruling 2026-10-16: the FOLLOW-820 GO/NO-GO ruling is DEFERRED. The project first completes ALL development and testing on localhost; production deployment then happens as a handover package to the CTO (deployment guide plus accesses), not as PM-run production steps. The same day the CEO reviewed the localhost demo (six findings); the demo substrate moved off the harness fixture page onto the real Estalara app (local-only repo `~/Projects/Estalara-gitlab-2026-08-17`, SDK to the real control plane :3000, documented in `ADAPTIVE_LISTINGS_LOCAL.md` of that repo). New tickets: FOLLOW-1316 (cross-visit profile persistence, P1, CEO-approved, NEXT), FOLLOW-1317 (grounding loses price and street address on the real backend, P1), FOLLOW-1318 (description route leaks playbook text on a cache miss, P2). Next free: FOLLOW-1319, RETRO-368, ESC-085.**
 
@@ -43,17 +62,23 @@ Phase and checkpoint per the approved plan; one heavy item at a time (RAM).
   constants; compliance review APPROVE WITH CONDITIONS, C1–C4 closed under ESC-085). K2c.
 - **FOLLOW-1333** — status: DONE # #1039 `1de62758`, 2026-10-18. Phase 2 R11 (one constant origin
   list, FOLLOW-941 closed; N1 127 → 92). K2c series 3× GREEN (README §5.30).
-- **FOLLOW-1334** — status: BACKLOG # Phase 3 M1 (port unique dashboard surfaces). K3.
-- **FOLLOW-1335** — status: BACKLOG # Phase 3 M2 (remove agency roles and `/dashboard`). K3.
-- **FOLLOW-1336** — status: BACKLOG # Phase 3 M3 (not-found, error, password reset). K3.
+- **FOLLOW-1334** — status: DONE # #1042 `304cd177`, 2026-10-19. Phase 3 M1 (pilot view, FAQ
+  answers, label calibration under `/admin/tenants/[id]`); security review RC-1 applied. K3 GREEN.
+- **FOLLOW-1335** — status: DONE # #1044 `d4680ca4`, 2026-10-19. Phase 3 M2 (agency roles and
+  `/dashboard` removed, staff-only claims; N1 `--final` 92 → 0; handover row 16). K3 GREEN.
+- **FOLLOW-1336** — status: DONE # #1041 `49ac9a21`, 2026-10-19. Phase 3 M3 (not-found, error
+  boundaries, password recovery; Supabase Auth settings → handover rows 11/17). K3 GREEN.
 - **FOLLOW-1337** — status: DONE # operational, 2026-10-18 (K2c ledger). Phase 3 M4: clean reinstall
   → one React copy → `NODE_ENV=production next build` exit 0 at `84bf3638`.
-- **FOLLOW-1338** — status: BACKLOG # Phase 3 M5 (lift report, daily snapshot, CSV). K3/K5.
+- **FOLLOW-1338** — status: DONE # #1043 `691e3f40`, 2026-10-19. Phase 3 M5 (lift report D-J
+  breakdown, daily snapshot cron + `H001` handover SQL, CSV export). K3 GREEN; K5 re-checks the
+  report.
 - **FOLLOW-1339** — status: BACKLOG # Phase 5 X1 (signed `live.signup` and `inquiry.completed`). K5.
 - **FOLLOW-1340** — status: BACKLOG # Phase 5 X2 (`listing-updated` webhook). K5.
 - **FOLLOW-1341** — status: BACKLOG # Phase 5 X3 (`cta`/`feature` slot hooks). K5.
 - **FOLLOW-1342** — status: BACKLOG # Phase 5 X4 (`data-debug` from env). K5.
-- **FOLLOW-1343** — status: DONE # #1021 `ca39406d`, 2026-10-18 (N2 v0). Instrument N2 (nav
+- **FOLLOW-1343** — status: DONE # #1021 `ca39406d`, 2026-10-18 (N2 v0) + #1045 `3952ac29`,
+  2026-10-19 (page tests for every remaining `/admin` page = N2 full). Instrument N2 (nav
   reachability + Playwright admin-smoke). K3 full = the authenticated rows (decision in M3).
 - **FOLLOW-1344** — status: BACKLOG # Instrument N3 (`real-app-acceptance.mjs`). K4b first use, K5
   full.

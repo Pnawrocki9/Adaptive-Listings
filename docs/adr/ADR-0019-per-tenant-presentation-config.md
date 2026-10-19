@@ -10,6 +10,24 @@ real-table wiring), FOLLOW-627 / PR #616 (`data_source` provenance + 404-on-0-ro
 / §H.9 (opt-out scope), Rule H, Rule K.2, Rule L, Rule U,
 `docs/DECISION-BRIEF-FACADES-622-623-2026-07-24.md`.
 
+> **Amended in part — 2026-10-19 (CEO ruling of 2026-10-19, plan "Faza Q",
+> `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md`; MASTER_DESIGN 4.28 §E.4 v3.0; ESC-086;
+> FOLLOW-1355/1356).** An accepted ADR is annotated, never edited. What this ruling changes in the
+> text below: (1) the **persistence contract of D5 is no longer byte-for-byte** — `applyQuizLeaf`
+> gains a third argument (`evidence: 'completed' | 'confirmed' | 'corrected'`, masses 0.72 / 0.90
+> instead of the 0.85 pin; package Q4) and the completion flow gains a confirmation step whose
+> outcome is recorded in the new `quiz_runs` table (handover SQL H002, package Q3);
+> `quiz_completions` and its ping stay unchanged; (2) the served quiz definition slice is
+> **additive**: `kind: 'single' | 'multi'` on questions, `traits` on answers, a `confirm` block,
+> `definition_version` and `definition_hash` (package Q1/Q3); the serve-time schema stays lenient,
+> authoring rules live in `quiz-lint.ts`; (3) the **default served to an unconfigured tenant is no
+> longer byte-identical to the SDK's bundled tree**: the control plane serves
+> `DEFAULT_QUIZ_DEFINITION_V2` (EN + PL, 12 results + neutral, both languages mandatory per the
+> CEO's ruling), while the bundled fallback stays EN-only and is used only when public-config does
+> not answer (D4 as applied to the quiz slice); (4) **D6's ≤ 42 KB budget was superseded on
+> 2026-09-21 by ESC-080 (43,136 B)** and is the budget every Faza Q package is measured against.
+> D1–D3 and the rest of D4 are unaffected.
+
 ---
 
 ## Context

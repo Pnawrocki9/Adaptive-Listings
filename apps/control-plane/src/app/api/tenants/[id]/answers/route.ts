@@ -2,10 +2,12 @@
  * POST /api/tenants/:id/answers — create an FAQ answer for a listing.
  * GET  /api/tenants/:id/answers?listing_id=X — list answers (without embeddings).
  *
- * Auth: Bearer JWT or Supabase SSR browser session via `getSessionAuthClaims()`
- * (apps/control-plane/src/lib/session-auth.ts, FOLLOW-454). The tenant in the
- * resolved claims must match the `:id` param — 401 for missing/invalid session,
- * 403 for mismatched tenant.
+ * Auth (ADR-0018 §2, FOLLOW-1334): `resolveTenantAccess` with `allowStaffOverride` via
+ * `resolveAnswersAccess` (`lib/answers-access.ts`). Agency path (unchanged): Bearer JWT or Supabase
+ * SSR browser session; the tenant in the claims must match the `:id` param — 401 for missing/invalid
+ * session, 403 for mismatched tenant. Staff path: an Estalara staff session may act on any
+ * `:id` that exists in `tenants` (404 otherwise); a staff POST needs `estalara:ops`+ (403 below) and
+ * commits the insert and its `staff_audit_log` row in ONE transaction (ADR-0018 §3a).
  *
  * POST body:
  *   listing_id  — string, required
@@ -20,11 +22,12 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
 
-import { createAdminClient, answers } from '@estalara/db';
-import { getSessionAuthClaims } from '@/lib/session-auth';
+import { createAdminClient, answers, staffAuditLog } from '@estalara/db';
+import { requestIp, resolveAnswersAccess } from '@/lib/answers-access';
 import { embedText } from '@/lib/openai-client';
 
 // ---------------------------------------------------------------------------
@@ -38,28 +41,6 @@ const CreateAnswerSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// Auth helper
-// ---------------------------------------------------------------------------
-
-/**
- * Validate the Bearer JWT and assert the caller's tenant matches `tenantId`.
- * Returns the claims on success, or a NextResponse with the appropriate error.
- */
-async function validateTenantAuth(
-  req: NextRequest,
-  tenantId: string,
-): Promise<{ ok: true } | NextResponse> {
-  const claims = await getSessionAuthClaims(req);
-  if (!claims) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  if (!claims.tenant_id || claims.tenant_id !== tenantId) {
-    return NextResponse.json({ error: 'Forbidden: tenant mismatch' }, { status: 403 });
-  }
-  return { ok: true };
-}
-
-// ---------------------------------------------------------------------------
 // POST — create answer
 // ---------------------------------------------------------------------------
 
@@ -67,10 +48,12 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
-  const { id: tenantId } = await params;
+  const { id: pathTenantId } = await params;
 
-  const authResult = await validateTenantAuth(req, tenantId);
-  if (authResult instanceof NextResponse) return authResult;
+  const auth = await resolveAnswersAccess(req, pathTenantId, 'write');
+  if (!auth.ok) return auth.response;
+  const { access } = auth;
+  const tenantId = access.tenantId;
 
   let body: unknown;
   try {
@@ -101,6 +84,57 @@ export async function POST(
     );
   }
 
+  const returningColumns = {
+    id: answers.id,
+    tenantId: answers.tenantId,
+    listingId: answers.listingId,
+    question: answers.question,
+    answer: answers.answer,
+    createdAt: answers.createdAt,
+    updatedAt: answers.updatedAt,
+  };
+
+  if (access.via === 'staff') {
+    // ── Atomic staff write (ADR-0018 §3a / FOLLOW-605 reference impl) ─────────────────────────
+    // The insert and its staff_audit_log row commit-or-roll-back TOGETHER, so an answer can never
+    // outlive a missing audit row. Fenced on access.tenantId (validated against `tenants`).
+    try {
+      const db = createAdminClient();
+      const row = await db.transaction(async (tx) => {
+        const inserted = await tx
+          .insert(answers)
+          .values({ tenantId, listingId: listing_id, question, answer, questionEmbedding })
+          .returning(returningColumns);
+        const created = inserted[0];
+        if (!created) throw new Error('answers insert returned no row');
+        await tx.insert(staffAuditLog).values({
+          adminUserId: access.staff.sub,
+          action: 'listing_answer.create',
+          targetTenantId: tenantId,
+          payload: { answer_id: created.id, listing_id, question, answer },
+          ipAddress: requestIp(req),
+          userAgent: req.headers.get('user-agent'),
+        });
+        return created;
+      });
+      return NextResponse.json(row, { status: 201 });
+    } catch (err) {
+      Sentry.captureException(err, {
+        tags: { route: 'tenants/answers', staff_audit_error: 'true' },
+        extra: { tenant_id: tenantId, admin_user_id: access.staff.sub },
+      });
+      return NextResponse.json(
+        {
+          error:
+            'The answer could not be recorded atomically with its staff audit row; ' +
+            'nothing was saved. Retry the action.',
+          code: 'audit_write_failed',
+        },
+        { status: 500 },
+      );
+    }
+  }
+
   try {
     const db = createAdminClient();
     const inserted = await db
@@ -112,15 +146,7 @@ export async function POST(
         answer,
         questionEmbedding,
       })
-      .returning({
-        id: answers.id,
-        tenantId: answers.tenantId,
-        listingId: answers.listingId,
-        question: answers.question,
-        answer: answers.answer,
-        createdAt: answers.createdAt,
-        updatedAt: answers.updatedAt,
-      });
+      .returning(returningColumns);
 
     const row = inserted[0];
     if (!row) {
@@ -142,10 +168,11 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
-  const { id: tenantId } = await params;
+  const { id: pathTenantId } = await params;
 
-  const authResult = await validateTenantAuth(req, tenantId);
-  if (authResult instanceof NextResponse) return authResult;
+  const auth = await resolveAnswersAccess(req, pathTenantId, 'read');
+  if (!auth.ok) return auth.response;
+  const tenantId = auth.access.tenantId;
 
   const listingId = req.nextUrl.searchParams.get('listing_id');
   if (!listingId) {

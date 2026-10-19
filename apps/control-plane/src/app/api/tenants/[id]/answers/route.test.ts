@@ -7,6 +7,8 @@
 import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type * as SessionAuthModule from '@/lib/session-auth';
+
 // ---------------------------------------------------------------------------
 // Mocks — must be declared before dynamic imports
 // ---------------------------------------------------------------------------
@@ -21,6 +23,8 @@ vi.mock('@/lib/openai-client', () => ({
 
 vi.mock('@estalara/db', () => ({
   createAdminClient: vi.fn(),
+  tenants: {},
+  staffAuditLog: { _tag: 'staff_audit_log' },
   answers: {
     id: 'id',
     tenantId: 'tenant_id',
@@ -33,8 +37,20 @@ vi.mock('@estalara/db', () => ({
   },
 }));
 
-vi.mock('@estalara/auth', () => ({
-  getAuthClaims: vi.fn(),
+// Auth (ADR-0018 §2, FOLLOW-1334): the routes delegate agency + staff resolution to
+// `resolveTenantAccess` (via `lib/answers-access.ts`), whose own wiring is exercised by
+// `src/lib/__tests__/resolve-tenant-access.test.ts`. Only `resolveTenantAccess` is a spy here;
+// `AccessError` stays real so the legacy `{ error }` mapping runs for real.
+vi.mock('@/lib/session-auth', async (importOriginal) => {
+  const actual = await importOriginal<typeof SessionAuthModule>();
+  return { ...actual, resolveTenantAccess: vi.fn() };
+});
+
+const mockCaptureException = vi.hoisted(() => vi.fn());
+
+vi.mock('@sentry/nextjs', () => ({
+  captureException: mockCaptureException,
+  captureMessage: vi.fn(),
 }));
 
 vi.mock('drizzle-orm', () => ({
@@ -42,8 +58,10 @@ vi.mock('drizzle-orm', () => ({
   and: vi.fn((...args: unknown[]) => ({ args, _tag: 'and' })),
 }));
 
-import { createAdminClient } from '@estalara/db';
-import { getAuthClaims } from '@estalara/auth';
+import { createAdminClient, staffAuditLog } from '@estalara/db';
+import { resolveTenantAccess, AccessError, type TenantAccess } from '@/lib/session-auth';
+
+const mockResolve = vi.mocked(resolveTenantAccess);
 
 // Dynamic import after mocks
 const { POST, GET } = await import('./route');
@@ -53,26 +71,48 @@ const { POST, GET } = await import('./route');
 // ---------------------------------------------------------------------------
 
 const TENANT_A = '11111111-1111-1111-1111-111111111111';
-const TENANT_B = '22222222-2222-2222-2222-222222222222';
 const LISTING_ID = 'listing-001';
 
-const MOCK_CLAIMS_A = {
-  sub: 'user-a',
-  email: 'a@test.com',
-  tenant_id: TENANT_A,
-  agency_role: 'agency:viewer' as const,
-  estalara_staff: false as const,
-  mfa_verified: true,
-};
+function agencyAccess(tenantId: string): TenantAccess {
+  return {
+    via: 'agency',
+    tenantId,
+    claims: {
+      sub: 'user-a',
+      email: 'a@test.com',
+      tenant_id: tenantId,
+      agency_role: 'agency:viewer',
+      estalara_staff: false,
+      mfa_verified: true,
+    },
+    rawToken: 'agency-jwt',
+  };
+}
 
-const MOCK_CLAIMS_B = {
-  sub: 'user-b',
-  email: 'b@test.com',
-  tenant_id: TENANT_B,
-  agency_role: 'agency:viewer' as const,
-  estalara_staff: false as const,
-  mfa_verified: true,
-};
+/** A resolved Estalara-staff access acting on an explicit, validated tenant. */
+function staffAccess(tenantId: string, canWrite = true): TenantAccess {
+  const role = canWrite ? 'estalara:ops' : 'estalara:readonly';
+  return {
+    via: 'staff',
+    tenantId,
+    staff: {
+      sub: 'staff-uuid',
+      email: 'staff@estalara.com',
+      tenant_id: null,
+      estalara_staff: true,
+      estalara_role: role,
+      mfa_verified: true,
+    },
+    role,
+    canWrite,
+    isSuperadmin: false,
+  };
+}
+
+const FOREIGN_TENANT_403 = new AccessError(
+  403,
+  'Access denied: agency session cannot act on a foreign tenant',
+);
 
 const MOCK_ANSWER_ROW = {
   id: 'answer-uuid-001',
@@ -138,7 +178,7 @@ beforeEach(() => {
 
 describe('POST /api/tenants/:id/answers', () => {
   it('returns 201 and created row on valid body', async () => {
-    vi.mocked(getAuthClaims).mockResolvedValue(MOCK_CLAIMS_A);
+    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
     vi.mocked(createAdminClient).mockReturnValue(
       makeDbMock({}) as unknown as ReturnType<typeof createAdminClient>,
     );
@@ -159,7 +199,7 @@ describe('POST /api/tenants/:id/answers', () => {
   });
 
   it('returns 401 when no auth token', async () => {
-    vi.mocked(getAuthClaims).mockResolvedValue(null);
+    mockResolve.mockRejectedValue(new AccessError(401, 'Unauthorized: no tenant access'));
 
     const req = makePostRequest(TENANT_A, {
       listing_id: LISTING_ID,
@@ -172,7 +212,7 @@ describe('POST /api/tenants/:id/answers', () => {
   });
 
   it('returns 403 when tenant in JWT does not match URL param', async () => {
-    vi.mocked(getAuthClaims).mockResolvedValue(MOCK_CLAIMS_B); // tenant B
+    mockResolve.mockRejectedValue(FOREIGN_TENANT_403); // tenant B
 
     const req = makePostRequest(TENANT_A, {
       // posting to tenant A's endpoint
@@ -187,7 +227,7 @@ describe('POST /api/tenants/:id/answers', () => {
   });
 
   it('returns 400 on invalid body (missing listing_id)', async () => {
-    vi.mocked(getAuthClaims).mockResolvedValue(MOCK_CLAIMS_A);
+    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
 
     const req = makePostRequest(TENANT_A, { question: 'Q?', answer: 'A.' });
 
@@ -196,7 +236,7 @@ describe('POST /api/tenants/:id/answers', () => {
   });
 
   it('returns 503 when embedding call fails', async () => {
-    vi.mocked(getAuthClaims).mockResolvedValue(MOCK_CLAIMS_A);
+    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
     mockEmbedText.mockRejectedValueOnce(new Error('OpenAI rate limit'));
 
     const req = makePostRequest(TENANT_A, {
@@ -212,7 +252,7 @@ describe('POST /api/tenants/:id/answers', () => {
 
 describe('GET /api/tenants/:id/answers', () => {
   it('returns 200 and array of rows (without embedding)', async () => {
-    vi.mocked(getAuthClaims).mockResolvedValue(MOCK_CLAIMS_A);
+    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
     vi.mocked(createAdminClient).mockReturnValue(
       makeDbMock({ selectResult: [MOCK_ANSWER_ROW] }) as unknown as ReturnType<
         typeof createAdminClient
@@ -232,7 +272,7 @@ describe('GET /api/tenants/:id/answers', () => {
   });
 
   it('returns 400 when listing_id query param is missing', async () => {
-    vi.mocked(getAuthClaims).mockResolvedValue(MOCK_CLAIMS_A);
+    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
 
     const req = new NextRequest(`http://localhost/api/tenants/${TENANT_A}/answers`, {
       method: 'GET',
@@ -244,10 +284,172 @@ describe('GET /api/tenants/:id/answers', () => {
   });
 
   it('returns 403 when tenant B tries to access tenant A answers', async () => {
-    vi.mocked(getAuthClaims).mockResolvedValue(MOCK_CLAIMS_B);
+    mockResolve.mockRejectedValue(FOREIGN_TENANT_403);
 
     const req = makeGetRequest(TENANT_A, LISTING_ID); // tenant A's endpoint
     const res = await GET(req, { params: Promise.resolve({ id: TENANT_A }) });
     expect(res.status).toBe(403);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Staff override (ADR-0018, FOLLOW-1334)
+// ---------------------------------------------------------------------------
+
+/** A db whose `transaction` hands the callback a tx with answers + audit insert spies. */
+function makeStaffDb(opts: { auditFails?: boolean } = {}) {
+  const auditValues = vi
+    .fn()
+    .mockImplementation(() =>
+      opts.auditFails ? Promise.reject(new Error('audit down')) : Promise.resolve(),
+    );
+  const answerReturning = vi.fn().mockResolvedValue([MOCK_ANSWER_ROW]);
+  const answerValues = vi.fn().mockReturnValue({ returning: answerReturning });
+  const txInsert = vi
+    .fn()
+    .mockImplementation((table: unknown) =>
+      table === staffAuditLog ? { values: auditValues } : { values: answerValues },
+    );
+  const transaction = vi.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
+    cb({ insert: txInsert }),
+  );
+  const select = vi.fn().mockReturnValue({
+    from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([MOCK_ANSWER_ROW]) }),
+  });
+  const outerInsert = vi.fn();
+  return {
+    db: { transaction, select, insert: outerInsert },
+    auditValues,
+    answerValues,
+    outerInsert,
+  };
+}
+
+describe('POST /api/tenants/:id/answers — staff override', () => {
+  const body = { listing_id: LISTING_ID, question: 'What is the yield?', answer: '6.5%' };
+
+  it('staff ops → 201; the insert and its staff_audit_log row share ONE transaction', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    const { db, auditValues, answerValues, outerInsert } = makeStaffDb();
+    vi.mocked(createAdminClient).mockReturnValue(
+      db as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    const res = await POST(makePostRequest(TENANT_A, body), {
+      params: Promise.resolve({ id: TENANT_A }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(db.transaction).toHaveBeenCalledOnce();
+    expect(outerInsert).not.toHaveBeenCalled();
+    expect(answerValues).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: TENANT_A, listingId: LISTING_ID }),
+    );
+    expect(auditValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        adminUserId: 'staff-uuid',
+        action: 'listing_answer.create',
+        targetTenantId: TENANT_A,
+        payload: expect.objectContaining({ listing_id: LISTING_ID, answer: '6.5%' }),
+      }),
+    );
+    expect(mockResolve).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ allowStaffOverride: true, tenantId: TENANT_A }),
+    );
+  });
+
+  it('staff readonly → 403 before any embedding call or write', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A, false));
+    const { db } = makeStaffDb();
+    vi.mocked(createAdminClient).mockReturnValue(
+      db as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    const res = await POST(makePostRequest(TENANT_A, body), {
+      params: Promise.resolve({ id: TENANT_A }),
+    });
+
+    expect(res.status).toBe(403);
+    expect(mockEmbedText).not.toHaveBeenCalled();
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it('staff + unknown tenant → 404 (resolve throws AccessError(404))', async () => {
+    mockResolve.mockRejectedValue(new AccessError(404, 'Unknown tenant'));
+
+    const res = await POST(makePostRequest(TENANT_A, body), {
+      params: Promise.resolve({ id: TENANT_A }),
+    });
+
+    expect(res.status).toBe(404);
+    expect(mockEmbedText).not.toHaveBeenCalled();
+  });
+
+  it('audit insert fails → 500 audit_write_failed, Sentry capture, nothing returned as created (K.2)', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    const { db } = makeStaffDb({ auditFails: true });
+    // A real transaction rolls the answer insert back when the audit insert throws; the route must
+    // surface that as an error, never a 201.
+    vi.mocked(createAdminClient).mockReturnValue(
+      db as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    const res = await POST(makePostRequest(TENANT_A, body), {
+      params: Promise.resolve({ id: TENANT_A }),
+    });
+
+    expect(res.status).toBe(500);
+    const json = await parseBody<{ code: string }>(res);
+    expect(json.code).toBe('audit_write_failed');
+    expect(mockCaptureException).toHaveBeenCalledOnce();
+  });
+
+  it('agency path stays un-audited: plain insert, no transaction', async () => {
+    mockResolve.mockResolvedValue(agencyAccess(TENANT_A));
+    const dbMock = makeDbMock({});
+    const withTx = { ...dbMock, transaction: vi.fn() };
+    vi.mocked(createAdminClient).mockReturnValue(
+      withTx as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    const res = await POST(makePostRequest(TENANT_A, body), {
+      params: Promise.resolve({ id: TENANT_A }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(withTx.transaction).not.toHaveBeenCalled();
+    expect(dbMock.insert).toHaveBeenCalledOnce();
+  });
+});
+
+describe('GET /api/tenants/:id/answers — staff override', () => {
+  it('staff readonly may read → 200 fenced to the path tenant', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A, false));
+    const { db } = makeStaffDb();
+    vi.mocked(createAdminClient).mockReturnValue(
+      db as unknown as ReturnType<typeof createAdminClient>,
+    );
+
+    const res = await GET(makeGetRequest(TENANT_A, LISTING_ID), {
+      params: Promise.resolve({ id: TENANT_A }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockResolve).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ allowStaffOverride: true, tenantId: TENANT_A }),
+    );
+  });
+
+  it('no session → 401 with the legacy { error } body', async () => {
+    mockResolve.mockRejectedValue(new AccessError(401, 'Unauthorized: no tenant access'));
+
+    const res = await GET(makeGetRequest(TENANT_A, LISTING_ID), {
+      params: Promise.resolve({ id: TENANT_A }),
+    });
+
+    expect(res.status).toBe(401);
+    expect(await parseBody<{ error: string }>(res)).toEqual({ error: 'Unauthorized' });
   });
 });

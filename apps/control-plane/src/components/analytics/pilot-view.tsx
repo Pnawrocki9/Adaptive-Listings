@@ -20,9 +20,13 @@
  *      (TICKET-PILOT-003)
  *
  * Data sources:
- *   GET /api/dashboard/analytics/lift?window_days=<7|14|30>  (panels 1, 3, 4)
- *   GET /api/pilot/inquiry-starts?window_days=<7|14|30>  (panel 2)
+ *   GET /api/dashboard/analytics/lift?window_days=<7|14|30|90>  (panels 1, 3, 4)
+ *   GET /api/pilot/inquiry-starts?window_days=<7|14|30|90>  (panel 2)
  * A shared window selector controls both endpoints simultaneously.
+ *
+ * FOLLOW-1338 (staff, i.e. with a `tenantId`): the summary panel splits the combined conversion into
+ * its two events per arm (LIVE signup, contact with the selling agent — ruling D-J); a "Download CSV"
+ * link fetches `lift/export` for the selected window; a History panel lists the daily snapshots.
  *
  * ADR-0018 §1 (FOLLOW-594/FOLLOW-1334): like `AnalyticsView`, the view takes `tenantId` as a PROP.
  * `/dashboard/analytics` (agency) renders it without one — the URLs are byte-identical to what the
@@ -42,6 +46,7 @@ import { useEffect, useState } from 'react';
 // interface drift (the root cause tracked by FOLLOW-122).
 
 import type { LiftResponse } from '@/app/api/dashboard/analytics/lift/route-helpers';
+import { LiftHistoryPanel } from './lift-history-panel';
 import type {
   InquiryStartsResponse,
   DailyBreakdownRow,
@@ -203,6 +208,64 @@ function MockDataBadge() {
   );
 }
 
+// ─── Conversion breakdown (ruling D-J) ───────────────────────────────────────
+
+/** A rate in [0, 1] as "3.12%"; `null` (count not read) as an em dash, never as 0%. */
+function fmtRateOrDash(rate: number | null): string {
+  return rate === null ? '—' : fmtRate(rate);
+}
+
+/**
+ * The combined conversion beside its two parts, per arm. A session that did both counts once in the
+ * combined figure and once in each part, so the parts may sum to more than the combined rate.
+ */
+function BreakdownTable({
+  breakdown,
+}: {
+  breakdown: NonNullable<LiftResponse['conversion_breakdown']>;
+}) {
+  const arms = [
+    ['Adapted', breakdown.adapted],
+    ['Holdout', breakdown.holdout],
+  ] as const;
+  return (
+    <div className="mt-4 overflow-x-auto" aria-label="Conversion breakdown">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-gray-100 text-left text-xs text-gray-500">
+            <th className="pb-2 font-medium">Arm</th>
+            <th className="pb-2 font-medium">Combined conversion</th>
+            <th className="pb-2 font-medium">LIVE signup rate</th>
+            <th className="pb-2 font-medium">Agent contact rate</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-50">
+          {arms.map(([label, b]) => (
+            <tr key={label}>
+              <td className="py-2 font-medium text-gray-800">{label}</td>
+              <td className="py-2 tabular-nums text-gray-700">
+                {fmtRate(b.conversion_rate)} ({b.conversions.toLocaleString()})
+              </td>
+              <td className="py-2 tabular-nums text-gray-700">
+                {fmtRateOrDash(b.live_signup_rate)}
+                {b.live_signups !== null && ` (${b.live_signups.toLocaleString()})`}
+              </td>
+              <td className="py-2 tabular-nums text-gray-700">
+                {fmtRateOrDash(b.agent_contact_rate)}
+                {b.agent_contacts !== null && ` (${b.agent_contacts.toLocaleString()})`}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-1 text-xs text-gray-400">
+        Share of sessions with a server-confirmed LIVE signup or agent contact (one session with
+        both counts once in the combined figure).
+      </p>
+    </div>
+  );
+}
+
 // ─── Summary Panel ────────────────────────────────────────────────────────────
 
 function SummaryPanel({ state }: { state: FetchState<LiftResponse> }) {
@@ -261,6 +324,10 @@ function SummaryPanel({ state }: { state: FetchState<LiftResponse> }) {
               </div>
             ))}
           </div>
+
+          {!loading && data?.conversion_breakdown && (
+            <BreakdownTable breakdown={data.conversion_breakdown} />
+          )}
 
           {!loading && summary && (
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -574,7 +641,7 @@ function ArchetypePanel({ state }: { state: FetchState<LiftResponse> }) {
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
-const WINDOW_OPTIONS = [7, 14, 30] as const;
+const WINDOW_OPTIONS = [7, 14, 30, 90] as const;
 
 interface PilotViewProps {
   /** Staff only: the tenant to read (sent as `&tenant_id=`). Absent → session-scoped agency read. */
@@ -682,22 +749,33 @@ export function PilotView({ tenantId }: PilotViewProps = {}) {
             starts.
           </p>
         </div>
-        <label className="flex items-center gap-2 text-sm text-gray-600">
-          Window
-          <select
-            value={windowDays}
-            onChange={(e) => {
-              setWindowDays(Number(e.target.value));
-            }}
-            className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800 focus:border-blue-500 focus:outline-none"
-          >
-            {WINDOW_OPTIONS.map((d) => (
-              <option key={d} value={d}>
-                {d} days
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="flex items-center gap-3">
+          {tenantId && (
+            <a
+              href={`/api/dashboard/analytics/lift/export?window=${String(windowDays)}&tenant_id=${encodeURIComponent(tenantId)}`}
+              download
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Download CSV
+            </a>
+          )}
+          <label className="flex items-center gap-2 text-sm text-gray-600">
+            Window
+            <select
+              value={windowDays}
+              onChange={(e) => {
+                setWindowDays(Number(e.target.value));
+              }}
+              className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800 focus:border-blue-500 focus:outline-none"
+            >
+              {WINDOW_OPTIONS.map((d) => (
+                <option key={d} value={d}>
+                  {d} days
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       <div className="space-y-6">
@@ -709,6 +787,8 @@ export function PilotView({ tenantId }: PilotViewProps = {}) {
         <FunnelPanel state={ctaState} />
         {/* Lift by archetype — TICKET-PILOT-003 */}
         <ArchetypePanel state={ctaState} />
+        {/* Daily snapshot history — FOLLOW-1338 (staff only: needs a tenant id) */}
+        {tenantId && <LiftHistoryPanel tenantId={tenantId} />}
       </div>
     </div>
   );

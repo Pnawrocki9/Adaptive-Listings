@@ -218,6 +218,21 @@ wait_for "Postgres login" 120 docker exec -e PGPASSWORD=postgres al_pg_local \
 $(tail -n 20 "$LOG_DIR/postgres-migrate.log")"
 log "Postgres bootstrapped, migrated, local-e2e tenant seeded (idempotent)"
 
+# FOLLOW-1338: tables that exist ONLY on localhost until the CTO applies them in production (CEO
+# ruling 2026-10-19: `.github/workflows/db-migrate.yml` runs every packages/db/migrations/** file
+# against the LIVE database on a push to main, so these live in docs/handover/migrations/ instead).
+# Each file is idempotent (CREATE ... IF NOT EXISTS, DROP POLICY IF EXISTS), so this re-runs freely.
+# It must come after the seed above: the tables reference tenants(id).
+for handover_sql in docs/handover/migrations/*.sql; do
+  [ -e "$handover_sql" ] || continue
+  docker exec -i -e PGPASSWORD=postgres al_pg_local \
+    psql -h 127.0.0.1 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -q <"$handover_sql" \
+    >>"$LOG_DIR/postgres-migrate.log" 2>&1 ||
+    die "handover migration $handover_sql failed - see $LOG_DIR/postgres-migrate.log:
+$(tail -n 20 "$LOG_DIR/postgres-migrate.log")"
+  log "applied handover migration $(basename "$handover_sql") to al_pg_local (localhost only)"
+done
+
 # ---- 5. grounding source :8081 (README 3.3b) ---------------------------------------------------
 step "5/11 fixture listing-details server :8081 (README 3.3b) + its signed conversion emitter (FOLLOW-1203)"
 # The fixture host backend signs the conversion it emits to ingest (README 3.3c). The secret is a

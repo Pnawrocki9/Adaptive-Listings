@@ -183,6 +183,14 @@
  * the same for the staff update and the staff delete) are new rows, and
  * `app/admin/tenants/[id]/listings/data.ts` (1 — the listings-with-answers lookup failing) is the
  * listings index read. No existing row moved or changed. Counted on top of FOLLOW-1336 (96 in 56): it is now **100 in 59**.
+ *
+ * FOLLOW-1338 (M5, plan Phase 3) added three rows, one site each: `app/api/cron/lift-snapshot/route.ts`
+ * (the daily snapshot failing — ClickHouse query, the write, or the table not yet created by the
+ * CTO step; one shared `fail()` helper, so ONE site however many `error.code`s), and the two new
+ * staff reads of the lift report, `app/api/dashboard/analytics/lift/export/route.ts` (ClickHouse
+ * failing under the CSV export) and `app/api/dashboard/analytics/lift/history/route.ts` (the
+ * snapshot read failing for a reason other than the missing table, which is not captured there).
+ * No existing row moved. It is now **103 in 62**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -196,7 +204,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 100;
+const TOTAL_SITES = 103;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -395,6 +403,13 @@ const REGISTER: CaptureSiteGroup[] = [
     consumer: NO_CHANNEL,
   },
   {
+    file: 'app/api/cron/lift-snapshot/route.ts',
+    sites: 1,
+    meaning:
+      'The daily lift snapshot failed — ClickHouse query (`clickhouse_query_failed`), the Postgres write (`lift_snapshot_write_failed`), or `lift_daily_snapshots` not created yet (`lift_snapshot_table_missing`, the CTO handover step); the pilot lift history has a gap for that day until the cron is re-run (FOLLOW-1338).',
+    consumer: NO_CHANNEL,
+  },
+  {
     file: 'app/api/config/route.ts',
     sites: 1,
     meaning: 'A tenant `brand_config` read/write failed.',
@@ -410,6 +425,20 @@ const REGISTER: CaptureSiteGroup[] = [
     file: 'app/api/dashboard/analytics/lift/route.ts',
     sites: 1,
     meaning: 'The CTA-lift query (dashboard analytics + pilot tab) failed.',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'app/api/dashboard/analytics/lift/export/route.ts',
+    sites: 1,
+    meaning:
+      'The ClickHouse query behind the lift CSV export failed — the staff got a JSON 500, never a CSV of zeros (FOLLOW-1338).',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'app/api/dashboard/analytics/lift/history/route.ts',
+    sites: 1,
+    meaning:
+      'Reading `lift_daily_snapshots` failed for a reason other than the table not existing (`lift_snapshot_table_missing` is answered without a capture here; the cron raises it) — the Pilot tab History shows an error banner (FOLLOW-1338).',
     consumer: NO_CHANNEL,
   },
   {

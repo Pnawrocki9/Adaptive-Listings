@@ -7,7 +7,7 @@
  *   - data_source === 'clickhouse' → no badge, numbers render
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { PilotView } from './pilot-view';
 
@@ -92,13 +92,24 @@ const INQUIRY_500_BODY = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+const HISTORY_EMPTY = {
+  ok: true,
+  status: 200,
+  body: { tenant_id: 'test-tenant', data_source: 'postgres', rows: [] },
+};
+
 function makeFetchMock(
   ctaResponse: { ok: boolean; status: number; body: unknown },
   inquiryResponse: { ok: boolean; status: number; body: unknown },
+  historyResponse: { ok: boolean; status: number; body: unknown } = HISTORY_EMPTY,
 ) {
   const globalFetch = vi.fn((url: unknown) => {
     const urlStr = String(url);
-    const response = urlStr.includes('analytics/lift') ? ctaResponse : inquiryResponse;
+    const response = urlStr.includes('lift/history')
+      ? historyResponse
+      : urlStr.includes('analytics/lift')
+        ? ctaResponse
+        : inquiryResponse;
     return Promise.resolve({
       ok: response.ok,
       status: response.status,
@@ -307,11 +318,13 @@ describe('PilotView — tenant scoping (ADR-0018, FOLLOW-1334)', () => {
     render(<PilotView tenantId={TENANT} />);
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      // the two window readers + the snapshot history (FOLLOW-1338)
+      expect(fetchMock).toHaveBeenCalledTimes(3);
     });
     const urls = fetchMock.mock.calls.map((c) => String(c[0]));
     expect(urls).toContain(`/api/dashboard/analytics/lift?window_days=7&tenant_id=${TENANT}`);
     expect(urls).toContain(`/api/pilot/inquiry-starts?window_days=7&tenant_id=${TENANT}`);
+    expect(urls).toContain(`/api/dashboard/analytics/lift/history?tenant_id=${TENANT}`);
   });
 
   it('without a tenantId prop the URLs are byte-identical to the agency dashboard’s', async () => {
@@ -330,5 +343,163 @@ describe('PilotView — tenant scoping (ADR-0018, FOLLOW-1334)', () => {
       '/api/dashboard/analytics/lift?window_days=7',
       '/api/pilot/inquiry-starts?window_days=7',
     ]);
+  });
+});
+
+// ─── FOLLOW-1338: D-J breakdown, 90-day window, CSV, History ──────────────────────
+
+describe('PilotView — lift report (FOLLOW-1338)', () => {
+  const TENANT = '550e8400-e29b-41d4-a716-446655440001';
+  const WITH_BREAKDOWN = {
+    ...MOCK_CTA_CLICKHOUSE,
+    conversion_source: 'signed_events' as const,
+    conversion_breakdown: {
+      adapted: {
+        sessions: 1000,
+        conversions: 80,
+        conversion_rate: 0.08,
+        live_signups: 50,
+        live_signup_rate: 0.05,
+        agent_contacts: 40,
+        agent_contact_rate: 0.04,
+      },
+      holdout: {
+        sessions: 111,
+        conversions: 5,
+        conversion_rate: 0.045,
+        live_signups: null,
+        live_signup_rate: null,
+        agent_contacts: null,
+        agent_contact_rate: null,
+      },
+    },
+  };
+
+  it('shows LIVE signup rate and agent contact rate per arm beside the combined conversion', async () => {
+    makeFetchMock(
+      { ok: true, status: 200, body: WITH_BREAKDOWN },
+      { ok: true, status: 200, body: MOCK_INQUIRY_CLICKHOUSE },
+    );
+    render(<PilotView tenantId={TENANT} />);
+    const table = await screen.findByLabelText('Conversion breakdown');
+    const rows = within(table).getAllByRole('row');
+    expect(within(rows[1]!).getByText('Adapted')).toBeTruthy();
+    expect(rows[1]!.textContent).toContain('8.00% (80)');
+    expect(rows[1]!.textContent).toContain('5.00% (50)');
+    expect(rows[1]!.textContent).toContain('4.00% (40)');
+    // a part that was not read is a dash, never 0%
+    expect(rows[2]!.textContent).toContain('4.50% (5)');
+    expect(rows[2]!.textContent).toContain('—');
+    expect(rows[2]!.textContent).not.toContain('0.00%');
+  });
+
+  it('offers 90 days and refetches both readers with window_days=90', async () => {
+    const fetchMock = makeFetchMock(
+      { ok: true, status: 200, body: WITH_BREAKDOWN },
+      { ok: true, status: 200, body: MOCK_INQUIRY_CLICKHOUSE },
+    );
+    render(<PilotView tenantId={TENANT} />);
+    const select = await screen.findByLabelText(/Window/);
+    expect(within(select).getByRole('option', { name: '90 days' })).toBeTruthy();
+    fireEvent.change(select, { target: { value: '90' } });
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+      expect(urls).toContain(`/api/dashboard/analytics/lift?window_days=90&tenant_id=${TENANT}`);
+      expect(urls).toContain(`/api/pilot/inquiry-starts?window_days=90&tenant_id=${TENANT}`);
+    });
+  });
+
+  it('Download CSV points at the export for the selected window and tenant (staff only)', async () => {
+    makeFetchMock(
+      { ok: true, status: 200, body: WITH_BREAKDOWN },
+      { ok: true, status: 200, body: MOCK_INQUIRY_CLICKHOUSE },
+    );
+    const { unmount } = render(<PilotView tenantId={TENANT} />);
+    const link = await screen.findByRole('link', { name: 'Download CSV' });
+    expect(link.getAttribute('href')).toBe(
+      `/api/dashboard/analytics/lift/export?window=7&tenant_id=${TENANT}`,
+    );
+    fireEvent.change(screen.getByLabelText(/Window/), { target: { value: '30' } });
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'Download CSV' }).getAttribute('href')).toContain(
+        'window=30',
+      );
+    });
+    unmount();
+
+    // no tenant id (the agency wrapper) -> no export link, no history request
+    const fetchMock = makeFetchMock(
+      { ok: true, status: 200, body: WITH_BREAKDOWN },
+      { ok: true, status: 200, body: MOCK_INQUIRY_CLICKHOUSE },
+    );
+    render(<PilotView />);
+    await screen.findByLabelText('Conversion breakdown');
+    expect(screen.queryByRole('link', { name: 'Download CSV' })).toBeNull();
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('lift/history'))).toBe(false);
+  });
+
+  it('History: empty state, rows, and an error banner when the table is missing', async () => {
+    makeFetchMock(
+      { ok: true, status: 200, body: WITH_BREAKDOWN },
+      { ok: true, status: 200, body: MOCK_INQUIRY_CLICKHOUSE },
+    );
+    const empty = render(<PilotView tenantId={TENANT} />);
+    expect(await screen.findByText(/No snapshots yet/)).toBeTruthy();
+    expect(screen.queryByRole('alert', { name: 'History unavailable' })).toBeNull();
+    empty.unmount();
+
+    makeFetchMock(
+      { ok: true, status: 200, body: WITH_BREAKDOWN },
+      { ok: true, status: 200, body: MOCK_INQUIRY_CLICKHOUSE },
+      {
+        ok: true,
+        status: 200,
+        body: {
+          tenant_id: TENANT,
+          data_source: 'postgres',
+          rows: [
+            {
+              day: '2026-10-18',
+              arm: 'adapted',
+              sessions: 60,
+              conversions: 9,
+              live_signups: 6,
+              agent_contacts: 5,
+              relative_lift_pct: 100,
+              p_value: 0.1234,
+              confidence: 'not_significant',
+              computed_at: '2026-10-19T01:15:02.123Z',
+            },
+          ],
+        },
+      },
+    );
+    const filled = render(<PilotView tenantId={TENANT} />);
+    const history = await screen.findByRole('region', { name: 'Lift history' });
+    await waitFor(() => {
+      expect(history.textContent).toContain('2026-10-18');
+    });
+    expect(history.textContent).toContain('+100.0%');
+    expect(history.textContent).toContain('0.1234');
+    filled.unmount();
+
+    makeFetchMock(
+      { ok: true, status: 200, body: WITH_BREAKDOWN },
+      { ok: true, status: 200, body: MOCK_INQUIRY_CLICKHOUSE },
+      {
+        ok: false,
+        status: 500,
+        body: {
+          error: {
+            code: 'lift_snapshot_table_missing',
+            message: 'lift_daily_snapshots does not exist',
+          },
+        },
+      },
+    );
+    render(<PilotView tenantId={TENANT} />);
+    const banner = await screen.findByRole('alert', { name: 'History unavailable' });
+    expect(banner.textContent).toContain('lift_snapshot_table_missing');
+    expect(screen.queryByText(/No snapshots yet/)).toBeNull();
   });
 });

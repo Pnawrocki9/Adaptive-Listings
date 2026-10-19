@@ -2769,3 +2769,12 @@ The premise was wrong here and would have produced a probe that cannot fail.
   listing id as 3 clicks, so it is a `HIDDEN_BY_DESIGN` row, not a hub hack. · Guardrail: _before
   porting a route's auth, read it — and grep the ratchet counters' literals
   (`scripts/check-single-tenant.sh`) before writing a new auth call_.
+- **2026-10-19 / FOLLOW-1338** · M5: lift report. Reader gains `conversion_breakdown` (LIVE signup /
+  agent contact per arm, additive) and window 90; a per-day reader (`fetchLiftDaily` +
+  `buildLiftDayRows`) feeds BOTH the snapshot cron and the CSV export (one formula,
+  `computeArmLift`); `api/cron/lift-snapshot` (CRON*SECRET, `secretEquals`), `lift/export`,
+  `lift/history`; `lift_daily_snapshots` DDL lives in
+  `docs/handover/migrations/0042*\*.sql`(NOT`packages/db/
+  migrations/`, CEO 2026-10-19), applied locally by `localhost-up.sh`, handover row 15; Sentry 100 -> 103 in 62, N1 `routes*inventory`94 -> 97. · Risks weighed: a drizzle schema file without a migration would claim a table prod lacks, so a typed`sql` helper (`lib/lift-snapshots.ts`) instead; 42P01 detection walks the `cause`chain and also requires the table name in a message (drizzle wraps the driver error; a missing`tenants`FK target must not read as a missing snapshot table); mock data is never persisted (CH unset / flag off = 200 with`not_configured`/`disabled`, no row); new columns are opt-in (`byType`, `since`) so the rollup's SQL is byte-identical; CSV: numbers never get the formula prefix (a `-50`lift stays a number), only string cells do; raw`db.execute`returns timestamptz as Date on postgres-js but a string on PGlite, so the reader formats it in SQL; PGlite per test costs ~4 s, one engine per file with DROP/CREATE of the table per case is ~10x faster. The per-day ClickHouse SQL is unit-tested against a fetch stand-in only, never against a real engine. · Guardrail: _a ticket that adds a table outside`packages/db/migrations/`
+  should require a test that applies the SQL file itself (PGlite) so the DDL, the UPSERT key and the
+  missing-table path are exercised, not mirrored*.

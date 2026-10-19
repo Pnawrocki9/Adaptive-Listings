@@ -27,6 +27,7 @@
 import { z } from 'zod';
 
 import { CANONICAL_ARCHETYPE_IDS } from '../archetypes.js';
+import { TraitIdSchema, type TraitId } from '../traits.js';
 import { QuizLanguageSchema, QuizPublicConfigResponseSchema } from './quiz-config.js';
 import { WidgetPlacementSchema } from './widget-placement.js';
 
@@ -122,26 +123,68 @@ export type OptOutWidgetConfig = z.infer<typeof OptOutWidgetConfigSchema>;
  *     by `QuizDefinitionSchema.superRefine` (unknown ids are a HARD write error). An empty
  *     object contributes nothing (used for pure branch/gate answers).
  *   - `next`    — the id of the next question, or `null` for a leaf (ends the walk).
+ *   - `traits`  — optional buyer traits this answer records (MASTER_DESIGN §E.4.2 v3.0,
+ *     FOLLOW-1356): at most 4, canonical ids, no duplicates. Traits never change the resolved
+ *     archetype; they ride alongside it (`resolveQuizOutcome` in `quiz-walk.ts`).
  */
 export const QuizAnswerSchema = z.object({
   id: z.string().min(1),
   label_i18n: LabelI18nSchema,
   weights: z.record(z.string(), z.number()),
   next: z.string().min(1).nullable(),
+  traits: z
+    .array(TraitIdSchema)
+    .max(4)
+    .refine((traits) => new Set(traits).size === traits.length, {
+      message: 'traits must not contain duplicates',
+    })
+    .optional(),
 });
 
 /** TypeScript type for one quiz answer. */
 export type QuizAnswer = z.infer<typeof QuizAnswerSchema>;
 
-/** One quiz question: a prompt plus ≥2 answers (ADR-0019 D3). */
+/**
+ * One quiz question: a prompt plus ≥2 answers (ADR-0019 D3).
+ *
+ * `kind` (FOLLOW-1356, MASTER_DESIGN §E.4.2 v3.0): `'single'` (the default when absent — one
+ * answer, then follow its `next`) or `'multi'` (a tick-all-that-apply trait screen: the buyer
+ * selects zero or more answers). The hard rule that a `multi` question's answers carry empty
+ * `weights` and `next: null` is an AUTHORING rule (`QuizDefinitionAuthoringSchema`), not a
+ * serve rule — see `quiz-lint.ts`.
+ */
 export const QuizQuestionSchema = z.object({
   id: z.string().min(1),
   prompt_i18n: LabelI18nSchema,
   answers: z.array(QuizAnswerSchema).min(2),
+  kind: z.enum(['single', 'multi']).optional(),
 });
 
 /** TypeScript type for one quiz question. */
 export type QuizQuestion = z.infer<typeof QuizQuestionSchema>;
+
+/**
+ * The result-confirmation block of a quiz definition (MASTER_DESIGN §E.4.2–§E.4.3 v3.0,
+ * FOLLOW-1356) — the texts of the "Based on your answers: {name} — {sentence}. Is that right?"
+ * screen and the correction ("Not quite") alternatives.
+ *   - `names_i18n`     — archetype_id → display name bag.
+ *   - `sentences_i18n` — archetype_id → one-sentence fact summary bag (second person).
+ *   - `alternatives`   — archetype_id → 2–4 other archetype ids offered on "Not quite".
+ *
+ * Shape only here. Canonical, non-neutral, non-self keys are checked by
+ * `QuizDefinitionSchema.superRefine` (cheap and safe at serve time); completeness (every
+ * reachable archetype has a name and a sentence) and EN + PL presence are AUTHORING rules
+ * (`quiz-lint.ts`). Consumed by the SDK confirmation screen (FOLLOW-1357 / Q2) and the admin
+ * simulator and confirmation tab (FOLLOW-1362 / Q7) via `nextStep` in `quiz-walk.ts`.
+ */
+export const QuizConfirmSchema = z.object({
+  names_i18n: z.record(z.string(), LabelI18nSchema),
+  sentences_i18n: z.record(z.string(), LabelI18nSchema),
+  alternatives: z.record(z.string(), z.array(z.string()).min(2).max(4)),
+});
+
+/** TypeScript type for the confirmation block. */
+export type QuizConfirm = z.infer<typeof QuizConfirmSchema>;
 
 /**
  * The fully editable per-brand quiz definition (ADR-0019 D3 + D5 / FOLLOW-639).
@@ -161,6 +204,13 @@ export type QuizQuestion = z.infer<typeof QuizQuestionSchema>;
  *   3. Question ids MUST be unique — a duplicate id makes the graph ambiguous.
  *   4. The graph reachable from `root` MUST be acyclic — a cycle is rejected (the walk
  *      would never terminate).
+ *   5. (FOLLOW-1356) When `confirm` is present, its keys and alternatives MUST be canonical
+ *      non-neutral archetype ids and an archetype MUST NOT list itself.
+ *
+ * This is the SERVE schema: `GET /api/quiz/public-config` re-parses stored rows with it and
+ * drops the slice on failure (buyers fall back to the default tree), so it stays LENIENT. The
+ * stricter AUTHORING rules (EN + PL on every text, `multi` question shape, `confirm`
+ * completeness, size limits) live in `QuizDefinitionAuthoringSchema` (`quiz-lint.ts`).
  *
  * The unreachable-ARCHETYPE check is deliberately NOT here (CEO ruled it non-blocking) —
  * it is the separate `computeUnreachableArchetypes` warning helper below.
@@ -171,6 +221,7 @@ export const QuizDefinitionSchema = z
     root: z.string().min(1),
     questions: z.array(QuizQuestionSchema).min(1),
     languages: z.array(QuizLanguageSchema).min(1),
+    confirm: QuizConfirmSchema.optional(),
   })
   .superRefine((def, ctx) => {
     // Build the question-id index and detect duplicates (guardrail 3).
@@ -251,6 +302,32 @@ export const QuizDefinitionSchema = z
       colour.set(qid, BLACK);
     };
     if (byId.has(def.root)) visit(def.root);
+
+    // Guardrail 5 (FOLLOW-1356): `confirm` keys and alternatives MUST be canonical,
+    // non-neutral archetype ids and an archetype MUST NOT list itself. Cheap and safe at serve
+    // time; the completeness and EN + PL rules are authoring-only (quiz-lint.ts). Written
+    // compactly on purpose: this runs inside the SDK bundle (gzip budget, ESC-080).
+    const confirm = def.confirm;
+    if (confirm) {
+      const bad = (id: string, path: (string | number)[], owner?: string): void => {
+        const message =
+          id === 'neutral' || !CANONICAL_ARCHETYPE_ID_SET.has(id)
+            ? `"${id}" is not a canonical non-neutral archetype id`
+            : id === owner
+              ? `"${id}" lists itself`
+              : '';
+        if (message) ctx.addIssue({ code: z.ZodIssueCode.custom, message, path });
+      };
+      for (const field of ['names_i18n', 'sentences_i18n'] as const) {
+        for (const id of Object.keys(confirm[field])) bad(id, ['confirm', field, id]);
+      }
+      for (const [id, alts] of Object.entries(confirm.alternatives)) {
+        bad(id, ['confirm', 'alternatives', id]);
+        alts.forEach((alt, i) => {
+          bad(alt, ['confirm', 'alternatives', id, i], id);
+        });
+      }
+    }
   });
 
 /** TypeScript type for a full quiz definition. */
@@ -297,37 +374,181 @@ export function reduceWeightsToArchetype(weights: Record<string, number>): Canon
  * guard bounds recursion even if called on a not-yet-validated draft) and path-bounded
  * (`MAX_PATHS`) so a pathological draft cannot hang the editor.
  *
+ * The `allowList` (default `QUIZ_TRAIT_ONLY_ARCHETYPE_IDS`) names archetypes the editor must
+ * NOT warn about because the quiz deliberately no longer assigns them (MASTER_DESIGN §E.4.3
+ * v3.0) — they stay in `CANONICAL_ARCHETYPE_IDS` and are reachable only through chat and
+ * behaviour. Pass `[]` to get the raw list.
+ *
  * @param def - the quiz definition (validated or a draft under edit).
+ * @param allowList - archetype ids to leave out of the result.
  * @returns canonical non-neutral archetype ids unreachable under this tree (may be empty).
  */
-export function computeUnreachableArchetypes(def: QuizDefinition): CanonicalArchetypeId[] {
-  const byId = new Map<string, QuizQuestion>(def.questions.map((q) => [q.id, q]));
+export function computeUnreachableArchetypes(
+  def: QuizDefinition,
+  allowList: readonly CanonicalArchetypeId[] = QUIZ_TRAIT_ONLY_ARCHETYPE_IDS,
+): CanonicalArchetypeId[] {
   const reachedLeaves = new Set<string>();
-  const MAX_PATHS = 20_000;
-  let pathCount = 0;
+  walkQuizPaths(def, (path) => {
+    reachedLeaves.add(reduceWeightsToArchetype(path.weights));
+  });
+  const allowed = new Set<string>(allowList);
+  return CANONICAL_ARCHETYPE_IDS.filter(
+    (id) => id !== 'neutral' && !reachedLeaves.has(id) && !allowed.has(id),
+  );
+}
 
-  const walk = (qid: string, acc: Record<string, number>, seen: ReadonlySet<string>): void => {
-    if (pathCount >= MAX_PATHS) return;
+/**
+ * The five archetype ids the v3.0 quiz no longer assigns (MASTER_DESIGN §E.4.3): `upsizer`
+ * (merged into `family_buyer`), `portfolio_builder` (merged into `yield_hunter`),
+ * `luxury_buyer` / `remote_worker` / `golden_visa_buyer` (now the `premium` /
+ * `works_from_home` / `residency_goal` traits). They remain canonical — the behaviour engine,
+ * bandit seeds and description cache depend on them — and are reachable only via chat and
+ * behaviour, so `computeUnreachableArchetypes` skips them by default.
+ */
+export const QUIZ_TRAIT_ONLY_ARCHETYPE_IDS: readonly CanonicalArchetypeId[] = [
+  'upsizer',
+  'portfolio_builder',
+  'luxury_buyer',
+  'remote_worker',
+  'golden_visa_buyer',
+];
+
+/** One step of a root→leaf quiz path as produced by `walkQuizPaths`. */
+export interface RawQuizPathStep {
+  /** The question answered at this step. */
+  question: QuizQuestion;
+  /**
+   * The chosen answer index (`single` question), or `[]` for a `multi` question (the walker
+   * never branches on a trait screen; it records the empty selection).
+   */
+  answerIndex: number | number[];
+}
+
+/** A complete root→leaf path as produced by `walkQuizPaths`. */
+export interface RawQuizPath {
+  /** Steps in walk order. */
+  steps: RawQuizPathStep[];
+  /** Accumulated archetype weights along the path. */
+  weights: Record<string, number>;
+  /** Traits recorded by the path's `single` answers, in encounter order (may repeat). */
+  traits: TraitId[];
+}
+
+/** Maximum number of root→leaf paths `walkQuizPaths` visits unless told otherwise. */
+export const DEFAULT_MAX_QUIZ_PATHS = 20_000;
+
+/**
+ * The ONE root→leaf path enumerator behind `computeUnreachableArchetypes`,
+ * `computeAmbiguousPaths` and `enumerateQuizPaths` (`quiz-walk.ts`), so the warnings can
+ * never disagree with the walker.
+ *
+ * Depth-first, in question/answer declaration order. A path ends at an answer with
+ * `next: null` or a dangling `next` (draft-safe), or at a `multi` question (a trait screen is
+ * always last and carries no weights, so it is recorded once with an empty selection instead
+ * of branching over its answers). Cycle-safe: a per-path visited guard drops a path that
+ * re-enters a question. Bounded by `maxPaths`.
+ *
+ * @param def - the quiz definition (validated or a draft under edit).
+ * @param visit - called once per complete path.
+ * @param maxPaths - stop after this many paths.
+ * @returns `{ truncated }` — true when the cap stopped the walk before it was exhaustive.
+ */
+export function walkQuizPaths(
+  def: QuizDefinition,
+  visit: (path: RawQuizPath) => void,
+  maxPaths: number = DEFAULT_MAX_QUIZ_PATHS,
+): { truncated: boolean } {
+  const byId = new Map<string, QuizQuestion>(def.questions.map((q) => [q.id, q]));
+  let pathCount = 0;
+  const state = { truncated: false };
+  const stopped = (): boolean => state.truncated;
+
+  const emit = (steps: RawQuizPathStep[], weights: Record<string, number>, traits: TraitId[]) => {
+    pathCount += 1;
+    visit({ steps, weights, traits });
+  };
+
+  const walk = (
+    qid: string,
+    steps: RawQuizPathStep[],
+    acc: Record<string, number>,
+    traits: TraitId[],
+    seen: ReadonlySet<string>,
+  ): void => {
+    if (stopped()) return;
     const q = byId.get(qid);
     if (!q || seen.has(qid)) return;
+    if (pathCount >= maxPaths) {
+      state.truncated = true;
+      return;
+    }
     const nextSeen = new Set(seen);
     nextSeen.add(qid);
-    for (const ans of q.answers) {
+    if (q.kind === 'multi') {
+      emit([...steps, { question: q, answerIndex: [] }], acc, traits);
+      return;
+    }
+    for (let ai = 0; ai < q.answers.length; ai += 1) {
+      if (stopped()) return;
+      const ans = q.answers[ai];
+      if (!ans) continue;
       const merged: Record<string, number> = { ...acc };
       for (const [archetypeId, weight] of Object.entries(ans.weights)) {
         merged[archetypeId] = (merged[archetypeId] ?? 0) + weight;
       }
+      const nextTraits = ans.traits ? [...traits, ...ans.traits] : traits;
+      const nextSteps = [...steps, { question: q, answerIndex: ai }];
       if (ans.next === null || !byId.has(ans.next)) {
-        pathCount += 1;
-        reachedLeaves.add(reduceWeightsToArchetype(merged));
+        if (pathCount >= maxPaths) {
+          state.truncated = true;
+          return;
+        }
+        emit(nextSteps, merged, nextTraits);
       } else {
-        walk(ans.next, merged, nextSeen);
+        walk(ans.next, nextSteps, merged, nextTraits, nextSeen);
       }
     }
   };
-  walk(def.root, {}, new Set<string>());
+  walk(def.root, [], {}, [], new Set<string>());
+  return state;
+}
 
-  return CANONICAL_ARCHETYPE_IDS.filter((id) => id !== 'neutral' && !reachedLeaves.has(id));
+/** A root→leaf path that adds weight to more than one archetype. */
+export interface AmbiguousQuizPath {
+  /** Question ids along the path, in walk order. */
+  questionIds: string[];
+  /** Selected answer ids along the path, in walk order. */
+  answerIds: string[];
+  /** The archetypes the path adds non-zero weight to (canonical order), at least two. */
+  archetypes: CanonicalArchetypeId[];
+}
+
+/**
+ * Compute the root→leaf paths that add weight to MORE THAN ONE archetype (the NON-BLOCKING
+ * editor warning, MASTER_DESIGN §E.4.2 v3.0). The v3.0 tree gives every path exactly one
+ * weighted answer, so the resolved leaf never depends on an argmax tiebreak or an override;
+ * a path that spreads weight over several archetypes is a drafting smell (and the cause of
+ * the v2.0 "luxury overrides the situation" defect). Bounded by the same path cap as
+ * `computeUnreachableArchetypes`.
+ *
+ * @param def - the quiz definition (validated or a draft under edit).
+ * @returns one entry per ambiguous path (may be empty).
+ */
+export function computeAmbiguousPaths(def: QuizDefinition): AmbiguousQuizPath[] {
+  const out: AmbiguousQuizPath[] = [];
+  walkQuizPaths(def, (path) => {
+    const archetypes = CANONICAL_ARCHETYPE_IDS.filter((id) => (path.weights[id] ?? 0) !== 0);
+    if (archetypes.length < 2) return;
+    const questionIds: string[] = [];
+    const answerIds: string[] = [];
+    for (const step of path.steps) {
+      if (Array.isArray(step.answerIndex)) continue; // a trait screen carries no weights
+      questionIds.push(step.question.id);
+      answerIds.push(step.question.answers[step.answerIndex]?.id ?? '');
+    }
+    out.push({ questionIds, answerIds, archetypes });
+  });
+  return out;
 }
 
 /**

@@ -14,6 +14,7 @@ export * from './schemas/index.js';
 export * from './errors.js';
 export * from './demo.js';
 export * from './archetypes.js';
+export * from './traits.js';
 export * from './directives.js';
 export * from './placeholder-tokens.js';
 export * from './ab-holdout.js';

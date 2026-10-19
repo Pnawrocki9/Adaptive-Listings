@@ -8,6 +8,8 @@ import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_QUIZ_DEFINITION_V2 } from '../quiz-default-v2.js';
 import { EXAMPLE_QUIZ_DEFINITION } from '../examples/presentation-config.js';
+import { QuizDefinitionAuthoringSchema } from './quiz-lint.js';
+import { nextStep, resolveQuizOutcome } from './quiz-walk.js';
 import {
   QUIZ_TRAIT_ONLY_ARCHETYPE_IDS,
   QuizAnswerSchema,
@@ -27,45 +29,55 @@ const answer = (extra: Record<string, unknown>) => ({
   ...extra,
 });
 
-describe('QuizAnswerSchema.traits', () => {
-  it('is optional and accepts up to 4 canonical, distinct traits', () => {
-    expect(QuizAnswerSchema.safeParse(answer({})).success).toBe(true);
-    expect(QuizAnswerSchema.safeParse(answer({ traits: [] })).success).toBe(true);
-    expect(
-      QuizAnswerSchema.safeParse(
-        answer({ traits: ['premium', 'has_children', 'will_let', 'residency_goal'] }),
-      ).success,
-    ).toBe(true);
-  });
-
-  it('rejects more than 4, duplicates and unknown traits', () => {
-    expect(
-      QuizAnswerSchema.safeParse(
-        answer({
-          traits: ['premium', 'has_children', 'will_let', 'residency_goal', 'works_from_home'],
-        }),
-      ).success,
-    ).toBe(false);
-    expect(QuizAnswerSchema.safeParse(answer({ traits: ['premium', 'premium'] })).success).toBe(
-      false,
-    );
-    expect(QuizAnswerSchema.safeParse(answer({ traits: ['luxury_buyer'] })).success).toBe(false);
-  });
-});
-
-describe('QuizQuestionSchema.kind', () => {
-  const q = (kind?: unknown) => ({
+describe('QuizAnswerSchema.traits and QuizQuestionSchema.kind (serve schema: forward compatible)', () => {
+  const q = (kind?: string) => ({
     id: 'q',
     prompt_i18n: { en: 'Q', pl: 'Q' },
     answers: [answer({ id: 'a' }), answer({ id: 'b' })],
     ...(kind === undefined ? {} : { kind }),
   });
 
-  it('is optional and accepts single | multi only', () => {
-    expect(QuizQuestionSchema.safeParse(q()).success).toBe(true);
-    expect(QuizQuestionSchema.safeParse(q('single')).success).toBe(true);
-    expect(QuizQuestionSchema.safeParse(q('multi')).success).toBe(true);
-    expect(QuizQuestionSchema.safeParse(q('checkbox')).success).toBe(false);
+  it('accepts traits as plain strings, so a trait added later cannot break an older cached SDK', () => {
+    expect(QuizAnswerSchema.safeParse(answer({})).success).toBe(true);
+    expect(QuizAnswerSchema.safeParse(answer({ traits: [] })).success).toBe(true);
+    expect(
+      QuizAnswerSchema.safeParse(answer({ traits: ['premium', 'a_future_trait'] })).success,
+    ).toBe(true);
+    expect(QuizAnswerSchema.safeParse(answer({ traits: [7] })).success).toBe(false);
+  });
+
+  it('accepts any string kind (unknown kinds are walked as single)', () => {
+    for (const kind of [undefined, 'single', 'multi', 'a_future_kind']) {
+      expect(QuizQuestionSchema.safeParse(q(kind)).success).toBe(true);
+    }
+  });
+
+  it('serves a row with an unknown trait and kind, and the walker drops the trait / walks single', () => {
+    const def = v2();
+    const first = def.questions[0]?.answers[0];
+    const home = def.questions.find((x) => x.id === 'q_home');
+    if (!first || !home) throw new Error('fixture');
+    first.traits = ['a_future_trait', 'premium'];
+    home.kind = 'a_future_kind';
+    const parsed = QuizDefinitionSchema.safeParse(def);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    // unknown trait dropped, canonical one kept
+    expect(resolveQuizOutcome(parsed.data, [0, 0, []])).toEqual({
+      leaf: 'first_time_buyer',
+      traits: ['premium'],
+    });
+    // q_home with an unknown kind behaves as single: picks one answer and follows its next
+    expect(nextStep(parsed.data, { path: [0] })).toEqual({
+      kind: 'question',
+      questionId: 'q_home',
+    });
+    expect(nextStep(parsed.data, { path: [0, 1] })).toEqual({
+      kind: 'question',
+      questionId: 't_home',
+    });
+    // the same row is an AUTHORING error
+    expect(QuizDefinitionAuthoringSchema.safeParse(def).success).toBe(false);
   });
 });
 

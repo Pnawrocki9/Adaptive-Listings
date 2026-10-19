@@ -73,13 +73,19 @@ describe('the SDK built-in default vs the serve and authoring schemas', () => {
     expect(computeUnreachableArchetypes(DEFAULT_QUIZ_DEFINITION)).toEqual([]);
   });
 
-  it('fails the authoring schema ONLY for the missing PL text — Q2 replaces it', () => {
+  it('fails the authoring schema ONLY for no PL, no confirm block and EN-only languages — Q2 replaces it', () => {
     const parsed = QuizDefinitionAuthoringSchema.safeParse(DEFAULT_QUIZ_DEFINITION);
     expect(parsed.success).toBe(false);
     const { errors } = lintQuizDefinition(DEFAULT_QUIZ_DEFINITION);
-    expect(errors.length).toBeGreaterThan(0);
-    expect(errors.every((e) => e.code === 'missing_translation')).toBe(true);
-    expect(errors.every((e) => e.path[e.path.length - 1] === 'pl')).toBe(true);
+    const codes = new Set(errors.map((e) => e.code));
+    expect([...codes].sort()).toEqual([
+      'confirm_missing',
+      'languages_incomplete',
+      'missing_translation',
+    ]);
+    const missing = errors.filter((e) => e.code === 'missing_translation');
+    expect(missing.length).toBeGreaterThan(0);
+    expect(missing.every((e) => e.path[e.path.length - 1] === 'pl')).toBe(true);
   });
 
   it('is authored to the old override scheme, so it carries ambiguous paths (warnings)', () => {

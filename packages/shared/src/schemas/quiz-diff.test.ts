@@ -33,6 +33,17 @@ describe('diffQuizDefinitions', () => {
     ]);
   });
 
+  it('reports a changed languages list (as a set: order alone is no change)', () => {
+    const b = v2();
+    b.languages = ['en', 'pl', 'es'];
+    expect(diffQuizDefinitions(v2(), b)).toEqual([
+      { type: 'languages_changed', before: ['en', 'pl'], after: ['en', 'pl', 'es'] },
+    ]);
+    const c = v2();
+    c.languages = ['pl', 'en'];
+    expect(diffQuizDefinitions(v2(), c)).toEqual([]);
+  });
+
   it('reports an added and a removed question', () => {
     const b = v2();
     b.questions = b.questions.filter((q) => q.id !== 't_student');

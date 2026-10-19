@@ -7,7 +7,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_QUIZ_DEFINITION_V2 } from '../quiz-default-v2.js';
-import { QuizDefinitionSchema, type QuizDefinition } from './presentation-config.js';
+import {
+  DEFAULT_MAX_QUIZ_PATHS,
+  QuizDefinitionSchema,
+  quizWalkStepBudget,
+  walkQuizPaths,
+  type QuizDefinition,
+} from './presentation-config.js';
 import {
   QUIZ_LINT_ERROR_CODES,
   QUIZ_LINT_WARNING_CODES,
@@ -141,6 +147,39 @@ const ERROR_CASES: Record<QuizLintErrorCode, () => QuizDefinition> = {
     delete def.confirm?.sentences_i18n.yield_hunter;
     return def;
   },
+  confirm_missing: () => {
+    const def = v2();
+    delete def.confirm;
+    return def;
+  },
+  confirm_alternative_unnamed: () => {
+    const def = v2();
+    delete def.confirm?.names_i18n.student_parent?.pl; // alternative of yield_hunter
+    return def;
+  },
+  confirm_alternative_duplicate: () => {
+    const def = v2();
+    if (!def.confirm) throw new Error('fixture');
+    def.confirm.alternatives.downsizer = ['family_buyer', 'family_buyer', 'second_home_buyer'];
+    return def;
+  },
+  languages_incomplete: () => {
+    const def = v2();
+    def.languages = ['en'];
+    return def;
+  },
+  invalid_question_kind: () => {
+    const def = v2();
+    question(def, 'q_home').kind = 'checkbox';
+    return def;
+  },
+  invalid_trait_list: () => {
+    const def = v2();
+    const first = question(def, 'q_purpose').answers[0];
+    if (!first) throw new Error('fixture');
+    first.traits = ['luxury_buyer'];
+    return def;
+  },
 };
 
 const WARNING_CASES: Record<QuizLintWarningCode, () => QuizDefinition> = {
@@ -263,15 +302,118 @@ describe('lintQuizDefinition — errors, one case per code', () => {
     question(def, 'q_home').prompt_i18n.en = 'x'.repeat(160);
     expect(lintQuizDefinition(def).errors).toEqual([]);
     const deep = levels(6, 2);
-    expect(lintQuizDefinition(deep).errors).toEqual([]);
+    expect(codes(lintQuizDefinition(deep).errors)).toEqual(['confirm_missing']); // only the missing confirm block
     const wide = levels(2, 8);
-    expect(lintQuizDefinition(wide).errors).toEqual([]);
+    expect(codes(lintQuizDefinition(wide).errors)).toEqual(['confirm_missing']);
   });
 
-  it('only skips the confirm completeness check when there is no confirm block', () => {
+  it('requires a confirm block: its absence is the ONLY finding on an otherwise clean tree', () => {
     const def = v2();
     delete def.confirm;
-    expect(lintQuizDefinition(def)).toEqual({ errors: [], warnings: [] });
+    const { errors, warnings } = lintQuizDefinition(def);
+    expect(errors).toEqual([
+      { code: 'confirm_missing', path: ['confirm'], message: expect.stringContaining('required') },
+    ]);
+    expect(warnings).toEqual([]);
+  });
+
+  it('flags an unnamed or blank-named alternative and a repeated one, by index', () => {
+    const def = v2();
+    if (!def.confirm) throw new Error('fixture');
+    delete def.confirm.names_i18n.student_parent; // an alternative of yield_hunter
+    def.confirm.alternatives.downsizer = ['family_buyer', 'family_buyer', 'second_home_buyer'];
+    const { errors } = lintQuizDefinition(def);
+    const at = (code: string) => errors.filter((e) => e.code === code).map((e) => e.path.join('.'));
+    expect(at('confirm_alternative_unnamed')).toEqual(
+      expect.arrayContaining([
+        'confirm.alternatives.yield_hunter.2',
+        'confirm.alternatives.first_time_buyer.2',
+      ]),
+    );
+    expect(at('confirm_alternative_duplicate')).toEqual(['confirm.alternatives.downsizer.1']);
+    // a blank EN name counts as unnamed too
+    const blank = v2();
+    if (!blank.confirm) throw new Error('fixture');
+    blank.confirm.names_i18n.flip_investor = { en: ' ', pl: 'Remont i sprzedaż' };
+    expect(codes(lintQuizDefinition(blank).errors)).toContain('confirm_alternative_unnamed');
+  });
+
+  it('requires both en and pl in languages', () => {
+    for (const languages of [['en'], ['pl'], ['es']] as const) {
+      const def = v2();
+      def.languages = [...languages];
+      expect(codes(lintQuizDefinition(def).errors)).toContain('languages_incomplete');
+    }
+    const ok = v2();
+    ok.languages = ['pl', 'es', 'en'];
+    expect(lintQuizDefinition(ok).errors).toEqual([]);
+  });
+
+  it('rejects unknown, repeated and more than 4 traits, and an unknown question kind', () => {
+    const cases: string[][] = [
+      ['premium', 'premium'],
+      ['premium', 'has_children', 'will_let', 'residency_goal', 'works_from_home'],
+      ['not_a_trait'],
+    ];
+    for (const traits of cases) {
+      const def = v2();
+      const first = question(def, 'q_purpose').answers[0];
+      if (!first) throw new Error('fixture');
+      first.traits = traits;
+      expect(codes(lintQuizDefinition(def).errors)).toEqual(['invalid_trait_list']);
+    }
+    const kind = v2();
+    question(kind, 'q_home').kind = 'checkbox';
+    expect(codes(lintQuizDefinition(kind).errors)).toEqual(['invalid_question_kind']);
+  });
+});
+
+describe('lintQuizDefinition on a cyclic draft', () => {
+  /** A chain of `n` questions with 2 answers each; the last points back to the root. */
+  function cyclicChain(n: number): QuizDefinition {
+    const questions = Array.from({ length: n }, (_, i) => ({
+      id: `c${String(i)}`,
+      prompt_i18n: { en: 'Q', pl: 'P' },
+      answers: ['a', 'b'].map((id) => ({
+        id,
+        label_i18n: { en: id, pl: `${id} pl` },
+        weights: { yield_hunter: 1 },
+        next: `c${String((i + 1) % n)}`,
+      })),
+    }));
+    return { schema_version: 1, root: 'c0', languages: ['en', 'pl'], questions };
+  }
+
+  it('stays within the step budget: the walk is cut off and flagged, never exponential', () => {
+    const def = cyclicChain(30);
+    let visited = 0;
+    const out = walkQuizPaths(def, () => {
+      visited += 1;
+    });
+    expect(out.truncated).toBe(true);
+    expect(out.steps).toBeLessThanOrEqual(quizWalkStepBudget(DEFAULT_MAX_QUIZ_PATHS));
+    expect(visited).toBe(0); // every path re-enters the cycle: none is complete
+    const small = walkQuizPaths(def, () => undefined, 50);
+    expect(small.steps).toBeLessThanOrEqual(quizWalkStepBudget(50));
+  });
+
+  it('skips every path-based check (no walk) and reports no path findings', () => {
+    const { errors, warnings } = lintQuizDefinition(cyclicChain(30));
+    const all = [...errors, ...warnings].map((i) => i.code);
+    for (const code of [
+      'too_many_paths',
+      'unreachable_archetype',
+      'ambiguous_path',
+      'argmax_tie',
+    ]) {
+      expect(all).not.toContain(code);
+    }
+    // the serve schema is what rejects the cycle, and the authoring schema keeps that rule
+    const parsed = QuizDefinitionAuthoringSchema.safeParse(cyclicChain(30));
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.map((i) => i.message).join()).toContain('cycle detected');
+    }
   });
 });
 
@@ -372,6 +514,12 @@ describe('QuizDefinitionAuthoringSchema vs QuizDefinitionSchema', () => {
       ERROR_CASES.answers_out_of_range(),
       ERROR_CASES.depth_exceeded(),
       ERROR_CASES.too_many_paths(),
+      ERROR_CASES.confirm_missing(),
+      ERROR_CASES.confirm_alternative_unnamed(),
+      ERROR_CASES.confirm_alternative_duplicate(),
+      ERROR_CASES.languages_incomplete(),
+      ERROR_CASES.invalid_question_kind(),
+      ERROR_CASES.invalid_trait_list(),
     ];
     for (const blob of blobs) {
       expect(QuizDefinitionSchema.safeParse(blob).success).toBe(true);

@@ -120,7 +120,7 @@ describe('enumerateQuizPaths — bounds and drafts', () => {
     if (!dangling) throw new Error('fixture');
     dangling.next = 'nope';
     const out = enumerateQuizPaths(def);
-    expect(out.truncated).toBe(false);
+    expect(out.truncated).toBe(true); // the re-entry is flagged: the enumeration is not exhaustive
     expect(out.paths.length).toBeGreaterThan(0);
     expect(longestPathFrom(def, def.root)).toBeGreaterThan(0);
   });
@@ -147,6 +147,23 @@ describe('resolveQuizOutcome', () => {
     const out = resolveQuizOutcome(DEFAULT_QUIZ_DEFINITION_V2, [SECOND, [1, 1, 0]]);
     expect(out.leaf).toBe('second_home_buyer');
     expect(out.traits).toEqual(['buying_from_abroad', 'will_let']);
+  });
+
+  it('counts a repeated multi index once and ignores weights on trait-screen answers', () => {
+    const def = v2();
+    const screen = def.questions.find((q) => q.id === 't_home');
+    const tick = screen?.answers[0];
+    if (!tick) throw new Error('fixture');
+    tick.weights = { yield_hunter: 5 }; // authoring forbids this; the walker must not use it
+    const once = resolveQuizOutcome(def, [MAIN_HERE, 0, [0]]);
+    const twice = resolveQuizOutcome(def, [MAIN_HERE, 0, [0, 0, 0]]);
+    expect(twice).toEqual(once);
+    expect(once.leaf).toBe('first_time_buyer'); // yield_hunter 5 is NOT added
+    // walkQuizPaths / enumerateQuizPaths agree: they also ignore a multi answer's weights
+    const paths = enumerateQuizPaths(def).paths;
+    const first = paths.find((p) => p.answerIds[0] === 'main_here' && p.answerIds[1] === 'first');
+    expect(first?.weights).toEqual({ first_time_buyer: 1 });
+    expect(first?.leaf).toBe('first_time_buyer');
   });
 
   it('never lets traits change the leaf', () => {
@@ -236,6 +253,23 @@ describe('nextStep — v2 tree', () => {
     delete def.confirm;
     const out = nextStep(def, { path: [MAIN_HERE, 0, []] });
     expect(out).toEqual({ kind: 'done', leaf: 'first_time_buyer', traits: [] });
+  });
+
+  it('confirms only when the leaf has BOTH a name and a sentence', () => {
+    const path: QuizPathStep[] = [MAIN_HERE, 0, []];
+    expect(nextStep(v2(), { path }).kind).toBe('confirm');
+    const noName = v2();
+    delete noName.confirm?.names_i18n.first_time_buyer;
+    expect(nextStep(noName, { path })).toEqual({
+      kind: 'done',
+      leaf: 'first_time_buyer',
+      traits: [],
+    });
+    const noSentence = v2();
+    delete noSentence.confirm?.sentences_i18n.first_time_buyer;
+    expect(nextStep(noSentence, { path }).kind).toBe('done');
+    // another leaf is unaffected
+    expect(nextStep(noSentence, { path: [MAIN_HERE, 1, []] }).kind).toBe('confirm');
   });
 
   it('ends the walk (done) when a draft has a dangling root', () => {

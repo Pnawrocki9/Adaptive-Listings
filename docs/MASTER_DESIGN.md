@@ -1,6 +1,8 @@
 # Estalara Adaptive Listings — Dogłębna analiza architektoniczno-biznesowa
 
-**Wersja:** 4.27 (2026-10-18 — ESC-085 (CEO rulings of 2026-10-16/17) enters the SoT: Adaptive Listings serves ONE tenant, app.estalara.com — §A.2 re-cut to the single-tenant model (one tenant row, the `ESTALARA_TENANT_ID` constant, a fixed origin allowlist, `tenant_id` kept internally); §B.4/§B.5/§B.6 PARKED → REMOVED (implementation deleted in plan Phase 2); §J.4 agency dashboard merged into the staff backoffice, agency roles retired; §K.3 fleet / alerts / ML-health / revenue panels NOT built; §E.3.4 item 3 and §D.6 carry the lift definition D-J (server-confirmed signed `live.signup` OR `inquiry.completed`, one conversion per session, `relative_lift_pct` from `lib/pilot-stats.ts`, 30/arm; ESC-084 stands); §P.0 notes the GO ruling DEFERRED (CEO 2026-10-16; definition of done = checkpoint K7; production steps = the CTO handover package `docs/handover/CTO_HANDOVER.md`); §Snapshot.1 rows K and U corrected against the tree (admin pages read the DB; mock only when the store is unconfigured), rows A.2/B.4/B.4.4/B.5/B.6/J/P.0 bracketed; ADR-0018 §Decision 0 and Resolved decision #2 reversed by a dated notice [FOLLOW-1319, ESC-085]. Poprzednio: 4.26 (2026-10-16 — §Snapshot.0 condition 1 re-measured at `main` HEAD `e8d1a04d` after FOLLOW-1314 (#1010) and FOLLOW-1315 (#1012): README §5.24, three consecutive `run=GREEN`, `[FRESH]`; still not ruled on [FOLLOW-820]. Poprzednio: 4.25 (2026-10-14 — §Snapshot.0 row 1 and its bullet re-cut: FOLLOW-820 condition 1 measured at `main` HEAD `f11534be` (three consecutive `run=GREEN`, `[FRESH]` with `commitsBehind=0`, README §5.23) after FOLLOW-1203 (#1007) and FOLLOW-1220 (#1005); not ruled on — the GO/NO-GO ruling is the CEO's [FOLLOW-820]. Poprzednio: 4.24 (2026-10-14 — FOLLOW-1203 (CEO decision #4 of 2026-09-13; ESC-084 rulings of 2026-10-13): the lift's conversion is DEFINED as a server-confirmed `inquiry.completed` or `live.signup` received at or after the session's first decision; `chat.contact_initiated` is dropped; a browser-emitted conversion is excluded from the lift, not rejected at ingest; the caller class is persisted as `events.caller_signed` (ClickHouse migration 0024, flag-gated by `CALLER_SIGNED_COLUMN_ENABLED`); on localhost the `:8081` fixture host backend emits the signed conversion and FOLLOW-819 AC(5) grades it; emission from the Estalara host backend and the prod apply of 0024 are post-GO deployment steps. Sections touched: §E.3.4 item 3 (definition), §P.0 (item 1 note + post-GO list), §D.6 (pointer). §Snapshot.0 status lines NOT edited here (PM). §Y.2: `CLAUDE.md` no-op (no section renamed; its critical path already names FOLLOW-1203); `docs/AGENT_WORKFLOW.md`, `.claude/agents/*.md`, `AUDIT_*.md`, `docs/ops/OPERATING_PRINCIPLES.md` no-op (0 references to the changed text); `backlog/QUEUE.md` / `backlog/STATUS.md` are the PM's [FOLLOW-1203]. Poprzednio: 4.23 (2026-10-13 — checkpoint K2 of the remediation program ruled PASSED by the CEO, two misses accepted (`llm-gateway.ts` 928 lines against < 900; nine ticket-named test files under `api/adapt` against 0); Phase 2 complete; §Snapshot.0 remediation-program entry extended [FOLLOW-1257]. Poprzednio: 4.22 (2026-10-13 — FOLLOW-1297 PR B (ADR-0023 §5 step 5, after the production cutover of 2026-10-13): `apps/llm-gateway` deleted with its Modal deploy job, its CI rows and the `MODAL_DESCRIPTION_URL` / `MODAL_EMBED_SEED_URL` dispatch branches; description generation and the embed seed run in the control plane only; the callback route `/api/internal/description-cache` deleted; §A.1 diagram and note, §E.7 note and write path, §Snapshot.1 rows A.1 and E.7 re-cut; operator step owed: `modal app stop estalara-description-generator` [FOLLOW-1297]. Poprzednio: 4.21 (2026-10-12 — FOLLOW-1297 PR A (ADR-0023 ACCEPTED by the CEO 2026-10-12, supersedes ADR-0016): description generation, the fact check and claim containment ported to the control plane (`lib/description-generator.ts`, `lib/grounding-check.ts`) behind the existing `MODAL_DESCRIPTION_URL` switch, embed-seed overflow behind `MODAL_EMBED_SEED_URL` (→ `POST /api/internal/listings/embed-seed`); parity corpus frozen from the Python (98 cases, 100 %); §A.1 and §E.7 paragraphs added, §Snapshot.1 rows A.1 and E.7 read "PR A merged, Modal still deployed, cutover pending" [FOLLOW-1297]. Poprzednio: 4.20 (2026-10-12 — CEO decision D4 executed (WP-2.9): §B.4 and §B.5 PARKED (frozen, not developed); auto-detection trimmed to Estalara markup (`data-estalara`, `json-ld`, `data-attributes`; AI Vision server-side), the seven platform techniques and their 14 corpus fixtures deleted; the micro-poll feature removed (`quiz_config.micro_polls_enabled` is a retired JSONB key, stripped on read); the DQS tracker and the public event `session.quality.snapshot` removed (ESC-082 option 1: a stale sender is rejected per event); §D.5.3 DQS formula marked removed from the SDK; §Snapshot.1 rows B.4 and B.5 re-cut [FOLLOW-1294]. Poprzednio: 4.19 (2026-10-12 — CEO rulings of 2026-10-12 on FOLLOW-820 conditions 1b and 1c: both **MET**. 1b on FOLLOW-1302's series (#978, `359db019`: three consecutive `run=GREEN` with an ADAPTED `llm_full` response after the second chat message, `[FRESH]` per run), with the `:8078` adapter stand-in and the 0.403-vs-0.484 negative-case reading recorded as caveats, not conditions; 1c on FOLLOW-1305 (#974) + FOLLOW-1312 (#977, per-slot refusal per the CEO ruling of 2026-10-11, ESC-076 AMENDMENT), with the bounded English lexicon, the digit-paraphrase refusal and the absent live refusal-rate measurement recorded as limits of record (the refusal-rate watch goes to checkpoint K2). §Snapshot.0 rows 1b/1c and bullets re-cut; critical path now reads FOLLOW-819 ×3 (README §5 record owed) → FOLLOW-1203 → FOLLOW-1220 → FOLLOW-820 [FOLLOW-1302, FOLLOW-1312]. Poprzednio: 4.18 (2026-10-04 — checkpoint K1 of the remediation program ruled PASSED by the CEO ("K1 passed, start Phase 2"), two misses accepted; Phases 0 and 1 complete (#941–#953); Phase 2 allocated as FOLLOW-1286..1299, with WP-2.13 = FOLLOW-1299 named as the builder of FOLLOW-820 condition 1b in §P.0 and §Snapshot.0; §Snapshot.0 "Status at HEAD" re-synced against `1f5bc1ed`; §Snapshot.1 rows B.1, B.2, B.3, B.4.4, D and E.1–E.3 corrected for Phase 0 deletions [FOLLOW-1257]. Poprzednio: 4.17 (2026-09-25 — `apps/stream-consumer`, `infra/terraform/redpanda`, the two llm-gateway event-bus pollers and the data-quality Kafka producer deleted; Redpanda is retired from the stack; §A.1 diagram and §C.2 batch-path line updated, §Snapshot.1 row A.1 gains a dated bracket [FOLLOW-1263]. Poprzednio: 4.16 (2026-09-24 — CEO rulings D1 and D2 of 2026-09-24 (`docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` §A, epic FOLLOW-1257) re-cut the FOLLOW-820 gate: GO = condition 1 (the FOLLOW-819 series rule, unchanged) + condition 1b (a chat arm on localhost graded as AC(8), new, NOT yet gradeable, built by WP-2.13) + condition 2 (FOLLOW-815, DONE #688); the former conditions 3 and 4 (chat-NLP in prod Modal with `MODAL_CHAT_NLP_URL`; the FOLLOW-450 prod flip) become post-GO deployment steps. §P.0's critical path drops FOLLOW-815 (DONE 2026-08-07) and names FOLLOW-1203, FOLLOW-1220 and the chat arm; §Snapshot.0 becomes the single status page ("Status at HEAD 2026-09-24"), citing README §5.13, §5.16 and §5.17 without re-grading; §Snapshot.1 rows L, M, N, R, U.11, W and D.5 read PARKED for single-tenant localhost GO and row P.0 is re-worded [FOLLOW-1258]. Poprzednio: 4.15 (2026-09-22 — CEO rulings of 2026-09-22 define FOLLOW-820 condition 1's series and close the three OPEN questions of v4.14: three consecutive `TALLY … run=GREEN` runs at the graded SHA on one un-restarted control plane, `run=RED` resets; a `run=UNMEASURED` run is neutral; `:8081` fixture-grounded runs count only after FOLLOW-1249 extends the fixture to production's grounding fields, so README §5.13 (`0025663f`) and §5.14 (`a51dcdd9`) are context, not GO evidence. §Snapshot.0 bullets (a)/(b) restated for #926 (FOLLOW-1244) and #927 (FOLLOW-1240) as shipped at `3759e259`; §Snapshot.1 row P.0 re-worded, verdict unchanged [FOLLOW-820]. Poprzednio: 4.14 (2026-09-21 — §P.0 condition 1 re-synced to the four graded FOLLOW-819 records of `tests/e2e/follow-819/README.md` §5.10–§5.13, stated by recorded `source`; the latest is 6/6 ×3 at `0025663f` on one un-restarted control plane. §Snapshot.0 gains what a FOLLOW-820 grader must weigh: the fixture-derived `:8081` grounding stand-in (761 vs MP-017's 902 `tokens_in`), how a holdout draw grades today versus FOLLOW-1240's specification (pending), README §6.7's "dev-server leak" reclassified as the FOLLOW-1241 product defect (#921; production ran it; FOLLOW-1248), FOLLOW-1242 DONE (#923, ESC-080 ceiling 43,136 B) but unproven on the real Worker, and FOLLOW-1246's stale-`dist` evidence risk. Three gate-definition questions written as OPEN for the CEO in §P.0 item 1; nothing decided [FOLLOW-1243]. Poprzednio: 4.13 (2026-09-14 — SoT re-sync after the #899–#904 merge train: FOLLOW-1196's AC(7) predicate and FOLLOW-1201's ingest/holdout contract stated as shipped; FOLLOW-820 condition 1 gains a pasted `--check-staleness` precondition and one deciding field; §E.3.4 "At HEAD" state moved under §Snapshot.0, which §Y.3 now names [FOLLOW-1209]. Poprzednio: 4.12 (2026-09-13 — the localhost-first stage and the FOLLOW-820 go/no-go gate enter the SoT (§P.0 = definition, §Snapshot.0 + §Snapshot.1 row P.0 = status); the §Snapshot.5 "no end-to-end test" line is replaced by the measured state, cited by recorded `source` rather than by tally; CEO rulings #2–#5 of 2026-09-13 on measurement design recorded in §E.3.4 and §D.6, each with its owning stub [FOLLOW-1148, absorbing FOLLOW-1129 + FOLLOW-1197; CEO decision #1, `docs/AUDIT-2026-09-13.md` §8]. Poprzednio: 4.11 (2026-08-27) — §E.7.0 dodane: reguła gruntowania osi dyrektyw, ratyfikowana przez CEO jako ESC-076 [ESC-076].)))))))))))))
+**Wersja:** 4.28 (2026-10-19 — the CEO's ruling of 2026-10-19 (plan „Faza Q”, decisions Q-A…Q-J) enters the SoT: §E.4 re-cut to v3.0 — a fact-based quiz tree (purpose first, ≤ 3 questions, an optional trait screen, the buyer's self-confirmation as ground truth), 12 results + `neutral` with 7 traits (`upsizer`, `portfolio_builder`, `luxury_buyer`, `remote_worker`, `golden_visa_buyer` chat/behaviour-only, kept canonical), EN + PL mandatory with a buyer-side language switcher, the fold re-cut (`applyQuizLeaf(state, leaf, evidence)`: 0.72 completed / 0.90 confirmed or corrected; `QUIZ_CONFIDENCE_BONUS` off the quiz path; `CHAT_ONLY_CONFIDENCE_SCALE` for chat without a quiz; drift never for a confirmed leaf, never to `neutral`), measurement in `quiz_runs` (handover SQL H002) with a pre-registered criterion (n = 400, 95 % Wilson lower bound ≥ 0.90), full quiz management in the backoffice, harness AC(10) and checkpoints KQ1–KQ3; the v2.0 text kept as §E.4.H; §D.1.1/§D.6/§D.7 dated notes; §Snapshot.0 gains the Phase Q bullet; §Snapshot.1 rows D.6 and E.4 bracketed — in the tree at HEAD still v2.0 [FOLLOW-1355]. Poprzednio: 4.27 (2026-10-18 — ESC-085 (CEO rulings of 2026-10-16/17) enters the SoT: Adaptive Listings serves ONE tenant, app.estalara.com — §A.2 re-cut to the single-tenant model (one tenant row, the `ESTALARA_TENANT_ID` constant, a fixed origin allowlist, `tenant_id` kept internally); §B.4/§B.5/§B.6 PARKED → REMOVED (implementation deleted in plan Phase 2); §J.4 agency dashboard merged into the staff backoffice, agency roles retired; §K.3 fleet / alerts / ML-health / revenue panels NOT built; §E.3.4 item 3 and §D.6 carry the lift definition D-J (server-confirmed signed `live.signup` OR `inquiry.completed`, one conversion per session, `relative_lift_pct` from `lib/pilot-stats.ts`, 30/arm; ESC-084 stands); §P.0 notes the GO ruling DEFERRED (CEO 2026-10-16; definition of done = checkpoint K7; production steps = the CTO handover package `docs/handover/CTO_HANDOVER.md`); §Snapshot.1 rows K and U corrected against the tree (admin pages read the DB; mock only when the store is unconfigured), rows A.2/B.4/B.4.4/B.5/B.6/J/P.0 bracketed; ADR-0018 §Decision 0 and Resolved decision #2 reversed by a dated notice [FOLLOW-1319, ESC-085]. Poprzednio: 4.26 (2026-10-16 — §Snapshot.0 condition 1 re-measured at `main` HEAD `e8d1a04d` after FOLLOW-1314 (#1010) and FOLLOW-1315 (#1012): README §5.24, three consecutive `run=GREEN`, `[FRESH]`; still not ruled on [FOLLOW-820]. Poprzednio: 4.25 (2026-10-14 — §Snapshot.0 row 1 and its bullet re-cut: FOLLOW-820 condition 1 measured at `main` HEAD `f11534be` (three consecutive `run=GREEN`, `[FRESH]` with `commitsBehind=0`, README §5.23) after FOLLOW-1203 (#1007) and FOLLOW-1220 (#1005); not ruled on — the GO/NO-GO ruling is the CEO's [FOLLOW-820]. Poprzednio: 4.24 (2026-10-14 — FOLLOW-1203 (CEO decision #4 of 2026-09-13; ESC-084 rulings of 2026-10-13): the lift's conversion is DEFINED as a server-confirmed `inquiry.completed` or `live.signup` received at or after the session's first decision; `chat.contact_initiated` is dropped; a browser-emitted conversion is excluded from the lift, not rejected at ingest; the caller class is persisted as `events.caller_signed` (ClickHouse migration 0024, flag-gated by `CALLER_SIGNED_COLUMN_ENABLED`); on localhost the `:8081` fixture host backend emits the signed conversion and FOLLOW-819 AC(5) grades it; emission from the Estalara host backend and the prod apply of 0024 are post-GO deployment steps. Sections touched: §E.3.4 item 3 (definition), §P.0 (item 1 note + post-GO list), §D.6 (pointer). §Snapshot.0 status lines NOT edited here (PM). §Y.2: `CLAUDE.md` no-op (no section renamed; its critical path already names FOLLOW-1203); `docs/AGENT_WORKFLOW.md`, `.claude/agents/*.md`, `AUDIT_*.md`, `docs/ops/OPERATING_PRINCIPLES.md` no-op (0 references to the changed text); `backlog/QUEUE.md` / `backlog/STATUS.md` are the PM's [FOLLOW-1203]. Poprzednio: 4.23 (2026-10-13 — checkpoint K2 of the remediation program ruled PASSED by the CEO, two misses accepted (`llm-gateway.ts` 928 lines against < 900; nine ticket-named test files under `api/adapt` against 0); Phase 2 complete; §Snapshot.0 remediation-program entry extended [FOLLOW-1257]. Poprzednio: 4.22 (2026-10-13 — FOLLOW-1297 PR B (ADR-0023 §5 step 5, after the production cutover of 2026-10-13): `apps/llm-gateway` deleted with its Modal deploy job, its CI rows and the `MODAL_DESCRIPTION_URL` / `MODAL_EMBED_SEED_URL` dispatch branches; description generation and the embed seed run in the control plane only; the callback route `/api/internal/description-cache` deleted; §A.1 diagram and note, §E.7 note and write path, §Snapshot.1 rows A.1 and E.7 re-cut; operator step owed: `modal app stop estalara-description-generator` [FOLLOW-1297]. Poprzednio: 4.21 (2026-10-12 — FOLLOW-1297 PR A (ADR-0023 ACCEPTED by the CEO 2026-10-12, supersedes ADR-0016): description generation, the fact check and claim containment ported to the control plane (`lib/description-generator.ts`, `lib/grounding-check.ts`) behind the existing `MODAL_DESCRIPTION_URL` switch, embed-seed overflow behind `MODAL_EMBED_SEED_URL` (→ `POST /api/internal/listings/embed-seed`); parity corpus frozen from the Python (98 cases, 100 %); §A.1 and §E.7 paragraphs added, §Snapshot.1 rows A.1 and E.7 read "PR A merged, Modal still deployed, cutover pending" [FOLLOW-1297]. Poprzednio: 4.20 (2026-10-12 — CEO decision D4 executed (WP-2.9): §B.4 and §B.5 PARKED (frozen, not developed); auto-detection trimmed to Estalara markup (`data-estalara`, `json-ld`, `data-attributes`; AI Vision server-side), the seven platform techniques and their 14 corpus fixtures deleted; the micro-poll feature removed (`quiz_config.micro_polls_enabled` is a retired JSONB key, stripped on read); the DQS tracker and the public event `session.quality.snapshot` removed (ESC-082 option 1: a stale sender is rejected per event); §D.5.3 DQS formula marked removed from the SDK; §Snapshot.1 rows B.4 and B.5 re-cut [FOLLOW-1294]. Poprzednio: 4.19 (2026-10-12 — CEO rulings of 2026-10-12 on FOLLOW-820 conditions 1b and 1c: both **MET**. 1b on FOLLOW-1302's series (#978, `359db019`: three consecutive `run=GREEN` with an ADAPTED `llm_full` response after the second chat message, `[FRESH]` per run), with the `:8078` adapter stand-in and the 0.403-vs-0.484 negative-case reading recorded as caveats, not conditions; 1c on FOLLOW-1305 (#974) + FOLLOW-1312 (#977, per-slot refusal per the CEO ruling of 2026-10-11, ESC-076 AMENDMENT), with the bounded English lexicon, the digit-paraphrase refusal and the absent live refusal-rate measurement recorded as limits of record (the refusal-rate watch goes to checkpoint K2). §Snapshot.0 rows 1b/1c and bullets re-cut; critical path now reads FOLLOW-819 ×3 (README §5 record owed) → FOLLOW-1203 → FOLLOW-1220 → FOLLOW-820 [FOLLOW-1302, FOLLOW-1312]. Poprzednio: 4.18 (2026-10-04 — checkpoint K1 of the remediation program ruled PASSED by the CEO ("K1 passed, start Phase 2"), two misses accepted; Phases 0 and 1 complete (#941–#953); Phase 2 allocated as FOLLOW-1286..1299, with WP-2.13 = FOLLOW-1299 named as the builder of FOLLOW-820 condition 1b in §P.0 and §Snapshot.0; §Snapshot.0 "Status at HEAD" re-synced against `1f5bc1ed`; §Snapshot.1 rows B.1, B.2, B.3, B.4.4, D and E.1–E.3 corrected for Phase 0 deletions [FOLLOW-1257]. Poprzednio: 4.17 (2026-09-25 — `apps/stream-consumer`, `infra/terraform/redpanda`, the two llm-gateway event-bus pollers and the data-quality Kafka producer deleted; Redpanda is retired from the stack; §A.1 diagram and §C.2 batch-path line updated, §Snapshot.1 row A.1 gains a dated bracket [FOLLOW-1263]. Poprzednio: 4.16 (2026-09-24 — CEO rulings D1 and D2 of 2026-09-24 (`docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` §A, epic FOLLOW-1257) re-cut the FOLLOW-820 gate: GO = condition 1 (the FOLLOW-819 series rule, unchanged) + condition 1b (a chat arm on localhost graded as AC(8), new, NOT yet gradeable, built by WP-2.13) + condition 2 (FOLLOW-815, DONE #688); the former conditions 3 and 4 (chat-NLP in prod Modal with `MODAL_CHAT_NLP_URL`; the FOLLOW-450 prod flip) become post-GO deployment steps. §P.0's critical path drops FOLLOW-815 (DONE 2026-08-07) and names FOLLOW-1203, FOLLOW-1220 and the chat arm; §Snapshot.0 becomes the single status page ("Status at HEAD 2026-09-24"), citing README §5.13, §5.16 and §5.17 without re-grading; §Snapshot.1 rows L, M, N, R, U.11, W and D.5 read PARKED for single-tenant localhost GO and row P.0 is re-worded [FOLLOW-1258]. Poprzednio: 4.15 (2026-09-22 — CEO rulings of 2026-09-22 define FOLLOW-820 condition 1's series and close the three OPEN questions of v4.14: three consecutive `TALLY … run=GREEN` runs at the graded SHA on one un-restarted control plane, `run=RED` resets; a `run=UNMEASURED` run is neutral; `:8081` fixture-grounded runs count only after FOLLOW-1249 extends the fixture to production's grounding fields, so README §5.13 (`0025663f`) and §5.14 (`a51dcdd9`) are context, not GO evidence. §Snapshot.0 bullets (a)/(b) restated for #926 (FOLLOW-1244) and #927 (FOLLOW-1240) as shipped at `3759e259`; §Snapshot.1 row P.0 re-worded, verdict unchanged [FOLLOW-820]. Poprzednio: 4.14 (2026-09-21 — §P.0 condition 1 re-synced to the four graded FOLLOW-819 records of `tests/e2e/follow-819/README.md` §5.10–§5.13, stated by recorded `source`; the latest is 6/6 ×3 at `0025663f` on one un-restarted control plane. §Snapshot.0 gains what a FOLLOW-820 grader must weigh: the fixture-derived `:8081` grounding stand-in (761 vs MP-017's 902 `tokens_in`), how a holdout draw grades today versus FOLLOW-1240's specification (pending), README §6.7's "dev-server leak" reclassified as the FOLLOW-1241 product defect (#921; production ran it; FOLLOW-1248), FOLLOW-1242 DONE (#923, ESC-080 ceiling 43,136 B) but unproven on the real Worker, and FOLLOW-1246's stale-`dist` evidence risk. Three gate-definition questions written as OPEN for the CEO in §P.0 item 1; nothing decided [FOLLOW-1243]. Poprzednio: 4.13 (2026-09-14 — SoT re-sync after the #899–#904 merge train: FOLLOW-1196's AC(7) predicate and FOLLOW-1201's ingest/holdout contract stated as shipped; FOLLOW-820 condition 1 gains a pasted `--check-staleness` precondition and one deciding field; §E.3.4 "At HEAD" state moved under §Snapshot.0, which §Y.3 now names [FOLLOW-1209]. Poprzednio: 4.12 (2026-09-13 — the localhost-first stage and the FOLLOW-820 go/no-go gate enter the SoT (§P.0 = definition, §Snapshot.0 + §Snapshot.1 row P.0 = status); the §Snapshot.5 "no end-to-end test" line is replaced by the measured state, cited by recorded `source` rather than by tally; CEO rulings #2–#5 of 2026-09-13 on measurement design recorded in §E.3.4 and §D.6, each with its owning stub [FOLLOW-1148, absorbing FOLLOW-1129 + FOLLOW-1197; CEO decision #1, `docs/AUDIT-2026-09-13.md` §8]. Poprzednio: 4.11 (2026-08-27) — §E.7.0 dodane: reguła gruntowania osi dyrektyw, ratyfikowana przez CEO jako ESC-076 [ESC-076].))))))))))))))
+
+**Changelog v4.28 (19 October 2026 — §E.4 v3.0: the quiz re-cut for ≥ 90 % archetype accuracy and full backoffice management [FOLLOW-1355 = package Q0 of plan „Faza Q”, approved by the CEO on 2026-10-19; source: the CEO's decisions Q-A…Q-J of 2026-10-19, `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md`]):** Docs-only. No runtime code changes; the design the CEO approved is transcribed, dated and attributed; nothing here decides anything new. **Why:** the CEO asked on 2026-10-19 for the quiz to be analysed from questions to archetype, grounded in research and brought to ≥ 90 % probability of the right archetype, and for full quiz editing and management in the backoffice. At HEAD the v2.0 tree has no accuracy measurement at all (no confirmation, definition version or timing on `quiz_completions`), its Q3 "luxury" / "remote work" answers override the Q2 situation, its confidence is not a probability (0.85 × 1.2 capped at 1.0), drift can pin `neutral`, the backoffice form edits English text only, and the editor has two bugs (a version-number race; an invalid active row loads STARTER). **What changed, per section:** (1) **§E.4** — re-cut to v3.0: E.4.1 philosophy (facts not attitudes, purpose first, self-confirmation as ground truth Q-A, the quiz alone ≥ 90 % Q-B, chat without a quiz still adapts Q-G); E.4.2 the tree with the EN/PL baseline texts, the trait screens, the confirmation and correction screens, the buyer's EN | PL switcher and the additive schema; E.4.3 the 12 results + `neutral` with their labelling rules, nearest alternatives and the four precedence rules, the five ids the quiz no longer assigns (kept in `CANONICAL_ARCHETYPE_IDS`, allow-listed in `computeUnreachableArchetypes`), the seven traits and their source playbooks (Q-F); E.4.4 the fold (0.72 / 0.90 / 0.90, floor 0.005, `none_of_these` → pre-quiz state, `QUIZ_CONFIDENCE_BONUS` off the quiz path, `CHAT_ONLY_CONFIDENCE_SCALE`, the confirmed-leaf anchor, chat τ = 0.5); E.4.5 the drift guards; E.4.6 unchanged, with a dated note; E.4.7 EN + PL mandatory (the CEO's ruling verbatim), the default v2 definition served from the control plane, the SDK's bundled fallback EN-only; E.4.8 measurement (`quiz_runs` via handover SQL H002, `POST /api/quiz/run`, the `quiz.event` steps under ESC-086, the metric, the pre-registered n = 400 / ≥ 372 criterion, what localhost proves versus production, the accuracy tab); E.4.9 backoffice management (structured EN | PL editor, lint, simulator, versions, browser-local draft + one audited publish Q-I, ops and above Q-H, advisory lock + `base_version` 409, the two bugs); E.4.10 harness AC(10), TALLY total 8 and checkpoints KQ1–KQ3; the v2.0 text kept as §E.4.H with a dated "Superseded 2026-10-19" note on each subsection. (2) **§D.6** — a dated note: the "Quiz discrimination" column is v2.0; under v3.0 five archetypes are chat/behaviour-only and the traits exist; the table is not rewritten. (3) **§D.1.1 and §D.7** — dated notes on the quiz/chat confidence scale under v3.0. (4) **§Snapshot.0** — one dated bullet: Phase Q inserted between K3 and Phase 4, checkpoints KQ1–KQ3. (5) **§Snapshot.1** — rows D.6 and E.4 bracketed "v3 ruled 2026-10-19, in the tree at HEAD still v2.0 (implementation Phase Q)"; verdicts not flipped. (6) **§Y.2** — the propagation record. **Rule H / architect guardrail:** every behaviour this version describes without code names its owning plan package in a "Właściciel (Rule H)" line under each v3.0 subsection — schema, `traits.ts`, walk/lint/diff, Wilson and `DEFAULT_QUIZ_DEFINITION_V2` Q1; widget, confirmation, switcher and SDK pings Q2; `quiz_runs`, H002, `/api/quiz/run`, CORS, DSR, consent and public-config Q3; fold and drift Q4; traits in copy and the playbook merges Q5; AC(10) and the re-pins Q6; editor API and UI C1–C4 of Q7; the accuracy report Q8; handover H — and their FOLLOW numbers are allocated by the PM on `main` (Rule AN) before dispatch, the same device v4.27 used; the plan's two optional items (a server-side confidence cap, capped multiplicative boosts) are named as unallocated. **Companion edits in the same PR:** none — this PR changes `docs/MASTER_DESIGN.md` only. Not in this PR: `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md`, `docs/research/QUIZ-ACCURACY-RESEARCH-2026-10-19.md`, `docs/decisions/PREREG-quiz-accuracy-2026-10.md`, ESC-086, the tickets and `backlog/QUEUE.md` (PM, package Q0, parallel PR); `docs/INTERFACES.md`, `docs/DATA_DICTIONARY.md` and a dated ADR-0019 amendment (owed with the packages that change the contract — see the §Y.2 record).
 
 **Changelog v4.27 (18 October 2026 — ESC-085: one tenant, GO deferred, the lift definition D-J [FOLLOW-1319 = package 0.2 of the localhost-completion plan approved by the CEO on 2026-10-17; source: the CEO's rulings D-A…D-K of 2026-10-16/17, transcribed in `backlog/ESCALATIONS.md` ESC-085]):** Docs-only. No runtime code changes; rulings are transcribed, dated and attributed; nothing here decides anything new. **Why:** the tree and the SoT still describe a multi-tenant SaaS (ADR-0018 §Decision 0 un-hid Tenants / Registrations / Demo Sessions on 2026-07-20; §B.4/§B.5 onboard foreign sites; §J.4/§K.3 describe an agency dashboard and a fleet panel), the gate assumed the PM takes production steps after GO, and §E.3.4 item 3 defined the conversion event without saying what business outcome the lift stands for. **What changed, per section:** (1) **§A.2** — a dated supersession note: one tenant row, `ESTALARA_TENANT_ID`, a fixed origin allowlist, `tenant_id` kept internally; the multi-tenant table kept as reference. (2) **§B.4, §B.5, §B.6** — PARKED → **REMOVED by ESC-085**, each with a one-paragraph historical note and the deleting plan package (R6, R6, R2); bodies kept for reference. (3) **§J.4** — the agency dashboard merged into the staff backoffice, agency roles retired (M1/M2), the D-K lift report named (M5). (4) **§K.3** — fleet / alerts / ML-health / revenue NOT built; the single-tenant backoffice scope. (5) **§E.3.4 item 3 and §D.6** — the D-J lift definition: signed `live.signup` OR `inquiry.completed`, one conversion per session, `relative_lift_pct` from `lib/pilot-stats.ts` (30/arm), `live_signup_rate` / `agent_contact_rate` beside it, the `:8081` fixture emits both; ESC-084's `caller_signed` mechanics kept, its `chat.contact_initiated` exclusion stands. (6) **§P.0** — a dated note: GO ruling DEFERRED (CEO 2026-10-16), definition of done = checkpoint K7, production steps = `docs/handover/CTO_HANDOVER.md` §4; the "On GO" paragraph bracketed. (7) **§Snapshot.0** — a re-sync line and one dated bullet (status only). (8) **§Snapshot.1** — rows K and U corrected against the tree (the admin pages read the DB through `data.ts`; `mock-data.ts` only when `DATABASE_URL_ADMIN` is absent — the "not wired to live DB lists" / "mock data" wording was stale); rows A.2, B.4, B.4.4, B.5, B.6, J and P.0 bracketed "ruled REMOVED / deferred, still in the tree at HEAD" — verdicts not flipped, because the code is still present. (9) **§Y.2** — the propagation record. **Rule H / architect guardrail:** every behaviour this version describes without code (the constant, the removals, the merged backoffice, the OR rule and the per-event rates, the fixture's second emitter, the daily snapshot and CSV export) names its plan package as owner (C2, R1–R11, M1–M5, X1); their FOLLOW numbers are allocated by the PM on `main` in package 0.3 (Rule AN) before dispatch — the same device v4.16 used for condition 1b. **Companion edits in the same PR:** `backlog/ESCALATIONS.md` ESC-085; `docs/adr/ADR-0018-superadmin-tenant-access.md` "Superseded in part — 2026-10-17" (Decision 0 and Resolved #2 reversed; Decisions 1–5 and Resolved #3 kept); `docs/handover/CTO_HANDOVER.md` v0 (new). Not in this PR: `backlog/QUEUE.md`, `backlog/FOLLOW_UPS.md`, `CLAUDE.md` (PM, package 0.3).
 
@@ -851,6 +853,15 @@ statement of program and gate status in the repo; everything else links here.
   FOLLOW-1220 (#1005) are done → the **FOLLOW-820 ruling** is the only step left (§P.0; `CLAUDE.md` "Localhost-first until FOLLOW-820 GO").
   The chat arm (1b, FOLLOW-1299 → FOLLOW-1302) and containment (1c, FOLLOW-1305 → FOLLOW-1312) were
   ruled MET on 2026-10-12. FOLLOW-815 is off the path.
+- **Phase Q (quiz) — inserted 2026-10-19 by the CEO's ruling of 2026-10-19 (recorded in v4.28,
+  FOLLOW-1355):** between checkpoint K3 and Phase 4 (P1–P7) of the localhost-completion plan
+  (`docs/PLAN-LOCALHOST-COMPLETION-2026-10-17.md`), ahead of further work. Scope: quiz v3 with
+  ≥ 90 % archetype accuracy by buyer self-confirmation, EN + PL, and full quiz management in the
+  backoffice — design §E.4 v3.0, plan `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md`, packages Q0–Q8 + H.
+  Checkpoints: **KQ1** (localhost, after Q1–Q6: FOLLOW-819 3× GREEN 8/8 on one SHA, AC(10) a/b/c),
+  **KQ2** (CEO walkthrough of the backoffice and the v3 quiz in EN and PL, after Q7–Q8), **KQ3**
+  (production measurement — a CTO step of the handover; its PASS/FAIL verdict is recorded here).
+  At HEAD `434b2513` no Phase Q code exists.
 - **Remediation program:** `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` approved by the CEO on
   2026-09-24 with every recommended default of its §A (D1–D10); epic FOLLOW-1257. This entry is the
   §Snapshot.0 record the plan's own Status clause asks for.
@@ -1155,9 +1166,9 @@ lands):
 | C | Signal ingestion / event taxonomy | 🟡 **Partial** | Ingest worker substantial. SDK emits **21 of 46** declared event types (2026-07-01 audit — up from the stale 8/37; the signal-enrichment set FOLLOW-207–211 landed: referrer, device, listing-view rate, favorites, filter payload). The `EVENT_TYPES` tuple (`packages/shared/src/schemas/events/index.ts`) has since grown to **52** entries (FOLLOW-461/RETRO-166 added 6 `adapt.description.*` observability types), so producer coverage is ~21/52 today; several chat/photo/mortgage_calc types remain schema-only. |
 | D | Intent Engine (12-dim ontology) | 🟡 **Partial** | Corrected (2026-07-01 audit): the 18-archetype set is **consistent across all ~15 code locations** (NOT "3 divergent places" — that stale claim conflated `archetype_embeddings` seed-count with the ontology). SDK Bayesian classifier real (rule-based, ~600 LOC). `apps/intent-engine` is a **real Modal chat-NLP service** (FOLLOW-087) making genuine LLM calls — NOT a 27-line placeholder. ⚠️ **CODE-VS-PROD (Rule AA), added 2026-08-07 by FOLLOW-891 — this row previously carried NO split and claimed a two-tier "Haiku 4.5 real-time + Sonnet batch" engine in the present tense.** **CODE axis:** only the real-time Haiku 4.5 tier exists (`src/main.py` `process_chat_message`); the Sonnet 4.6 batch tier (`batch_enrich_conversations`) was removed by FOLLOW-1264 (2026-09-29) — see §D.4. **PROD axis:** the deployed `estalara-intent-engine` app registers **exactly two** functions — probe 2026-08-07, `modal.Function.from_name(...).hydrate()`: `chat_nlp_endpoint` → `fu-lvhrvBFkOJhWYUon9GXkvm` and `process_chat_message` → `fu-ztEu85F1cKenPZVRyIuqH1`; `batch_enrich_conversations` → **`NotFoundError`**. `main.py` never imports `jobs.batch_enrich`, so the 6-hourly batch tier is **not in production and its cron has never fired**. (Sonnet is not wholly absent from prod: `nlp.py:508-509` retries a low-confidence multilingual Haiku extraction on Sonnet inside the real-time tier. That is a retry, not the §C.3 batch tier.) `modal-deploy.yml`'s own comment above the deploy step states the batch tier is not deployed and calls it deliberate — **the executed corpus is right and this document was wrong**. Whether the batch tier is WANTED is **not decided here**: it is FOLLOW-874 item 2. Remaining gaps: `packages/intent-ontology` is still a 14-line version stub (0 consumers — FOLLOW-467) **[2026-09-29, FOLLOW-1266 (#943): the package was deleted with the other four stub packages; the gap closed by removal. Recorded 2026-10-04 (FOLLOW-1257 K1)]**; ~~the real-time chat→NLP path is code-complete but dead in prod (stream-consumer not deployed, F-03)~~ — **CORRECTED 2026-08-07 (FOLLOW-891):** the real-time path no longer depends on `stream-consumer` (ADR-0016: the ingest Worker POSTs straight to `chat_nlp_endpoint`), and that endpoint is now deployed. The **traffic** axis is still unproven — see row A.1's Rule AA note and FOLLOW-892. |
 | D.5 | Continuous Detection Quality | ⏸️ **PARKED (2026-09-24 — single-tenant localhost GO)** | **PARKED 2026-09-24 (CEO-approved plan WP-1.1 / `docs/AUDIT-2026-09-24.md` §4 item 8: single-tenant localhost GO; resumes after FOLLOW-820 GO; FOLLOW-1258).** Was 🟥 Design-only: No DQS measurement code beyond the schema_validation cron. |
-| D.6 | Archetype Coverage Matrix | 🟢 **UPDATED (2026-06-19, FOLLOW-344)** | All 17 non-neutral archetypes reachable: 9 🟢 Full (behavioral+quiz+chat), 6 🟡 Quiz/chat-only (vacation_rental_investor/downsizer/remote_worker/retiree_relocator/diaspora_buyer/student_parent — no reliable passive behavioral discriminator), 2 ⚪ Quiz/chat-only (golden_visa_buyer/commercial_investor). Plus `neutral` (🟢 Always) = 18/18 total. Counts reconciled to match §D.6 table Status column (FOLLOW-364). |
+| D.6 | Archetype Coverage Matrix | 🟢 **UPDATED (2026-06-19, FOLLOW-344)** | **[2026-10-19, v4.28 (FOLLOW-1355): v3 ruled 2026-10-19 — under §E.4 v3.0 the quiz assigns 12 results + `neutral`; `upsizer`, `portfolio_builder`, `luxury_buyer`, `remote_worker`, `golden_visa_buyer` become chat/behaviour-only and 7 traits exist (dated note under the §D.6 table). In the tree at HEAD still v2.0 (implementation Phase Q); the counts below are v2.0 and are not re-graded.]** All 17 non-neutral archetypes reachable: 9 🟢 Full (behavioral+quiz+chat), 6 🟡 Quiz/chat-only (vacation_rental_investor/downsizer/remote_worker/retiree_relocator/diaspora_buyer/student_parent — no reliable passive behavioral discriminator), 2 ⚪ Quiz/chat-only (golden_visa_buyer/commercial_investor). Plus `neutral` (🟢 Always) = 18/18 total. Counts reconciled to match §D.6 table Status column (FOLLOW-364). |
 | E.1–E.3 | Adaptation decision tree + A/B + bandit | 🟡 **Partial** | A/B holdout + Thompson sampling math shipped + tested + **wired into canonical `POST /api/adapt`** (Sprint 9.5 PR #122, FOLLOW-007). Server selects a `variant` per (tenant, archetype) request and includes it in the response body. **Sprint 10 closed both Sprint 9.5 half-wires:** (1) SDK `AdaptResponse.variant?: string` field added in PR #127 (FOLLOW-042); (2) SDK feedback ping consumer at `packages/sdk/src/core/adapt.ts:postFeedbackPing()` POSTs to `/api/adapt/feedback` on outcome events in PR #127 (FOLLOW-041). PR #133 (FOLLOW-051) hardened the feedback endpoint from presence-only Bearer to HMAC-SHA256 tenant-scoped signing — threat model documented in §V.3.2. **Bandit feedback loop is end-to-end wired in CODE.** ⚠️ **CODE-VS-PROD (Rule AA):** the 2026-07-01 audit (F-06) found the prod feedback endpoint 503-gated (`FEEDBACK_ENDPOINT_ENABLED !== 'true'`, ADR-0015 interim), so `ab_bandit_weights` are **frozen at Beta(1,1) → Thompson sampling is uniform-random in prod**. FOLLOW-450 (Sprint 22b, P0) landed the go-live code (PR #426, DONE) but its AC1 is OPERATOR-PENDING — an operator must set `FEEDBACK_ENDPOINT_ENABLED=true` + provision `ADAPT_API_KEY`/`OPS_TENANT_ID` in Doppler prd and prove a real weight delta (`pnpm feedback:canary`) before the loop actually learns. Remaining limitation: the bandit *selection* keys against `ab_bandit_weights` rows (Beta priors) without consulting `archetype_embeddings.embedding` for archetype context — that depends on FOLLOW-063 (LG-1 — automated archetype seed enforcement) to make the cosine path reachable. Decision-api Worker (`apps/decision-api/src/app/api/adapt/route.ts`) still on keyword path — by design per ADR-0004 (canonical = control-plane). **[2026-09-25, FOLLOW-1262 (#938): `apps/decision-api` was deleted outright, so the preceding sentence is history. 2026-10-04 (FOLLOW-1257 K1): the bandit freeze the CEO ruled as D3 is FOLLOW-1286 (WP-2.1). Status: frozen until playbook variants survive §E.7.0 (D3, FOLLOW-1286) — `/api/adapt` serves and logs `variant='control'` without drawing an arm; `getBanditArms`, the new-tenant seed, `/api/ab/weights`, the bandit-resume `PATCH` and `/api/adapt/feedback` sit behind `BANDIT_ENABLED` (default off → 404 `bandit_disabled`); the SDK variant cache and HMAC feedback ping (`postFeedbackPing()` above) are removed. The loop described in this row is frozen, not learning; see §E.3 and the ESC-077 amendment.]** |
-| E.4 | Investor Quiz Widget | 🟢 **Mostly Shipped** | v2.0 cascading decision tree (3 branches, 17 leaf archetypes, 2–3 questions) ratified 2026-06-05 and **IMPLEMENTED** (2026-07-01 audit): `applyQuizLeaf()` direct-assignment ships in `packages/sdk/src/core/intent.ts` + `index.ts` (verified — 13 SDK files reference it), post-quiz drift detection (DRIFT_HOLD_COUNT=3), `quiz_completions` MOAT table, multilingual (en/pl/es), per-tenant toggle. (Was "impl PENDING" in the 2026-05-24 snapshot; the flat 2-question quiz was rewritten.) Open: `quiz_completions` had 0 DSR readers until FOLLOW-455 (tracked in FOLLOW-467 dead-scaffold sweep). |
+| E.4 | Investor Quiz Widget | 🟢 **Mostly Shipped** | **[2026-10-19, v4.28 (FOLLOW-1355): v3 ruled 2026-10-19 (CEO, plan „Faza Q”, decisions Q-A…Q-J) — §E.4 now describes v3.0 (fact-based tree, 12 results + `neutral` + 7 traits, buyer self-confirmation, EN + PL with a buyer-side switcher, fold masses 0.72 / 0.90, `quiz_runs` measurement, full backoffice management); in the tree at HEAD still v2.0 (implementation = Phase Q packages Q1–Q8, none started at `434b2513`; v2.0 text kept in §E.4.H). The verdict and the evidence below grade v2.0 and are not flipped.]** v2.0 cascading decision tree (3 branches, 17 leaf archetypes, 2–3 questions) ratified 2026-06-05 and **IMPLEMENTED** (2026-07-01 audit): `applyQuizLeaf()` direct-assignment ships in `packages/sdk/src/core/intent.ts` + `index.ts` (verified — 13 SDK files reference it), post-quiz drift detection (DRIFT_HOLD_COUNT=3), `quiz_completions` MOAT table, multilingual (en/pl/es), per-tenant toggle. (Was "impl PENDING" in the 2026-05-24 snapshot; the flat 2-question quiz was rewritten.) Open: `quiz_completions` had 0 DSR readers until FOLLOW-455 (tracked in FOLLOW-467 dead-scaffold sweep). |
 | E.6 | Placeholder Resolution Order (7-level) | 🟡 **Partial** | Only Level 1 (DOM attribute) implemented; Levels 2–7 fall through to literal `{token}` on-page (FOLLOW-026 P1). |
 | E.7 | Long-form Description Pipeline (v2.0 permanent cache, no Tiers) | 🟢 **Shipped + LIVE in prod** | Tiers/TTL eliminated (CEO 2026-06-05) and the pipeline is **implemented and live in prod** since 2026-07-03 (Modal `estalara-description-generator`, ADR-0016 direct-HTTPS dispatch, no Redpanda). `apps/llm-gateway/src/jobs/generate_description.py` writes both Redis (no TTL) and the `description_cache_persistent` Postgres table (real Drizzle table — `packages/db/src/schema/description_cache_persistent.ts`) via `_write_to_postgres_cache`; invalidation is by `listing.updated` only; `tier` param removed. Anti-hallucination guards real (whitelist + `<adaptation_verdict>` NEUTRAL fit-gate [ADR-0010] + negative-cache [FOLLOW-465] + model-keyed read [FOLLOW-464]). (Was "impl PENDING" in the 2026-05-24 snapshot.) [2026-10-12, FOLLOW-1297 PR A (ADR-0023): the pipeline was ported to the control plane behind `MODAL_DESCRIPTION_URL`; parity corpus 98/98.] [2026-10-13, FOLLOW-1297 PR B: **the control plane is the only runtime** — `lib/description-generator.ts` generates in `after()` of the request that missed the cache and writes Postgres (`publishPgCachedDescription`) then Redis; `apps/llm-gateway/src/jobs/generate_description.py`, the Modal dispatch and the callback route `/api/internal/description-cache` are deleted. Every mention of the Modal job earlier in this row is history. The frozen parity corpus is the record of the Python behaviour.] |
 | F | Data Network Effect (archetype embedding space) | 🟡 **Partial** | `archetype_embeddings` table seeded with all **18** archetypes (migration `0005_seed_archetype_embeddings.sql`, post-Sprint 8). Sprint 10 FOLLOW-043 (PR #131 + 6 fix commits) ships `pnpm seed:archetypes` script (uses Supabase PostgREST + `service_role` key per fix commit `82b9e2e` — Supabase direct host is IPv6-only, unreachable from GitHub Actions) and a manual `workflow_dispatch` GitHub Action (`.github/workflows/seed-archetypes.yml`). When invoked against a Doppler-configured environment with `SUPABASE_SERVICE_ROLE_KEY` + `OPENAI_API_KEY`, the script populates all 18 vectors with OpenAI `text-embedding-3-small` at 1024 dims; cost <$0.001. **No CI step or on-merge automation runs the seed automatically.** For any fresh DB pull, `archetype_embeddings.embedding` remains NULL until an operator runs the workflow — the cosine path that FOLLOW-019 (Sprint 9.5 PR #123) wired still falls back to djb2 by default. FOLLOW-063 (RETRO-006 LG-1) tracks the auto-seed enforcement + README runbook. The `listing_embeddings` table (migration 0013) is wired and PR #132 (FOLLOW-046) auto-seeds the 12-listing demo manifest on activation; non-demo tenants still need manual `POST /api/listings/embed` (FOLLOW-046 carve-out). **Sprint 11 FOLLOW-063 (PR #135) ships `archetype-embeddings-not-null` CI precheck (push:main, soft-skip until DOPPLER_TOKEN_DEV provisioned) + `.github/workflows/post-migrate-seed.yml` idempotent auto-seed on every push to main. Once ESC-009 / FOLLOW-040 escalation resolves, the cosine path will be enforceable in CI for any fresh DB pull.** |
@@ -2509,7 +2520,7 @@ Każdy wymiar ma **confidence score** (0–1). Adaptation engine zachowuje się 
 
 #### D.1.1. Mapowanie 12-dim intent vector → archetype posterior update
 
-Gdy `chat.intent.detected` event dotrze do SDK, wywoływana jest `applyChatIntentPrior(state, intentDimensions)` — parallel do `applyQuizPrior()`. Chat intent jest traktowany jak silny prior (NIE behaviorally damped, weight = `QUIZ_CONFIDENCE_BONUS`).
+Gdy `chat.intent.detected` event dotrze do SDK, wywoływana jest `applyChatIntentPrior(state, intentDimensions)` — parallel do `applyQuizPrior()`. Chat intent jest traktowany jak silny prior (NIE behaviorally damped, weight = `QUIZ_CONFIDENCE_BONUS`). **[2026-10-19, v4.28 (FOLLOW-1355): w §E.4 v3.0 skala ×1,2 zostaje tylko dla czatu w sesji bez quizu, jako `CHAT_ONLY_CONFIDENCE_SCALE`; fold czatu po quizie nie dostaje skali, a przy potwierdzonym liściu likelihoody czatu są tłumione τ = 0,5 — §E.4.4 (pakiet Q4). Przy HEAD nadal `QUIZ_CONFIDENCE_BONUS` dla każdego foldu czatu.]**
 
 **`CHAT_INTENT_LIKELIHOODS` — mapping reguł (do zaimplementowania w `packages/sdk/src/core/intent.ts`, FOLLOW-100):**
 
@@ -2824,6 +2835,17 @@ probability of those two actions, not a measure of purchases.
 
 Quiz v2.0 (drzewo decyzyjne, 2026-06-05): wszystkie 17 archetypów non-neutral są teraz bezpośrednio osiągalne przez quiz. Poprzednie "🔴 None" archetypy wymagały tylko chatu — teraz mają dedykowane ścieżki w drzewie decyzyjnym (patrz §E.4.2).
 
+> **[2026-10-19, v4.28 (FOLLOW-1355) — kolumna „Quiz discrimination” i zdanie powyżej opisują drzewo
+> v2.0** (dziś §E.4.H.2; w drzewie przy HEAD nadal działa). Pod §E.4 v3.0 (decyzje CEO Q-C/Q-E z
+> 2026-10-19, pakiety Q1–Q5 Fazy Q) quiz przypisuje 12 wyników + `neutral`; pięć archetypów —
+> `upsizer`, `portfolio_builder`, `luxury_buyer`, `remote_worker`, `golden_visa_buyer` — jest
+> osiągalnych **tylko przez czat i zachowanie** (zostają w `CANONICAL_ARCHETYPE_IDS`), a quiz
+> zbiera 7 cech (`premium`, `works_from_home`, `residency_goal`, `buying_from_abroad`,
+> `seasoned_investor`, `will_let`, `has_children`; §E.4.3), które zmieniają treść przez playbooki
+> źródłowe. Dla `remote_worker` i `golden_visa_buyer` (dziś „Quiz/chat-only”) oznacza to pod v3.0
+> „chat-only” jako archetyp — sygnał z quizu przechodzi na cechę. Tabela nie jest przepisywana;
+> zostanie przeliczona, gdy v3.0 trafi do drzewa.]
+
 ---
 
 ### D.7. Confidence & Fallback Policy
@@ -2835,6 +2857,11 @@ Quiz v2.0 (drzewo decyzyjne, 2026-06-05): wszystkie 17 archetypów non-neutral s
 | Behavioral (SIGNAL_LIKELIHOODS) | `BEHAVIORAL_DAMPING = 0.3` × likelihood | Soft signal — gradual accumulation |
 | Quiz (`applyQuizPrior`) | `QUIZ_CONFIDENCE_BONUS = 1.2` | Strong prior — explicit self-declaration |
 | Chat NLP (`applyChatIntentPrior`) | `QUIZ_CONFIDENCE_BONUS = 1.2` (when `chat_confidence > 0.7`) | Strong prior — treated same weight as quiz |
+
+> **[2026-10-19, v4.28 (FOLLOW-1355): wiersze Quiz i Chat NLP powyżej opisują stan v2.0.** Pod §E.4
+> v3.0 quiz nie dostaje `QUIZ_CONFIDENCE_BONUS` — `applyQuizLeaf(state, leaf, evidence)` daje masę
+> 0,72 (`completed`) albo 0,90 (`confirmed` / `corrected`), a confidence = max posterior; czat
+> dostaje ×1,2 tylko w sesji bez quizu (`CHAT_ONLY_CONFIDENCE_SCALE`) — §E.4.4, pakiet Q4.]
 
 **Fallback rules:**
 1. If `combined_confidence <= 0.6` → serve `neutral` playbook, no DOM mutation. (Boundary is inclusive, matching code: `route.ts:275` is `if (confidence <= CONFIDENCE_THRESHOLD)`, so adaptation requires strictly `> 0.6` and exactly 0.6 serves `neutral` — corrected from `< 0.6` 2026-08-07, FOLLOW-887; the `> 0.6` phrasings at the §D.1 dimension note and §E.1 step 1 were already correct.)
@@ -3184,9 +3211,533 @@ Mechanizmy CATE estimation feed do D.5 confirmation rate (post-adaptation behavi
 
 ---
 
-### E.4. Investor Quiz Widget — cascading decision tree (v2.0, ratified 2026-06-05)
+### E.4. Quiz Widget — drzewo faktów, samopotwierdzenie, pomiar (v3.0, zaplanowane 2026-10-19)
 
-#### E.4.1. Filozofia — cel quizu
+> **v3.0 — zatwierdzone przez CEO 2026-10-19 (plan „Faza Q”, decyzje Q-A…Q-J; zapisane 2026-10-19
+> w v4.28, FOLLOW-1355).** Plan: `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` (kopię planu zatwierdzonego
+> przez CEO dodaje PM w równoległym PR pakietu Q0). Implementacja = pakiety **Q1–Q8** Fazy Q oraz
+> **H** (handover); numery FOLLOW nadaje PM na `main` (Rule AN). **W drzewie przy HEAD działa nadal
+> v2.0** — jej tekst jest zachowany jako historia w §E.4.H; stan: §Snapshot.1 wiersz E.4. Podsekcje
+> E.4.1–E.4.10 opisują zachowanie docelowe v3.0, nie stan. **Nazewnictwo:** plan nazywa nowe drzewo
+> „drzewem v2” (stąd `DEFAULT_QUIZ_DEFINITION_V2` — druga domyślna definicja w sensie ADR-0019); w
+> tym dokumencie jest to §E.4 v3.0 — ta sama rzecz. Przegląd literatury:
+> `docs/research/QUIZ-ACCURACY-RESEARCH-2026-10-19.md` (pakiet Q0, PM). Faza Q wchodzi między punkt
+> kontrolny K3 a Fazę 4 planu localhost-completion (§Snapshot.0).
+
+#### E.4.1. Filozofia — cel quizu (v3.0)
+
+Quiz pozostaje najsilniejszym sygnałem cold-start. v3.0 zmienia to, o co pyta, i dodaje sprawdzenie
+wyniku przez samego kupującego:
+
+- **Fakty, nie postawy.** Każde pytanie dotyczy faktu lub planu (kto będzie tam mieszkał przez
+  większość roku, w jakim kraju, czy kupujący miał już własne lokum, jak nieruchomość ma zarabiać),
+  nie preferencji. Pytania pozostają generyczne — niezależne od oglądanego listingu.
+- **Najpierw cel zakupu.** Q1 pyta o przeznaczenie; każda ścieżka ma dokładnie jedną ważoną
+  odpowiedź, więc żadna odpowiedź nie nadpisuje innej (koniec reguły override v2.0).
+- **Kształt:** ≤ 3 pytania na ścieżkę + opcjonalny ekran cech + ekran potwierdzenia.
+- **Ground truth = samopotwierdzenie kupującego** na ekranie potwierdzenia (decyzja CEO **Q-A**).
+- **Sam quiz ma dać ≥ 90 %** trafności (decyzja **Q-B**), liczonej na liściu quizu (§E.4.8).
+  Zachowanie i czat po quizie tylko doprecyzowują; potwierdzonego liścia nie zdejmują (§E.4.4,
+  §E.4.5).
+- **Mniej archetypów, pewniej** (decyzje **Q-C**, **Q-E**): 12 wyników + `neutral`; reszta jako
+  cechy (§E.4.3).
+- **Czat bez quizu nadal adaptuje** (decyzja **Q-G**; warunek 1b §P.0 zostaje) — §E.4.4.
+
+Bez zmian względem v2.0: quiz działa na liście i na stronie szczegółowej, wszędzie tam, gdzie
+załadowane jest SDK; włącznik `QuizConfig.enabled` per tenant (`tenants.quiz_config`, §E.4.6).
+
+**Właściciel (Rule H):** Q1 (schemat, default), Q2 (widget), Q4 (fold); dowód na localhost = KQ1 i
+KQ2, pomiar trafności = KQ3 (CTO) — §E.4.10.
+
+#### E.4.2. Drzewo v3.0 — cel → doprecyzowanie → cechy → potwierdzenie
+
+```
+Q1 q_purpose (zawsze) — „Do czego ma służyć ta nieruchomość?”
+  main_here  główny dom, w kraju, w którym mieszkam            → q_home
+  main_move  główny dom, w kraju, do którego się przeprowadzam  → q_move  [cecha buying_from_abroad]
+             (lub wracam)
+  second     dom wakacyjny / drugi, na co dzień gdzie indziej   → second_home_buyer → t_second
+  invest     inwestycja — pod wynajem lub odsprzedaż             → q_invest
+  student    mieszkanie dla studiującego dziecka                 → student_parent → t_student
+  unsure     jeszcze nie wiem                                    → neutral [KONIEC, bez potwierdz.]
+
+q_home — „Co najlepiej Cię opisuje?”
+  first   pierwsze własne                        → first_time_buyer → t_home
+  up      miałem/am własne, chcę więcej/lepiej   → family_buyer     → t_home
+  down    miałem/am własne, chcę mniej/łatwiej   → downsizer        → t_home
+
+q_move — „Który opis do Ciebie pasuje?”
+  return  wracam do kraju pochodzenia   → diaspora_buyer    → t_move
+  retire  emerytura (lub wkrótce)       → retiree_relocator → t_move
+  work    będę tam pracować             → lifestyle_expat   → t_move
+
+q_invest — „Jak ta nieruchomość ma na siebie zarabiać?”
+  long           najem długoterminowy   → yield_hunter             → t_invest
+  short          najem krótkoterminowy  → vacation_rental_investor → t_invest
+  flip           remont i sprzedaż      → flip_investor            → t_invest
+  commercial     lokal komercyjny       → commercial_investor      → t_invest
+  inv_undecided  jeszcze nie wiem       → yield_hunter (bezpieczny default, raportowany osobno)
+                                          → t_invest
+
+t_* — ekran cech (kind: multi, opcjonalny, zawsze ostatni, „Żadne z powyższych” wyłączne)
+  t_home     has_children, works_from_home, premium
+  t_move     has_children, works_from_home, premium, residency_goal
+  t_second   will_let, buying_from_abroad, works_from_home, residency_goal, premium
+  t_invest   seasoned_investor, buying_from_abroad, residency_goal, premium
+  t_student  buying_from_abroad, will_let
+
+POTWIERDZENIE (każdy wynik ≠ neutral)
+  „Na podstawie Twoich odpowiedzi: {nazwa} — {zdanie z faktami}. Zgadza się?”
+  [Tak, to ja] → confirmed      [Nie do końca] → 3 najbliższe alternatywy (§E.4.3)
+                                                 + „Żadne — pokaż wszystkie” (= neutral)
+  × na ekranie potwierdzenia → wynik stosowany, zapis `unconfirmed`
+```
+
+Reguły drzewa:
+
+- **Jedna ważona odpowiedź na ścieżkę** (`weights {archetype: 1}`), więc istniejący argmax
+  `reduceWeightsToArchetype` (`packages/shared/src/schemas/presentation-config.ts`) zwraca liść bez
+  zmian; nie potrzeba jawnego pola wyniku. Szacunek raportu A: ~2,7 pytania dla wyniku ≠ neutral, 1
+  dla „jeszcze nie wiem”.
+- **Ekran cech** to pytanie `kind: 'multi'` z `weights {}` i `next: null` (twarda reguła schematu),
+  więc cechy nigdy nie zmieniają wyniku, a ekran jest zawsze ostatni. Starsze SDK narysują go jako
+  pytanie jednokrotnego wyboru — wynik i tak jest poprawny, bo wagi zebrano wcześniej.
+- **Potwierdzenie:** [Tak, to ja] i [Nie do końca] mają równą wagę wizualną, żaden nie jest
+  domyślny. „Nie do końca” → 3 najbliższe alternatywy + „Żadne — pokaż wszystkie” (= `neutral`,
+  bez zapisu archetypu — ta sama reguła co FOLLOW-554). Jedna korekta, bez ponownego quizu. Klasy
+  `.estalara-quiz-result|-confirm|-reject|-option` — **nie** `.estalara-quiz-answer` (pętla harnessu
+  klika odpowiedzi).
+- **Przełącznik języka EN | PL** na karcie quizu (decyzja **Q-D**): wybór kupującego trzymany w
+  sessionStorage, nadpisuje `quiz_config.language` dla pytań i tekstów potwierdzenia (§E.4.7).
+- **EN i PL obowiązkowe** dla każdego `prompt_i18n`, `label_i18n` i tekstu `confirm` (błąd
+  blokujący w schemacie i w lincie edytora, §E.4.9).
+- **Schemat** (`packages/shared/src/schemas/presentation-config.ts`, addytywnie, `schema_version` 1
+  zostaje): `QuizAnswerSchema.traits?: TraitId[]` (≤ 4); `QuizQuestionSchema.kind?:
+  'single' | 'multi'`; `QuizDefinitionSchema.confirm?: { names_i18n, sentences_i18n,
+  alternatives }`.
+  Nowe twarde reguły: pytanie `multi` ma `weights {}` i `next null`; klucze `confirm` kanoniczne;
+  każdy osiągalny archetyp ma nazwę i zdanie w `confirm`; EN + PL obowiązkowe. Nowe ostrzeżenie
+  `computeAmbiguousPaths` (ścieżka z wagą dla więcej niż jednego archetypu).
+- **SDK** (`packages/sdk/src/ui/quiz-widget.ts`): `resolveQuizOutcome(def, path) → {leaf, traits}`,
+  krok `multi` (checkboxy, „Żadne” wyłączne), ekran potwierdzenia i korekty, przełącznik języka,
+  `onComplete(leaf, {confirmation, traits, quiz_run_id, definition_hash})`.
+
+**Teksty bazowe EN/PL** (z raportu projektowego A; to baza autorska — redaguje je pakiet Q1,
+akceptuje CEO w symulatorze przy KQ2; polskie warianty są neutralne płciowo tam, gdzie się da):
+
+| Ekran / id | EN | PL | Wynik / cechy |
+|---|---|---|---|
+| `q_purpose` | What will this property be for? | Do czego ma służyć ta nieruchomość? | — |
+| `main_here` | My main home, in the country where I live now | Mój główny dom — w kraju, w którym teraz mieszkam | → `q_home` |
+| `main_move` | My main home, in a country I'm moving to (or back to) | Mój główny dom — w kraju, do którego się przeprowadzam (lub wracam) | cecha `buying_from_abroad` → `q_move` |
+| `second` | A holiday or second home — I'll mainly live elsewhere | Dom wakacyjny lub drugi dom — na co dzień mieszkam gdzie indziej | `second_home_buyer` → `t_second` |
+| `invest` | An investment — to rent out or resell | Inwestycja — pod wynajem lub odsprzedaż | → `q_invest` |
+| `student` | A home for my child who is studying | Mieszkanie dla mojego dziecka na czas studiów | `student_parent` → `t_student` |
+| `unsure` | Not sure yet — just looking | Jeszcze nie wiem — tylko się rozglądam | `neutral`, koniec |
+| `q_home` | Which fits you best? | Co najlepiej Cię opisuje? | — |
+| `first` | This will be my first own home | To będzie moje pierwsze własne mieszkanie lub dom | `first_time_buyer` |
+| `up` | I've owned before — now I need more space or a better home | To nie mój pierwszy własny dom — potrzebuję więcej miejsca lub lepszego domu | `family_buyer` |
+| `down` | I've owned before — now I want something smaller and easier to look after | To nie mój pierwszy własny dom — chcę czegoś mniejszego i łatwiejszego w utrzymaniu | `downsizer` |
+| `q_move` | Which describes you? | Który opis do Ciebie pasuje? | — |
+| `return` | I'm moving back to my home country | Wracam do kraju, z którego pochodzę | `diaspora_buyer` |
+| `retire` | I'm retired or about to retire | Jestem na emeryturze lub wkrótce na nią przechodzę | `retiree_relocator` |
+| `work` | I'll keep working there — a job, my own business or remotely | Będę tam pracować — na etacie, we własnej firmie lub zdalnie | `lifestyle_expat` |
+| `q_invest` | How should it earn money? | Jak ta nieruchomość ma na siebie zarabiać? | — |
+| `long` | Long-term rental to tenants | Najem długoterminowy | `yield_hunter` |
+| `short` | Holiday / short-term rental (e.g. Airbnb) | Najem krótkoterminowy / wakacyjny (np. Airbnb) | `vacation_rental_investor` |
+| `flip` | Renovate and resell | Remont i sprzedaż z zyskiem | `flip_investor` |
+| `commercial` | Commercial premises (shop, office, warehouse) | Lokal komercyjny (sklep, biuro, magazyn) | `commercial_investor` |
+| `inv_undecided` | Not decided yet | Jeszcze nie wiem | `yield_hunter` (default, raportowany osobno) |
+| `t_*` (pytanie) | Anything else that applies? (optional — tick all that fit) | Coś jeszcze się zgadza? (opcjonalnie — zaznacz wszystko, co pasuje) | — |
+| `t_*` (wyjście) | None of these | Żadne z powyższych | czyści pozostałe |
+| `has_children` | Children will live with me | Będą ze mną mieszkać dzieci | cecha |
+| `works_from_home` | I'll work from home 2+ days a week | Będę pracować z domu co najmniej 2 dni w tygodniu | cecha |
+| `premium` | I'm looking at the top end of the market | Szukam w segmencie premium | cecha |
+| `residency_goal` | I want residency through this purchase (e.g. golden visa) | Chcę uzyskać prawo pobytu dzięki temu zakupowi (np. złota wiza) | cecha |
+| `buying_from_abroad` | I live in a different country than the property | Mieszkam w innym kraju niż ta nieruchomość | cecha |
+| `seasoned_investor` | I already own other investment property | Mam już inne nieruchomości inwestycyjne | cecha |
+| `will_let` (`t_second`) | I'll rent it out when I'm not using it | Będę ją wynajmować, kiedy z niej nie korzystam | cecha |
+| `will_let` (`t_student`) | Other students will rent rooms there too | Pokoje wynajmą też inni studenci | cecha |
+| potwierdzenie | Based on your answers: **{name}** — {sentence}. Is that right? | Na podstawie Twoich odpowiedzi: **{nazwa}** — {zdanie}. Zgadza się? | — |
+| przyciski | [Yes, that's me] [Not quite] | [Tak, to ja] [Nie do końca] | `confirmed` / korekta |
+| korekta | Which fits you better? | Co pasuje lepiej? | 3 alternatywy (§E.4.3) |
+| korekta (wyjście) | None of these — show me everything | Żadne — pokaż wszystkie oferty | `neutral`, bez zapisu archetypu |
+
+Zdania potwierdzenia powtarzają w drugiej osobie fakty, które przypięły wynik (reguła etykietowania
+z §E.4.3). Raport A podaje dwa wzory: `first_time_buyer` — „First-time buyer — you're buying your
+first own home where you live now.” / „Pierwszy własny dom — kupujesz swoje pierwsze mieszkanie lub
+dom tam, gdzie mieszkasz.”; `family_buyer` (dla kupującego „Moving up” / „Przeprowadzka na
+lepsze”) — „Moving up — you've owned before and want more space or a better home.” (PL wymaga
+wersji neutralnej płciowo). Pozostałe 10 par pisze pakiet Q1 z reguł etykietowania.
+
+**Właściciel (Rule H):** Q1 (schemat, `traits.ts`, `DEFAULT_QUIZ_DEFINITION_V2` EN+PL, redakcja
+tekstów), Q2 (widget: krok `multi`, potwierdzenie i korekta, przełącznik języka, `onComplete`).
+
+#### E.4.3. Pokrycie — 12 wyników + neutral, reguły pierwszeństwa, cechy (v3.0)
+
+Każdy wynik ma regułę etykietowania w jednym zdaniu — dwie osoby czytające tę samą sesję mają
+przypisać ten sam archetyp:
+
+| Wynik | Reguła etykietowania | Przypięty przez | 3 najbliższe alternatywy (ekran korekty) |
+|---|---|---|---|
+| `yield_hunter` (wchłania `portfolio_builder`) | Dochód z najmu długoterminowego; nikt z domowników tam nie mieszka | `invest` → `long` (lub `inv_undecided`) | vacation_rental_investor, flip_investor, student_parent |
+| `vacation_rental_investor` | Dochód z najmu krótkoterminowego / wakacyjnego; własne pobyty najwyżej okazjonalne | `invest` → `short` | second_home_buyer, yield_hunter, flip_investor |
+| `flip_investor` | Kupuje, by wyremontować i sprzedać, nie by trzymać | `invest` → `flip` | yield_hunter, vacation_rental_investor, commercial_investor |
+| `commercial_investor` | Lokal niemieszkalny (sklep, biuro, magazyn) jako inwestycja (app ma typy OFFICE/RETAIL/WAREHOUSE/COMMERCIAL) | `invest` → `commercial` | yield_hunter, flip_investor, vacation_rental_investor |
+| `first_time_buyer` | Główny dom w kraju zamieszkania; nigdy nie miał własnego | `main_here` → `first` | family_buyer, lifestyle_expat, student_parent |
+| `family_buyer` (wchłania `upsizer`; dla kupującego „przeprowadzka na lepsze”) | Główny dom w kraju zamieszkania; miał własne, chce więcej lub lepiej | `main_here` → `up` | first_time_buyer, downsizer, lifestyle_expat |
+| `downsizer` | Główny dom w kraju zamieszkania; miał własne, chce mniej lub łatwiej w utrzymaniu | `main_here` → `down` | retiree_relocator, family_buyer, second_home_buyer |
+| `retiree_relocator` | Główny dom w nowym kraju; emerytura | `main_move` → `retire` | second_home_buyer, downsizer, diaspora_buyer |
+| `lifestyle_expat` | Główny dom w nowym kraju; pracuje dalej (etat, firma, zdalnie) | `main_move` → `work` | retiree_relocator, diaspora_buyer, first_time_buyer |
+| `diaspora_buyer` (zawężony) | Wraca do kraju pochodzenia; „wracam” wygrywa z „emerytura” | `main_move` → `return` | lifestyle_expat, retiree_relocator, second_home_buyer |
+| `second_home_buyer` | Sam korzysta część roku; główny dom gdzie indziej; wynajem w czasie nieobecności drugorzędny | `second` | vacation_rental_investor, retiree_relocator, lifestyle_expat |
+| `student_parent` | Dla własnego dziecka na czas studiów | `student` | yield_hunter, first_time_buyer, family_buyer |
+| `neutral` | Cel nie podany | `unsure` | — (bez potwierdzenia) |
+
+**Reguły pierwszeństwa (stała kolejność):** (1) o wyniku decyduje, kto mieszka tam przez większość
+roku — kupujący → główny dom; kupujący część roku → drugi dom; najemcy lub goście → inwestycja;
+studiujące dziecko → student; (2) w „głównym domu” przeprowadzka za granicę wygrywa z historią
+własności (tak rozdzielone są `retiree_relocator` i `downsizer` — nakładanie z FOLLOW-344); (3) w
+„przeprowadzce” powrót wygrywa z emeryturą; (4) każde drugorzędne użycie jest cechą, nigdy drugim
+wynikiem.
+
+**Pięć id, których quiz już nie przypisuje** — `upsizer`, `portfolio_builder`, `luxury_buyer`,
+`remote_worker`, `golden_visa_buyer` — **zostają** w `CANONICAL_ARCHETYPE_IDS`
+(`packages/shared/src/archetypes.ts`; kanoniczna lista 18 id nie zmienia się — zależą od niej silnik
+zachowań, seedy bandyty i cache opisów). Są osiągalne tylko przez czat i zachowanie.
+`computeUnreachableArchetypes` dostaje allow-listę tych 5 id, żeby edytor nie ostrzegał o celowej
+nieosiągalności. Fakty zewnętrzne sprawdzone 2026-10-19: Hiszpania zamknęła golden visa 3.04.2025
+(Ley Orgánica 1/2025); cypryjska ścieżka PR z inwestycji ≥ 300 tys. € (Reg. 6(2)) działa w 2026 —
+dlatego cel pobytowy jest cechą, nie archetypem.
+
+**Cechy** — `packages/shared/src/traits.ts`, `CANONICAL_TRAIT_IDS` (etykiety EN/PL: §E.4.2):
+
+| Cecha | Zastępuje / playbook źródłowy (`packages/shared/src/playbooks/archetypes/`) |
+|---|---|
+| `premium` | `luxury_buyer` — `luxury-buyer.ts` (`listing_rules` + slot/akapit) |
+| `works_from_home` | `remote_worker` — `remote-worker.ts` |
+| `residency_goal` | `golden_visa_buyer` — `golden-visa-buyer.ts` |
+| `buying_from_abroad` | copy zakupu zdalnego z `diaspora-buyer.ts` |
+| `seasoned_investor` | `portfolio_builder` — głos z `portfolio-builder.ts` |
+| `will_let` | drugi dom „wynajmowany w czasie nieobecności” (`second-home-buyer.ts`) |
+| `has_children` | brak (nowa) — szkoły wspominane tylko, gdy to prawda |
+
+**Cechy od razu zmieniają treść** (decyzja **Q-F**): cecha trafia do sesji, `intent.snapshot` i
+guidance `description`; dołącza `listing_rules` i jeden slot/akapit z playbooka źródłowego.
+Playbooki scalone: `family_buyer` ← `upsizer` (bez założenia dzieci, chyba że `has_children`),
+`yield_hunter` ← `portfolio_builder`; opis `diaspora_buyer` zawężony do powrotu. Grounding nadal
+według §E.7.0 (ESC-076): cecha nie dodaje twierdzeń, których listing nie popiera.
+
+**Właściciel (Rule H):** Q1 (`traits.ts`, allow-lista, schemat), Q5 (scalenia playbooków, cecha →
+`listing_rules` + slot, guidance w `description-generator.ts`, parytet opisów).
+
+#### E.4.4. Fold — `applyQuizLeaf` z dowodem, bez bonusu na ścieżce quizu (v3.0)
+
+v2.0 przypina liść na 0,85 i raportuje `confidence = min(0,85 × 1,2; 1) = 1,0` — confidence nie
+jest prawdopodobieństwem, a ×1,2 mnoży też zachowanie sprzeczne z quizem. v3.0:
+
+```typescript
+// packages/sdk/src/core/intent.ts — kształt docelowy (pakiet Q4); przy HEAD nie istnieje
+type QuizEvidence = 'completed' | 'confirmed' | 'corrected';
+export function applyQuizLeaf(
+  state: IntentState,
+  leaf: Archetype, // przy 'corrected': archetyp wybrany w korekcie
+  evidence: QuizEvidence = 'completed',
+): IntentState;
+// masa liścia: completed 0.72 (reszta 0.28/17), confirmed 0.90, corrected 0.90 (reszta 0.10/17)
+// podłoga 0.005 dla każdego archetypu (reguła Cromwella)
+// confidence = max posterior (bez QUIZ_CONFIDENCE_BONUS)
+```
+
+| Dowód | Masa liścia | Masa każdego innego archetypu | Confidence vs bramki (serwer > 0,6, DOM 0,5) |
+|---|---|---|---|
+| `completed` (liść osiągnięty, przed potwierdzeniem) | 0,72 | 0,28/17 ≈ 0,0165 | 0,72 — nad obiema |
+| `confirmed` | 0,90 | 0,10/17 ≈ 0,0059 | 0,90 |
+| `corrected` | 0,90 na archetypie z korekty (stary liść dostaje tylko udział resztowy) | 0,10/17 ≈ 0,0059 | 0,90 |
+
+- **„Żadne — pokaż wszystkie” (`none_of_these`)** → stan sprzed quizu, flaga `quiz_rejected`, bez
+  przypięcia.
+- **Liść `neutral`** → `quiz_answered = true`, stan nieprzypięty.
+- **`QUIZ_CONFIDENCE_BONUS` znika ze ścieżki quizu** (confidence staje się prawdopodobieństwem;
+  kalibracja ma sens). Skala ×1,2 zostaje **tylko** dla czatu w sesji bez quizu, pod nazwą
+  `CHAT_ONLY_CONFIDENCE_SCALE` (decyzja **Q-G**): AC(8) G-04 bez zmian (0,553 × 1,2 = 0,664). Fold
+  czatu po quizie nie dostaje skali (nowy pin).
+- **Potwierdzony liść (`confirmed` / `corrected`):** każda aktualizacja z zachowania zachowuje jego
+  masę i normalizuje tylko resztę — jeden helper dla wszystkich miejsc przeliczeń w `intent.ts`
+  (plan: 8 miejsc). Czat przy potwierdzonym liściu jest tłumiony **τ = 0,5** (likelihoody czatu
+  podniesione do potęgi τ): 3 zgodne sprzeczne wymiary nie przewracają liścia (~62 wobec szans
+  153:1), 4 przewracają (~247). Po foldzie czatu zachowanie chroni nową masę liścia.
+- **Niepotwierdzony liść (`completed`)** aktualizowany normalnie. Udokumentowana konsekwencja: dwie
+  zakładki ogłoszeń 3-pokojowych (addytywne +0,15 dla `family_buyer` w `intent.ts`) zbijają 0,72 do
+  ~0,55 — poniżej bramki serwera, koniec adaptacji. Zamiana addytywnych podbić na ograniczone
+  mnożniki to osobny ticket (poza Q4).
+- Bez zmian: `SWITCH_MARGIN` 0,05 i reguła „`neutral` nie zdejmuje archetypu z quizu”; bramki DOM
+  0,5 (`DOM_ADAPT_CONFIDENCE_FLOOR`) i serwer > 0,6 (`CONFIDENCE_THRESHOLD`).
+- Opcjonalnie, osobny ticket: serwer ogranicza `confidence` klienta do tego, co popiera dowód sesji
+  (`api/adapt/route.ts` ufa dziś `body.confidence`), najpierw w trybie cienia — to nie jest granica
+  bezpieczeństwa (klucz HMAC jest w przeglądarce).
+- Później (v2 foldu): masa resztowa z wygładzonego wiersza zmierzonej macierzy pomyłek (§E.4.8) —
+  tu pomiar wraca do foldu.
+
+**Właściciel (Rule H):** Q4 (masy, bonus tylko dla czatu bez quizu, kotwica potwierdzonego liścia,
+τ czatu, strażniki driftu, re-piny testów SDK). Serwerowy limit confidence i mnożniki zamiast
+addytywnych podbić — osobne tickety, które plan nazywa opcjonalnymi; numer nadaje PM, jeśli CEO je
+zleci.
+
+#### E.4.5. Drift po quizie (v3.0)
+
+Mechanizm v2.0 (`packages/sdk/src/core/adapt-loop.ts`, `DRIFT_HOLD_COUNT = 3`, kandydat z
+`detectMismatch` w `intent.ts`) zostaje, z trzema strażnikami:
+
+- **nigdy dla potwierdzonego liścia** (`confirmed` / `corrected`) — decyzja **Q-B**;
+- **nigdy do `neutral`** — strażnik w `detectMismatch` i w miejscu ponownego przypięcia w
+  `adapt-loop.ts` (dziś go nie ma: na starcie sesji `BASE_PRIOR` daje `neutral` 0,37, więc drift
+  może przypiąć `neutral` i zakończyć adaptację);
+- **ponowne przypięcie przez nowe `applyDriftCandidate`** na masie `completed` (0,72), oznaczone
+  `source: 'drift'`, zamiast `applyQuizLeaf`.
+
+Bez zmian: rekord `description_cache_persistent` dla archetypu z quizu nie jest modyfikowany przez
+drift. Tekst v2.0: §E.4.H.5.
+
+**Właściciel (Rule H):** Q4.
+
+#### E.4.6. Gdy quiz jest wyłączony (admin toggle OFF) (v2.0 — aktualne w v3.0)
+
+> **[2026-10-19, v4.28 (FOLLOW-1355): bez zmian merytorycznych w v3.0.** Gdy quiz jest
+> wyłączony, ścieżka i progi są te same. Skala ×1,2, którą dostaje tu czat, w v3.0 nazywa
+> się `CHAT_ONLY_CONFIDENCE_SCALE` (§E.4.4) i liczbowo się nie zmienia (decyzja Q-G).]
+
+```
+currentIntentState.archetype = 'neutral'
+  ↓
+Sygnały behawioralne + chat akumulują się
+  ↓
+refreshDirectives() co 5 sygnałów → POST /api/adapt:
+  serwer: if confidence <= CONFIDENCE_THRESHOLD (0.6): source: 'default', directives: []
+          (route.ts:86,275 — wymagane strictly > 0.6; dokładnie 0.6 zwraca [])
+  SDK:    DOM mutuje tylko gdy aboveFloor =
+          confidence >= DOM_ADAPT_CONFIDENCE_FLOOR (0.5)
+          || signal_count >= DOM_ADAPT_MIN_SIGNAL_COUNT (2)
+          (dysjunkcja, index.ts:879-881 — gałąź signal_count działa też przy quiz OFF)
+```
+(Skorygowane 2026-08-07, FOLLOW-882: poprzedni pseudokod miał `<`/`≥` — permissive na granicy,
+której kod nie ma — i nie pokazywał gałęzi `signal_count`.) `CONFIDENCE_THRESHOLD` jest twardą
+stałą modułu (`route.ts:86` — `const CONFIDENCE_THRESHOLD = 0.6;`), **NIE** per-tenant tunable —
+żaden mechanizm per-tenant nie istnieje w HEAD; wcześniejsze zdanie "tunable per-tenant (pilot:
+może być 0.4)" wywodziło się z AUDIT-2026-06-04 (`:1132` zakładał wpis w `.env.example`, nigdy
+nie zaimplementowany) i jest WYCOFANE jako opis stanu. Sama intencja per-tenant progu nie jest
+usuwana po cichu: jeśli pilot ma dostać niższy próg (np. 0.4), to decyzja produktowa — stub
+zgłoszony do PM (kandydat FOLLOW-889), bez asercji intencji tutaj (ESC-054 pozostaje OPEN). Bez
+chatu (FOLLOW-087): identyfikacja zajmuje 5–10 minut aktywnego przeglądania. Z chatem: 1–2
+wiadomości.
+
+#### E.4.7. Wielojęzyczność quizu (v3.0)
+
+Decyzja CEO **Q-D** (2026-10-19), dosłownie: _„Każde pytanie musi być dostępne w języku PL in EN a
+użytkownik powinien móc zmienić sobie język quizu.”_
+
+- **EN i PL obowiązkowe** dla każdego pytania, odpowiedzi, cechy i tekstu potwierdzenia — brak
+  któregoś to błąd blokujący (schemat §E.4.2, lint §E.4.9). **ES opcjonalny**: zachowywany przy
+  zapisie i imporcie, edytowalny w JSON (`QUIZ_LANGUAGE_VALUES` w
+  `packages/shared/src/schemas/quiz-config.ts` nadal zawiera `es`).
+- **Kolejność rozpoznania języka:** (0) wybór kupującego z przełącznika EN | PL na karcie
+  (sessionStorage) — nadpisuje wszystko poniżej; potem łańcuch v2.0 bez zmian: (1)
+  `quiz_config.language`, (2) `data-language` na `<script>`, (3) `navigator.language`, (4) `'en'`.
+  Chrome karty (EN/PL/ES) jest już w SDK.
+- **Default v2 EN+PL serwowany z control plane:** `DEFAULT_QUIZ_DEFINITION_V2` w `packages/shared`;
+  `GET /api/quiz/public-config` emituje go (z `definition_version` i hashem), gdy tenant nie ma
+  aktywnego wiersza w `quiz_definitions`.
+- **Wbudowany fallback w SDK zostaje EN-only** (budżet bundla 43 136 B gzip, ESC-080; plan podaje
+  dziś 40 405 B). Służy tylko wtedy, gdy public-config nie odpowiada.
+
+**Właściciel (Rule H):** Q1 (`DEFAULT_QUIZ_DEFINITION_V2`, reguła EN+PL), Q2 (przełącznik, fallback
+EN, `build:check`), Q3 (public-config serwuje default v2 + wersję/hash). Tekst v2.0: §E.4.H.7.
+
+#### E.4.8. Pomiar trafności — `quiz_runs`, metryka, pre-rejestracja (v3.0)
+
+Zastępuje ramę „MOAT: quiz_completions” (§E.4.H.8). **`quiz_completions` zostaje bez zmian — żadnych
+nowych kolumn:** Drizzle wstawia wszystkie kolumny schematu, więc kolumna, której produkcja jeszcze
+nie ma, oznacza utratę ukończeń.
+
+**Nowa tabela `quiz_runs`** — jeden wiersz na wyświetlony quiz; handover SQL
+`docs/handover/migrations/H002_quiz_runs.sql` (idempotentny, RLS jak H001), lokalnie stosowany przez
+`scripts/dev/localhost-up.sh`, na produkcji = krok CTO. Dostęp przez typowany helper raw-SQL
+`apps/control-plane/src/lib/quiz-runs.ts` wg wzorca `lib/lift-snapshots.ts` (SQLSTATE 42P01 →
+`quiz_runs_table_missing`, 503, Sentry), nie przez schemat Drizzle.
+
+```
+quiz_runs
+  id                   uuid PK      -- quiz_run_id, losowy UUID z SDK przy renderze karty
+  tenant_id            uuid FK      (cascade)
+  session_id           text         -- ten sam hash odcisku co quiz_completions
+  language             text
+  definition_hash      text         -- SHA-256 wyrenderowanej definicji
+  definition_version   int NULL     -- quiz_definitions.version; NULL dla defaultu
+  sdk_version          text
+  status               text CHECK   -- shown | dismissed | completed | confirmed | corrected
+                                    --   | unconfirmed
+  last_step            int          -- krok, na którym kupujący zamknął kartę
+  resolved_archetype   text NULL    -- liść quizu; NULL do ukończenia
+  answer_path          jsonb        -- kształt jak quiz_completions.answer_path
+  traits               jsonb
+  step_ms              int[]        -- czas na pytanie, ograniczony
+  result_ms            int          -- czas na ekranie potwierdzenia
+  offered              jsonb        -- alternatywy pokazane po „Nie do końca”, w kolejności
+  confirmed_archetype  text NULL    -- = liść (confirmed) | wybór z korekty | 'none_of_these'
+  shown_at, updated_at timestamptz
+  CHECK (confirmed_archetype IS NULL OR status IN ('confirmed','corrected'))
+  INDEX (tenant_id, definition_hash, status)
+```
+
+- **Trasa `POST /api/quiz/run`** (SDK → control plane): HMAC i bramka originu jak
+  `quiz/completion`, opt-out → 204 bez wiersza, zgoda na profilowanie jak `consent-gate.ts`; maszyna
+  stanów tylko do przodu — `shown → dismissed` albo `shown → completed → confirmed | corrected |
+  unconfirmed`; pierwszy status terminalny wygrywa, powtórka = 200 bez zmian. Wpis CORS w
+  `middleware.ts`; DSR erase / access / portability obejmują `quiz_runs` (42P01 tolerowane tylko dla
+  tej tabeli). Skip i × przed liściem = `dismissed` z `last_step`; × na ekranie potwierdzenia (lub
+  `pagehide`) = `unconfirmed`.
+- **`quiz.event`** (ingest): nowe wartości `step` `confirmed | corrected | unconfirmed` oraz
+  opcjonalne `quiz_run_id` i `resolved_archetype` w `QuizEventPayloadSchema`
+  (`packages/shared/src/schemas/events/quiz.ts`; addytywnie — dziś `step: z.string()` przepuszcza
+  nowe wartości, a nowe pola są wycinane). Trzy zmiany publicznej powierzchni — `quiz.event`,
+  `/api/quiz/run`, blok `confirm` (+ wersja/hash) w public-config — rejestruje **ESC-086** (PM, Q0).
+- **Prywatność:** wszystko pseudonimowe (hash odcisku, losowy UUID, indeksy odpowiedzi, zamknięta
+  lista archetypów i cech); bez wolnego tekstu („Żadne” to enum); czasy zaokrąglone i ograniczone;
+  bez IP i UA; retencja jak `quiz_completions`.
+
+**Metryka** (jedna wersja = jeden `definition_hash`; wiersze `confirmed | corrected`, liść ≠
+`neutral`, bez ruchu staff/ops):
+
+- **A = confirmed / (confirmed + corrected)** — trafność nagłówkowa (korekta na `none_of_these` to
+  wiersz `corrected`, więc liczy się jako pomyłka);
+- precyzja per liść; recall per klasa prawdziwa (potwierdzony liść albo cel korekty); macro recall
+  (klasy z ≥ 30 etykietami); macierz pomyłek z kolumną `none_of_these`;
+- wskaźnik odpowiedzi = rozstrzygnięte / completed; wariant pesymistyczny (`unconfirmed` = błąd);
+- przekroje: język × tercyl szybkości; szybkie „tak” (`result_ms` < 1,5 s) = flaga przytakiwania,
+  raportowana, nie wykluczana.
+
+**Kryterium ≥ 90 % — pre-rejestrowane** (decyzja **Q-J**; plik
+`docs/decisions/PREREG-quiz-accuracy-2026-10.md`, PM, Q0, przed jakimkolwiek wierszem produkcyjnym):
+n = **400** rozstrzygniętych przebiegów na jednym `definition_hash`; dwustronna 95 % dolna granica
+Wilsona dla A ≥ 0,90 ⇒ **≥ 372/400** (371 = FAIL); jedna analiza; futility przy n = 130 i n = 200,
+gdy górna granica Wilsona < 0,90; per klasa tylko przy ≥ 100 etykietach, recall LB ≥ 0,80; wskaźnik
+odpowiedzi ≥ 60 %; wariant pesymistyczny raportowany obok; kontrola **κ Cohena** na ~60 sesjach
+ocenionych przez agentów nieruchomości po pierwszym kontakcie; zmiana hasha restartuje licznik. Helper
+`packages/shared/src/stats/wilson.ts` z pinami: 372/400 PASS, 371/400 FAIL; obserwowane 95 % → n ≥
+127, 93 % → n ≥ 362.
+
+**Co dowodzi localhost, a co tylko produkcja.** Localhost: potok (każdy status ląduje, opt-out nic
+nie pisze, DSR kasuje, CORS, brak tabeli = głośno), matematyka (złote fixtury) i piny foldu;
+opcjonalny dogfood 30–50 osób tylko dla UX i sformułowań. Sesje syntetyczne potwierdzają same siebie
+— **localhost nie dowodzi 90 %**. Tylko produkcja (**KQ3, krok CTO**: H002, włączenie kroku
+potwierdzenia, zamrożenie hasha): ≥ 400 rozstrzygnięć, recall per klasa, κ, dryf miesięczny.
+
+**Backoffice:** zakładka `/admin/tenants/[id]/quiz-accuracy` + `GET
+/api/admin/tenants/quiz-accuracy` — lejek shown → dismissed per krok → completed → confirmed /
+corrected / unconfirmed; nagłówek + Wilson + werdykt `PASS | FAIL | FUTILE | INSUFFICIENT_N`; per
+liść; macierz; język; miesiące. Opcjonalny cron ostrzegawczy (Sentry, gdy miesiąc z ≥ 100
+rozstrzygnięciami ma górną granicę < 0,90 lub odpowiedzi < 60 %).
+
+**Właściciel (Rule H):** Q1 (`stats/wilson.ts`), Q2 (pingi SDK), Q3 (H002, `lib/quiz-runs.ts`,
+trasa, CORS, DSR, zgoda), Q8 (raport, zakładka, cron), H (H002 w `docs/handover/CTO_HANDOVER.md` §4,
+„włącz potwierdzenie, zamroź hash, zbierz 400”, miesięczny monitor); PM: PREREG, ESC-086.
+
+#### E.4.9. Backoffice — pełne zarządzanie quizem (v3.0)
+
+Zastępuje opis samego włącznika (§E.4.H.9). Włącznik ON/OFF i `quiz_config` są na
+`/admin/tenants/[id]/quiz` (dawne `/dashboard/quiz` usunięto razem z `/dashboard`, FOLLOW-1335) —
+bez zmian. Edytor definicji zostaje pod tym samym adresem `/admin/tenants/[id]/quiz-definition` (bez
+nowej strony).
+
+- **Logika w `packages/shared`:** `schemas/quiz-walk.ts` (czyste helpery walkera przeniesione z SDK,
+  `enumerateQuizPaths`, `resolveLeafArchetype`, maszyna stanów `nextStep(def, state)` używana też
+  przez SDK i symulator); `quiz-lint.ts` z `QuizDefinitionAuthoringSchema` = schemat serwowany
+  plus reguły autorskie (pytania-sieroty, duplikaty id odpowiedzi, ≤ 40 pytań, 2–8 odpowiedzi,
+  głębokość ≤ 6, ≤ 2000 ścieżek, puste lub > 160 znaków etykiety, **brak EN lub PL = błąd**;
+  ostrzeżenia: nieosiągalne poza allow-listą §E.4.3, remisy, wagi ujemne, duplikaty etykiet);
+  `quiz-diff.ts`. **Schemat serwowany zostaje łagodny** — public-config ponownie parsuje zapisany
+  blob, a zaostrzenie zrzuciłoby kupujących na default.
+- **Edytor strukturalny:** karty pytań i wiersze odpowiedzi z polami **EN | PL obok siebie** i
+  licznikiem („PL 12/30”); dodaj / usuń / zmień kolejność (usunięcie zeruje przychodzące `next` i
+  oznacza je; zmiana kolejności ostrzega, że zmienia indeksy odpowiedzi); `next` jako lista bez
+  siebie i przodków; **wybór liścia** per odpowiedź końcowa (pisze `weights {X: 1}`; „custom
+  weights” w „Advanced”); ekran cech (`kind: multi`); zakładka „Potwierdzenie” (nazwy, zdania,
+  alternatywy EN | PL); panel lintu — błędy blokują zapis.
+- **Symulator:** przejście szkicu jako kupujący w EN i PL z liściem, cechami i ekranem potwierdzenia
+  oraz tabela wszystkich ścieżek.
+- **Wersje:** lista (wersja, aktywna, data, autor, hash, liczby), diff, **przywróć**
+  (kopia-do-przodu jako nowa wersja), **cofnij do defaultu** (deaktywacja — public-config serwuje
+  default v2), „wczytaj default do edytora” (zastępuje STARTER).
+- **Publikacja:** szkic tylko w przeglądarce (localStorage, strażnik niezapisanych zmian) i jedna
+  świadoma, audytowana publikacja — PUT z dialogiem diff i notą o ~6 min propagacji (`max-age=300,
+  stale-while-revalidate=60` + sessionStorage w SDK). **Bez szkiców serwerowych** (decyzja **Q-I**;
+  brak nowej kolumny na produkcji). Import / eksport JSON (walidacja autorska, nota o wycinanych
+  kluczach). Tryb tylko-do-odczytu dla `readonly` (`can_write`).
+- **Uprawnienia** (decyzja **Q-H**): publikacja, przywrócenie, cofnięcie do defaultu i import —
+  **ops i wyżej**, audyt w tej samej transakcji.
+- **API** (`apps/control-plane/src/app/api/admin/tenants/quiz-definition/`): GET (+ `can_write`,
+  `invalid_active` z surowym JSON, `lint`); PUT (+ `base_version` → 409 `version_conflict`, `source`
+  `editor | import`; odczyt `max(version)` **w transakcji** pod `pg_advisory_xact_lock`); nowe `GET
+  versions`, `PUT activate`, `PUT deactivate`. Audyt `quiz_definition.{update,restore,
+  revert_to_default}` z parą wersji + SHA-256 definicji, nie całym blobem;
+  `scripts/check-staff-write-atomicity.sh` zielony.
+- **Ukończenia i analityka:** podgląd ukończeń pokazuje **tekst** pytań i odpowiedzi (API zwraca
+  `answer_path`; wersja z `quiz_runs.definition_version`, dla starych wierszy oznaczenie
+  „przybliżone”); etykiety gałęzi w analityce z definicji zamiast na sztywno; odpływ per pytanie z
+  lejka `quiz_runs`. AI „Suggest weights” zostaje bez audytu (nic nie zapisuje).
+
+**Dwa istniejące błędy, które naprawia plan:** (1) **wyścig numerów wersji** — PUT czyta
+`max(version)` poza transakcją (`quiz-definition/route.ts`), więc dwa równoczesne zapisy mogą dać tę
+samą wersję N+1 (jedyny unikalny indeks jest częściowy, na wierszach aktywnych); (2) **nieważny
+aktywny wiersz ładuje STARTER** — GET zwraca `definition: null`, edytor wczytuje 2-pytaniowy
+`STARTER_DEFINITION` przy etykiecie „Active version N”, a zapis nadpisuje prawdziwy wiersz; v3.0
+pokazuje baner „nieważny aktywny wiersz” z surowym JSON.
+
+**Właściciel (Rule H):** Q1 (`quiz-walk.ts`, `quiz-lint.ts`, `quiz-diff.ts`), Q7 — C1 (API: wersje,
+activate / deactivate, blokada, 409, audyt), C2 (edytor strukturalny EN | PL, liść, cechy,
+potwierdzenie, lint), C3 (symulator, wersje UI, import / eksport, publikacja), C4 (ukończenia jako
+tekst, etykiety analityki, odpływ).
+
+#### E.4.10. Harness i punkty kontrolne Fazy Q (v3.0)
+
+**AC(10) „ścieżka potwierdzenia”** w `tests/e2e/follow-819/differentiator-e2e.mjs`, pin
+`ac10-verdict.test.ts` w `pnpm e2e:smoke`: **(a)** potwierdzenie → wiersz `confirmed`, stan 0,90,
+następny `/api/adapt` z hintem 0,9 adaptowany, 2 sprzeczne sygnały nie ruszają liścia; **(b)**
+korekta → wiersz `corrected`, follow-up wysłany po korekcie i po foldzie (reguła FOLLOW-1352) z
+hintem skorygowanym, adaptowany; **(c)** × na potwierdzeniu → `unconfirmed`, 0,72. AC(1): widoczny
+`.estalara-quiz-result` = ukończenie, potem klik potwierdzenia; pewność w artefaktach i README 1,0 →
+0,72 / 0,90. Testy SDK (plan: 117 odwołań do `applyQuizLeaf`): domyślne `evidence = 'completed'`,
+piny 0,85 / 1,0 → 0,72, nowe piny 0,90 / korekta / τ / drift. **TALLY total 8**; wszystkie starsze
+artefakty są STALE (planowo) → świeża seria 3× GREEN.
+
+- **KQ1 (localhost, po Q1–Q6):** seria 3× GREEN **8/8** na jednym SHA (AC(10) a/b/c); pin: hop 11 =
+  0,90 po potwierdzeniu; wiersze `quiz_runs` dla każdego statusu; DSR kasuje; opt-out nic nie pisze;
+  złote fixtury Wilsona; bundle ≤ 43 136 B; `pnpm e2e:smoke`. STOP: AC(10)(b) nie serwuje
+  skorygowanego archetypu → ścieżka korekty zepsuta, nie mergować; AC(1)/AC(8) RED dwa razy →
+  bisekcja.
+- **KQ2 (CEO, po Q7–Q8):** CEO w backoffice przechodzi symulator EN i PL po 3 ścieżkach, edytuje
+  pytanie w obu językach, publikuje, widzi wersję i diff, przywraca poprzednią, ogląda raport
+  trafności z lejkiem (na localhost dane syntetyczne — werdykt `INSUFFICIENT_N`) i na stronie
+  ogłoszenia `:5173` przechodzi quiz po polsku z przełącznikiem języka i potwierdzeniem. STOP: CEO
+  odrzuca teksty lub drzewo → poprawki w Q1 przed Fazą 4.
+- **KQ3 (produkcja, CTO):** H002, włączenie, ≥ 400 rozstrzygnięć, jedna pre-rejestrowana analiza, κ;
+  werdykt PASS / FAIL trafia do §Snapshot.0.
+
+**Właściciel (Rule H):** Q6 (AC(10), pętla AC(1), re-piny, TALLY 8, README §5); punkty kontrolne —
+PM; KQ3 — CTO (pakiet H).
+
+#### E.4.H. Historia — v2.0 (ratyfikowane 2026-06-05, zastąpione 2026-10-19)
+
+> **Superseded 2026-10-19 (CEO, plan „Faza Q”; zapisane w v4.28, FOLLOW-1355).** Poniżej tekst
+> §E.4.1–§E.4.5 i §E.4.7–§E.4.9 w wersji v2.0, zachowany bez zmian jako zapis. Opisuje drzewo,
+> które **nadal działa w drzewie przy HEAD** (`packages/sdk/src/ui/quiz-widget.ts`,
+> `DEFAULT_QUIZ_DEFINITION`) do czasu pakietów Q1–Q4; nie jest już zachowaniem docelowym. §E.4.6 nie
+> przeszło do historii — jest aktualne w v3.0.
+
+##### E.4.H.1. Filozofia — cel quizu (v2.0)
+
+> **Superseded 2026-10-19 (v4.28, FOLLOW-1355) → §E.4.1 v3.0 (fakty, cel zakupu,
+> samopotwierdzenie).** Tekst v2.0 poniżej, zachowany jako zapis.
 
 Quiz służy jako najsilniejszy sygnał cold-start: identyfikuje archetype inwestora zanim system
 zdąży zebrać wystarczające sygnały behawioralne. Pytania są **generyczne** — niezależne od
@@ -3198,7 +3749,10 @@ jest załadowane. Trigger: **30 sekund** spędzonych na stronie (nie 3 odsłony 
 w poprzednim projekcie). Cooldown: 24h w localStorage po odrzuceniu. Kontrolowany flagą
 `QuizConfig.enabled` (default: `false`) per tenant w tabeli `tenants.quiz_config`.
 
-#### E.4.2. Drzewo decyzyjne — 3 gałęzie, 2–3 pytania, 17 liści
+##### E.4.H.2. Drzewo decyzyjne — 3 gałęzie, 2–3 pytania, 17 liści (v2.0)
+
+> **Superseded 2026-10-19 (v4.28, FOLLOW-1355) → §E.4.2 v3.0 (drzewo cel → doprecyzowanie → cechy
+> → potwierdzenie).** Tekst v2.0 poniżej, zachowany jako zapis.
 
 Poprzedni flat 2-pytaniowy quiz produkował 4 komórki dla 18 archetypów, z nakładającymi się
 prawdopodobieństwami w popularnych komórkach. Nowy quiz używa **drzewa decyzyjnego z bramą Q1**,
@@ -3260,7 +3814,10 @@ Q3 (tylko po A):
   C. Nowy rozdział za granicą — praca i życie → lifestyle_expat [KONIEC]
 ```
 
-#### E.4.3. Pokrycie archetypów po redesignie
+##### E.4.H.3. Pokrycie archetypów po redesignie (v2.0)
+
+> **Superseded 2026-10-19 (v4.28, FOLLOW-1355) → §E.4.3 v3.0 (12 wyników + neutral, cechy, 5 id
+> tylko z czatu/zachowania).** Tekst v2.0 poniżej, zachowany jako zapis.
 
 Wszystkie 17 archetypów non-neutral jest teraz bezpośrednio osiągalnych przez quiz (włącznie z
 poprzednimi "🔴 None": `student_parent`, `retiree_relocator`, `diaspora_buyer`).
@@ -3286,7 +3843,10 @@ poprzednimi "🔴 None": `student_parent`, `retiree_relocator`, `diaspora_buyer`
 | lifestyle_expat | CROSS-BORDER→A→C | 3 |
 | neutral | Q1→D (skip) | 1 |
 
-#### E.4.4. Zmiany w silniku intencji — direct assignment
+##### E.4.H.4. Zmiany w silniku intencji — direct assignment (v2.0)
+
+> **Superseded 2026-10-19 (v4.28, FOLLOW-1355) → §E.4.4 v3.0 (masy 0,72 / 0,90, bez
+> `QUIZ_CONFIDENCE_BONUS` na ścieżce quizu).** Tekst v2.0 poniżej, zachowany jako zapis.
 
 Poprzednia `applyQuizPrior(state, purpose, horizon)` mnożyła wagi przez prior Bayesowski.
 Z drzewem decyzyjnym, które produkuje jednoznaczny liść, właściwe podejście to **bezpośrednie
@@ -3314,7 +3874,10 @@ export function applyQuizLeaf(state: IntentState, archetype: Archetype): IntentS
 `applyQuizPrior()` pozostaje jako legacy fallback. `applyQuizLeaf()` jest wywoływana gdy
 ścieżka drzewa kończy się na liściu.
 
-#### E.4.5. Post-quiz drift detection i session override
+##### E.4.H.5. Post-quiz drift detection i session override (v2.0)
+
+> **Superseded 2026-10-19 (v4.28, FOLLOW-1355) → §E.4.5 v3.0 (strażniki: nigdy dla potwierdzonego
+> liścia, nigdy do `neutral`).** Tekst v2.0 poniżej, zachowany jako zapis.
 
 Quiz wyznacza archetype z confidence ~0.95. Ale sygnały behawioralne i chat mogą go korygować
 w obrębie sesji. Mechanizm w `packages/sdk/src/index.ts`:
@@ -3341,33 +3904,10 @@ Chat override: kiedy `apps/intent-engine` (FOLLOW-087) emituje `chat.intent.dete
 trafia do `applyBehavioralSignal()` z wyższymi wagami → naturalnie buduje się w kierunku
 progu mismatchu szybciej niż sygnały scroll/click.
 
-#### E.4.6. Gdy quiz jest wyłączony (admin toggle OFF)
+##### E.4.H.7. Wielojęzyczność quizu (v2.0)
 
-```
-currentIntentState.archetype = 'neutral'
-  ↓
-Sygnały behawioralne + chat akumulują się
-  ↓
-refreshDirectives() co 5 sygnałów → POST /api/adapt:
-  serwer: if confidence <= CONFIDENCE_THRESHOLD (0.6): source: 'default', directives: []
-          (route.ts:86,275 — wymagane strictly > 0.6; dokładnie 0.6 zwraca [])
-  SDK:    DOM mutuje tylko gdy aboveFloor =
-          confidence >= DOM_ADAPT_CONFIDENCE_FLOOR (0.5)
-          || signal_count >= DOM_ADAPT_MIN_SIGNAL_COUNT (2)
-          (dysjunkcja, index.ts:879-881 — gałąź signal_count działa też przy quiz OFF)
-```
-(Skorygowane 2026-08-07, FOLLOW-882: poprzedni pseudokod miał `<`/`≥` — permissive na granicy,
-której kod nie ma — i nie pokazywał gałęzi `signal_count`.) `CONFIDENCE_THRESHOLD` jest twardą
-stałą modułu (`route.ts:86` — `const CONFIDENCE_THRESHOLD = 0.6;`), **NIE** per-tenant tunable —
-żaden mechanizm per-tenant nie istnieje w HEAD; wcześniejsze zdanie "tunable per-tenant (pilot:
-może być 0.4)" wywodziło się z AUDIT-2026-06-04 (`:1132` zakładał wpis w `.env.example`, nigdy
-nie zaimplementowany) i jest WYCOFANE jako opis stanu. Sama intencja per-tenant progu nie jest
-usuwana po cichu: jeśli pilot ma dostać niższy próg (np. 0.4), to decyzja produktowa — stub
-zgłoszony do PM (kandydat FOLLOW-889), bez asercji intencji tutaj (ESC-054 pozostaje OPEN). Bez
-chatu (FOLLOW-087): identyfikacja zajmuje 5–10 minut aktywnego przeglądania. Z chatem: 1–2
-wiadomości.
-
-#### E.4.7. Wielojęzyczność quizu
+> **Superseded 2026-10-19 (v4.28, FOLLOW-1355) → §E.4.7 v3.0 (EN + PL obowiązkowe, przełącznik
+> języka kupującego).** Tekst v2.0 poniżej, zachowany jako zapis.
 
 Widget wspiera `en` (domyślny), `pl`, `es`. Priorytet rozpoznawania języka:
 1. `quizConfig.language` — ustawienie admin per-tenant (z DB via `/api/quiz/config`)
@@ -3380,7 +3920,10 @@ Zmiana w `config.ts:89–91`: jeśli `data-language` absent/unrecognized → try
 Bug do naprawienia: `QuizConfig.language` schema w `quiz/config/route.ts:25` ma tylko
 `'en' | 'pl'` — musi być rozszerzony do `'en' | 'pl' | 'es'`.
 
-#### E.4.8. MOAT: quiz_completions table
+##### E.4.H.8. MOAT: quiz_completions table (v2.0)
+
+> **Superseded 2026-10-19 (v4.28, FOLLOW-1355) → §E.4.8 v3.0 (`quiz_runs`, metryka,
+> pre-rejestracja); tabela poniżej zostaje jako zapis.** Tekst v2.0 poniżej, zachowany jako zapis.
 
 Każde ukończenie quizu to dane treningowe. Nowa tabela Postgres:
 
@@ -3403,7 +3946,10 @@ CREATE TABLE quiz_completions (
 
 Łączy: (session → quiz path → resolved archetype → adaptation → conversion) — pełny łańcuch MOAT.
 
-#### E.4.9. Admin ON/OFF toggle
+##### E.4.H.9. Admin ON/OFF toggle (v2.0)
+
+> **Superseded 2026-10-19 (v4.28, FOLLOW-1355) → §E.4.9 v3.0 (pełne zarządzanie quizem w
+> backoffice).** Tekst v2.0 poniżej, zachowany jako zapis.
 
 `QuizConfig.enabled: boolean` (default `false`) istnieje w `apps/control-plane/src/app/api/quiz/config/route.ts`.
 Admin UI: `admin.estalara.com/dashboard/quiz`. Wpływ wyłączenia: identyfikacja archetypu opóźnia
@@ -7990,6 +8536,8 @@ Every Master_Design update (any version bump — patch, minor, or major) MUST in
 `docs/ops/OPERATING_PRINCIPLES.md` Appendix B links here rather than duplicating the list, so the list above is the only place this checklist lives. That structural choice is itself an application of Master_Design = single source of truth (Operating Principle 1).
 
 **Propagation record — v4.27 (2026-10-18, FOLLOW-1319 / ESC-085).** Item 1 `CLAUDE.md`: no section renamed; its "any real estate website" sentence and the agent-role rows (platform-templates, schema-validation, Magic Link) are now stale against ESC-085 and are corrected by the PM in package 0.3 of the plan (same sprint, separate PR — outside this docs PR's file set). Item 2 `docs/AGENT_WORKFLOW.md`, item 3 `.claude/agents/*.md`, item 7 `docs/ops/OPERATING_PRINCIPLES.md`: no-ops (no section renamed; 0 references to the changed text). Item 4 `backlog/QUEUE.md`: the PM's (package 0.3: tickets per plan package, the D-I moratorium lifted). Item 5 `backlog/STATUS.md` and item 6 `AUDIT_*.md`: no-ops (their paths are stale since FOLLOW-1269; left as written). Companion edits in THIS PR: `backlog/ESCALATIONS.md` (ESC-085), `docs/adr/ADR-0018-superadmin-tenant-access.md` (dated "Superseded in part" notice), `docs/handover/CTO_HANDOVER.md` (new, v0), `.claude/agents/architect/lessons.md`.
+
+**Propagation record — v4.28 (2026-10-19, FOLLOW-1355 / plan „Faza Q”).** Searched each document for the v2.0 quiz tree, `applyQuizLeaf`, the 0.85 / 1.0 pins, "17 liści" / "17 leaf", `QUIZ_CONFIDENCE_BONUS`, `quiz_completions`, `DEFAULT_QUIZ_DEFINITION`, "cascading decision", §E.4.x and the five de-assigned ids. Item 1 `CLAUDE.md`: 0 references and no section renamed — no-op for the quiz text; its "Update 2026-10-18" paragraph (governing plan, critical path) does not mention Phase Q — owed to the PM (one line naming Phase Q and KQ1–KQ3, with the Q0 bookkeeping). Item 2 `docs/AGENT_WORKFLOW.md`: 0 — no-op. Item 3 `.claude/agents/*.md`: 0 quiz references (the two "0.85" hits, `ml-engineer.md` and `data-engineer.md`, are selector-coverage thresholds, unrelated) — no-op. Item 4 `backlog/QUEUE.md`: the PM's (Q0). Items 5 and 6: no-ops (stale paths, as in v4.27). Item 7 `docs/ops/OPERATING_PRINCIPLES.md`: 0, §Y unchanged — no-op. Beyond the checklist: `docs/INTERFACES.md` — the `quiz_definition` slice paragraph (`DEFAULT_QUIZ_DEFINITION` "byte-identical to pre-ADR-0019") and the staff write path (only `quiz_definition.update`) go stale when Q1/Q3/Q7 land; ESC-086's three surfaces (`quiz.event` steps and optional fields, `POST /api/quiz/run`, the `confirm` block with version/hash in public-config) and the new admin routes (`versions`, `activate`, `deactivate`, `quiz-accuracy`) need entries — owed with Q2/Q3/Q7/Q8 (a contract entry ships with its code; the 0.85 in its chat-shadow example is a chat confidence, unrelated). `docs/DATA_DICTIONARY.md`: 0 references (its quiz mentions are the ClickHouse `source` value and the `quiz_leaf` payload key, unchanged) — no-op now; the `quiz.event` fields `quiz_run_id` / `resolved_archetype` are owed there with Q2/Q3 if the payload is documented. `docs/adr/ADR-0019-per-tenant-presentation-config.md`: cites the two-argument `applyQuizLeaf(state, resolvedArchetype)` ("Where answer→archetype scoring lives today" and D5, "byte-for-byte") and D6's ≤ 42 KB budget (already superseded by ESC-080's 43,136 B) — a dated "Amended in part 2026-10-19" note (three-argument `applyQuizLeaf`, the served default v2 EN+PL, the EN-only bundled fallback, the additive `confirm` / `kind` / `traits` schema) is owed (PM or Q1; an accepted ADR gets a dated note, never an edit). `packages/sdk/README.md`: 0 — no-op. In this file: §D.1.1, §D.6 and §D.7 carry dated notes; the §U pointer "Patrz Section E.4.8 dla pełnej listy quiz ticketów" now resolves to v3.0 §E.4.8 (the v2.0 text it meant is §E.4.H.8) — left as written.
 
 ### Y.3 — Snapshot.1 freshness policy
 

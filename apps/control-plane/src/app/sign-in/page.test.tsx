@@ -24,4 +24,13 @@ describe('SignInPage', () => {
     render(await SignInPage({ searchParams: Promise.resolve({}) }));
     expect(screen.queryByRole('alert')).toBeNull();
   });
+
+  it.each(['__proto__', 'constructor', 'toString', 'hasOwnProperty'])(
+    'inherited Object.prototype name ?error=%s renders no message and the page still renders',
+    async (name) => {
+      render(await SignInPage({ searchParams: Promise.resolve({ error: name }) }));
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(screen.getByTestId('form')).toBeDefined();
+    },
+  );
 });

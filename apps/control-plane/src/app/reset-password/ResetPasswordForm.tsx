@@ -11,6 +11,7 @@
 
 import { useState } from 'react';
 import type { SyntheticEvent } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 import { createClient } from '@/lib/supabase/client';
@@ -25,6 +26,7 @@ export default function ResetPasswordForm() {
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [sessionsNotice, setSessionsNotice] = useState(false);
 
   async function doReset() {
     setError(null);
@@ -51,9 +53,21 @@ export default function ResetPasswordForm() {
         return;
       }
 
-      // The password is already changed; failing to end the OTHER sessions must not strand the
-      // user on this page, so the result is not awaited as a gate.
-      await supabase.auth.signOut({ scope: 'others' }).catch(() => undefined);
+      // The password is already changed, so a failure to end the OTHER sessions must not block
+      // the user or undo it. The call IS awaited; when it fails (an error result or a throw) the
+      // user is told neutrally that other sessions may still be signed in and continues to /admin
+      // from a link instead of being redirected past the notice.
+      let othersEnded = true;
+      try {
+        const { error: signOutError } = await supabase.auth.signOut({ scope: 'others' });
+        othersEnded = !signOutError;
+      } catch {
+        othersEnded = false;
+      }
+      if (!othersEnded) {
+        setSessionsNotice(true);
+        return;
+      }
 
       router.push('/admin');
     } catch {
@@ -66,6 +80,19 @@ export default function ResetPasswordForm() {
   function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
     void doReset();
+  }
+
+  if (sessionsNotice) {
+    return (
+      <div className="w-full space-y-4">
+        <p role="status" className="text-sm text-gray-700">
+          Your password was changed. Other devices may still be signed in.
+        </p>
+        <Link href="/admin" className="block text-center text-sm font-medium underline">
+          Continue to the admin panel
+        </Link>
+      </div>
+    );
   }
 
   return (

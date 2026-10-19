@@ -21,7 +21,12 @@ export default async function SignInPage({
   searchParams: Promise<{ error?: string | string[] }>;
 }): Promise<React.JSX.Element> {
   const { error } = await searchParams;
-  const notice = typeof error === 'string' ? (SIGN_IN_ERROR_MESSAGES[error] ?? null) : null;
+  // hasOwn, not a bare index: `?error=__proto__` / `toString` / `constructor` must not resolve to
+  // an inherited Object.prototype member.
+  const notice =
+    typeof error === 'string' && Object.hasOwn(SIGN_IN_ERROR_MESSAGES, error)
+      ? SIGN_IN_ERROR_MESSAGES[error]
+      : null;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-white px-4">

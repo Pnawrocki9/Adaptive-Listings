@@ -2,6 +2,7 @@
  * /reset-password (FOLLOW-1336) — the Server Component requires the recovery session; the form
  * sets the password, ends the other sessions and goes to /admin.
  */
+import type React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -18,6 +19,11 @@ const { mockRedirect, mockGetUser, mockUpdateUser, mockSignOut, mockPush } = vi.
 vi.mock('next/navigation', () => ({
   redirect: mockRedirect,
   useRouter: () => ({ push: mockPush }),
+}));
+vi.mock('next/link', () => ({
+  default: ({ href, children }: { href: string; children: React.ReactNode }) => (
+    <a href={href}>{children}</a>
+  ),
 }));
 vi.mock('@/lib/supabase/server', () => ({
   createServerSupabaseClient: vi.fn(() => Promise.resolve({ auth: { getUser: mockGetUser } })),
@@ -105,14 +111,31 @@ describe('ResetPasswordForm', () => {
     expect(mockSignOut).not.toHaveBeenCalled();
   });
 
-  it('a failing "sign out others" does not strand the user', async () => {
+  it('sign-out-others returns an error → password kept, neutral notice, link on to /admin, no redirect', async () => {
+    mockUpdateUser.mockResolvedValue({ data: {}, error: null });
+    mockSignOut.mockResolvedValue({ error: { message: 'raw detail' } });
+    render(<ResetPasswordForm />);
+    fill('a-long-enough-password', 'a-long-enough-password');
+
+    const status = await screen.findByRole('status');
+    expect(status.textContent).toMatch(/other devices may still be signed in/i);
+    expect(status.textContent).not.toContain('raw detail');
+    expect(
+      screen
+        .getByText(/continue to the admin panel/i)
+        .closest('a')
+        ?.getAttribute('href'),
+    ).toBe('/admin');
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('sign-out-others throws → the same notice and link', async () => {
     mockUpdateUser.mockResolvedValue({ data: {}, error: null });
     mockSignOut.mockRejectedValue(new Error('boom'));
     render(<ResetPasswordForm />);
     fill('a-long-enough-password', 'a-long-enough-password');
 
-    await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith('/admin');
-    });
+    expect((await screen.findByRole('status')).textContent).toMatch(/may still be signed in/i);
+    expect(mockPush).not.toHaveBeenCalled();
   });
 });

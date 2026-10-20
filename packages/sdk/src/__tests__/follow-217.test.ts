@@ -215,7 +215,7 @@ describe('AC1 + AC2 — rehydrated archetype survives init() wiring (LG-1 regres
 
     const archetypeA = listingAState.archetype; // 'yield_hunter'
     const signalCountA = listingAState.signal_count; // 0
-    const confidenceA = listingAState.confidence; // ~0.85
+    const confidenceA = listingAState.confidence; // 0.72 (FOLLOW-1359)
 
     // === Listing B: run real init() ===
     seedSession();

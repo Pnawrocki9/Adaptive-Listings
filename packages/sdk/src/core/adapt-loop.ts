@@ -15,7 +15,7 @@ import {
   readResolvedArchetype,
 } from './session.js';
 import type { ResolvedArchetype } from './session.js';
-import { applyQuizLeaf, calculateBehavioralOnlyState, detectMismatch } from './intent.js';
+import { applyDriftCandidate, calculateBehavioralOnlyState, detectMismatch } from './intent.js';
 import type { Archetype } from './intent.js';
 import type { ArchetypeId } from '@estalara/shared';
 import {
@@ -359,8 +359,8 @@ export function createAdaptLoop(
       // Sidebar widget is admin-only — profiling visibility is in admin.estalara.com.
     }
 
-    // Drift detection after a quiz only [FOLLOW-201].
-    if (ctx.state.quiz_answered) {
+    // Drift detection after a quiz only, never for a confirmed leaf (§E.4.5) [FOLLOW-201, 1359].
+    if (ctx.state.quiz_answered && !ctx.state.quiz_confirmed) {
       const behavioralOnlyState = calculateBehavioralOnlyState(signalHistory);
       const mismatch = detectMismatch(
         ctx.state.archetype,
@@ -379,9 +379,10 @@ export function createAdaptLoop(
           driftCandidateCount = 1;
         }
 
-        if (driftCandidateCount >= DRIFT_HOLD_COUNT) {
-          // Sustained drift: override the quiz archetype.
-          ctx.state = applyQuizLeaf(ctx.state, candidate);
+        // Never re-pin `neutral` (§E.4.5) [FOLLOW-1359].
+        if (driftCandidateCount >= DRIFT_HOLD_COUNT && candidate !== 'neutral') {
+          // Sustained drift: override the quiz archetype at the `completed` mass.
+          ctx.state = applyDriftCandidate(ctx.state, candidate);
           onIntentUpdate();
           // Reset candidate state so the cycle can begin again if drift continues.
           driftCandidateArchetype = null;

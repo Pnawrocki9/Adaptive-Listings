@@ -167,8 +167,8 @@ describe('FOLLOW-1024 — a conversation outweighs a quiz answer clicked through
   it('five investor-leaning questions re-classify a buyer who answered "family home"', () => {
     const quizzed = applyQuizLeaf(initIntentState(), 'family_buyer');
     expect(quizzed.archetype).toBe('family_buyer');
-    // The quiz enters at p=0.85 — deliberately hard to overturn by accident.
-    expect(quizzed.probabilities.family_buyer).toBeGreaterThan(0.8);
+    // The quiz enters at p=0.72 (`completed`, FOLLOW-1359) — hard to overturn by accident.
+    expect(quizzed.probabilities.family_buyer).toBeCloseTo(0.72, 10);
 
     const afterChat = converse(quizzed, [
       { purchase_purpose: 'investment' },
@@ -185,8 +185,8 @@ describe('FOLLOW-1024 — a conversation outweighs a quiz answer clicked through
   it('a single passing remark does NOT overturn the quiz', () => {
     const quizzed = applyQuizLeaf(initIntentState(), 'family_buyer');
     const afterOne = applyChatIntentPrior(quizzed, { purchase_purpose: 'investment' });
-    // One dimension is a remark, not a revealed intent: it moves p(family_buyer) 0.850 → 0.537
-    // against yield_hunter's 0.078, so the lead does not change hands. Those numbers are a
+    // One dimension is a remark, not a revealed intent: it moves p(family_buyer) 0.720 → 0.345
+    // against yield_hunter's 0.110 (FOLLOW-1359 masses), so the lead does not change hands. Those numbers are a
     // property of BASE_PRIOR × the quiz leaf × CHAT_INTENT_LIKELIHOODS — reproducible by
     // running this file, not an environment fact, so they belong here and not in the
     // measured-premise register.

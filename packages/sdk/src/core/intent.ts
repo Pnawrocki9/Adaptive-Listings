@@ -76,7 +76,10 @@ export type ArchetypeProbabilities = Record<Archetype, number>;
 
 export interface IntentState {
   archetype: Archetype;
-  /** 0.0 – 1.0. With quiz_answered=true, this includes the QUIZ_CONFIDENCE_BONUS (capped at 1.0). */
+  /**
+   * 0.0 – 1.0: the posterior of `archetype` (§E.4.4 v3.0). Only a chat fold in a session without a
+   * quiz scales it, by `CHAT_ONLY_CONFIDENCE_SCALE` (capped at 1.0) [FOLLOW-1359].
+   */
   confidence: number;
   probabilities: ArchetypeProbabilities;
   /** Count of behavioral signals processed (known event types only). */
@@ -99,6 +102,15 @@ export interface IntentState {
    * with the state (`carry` keeps it); sent as `traits` on `/api/adapt` and `intent.snapshot`.
    */
   quiz_traits?: TraitId[];
+  /**
+   * The buyer confirmed (or corrected to) the quiz leaf: behaviour keeps the leaf's mass, chat is
+   * tempered by τ, drift never fires (§E.4.4, §E.4.5) [FOLLOW-1359].
+   */
+  quiz_confirmed?: boolean;
+  /** "None of these" on the result screen: the pre-quiz state, unpinned (§E.4.4) [FOLLOW-1359]. */
+  quiz_rejected?: true;
+  /** The leaf was re-pinned by behavioural drift, not by the buyer (§E.4.5) [FOLLOW-1359]. */
+  source?: 'drift';
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -401,8 +413,29 @@ export function resolveIntentOverrides(weights: IntentWeights | null): IntentEng
   return { behavioralDamping, basePrior, signalLikelihoods };
 }
 
-/** Confidence multiplier when the quiz has been answered (capped at 1.0). */
-const QUIZ_CONFIDENCE_BONUS = 1.2;
+/**
+ * How the buyer closed the quiz's result screen (§E.4.4 v3.0): `completed` = leaf reached, not
+ * confirmed (incl. × / no confirmation step); `corrected` = the leaf passed is the correction.
+ */
+export type QuizEvidence = 'completed' | 'confirmed' | 'corrected';
+
+/** Leaf mass of an unconfirmed quiz result; the rest share 0.28 / 17 (§E.4.4) [FOLLOW-1359]. */
+const QUIZ_COMPLETED_MASS = 0.72;
+
+/** Leaf mass of a confirmed or corrected quiz result; the rest share 0.10 / 17 [FOLLOW-1359]. */
+const QUIZ_CONFIRMED_MASS = 0.9;
+
+/** Cromwell floor per archetype when a confirmed leaf renormalises the rest [FOLLOW-1359]. */
+const QUIZ_PROB_FLOOR = 0.005;
+
+/** Chat likelihoods are raised to τ while the quiz leaf is confirmed (§E.4.4) [FOLLOW-1359]. */
+const CHAT_CONFIRMED_TAU = 0.5;
+
+/**
+ * Chat-fold confidence multiplier, ONLY in a session without a quiz (capped at 1.0) — CEO decision
+ * Q-G; AC(8) G-04 rests on it: 0.553 × 1.2 [FOLLOW-1359].
+ */
+const CHAT_ONLY_CONFIDENCE_SCALE = 1.2;
 
 /** Uniform probability per archetype = 1 / 18. */
 const UNIFORM_PROB = 1 / ARCHETYPE_NAMES.length;
@@ -447,9 +480,49 @@ function carry(state: IntentState): IntentState {
   return kept;
 }
 
-function withConfidenceBonus(rawConfidence: number, quizAnswered: boolean): number {
-  if (!quizAnswered) return rawConfidence;
-  return Math.min(rawConfidence * QUIZ_CONFIDENCE_BONUS, 1.0);
+/**
+ * The one rebuild for every behavioural recompute site: a confirmed leaf keeps its mass and the
+ * rest is renormalised (floored at QUIZ_PROB_FLOOR); confidence = the posterior, no bonus
+ * (§E.4.4 v3.0) [FOLLOW-1359].
+ * @param signals - Added to `signal_count` (1 for a counted behavioural event, else 0).
+ * @param hold    - Hysteresis + quiz stickiness against the current archetype (false = cold path).
+ */
+function rebuild(
+  state: IntentState,
+  probabilities: ArchetypeProbabilities,
+  signals: number,
+  hold = true,
+): IntentState {
+  if (state.quiz_confirmed) {
+    const leaf = state.archetype;
+    const others = ARCHETYPE_NAMES.length - 1;
+    // The leaf keeps its mass, up to 1 − 17 × floor (0.915) so every other archetype keeps the floor.
+    const mass = Math.min(state.probabilities[leaf], 1 - others * QUIZ_PROB_FLOOR);
+    let rest = 0;
+    for (const k of ARCHETYPE_NAMES) if (k !== leaf) rest += probabilities[k];
+    probabilities = Object.fromEntries(
+      ARCHETYPE_NAMES.map((k) => [
+        k,
+        k === leaf
+          ? mass
+          : QUIZ_PROB_FLOOR +
+            ((1 - mass - others * QUIZ_PROB_FLOOR) * probabilities[k]) / (rest || 1),
+      ]),
+    ) as ArchetypeProbabilities;
+  }
+  const { archetype, confidence } = classifyFromProbabilities(
+    probabilities,
+    hold ? state.archetype : undefined,
+    state.quiz_answered,
+  );
+  return {
+    ...carry(state),
+    archetype,
+    confidence,
+    probabilities,
+    signal_count: state.signal_count + signals,
+    last_updated_at: Date.now(),
+  };
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -634,20 +707,7 @@ export function applyBehavioralSignal(
     }
     probabilities = normalize(boosted);
 
-    const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
-      probabilities,
-      state.archetype,
-      state.quiz_answered,
-    );
-    return {
-      ...carry(state),
-      archetype,
-      confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
-      probabilities,
-      signal_count: state.signal_count + 1,
-      last_updated_at: Date.now(),
-      quiz_answered: state.quiz_answered,
-    };
+    return rebuild(state, probabilities, 1);
   }
 
   // Static neutral push, then payload.feature boosts [FOLLOW-100].
@@ -688,21 +748,7 @@ export function applyBehavioralSignal(
     // unrecognized feature → no boost (base neutral-push from step 1 only)
 
     probabilities = normalize(boosted);
-    const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
-      probabilities,
-      state.archetype,
-      state.quiz_answered,
-    );
-
-    return {
-      ...carry(state),
-      archetype,
-      confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
-      probabilities,
-      signal_count: state.signal_count + 1,
-      last_updated_at: Date.now(),
-      quiz_answered: state.quiz_answered,
-    };
+    return rebuild(state, probabilities, 1);
   }
 
   // Intercept filter.applied before the static SIGNAL_LIKELIHOODS lookup.
@@ -711,21 +757,7 @@ export function applyBehavioralSignal(
     if (!facet) return state;
 
     const probabilities = applyFilterBoosts(state.probabilities, facet, payload?.value);
-    const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
-      probabilities,
-      state.archetype,
-      state.quiz_answered,
-    );
-
-    return {
-      ...carry(state),
-      archetype,
-      confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
-      probabilities,
-      signal_count: state.signal_count + 1,
-      last_updated_at: Date.now(),
-      quiz_answered: state.quiz_answered,
-    };
+    return rebuild(state, probabilities, 1);
   }
 
   const rawLikelihood = effectiveLikelihoods[eventType];
@@ -735,22 +767,7 @@ export function applyBehavioralSignal(
     ARCHETYPE_NAMES.map((k) => [k, 1 + (rawLikelihood[k] - 1) * effectiveDamping]),
   ) as ArchetypeProbabilities;
 
-  const probabilities = applyLikelihood(state.probabilities, dampedLikelihood);
-  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
-    probabilities,
-    state.archetype,
-    state.quiz_answered,
-  );
-
-  return {
-    ...carry(state),
-    archetype,
-    confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
-    probabilities,
-    signal_count: state.signal_count + 1,
-    last_updated_at: Date.now(),
-    quiz_answered: state.quiz_answered,
-  };
+  return rebuild(state, applyLikelihood(state.probabilities, dampedLikelihood), 1);
 }
 
 // ─── Mismatch detection ───────────────────────────────────────────────────────
@@ -773,7 +790,10 @@ export function detectMismatch(
   sessionId: string,
 ): MismatchEvent | null {
   if (behavioralState.signal_count < MISMATCH_MIN_SIGNALS) return null;
-  if (quizArchetype === behavioralState.archetype) return null;
+  // Never a drift to `neutral` (BASE_PRIOR leads with it) — §E.4.5 v3.0 [FOLLOW-1359].
+  if (quizArchetype === behavioralState.archetype || behavioralState.archetype === 'neutral') {
+    return null;
+  }
 
   const probs = behavioralState.probabilities;
   const quizArchetypeProb = probs[quizArchetype];
@@ -811,28 +831,46 @@ export function detectMismatch(
 }
 
 /**
- * v2 quiz leaf: target at 0.85, others share 0.15, quiz_answered set.
- * @param state - Current intent state (signal_count and last_updated_at are preserved).
- * @param archetype - The leaf archetype resolved by the decision tree.
+ * v3.0 quiz fold (§E.4.4): the leaf at 0.72 (`completed`) or 0.90 (`confirmed` / `corrected`), the
+ * rest share the remainder equally (both above QUIZ_PROB_FLOOR); confidence = the leaf's posterior.
+ * A `neutral` leaf sets `quiz_answered` and pins nothing [FOLLOW-1359].
+ * @param state     - Current intent state (signal_count is preserved).
+ * @param archetype - The leaf; for `corrected`, the archetype the buyer corrected to.
+ * @param evidence  - How the result screen closed.
  */
-export function applyQuizLeaf(state: IntentState, archetype: Archetype): IntentState {
-  const leafProb = 0.85;
-  const otherCount = ARCHETYPE_NAMES.length - 1;
-  const otherProb = 0.15 / otherCount;
-
+export function applyQuizLeaf(
+  state: IntentState,
+  archetype: Archetype,
+  evidence: QuizEvidence = 'completed',
+): IntentState {
+  if (archetype === 'neutral') {
+    return { ...carry(state), last_updated_at: Date.now(), quiz_answered: true };
+  }
+  const mass = evidence === 'completed' ? QUIZ_COMPLETED_MASS : QUIZ_CONFIRMED_MASS;
   const probabilities = Object.fromEntries(
-    ARCHETYPE_NAMES.map((k) => [k, k === archetype ? leafProb : otherProb]),
+    ARCHETYPE_NAMES.map((k) => [
+      k,
+      k === archetype ? mass : (1 - mass) / (ARCHETYPE_NAMES.length - 1),
+    ]),
   ) as ArchetypeProbabilities;
 
   return {
     ...carry(state),
     archetype,
-    confidence: Math.min(0.85 * QUIZ_CONFIDENCE_BONUS, 1.0),
+    confidence: mass,
     probabilities,
-    signal_count: state.signal_count,
     last_updated_at: Date.now(),
     quiz_answered: true,
+    quiz_confirmed: evidence !== 'completed',
   };
+}
+
+/**
+ * Sustained behavioural drift re-pins the candidate at the `completed` mass, marked
+ * `source: 'drift'`; the caller never passes `neutral` nor a confirmed state (§E.4.5) [FOLLOW-1359].
+ */
+export function applyDriftCandidate(state: IntentState, candidate: Archetype): IntentState {
+  return { ...applyQuizLeaf(state, candidate), source: 'drift' };
 }
 
 /**
@@ -853,8 +891,15 @@ export function applyChatIntentPrior(
   for (const [dimension, value] of entries) {
     const likelihood = CHAT_INTENT_LIKELIHOODS[`${dimension}=${value}`];
     if (!likelihood) continue;
-    // Multiplicative, NOT damped (§D.7: chat weight == quiz weight).
-    probabilities = applyLikelihood(probabilities, likelihood);
+    // Multiplicative, NOT damped (§D.7); tempered by τ while the quiz leaf is confirmed (§E.4.4).
+    probabilities = applyLikelihood(
+      probabilities,
+      state.quiz_confirmed
+        ? (Object.fromEntries(
+            ARCHETYPE_NAMES.map((k) => [k, likelihood[k] ** CHAT_CONFIRMED_TAU]),
+          ) as ArchetypeProbabilities)
+        : likelihood,
+    );
     matched = true;
   }
 
@@ -868,7 +913,10 @@ export function applyChatIntentPrior(
     state.archetype,
     state.quiz_answered,
   );
-  const confidence = withConfidenceBonus(rawConfidence, true);
+  // The ×1.2 only without a quiz (CEO decision Q-G); after a quiz, the posterior [FOLLOW-1359].
+  const confidence = state.quiz_answered
+    ? rawConfidence
+    : Math.min(rawConfidence * CHAT_ONLY_CONFIDENCE_SCALE, 1.0);
 
   // Confident chat leader vs the quiz archetype's updated probability.
   let chat_mismatch: { quiz_archetype: Archetype; chat_archetype: Archetype } | undefined;
@@ -886,9 +934,7 @@ export function applyChatIntentPrior(
     archetype,
     confidence,
     probabilities,
-    signal_count: state.signal_count,
     last_updated_at: Date.now(),
-    quiz_answered: state.quiz_answered,
     ...(chat_mismatch !== undefined ? { chat_mismatch } : {}),
   };
 }
@@ -944,18 +990,8 @@ export function applyReferrerHints(
     boosted.first_time_buyer += 0.03;
   }
 
-  const probabilities = normalize(boosted);
-  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(probabilities);
-
-  return {
-    ...carry(state),
-    archetype,
-    confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
-    probabilities,
-    signal_count: state.signal_count,
-    last_updated_at: Date.now(),
-    quiz_answered: state.quiz_answered,
-  };
+  // Cold-session path: no hysteresis against the current archetype.
+  return rebuild(state, normalize(boosted), 0, false);
 }
 
 // ─── Listing-view rate signal (FOLLOW-208) ────────────────────────────────────
@@ -998,23 +1034,8 @@ export function applyListingViewRate(
   // No matching bracket → return state unchanged (same reference).
   if (!rateBoost) return state;
 
-  const probabilities = normalize(rateBoost);
   // Guarded: runs on every view [FOLLOW-363].
-  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
-    probabilities,
-    state.archetype,
-    state.quiz_answered,
-  );
-
-  return {
-    ...carry(state),
-    archetype,
-    confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
-    probabilities,
-    signal_count: state.signal_count,
-    last_updated_at: Date.now(),
-    quiz_answered: state.quiz_answered,
-  };
+  return rebuild(state, normalize(rateBoost), 0);
 }
 
 // ─── Dwell-time confidence boost (FOLLOW-190, capped in FOLLOW-227) ───────────
@@ -1040,21 +1061,9 @@ export function applyDwellSignal(state: IntentState, elapsed_ms: number): Intent
   const likelihood = Object.fromEntries(
     ARCHETYPE_NAMES.map((k) => [k, k === state.archetype ? boost : 1.0]),
   ) as ArchetypeProbabilities;
-  const probabilities = applyLikelihood(state.probabilities, likelihood);
   // Guarded: runs on every dwell tick [FOLLOW-363].
-  const { archetype, confidence: rawConfidence } = classifyFromProbabilities(
-    probabilities,
-    state.archetype,
-    state.quiz_answered,
-  );
   return {
-    ...carry(state),
-    archetype,
-    confidence: withConfidenceBonus(rawConfidence, state.quiz_answered),
-    probabilities,
-    signal_count: state.signal_count,
-    last_updated_at: Date.now(),
-    quiz_answered: state.quiz_answered,
+    ...rebuild(state, applyLikelihood(state.probabilities, likelihood), 0),
     // Increment the tick counter so the persisted envelope carries the correct
     // count into the next listing page (Rule R idempotency — FOLLOW-227).
     dwell_ticks_applied: (state.dwell_ticks_applied ?? 0) + 1,

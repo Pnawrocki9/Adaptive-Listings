@@ -547,3 +547,16 @@ the invoking command.
   contract (FOLLOW-1311) can catch. · **Guardrail I'd add:** every served headline in a live
   measurement is diffed by hand against the grounding payload — a 100 % served rate is not a 100 %
   grounded rate.
+
+- **2026-10-20 / FOLLOW-1359** · **Built:** the v3.0 fold: `applyQuizLeaf(state, leaf, evidence)`
+  0.72 / 0.90 / 0.90, confidence = posterior, neutral leaf unpinned, "None of these" = pre-quiz
+  state + `quiz_rejected`; one `rebuild()` for all seven behavioural recompute sites (confirmed-leaf
+  anchor with a real 0.005 floor); chat τ = 0.5 while confirmed; `CHAT_ONLY_CONFIDENCE_SCALE`; drift
+  guards + `applyDriftCandidate`. +73 B gzip (the dedup of the seven return blocks paid for most of
+  it). · **Real vs placeholder:** a "floor" applied before renormalisation is not a floor — the
+  first cut let 20 commercial bookmarks drive 16 archetypes to 0.0016 under a constant named
+  `QUIZ_PROB_FLOOR`; the honest floor needs the leaf mass capped at 1 − 17 × 0.005 = 0.915. Also the
+  spec's "two 3-bed bookmarks → ~0.55" measures 0.462 (one bookmark gives 0.577). · **Guardrail I'd
+  add:** every number a design doc states as a consequence ("~0.55", "3 do not flip") gets a pin
+  computed by the code before the doc is ruled; and a brief's expected behaviour ("correcting draws
+  a follow-up") is probed against the math before it is pinned.

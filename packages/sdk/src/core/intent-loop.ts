@@ -26,6 +26,7 @@ import {
   detectMismatch,
   DWELL_MAX_SESSION_CONTRIBUTION,
 } from './intent.js';
+import type { QuizEvidence } from './intent.js';
 import type { BootContext } from './boot.js';
 import type { AdaptLoop } from './adapt-loop.js';
 
@@ -257,9 +258,20 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
           // reflect quiz completion state on the next 5-signal boundary or beforeunload.
           snapshotCtx.quizCompleted = true;
           snapshotCtx.quizLeaf = final;
-          // The fold is unchanged here (0.85); package Q4 (FOLLOW-1359) changes it. Traits ride
-          // the state: persisted, sent on /api/adapt and intent.snapshot (ESC-086 item 4).
-          ctx.state = { ...applyQuizLeaf(ctx.state, final), quiz_traits: outcome.traits };
+          // §E.4.4 fold [FOLLOW-1359]: "None of these" keeps the pre-quiz state; × / no step =
+          // `completed` (0.72). Traits ride the state: persisted, sent on /api/adapt and
+          // intent.snapshot (ESC-086 item 4).
+          const confirmation = outcome.confirmation;
+          const evidence: QuizEvidence =
+            confirmation === 'confirmed' || confirmation === 'corrected'
+              ? confirmation
+              : 'completed';
+          ctx.state = {
+            ...(confirmation === 'none_of_these'
+              ? { ...ctx.state, quiz_rejected: true as const }
+              : applyQuizLeaf(ctx.state, final, evidence)),
+            quiz_traits: outcome.traits,
+          };
           // Seed the SoT from a NON-neutral result only — "None of these" pins nothing
           // (ADR-0014) [FOLLOW-554].
           if (final !== 'neutral') {
@@ -284,7 +296,6 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
 
           // ESC-086 item 1: one quiz.event per run — `completed` without a confirmation step,
           // else how the result screen closed; `archetype` is the final one [FOLLOW-1357].
-          const confirmation = outcome.confirmation;
           queue.push({
             type: 'quiz.event',
             payload: {

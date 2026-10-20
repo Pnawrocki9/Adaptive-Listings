@@ -2,7 +2,8 @@ import type { PlaybookEntry } from '../types.js';
 
 export const yieldHunterPlaybook: PlaybookEntry = {
   archetype: 'yield_hunter',
-  description: 'Long-term investor maximizing rental cashflow and ROI',
+  description:
+    'Long-term investor maximizing rental cashflow and ROI, including experienced portfolio owners (the seasoned_investor add-on carries the portfolio voice)',
   slots: [
     {
       slot: 'headline',

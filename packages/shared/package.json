@@ -23,6 +23,11 @@
       "require": "./dist/playbooks/index.cjs",
       "types": "./dist/playbooks/index.d.ts"
     },
+    "./playbook-traits": {
+      "import": "./dist/playbooks/traits.js",
+      "require": "./dist/playbooks/traits.cjs",
+      "types": "./dist/playbooks/traits.d.ts"
+    },
     "./browser-origins": {
       "import": "./dist/browser-origins.js",
       "require": "./dist/browser-origins.cjs",

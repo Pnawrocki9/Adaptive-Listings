@@ -2,7 +2,8 @@ import type { PlaybookEntry } from '../types.js';
 
 export const upsizerPlaybook: PlaybookEntry = {
   archetype: 'upsizer',
-  description: 'Current homeowner trading up to more space or better location',
+  description:
+    'Current homeowner trading up to more space or better location (no longer assigned by the quiz; its wording is folded into family_buyer)',
   slots: [
     {
       slot: 'headline',

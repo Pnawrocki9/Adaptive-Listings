@@ -6,7 +6,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { computeCosineSimilarity } from '@estalara/shared';
+import { computeCosineSimilarity, isTraitId } from '@estalara/shared';
 import type {
   AdaptationDirectives,
   TextDirective,
@@ -15,6 +15,7 @@ import type {
 } from '@estalara/shared';
 import { assignHoldout, thompsonSample } from '@estalara/shared';
 import { getPlaybook } from '@estalara/shared/playbooks';
+import { getTraitAddOns, traitSlots } from '@estalara/shared/playbook-traits';
 import type { SlotDirective } from '@estalara/shared/playbooks';
 import { callLlmGateway } from '@/lib/llm-gateway';
 import { clickhouseAuthHeaders } from '@/lib/clickhouse-http';
@@ -85,6 +86,15 @@ const AdaptPostBodySchema = z.object({
   consent_mode_enabled: z.boolean().optional(),
   /** Content locale for slot copy; falls back to English per slot [F-09]. */
   locale: z.enum(['en', 'pl', 'es']).optional(),
+  /**
+   * Buyer traits from the quiz [FOLLOW-1360, ESC-086 item 4]. Additive: ids that are not a
+   * canonical trait are dropped, not rejected, so an older or newer client never gets a 400.
+   */
+  traits: z
+    .array(z.string().max(64))
+    .max(32)
+    .transform((ids) => ids.filter(isTraitId).slice(0, 7))
+    .optional(),
 });
 
 // ─── Decision logic ───────────────────────────────────────────────────────────
@@ -120,6 +130,8 @@ async function runDecisionTree(
   groundingMissing = false,
   /** Facts for playbook `{token}`s on the no-model branches [FOLLOW-1140, ESC-074]. */
   listingId?: string,
+  /** Canonical trait ids; each adds guidance and at most one invitation slot [FOLLOW-1360]. */
+  traits: readonly string[] = [],
 ): Promise<{
   directives: TextDirective[];
   source: AdaptationDirectives['source'];
@@ -163,6 +175,17 @@ async function runDecisionTree(
     confidence,
   }));
 
+  // A trait's invitation slot (`trait_note`) asserts nothing about the property, so it rides the
+  // same withhold rule as `cta`; only the playbook branches serve it [FOLLOW-1360].
+  const traitAddOns = getTraitAddOns(traits);
+  const traitDirectives: TextDirective[] = traitSlots(traitAddOns).map((s) => ({
+    type: 'text' as const,
+    slot: s.slot,
+    value: (locale === 'pl' ? s.pl : locale === 'es' ? s.es : undefined) ?? s.en,
+    archetype: archetypeId,
+    confidence,
+  }));
+
   // Token fill on the verbatim-template branches only; an object for eslint narrowing
   // [FOLLOW-1140].
   const playbookTokenDrop = { dropped: false };
@@ -181,7 +204,7 @@ async function runDecisionTree(
       });
       playbookTokenDrop.dropped = true;
     }
-    return directives;
+    return [...directives, ...traitDirectives];
   };
 
   // Branch 2: playbook, no LLM; property-fact slots withheld per §E.7.0 (ESC-076) [FOLLOW-1163].
@@ -228,6 +251,7 @@ async function runDecisionTree(
     basePlaybook: playbook,
     listingContext,
     groundingMissing,
+    ...(traits.length > 0 ? { traits } : {}),
     sessionId,
     tenantId,
     onFallback: (reason) => {
@@ -818,6 +842,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     selectedVariant,
     groundingMissing,
     body.listing_id,
+    body.traits,
   );
 
   // Credited arm: 'control' when the §E.7.0 withhold left nothing variant-bearing [FOLLOW-1163].

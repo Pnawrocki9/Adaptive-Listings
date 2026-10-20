@@ -30,6 +30,13 @@
  *   worth arguing about and they hold: they promise that WE have a projection or a calculator,
  *   not that this property yields anything. `Enquire About Holiday Use` invites a question; it
  *   does not claim holiday use is permitted.
+ * - **`trait_note` — non-assertive, SERVED [FOLLOW-1360].** One invitation per buyer trait, all six
+ *   read: `Request a Private Viewing`, `Ask About Home Office Space`, `Ask About Residency
+ *   Requirements`, `Request an Investment Pack`, `Ask About Buying From Abroad`, `Ask About
+ *   Letting This Home` (and their PL/ES). Each is an offer or a question the buyer may ask; none
+ *   says the property has an office, qualifies for residency, yields anything or may be let.
+ *   `has_children` has no slot. The set lives in `packages/shared/src/playbooks/traits.ts`, whose
+ *   test pins every string against a claim-word list, so a re-authored string is a red test.
  * - **`headline` — assertive, WITHHELD.** Every property claim in the playbook lives here.
  * - **`feature` — MIXED, and therefore withheld whole.** Most are section labels that assert
  *   nothing (`Family Essentials`, `Portfolio Metrics`, `Renovation Scope`, `Why Upgrade?`), but
@@ -57,7 +64,7 @@ import type { TextDirective } from '@estalara/shared';
  * a `Rule I` violation, and a mutable-looking export invites a second definition. The membership
  * test is exported instead: see {@link isNonAssertiveSlot}.
  */
-const NON_ASSERTIVE_SLOTS: ReadonlySet<string> = new Set(['cta']);
+const NON_ASSERTIVE_SLOTS: ReadonlySet<string> = new Set(['cta', 'trait_note']);
 
 /**
  * Does this slot assert a fact about the property? [FOLLOW-1173]

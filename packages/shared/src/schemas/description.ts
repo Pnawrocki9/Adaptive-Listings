@@ -253,6 +253,16 @@ export const DescriptionRequestedEventSchema = z.object({
    * Not present when override_model is set (DEMO MODE path uses override_model instead).
    */
   generation_model: z.string().optional(),
+
+  /**
+   * Buyer trait ids (FOLLOW-1360): the generator appends each trait's grounded rules to the
+   * archetype's hard rules. Absent or empty → the prompt is byte-identical to before. Optional and
+   * additive. NOT yet set by the control-plane route: the description cache is keyed
+   * (tenant, listing, archetype, locale, model) with no trait component, so a trait-bearing text
+   * would be served to a buyer without the trait — a trait-keyed cache needs a migration
+   * (separate ticket).
+   */
+  traits: z.array(z.string()).max(7).optional(),
 });
 
 export type DescriptionRequestedEvent = z.infer<typeof DescriptionRequestedEventSchema>;

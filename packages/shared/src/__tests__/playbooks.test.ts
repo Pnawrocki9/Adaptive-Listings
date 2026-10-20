@@ -139,11 +139,17 @@ describe('getPlaybook — spot checks for key archetypes', () => {
   // `family_buyer` was '{bedrooms}BR Family Home — {school_rating} School District'. School
   // ratings need a third-party dataset nobody in the estate has, and the HARD RULES forbid
   // quoting one. `{bedrooms}` stays: it IS a fact of the listing and resolves server-side.
-  it('family_buyer headline is family-framed and claims no school rating (ESC-075)', () => {
+  //
+  // FOLLOW-1360: `family_buyer` absorbed `upsizer` ("Moving up") and stopped assuming children
+  // (they are the `has_children` trait), so no headline variant names a family or a school.
+  it('family_buyer headlines are moving-up framed and assume no children or schools (ESC-075)', () => {
     const playbook = getPlaybook('family_buyer');
     const headlineSlot = playbook.slots.find((s) => s.slot === 'headline');
-    expect(headlineSlot?.en).toMatch(/family/i);
-    expect(headlineSlot?.en).not.toMatch(/school/i);
+    expect(headlineSlot?.en).toMatch(/room to grow/i);
+    for (const variant of headlineSlot?.variants?.en ?? []) {
+      expect(variant).not.toMatch(/school|famil|child/i);
+    }
+    expect(headlineSlot?.variants?.en.some((v) => /moving up/i.test(v))).toBe(true);
   });
 
   it('lifestyle_expat headline mentions expat community', () => {

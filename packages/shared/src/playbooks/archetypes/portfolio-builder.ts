@@ -2,7 +2,8 @@ import type { PlaybookEntry } from '../types.js';
 
 export const portfolioBuilderPlaybook: PlaybookEntry = {
   archetype: 'portfolio_builder',
-  description: 'Experienced investor scaling a multi-property portfolio',
+  description:
+    'Experienced investor scaling a multi-property portfolio (no longer assigned by the quiz; its voice is the seasoned_investor add-on)',
   slots: [
     {
       slot: 'headline',

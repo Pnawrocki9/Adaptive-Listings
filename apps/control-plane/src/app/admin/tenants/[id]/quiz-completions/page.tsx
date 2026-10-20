@@ -50,7 +50,7 @@ export default async function StaffTenantQuizCompletionsPage({
         <h1 className="text-2xl font-bold text-gray-900">Quiz Completions</h1>
         <p className="mt-1 text-sm text-gray-500">
           Read-only staff viewer (FOLLOW-999). Every SDK quiz completion recorded for this tenant —
-          resolved archetype, branch, answer indexes. Tenant:{' '}
+          resolved archetype, branch, and each answer as text. Tenant:{' '}
           <span className="font-mono text-xs">{id}</span>
         </p>
       </div>

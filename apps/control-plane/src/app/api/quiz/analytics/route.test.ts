@@ -34,16 +34,24 @@ vi.mock('@estalara/db', () => ({
     branch: 'qc.branch',
     createdAt: 'qc.created_at',
   },
+  quizDefinitions: {
+    tenantId: 'qd.tenant_id',
+    version: 'qd.version',
+    isActive: 'qd.is_active',
+    definition: 'qd.definition',
+  },
 }));
 
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((col: unknown, val: unknown) => ({ col, val })),
+  inArray: vi.fn((col: unknown, vals: unknown) => ({ inArray: col, vals })),
   gte: vi.fn((col: unknown, val: unknown) => ({ gte: col, val })),
   // and() passes the eq fence through as the first member so the fake's where()
   // capture can read `w.val` for a bare eq AND `w.members[0].val` for and(...).
   and: vi.fn((...members: { val?: unknown }[]) => ({ and: true, members, val: members[0]?.val })),
   sql: Object.assign((strings: TemplateStringsArray) => ({ sql: strings.join('') }), {
     raw: (s: string) => ({ sql: s }),
+    join: (parts: unknown[]) => ({ join: parts }),
   }),
 }));
 
@@ -55,6 +63,7 @@ vi.mock('@/lib/session-auth', async (importOriginal) => {
 vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn() }));
 
 import { createAdminClient } from '@estalara/db';
+import { DEFAULT_QUIZ_DEFINITION_V2 } from '@estalara/shared';
 import { resolveTenantAccess, type TenantAccess } from '@/lib/session-auth';
 import { GET } from './route';
 
@@ -84,15 +93,23 @@ function staffAccess(tenantId: string): TenantAccess {
 
 // ─── Chainable fake DB with a programmed results queue ────────────────────────
 
-function makeDb(queue: unknown[]) {
+function makeDb(queue: unknown[], executeResults: unknown[] = [[], []]) {
   const state = {
     queue: [...queue],
+    execute: vi.fn(),
     whereVals: [] as unknown[],
     select: vi.fn(),
   };
 
+  // `quiz_runs` raw reads (counts, then dismissed runs); an Error entry rejects.
+  const runResults = [...executeResults];
+  state.execute.mockImplementation(() => {
+    const r = runResults.shift() ?? [];
+    return r instanceof Error ? Promise.reject(r) : Promise.resolve(r);
+  });
   state.select.mockImplementation(() => {
-    const result = state.queue.shift();
+    // The active-definition lookup (FOLLOW-1362 C4) follows the five reads; unprogrammed = none.
+    const result = state.queue.length > 0 ? state.queue.shift() : [];
     const chain = {
       from: () => chain,
       where: (w: { val?: unknown }) => {
@@ -174,8 +191,9 @@ describe('GET /api/quiz/analytics', () => {
     mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     const db = makeDb(HAPPY_QUEUE);
     await GET(makeRequest());
-    // Five queries — five fenced where()s (and() passes the eq fence through).
-    expect(db.whereVals).toEqual([TENANT_A, TENANT_A, TENANT_A, TENANT_A, TENANT_A]);
+    // Five aggregate queries plus the active-definition lookup (FOLLOW-1362 C4): six fenced
+    // where()s (and() passes the eq fence through).
+    expect(db.whereVals).toEqual(Array(6).fill(TENANT_A));
   });
 
   it('staff with ?tenant_id → 200 fenced to the override tenant', async () => {
@@ -204,5 +222,96 @@ describe('GET /api/quiz/analytics', () => {
     expect(res.status).toBe(500);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('internal_error');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FOLLOW-1362 C4 - branch labels from the definition, runs funnel, drop-off
+
+describe('GET /api/quiz/analytics - labels and funnel (FOLLOW-1362 C4)', () => {
+  it('branch labels come from the active definition (root answers into each question)', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    makeDb([...HAPPY_QUEUE, []]);
+    const body = (await (await GET(makeRequest())).json()) as QuizAnalyticsResponse;
+    // No stored definition: the built-in default. q_home is reached by one root answer.
+    expect(body.branch_labels.q_home?.en).toBe('My main home, in the country where I live now');
+    expect(body.branch_labels.q_home?.pl).toBe('Mój główny dom — w kraju, w którym teraz mieszkam');
+    expect(body.branch_labels.q_invest).toBeDefined();
+    expect(body.branch_labels.q_move).toBeDefined();
+  });
+
+  it('funnel counts and per-question drop-off from quiz_runs', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    makeDb(HAPPY_QUEUE, [
+      [
+        { status: 'shown', cnt: 4 },
+        { status: 'dismissed', cnt: 3 },
+        { status: 'completed', cnt: 1 },
+        { status: 'confirmed', cnt: 5 },
+        { status: 'corrected', cnt: 1 },
+      ],
+      [
+        // dismissed on the root question: no path, step 0
+        { last_step: 0, answer_path: null, definition_version: null },
+        { last_step: 0, answer_path: null, definition_version: null },
+        // dismissed on the question after the first answer
+        {
+          last_step: 1,
+          answer_path: [{ question_id: 'q_purpose', answer_index: 0 }],
+          definition_version: null,
+        },
+        // served an older stored version: not located on the active definition, grouped by step
+        { last_step: 1, answer_path: null, definition_version: 2 },
+      ],
+    ]);
+    const body = (await (await GET(makeRequest())).json()) as QuizAnalyticsResponse;
+    expect(body.runs.available).toBe(true);
+    if (!body.runs.available) return;
+    expect(body.runs.funnel).toEqual({
+      shown: 14,
+      completed: 7, // completed + confirmed + corrected + unconfirmed
+      confirmed: 5,
+      corrected: 1,
+      unconfirmed: 0,
+      dismissed: 3,
+    });
+    const root = body.runs.drop_off.find((d) => d.question_id === 'q_purpose');
+    expect(root?.prompt?.en).toBe('What will this property be for?');
+    expect(root?.count).toBe(2);
+    expect(root?.share).toBe(0.5);
+    expect(body.runs.drop_off.find((d) => d.question_id === 'q_home')?.count).toBe(1);
+    expect(body.runs.drop_off.find((d) => d.question_id === null)?.step).toBe(1);
+  });
+
+  it('quiz_runs missing (42P01) -> available:false, the rest of the page still 200', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    makeDb(HAPPY_QUEUE, [
+      Object.assign(new Error('relation "quiz_runs" does not exist'), { code: '42P01' }),
+    ]);
+    const res = await GET(makeRequest());
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as QuizAnalyticsResponse;
+    expect(body.runs).toEqual({ available: false });
+    expect(body.total_completions).toBe(89);
+  });
+
+  it('a stored active definition drives the branch labels', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    const edited = {
+      ...DEFAULT_QUIZ_DEFINITION_V2,
+      questions: DEFAULT_QUIZ_DEFINITION_V2.questions.map((q) =>
+        q.id === 'q_purpose'
+          ? {
+              ...q,
+              answers: q.answers.map((a) =>
+                a.next === 'q_home' ? { ...a, label_i18n: { en: 'EDITED HOME', pl: 'DOM' } } : a,
+              ),
+            }
+          : q,
+      ),
+    };
+    makeDb([...HAPPY_QUEUE, [{ version: 4, definition: edited }]]);
+    const body = (await (await GET(makeRequest())).json()) as QuizAnalyticsResponse;
+    expect(body.branch_labels.q_home).toEqual({ en: 'EDITED HOME', pl: 'DOM' });
   });
 });

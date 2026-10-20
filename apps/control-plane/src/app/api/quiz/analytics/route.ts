@@ -43,6 +43,8 @@ import * as Sentry from '@sentry/nextjs';
 import { and, eq, gte, sql } from 'drizzle-orm';
 
 import { createAdminClient, quizCompletions } from '@estalara/db';
+import { readQuizRunFunnel } from '@/lib/quiz-runs';
+import { branchLabels, loadActiveDefinition, pendingQuestion, type TextBag } from '@/lib/quiz-text';
 import { resolveTenantAccess, type TenantAccess } from '@/lib/session-auth';
 import { accessErrorToResponse } from '@/lib/access-error-response';
 
@@ -56,7 +58,38 @@ export interface QuizAnalyticsResponse {
   daily: { day: string; count: number }[];
   by_archetype: { archetype: string; count: number }[];
   by_branch: { branch: string | null; count: number }[];
+  /**
+   * Label of each branch id, derived from the ACTIVE definition (built-in default when none):
+   * the label of the root answer that leads to that question (FOLLOW-1362 C4).
+   */
+  branch_labels: Record<string, TextBag>;
+  /** `quiz_runs` funnel + drop-off; `available: false` = H002 not applied (FOLLOW-1362 C4). */
+  runs: QuizRunsSummary;
 }
+
+/** Funnel counts and per-question drop-off of `quiz_runs`. */
+export type QuizRunsSummary =
+  | { available: false }
+  | {
+      available: true;
+      /** Final-status counts: a run that is `confirmed` also counts in `completed`. */
+      funnel: {
+        shown: number;
+        completed: number;
+        confirmed: number;
+        corrected: number;
+        unconfirmed: number;
+        dismissed: number;
+      };
+      /** Where dismissed runs stopped; `question_id: null` rows are grouped by `step`. */
+      drop_off: {
+        question_id: string | null;
+        step: number | null;
+        prompt: TextBag | null;
+        count: number;
+        share: number;
+      }[];
+    };
 
 const DAILY_WINDOW_DAYS = 14;
 const ROLLING_WINDOW_DAYS = 30;
@@ -124,6 +157,51 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       .where(eq(quizCompletions.tenantId, tenantId))
       .groupBy(quizCompletions.branch);
 
+    // FOLLOW-1362 C4: labels + funnel. Dismissed runs are located on the active definition only
+    // when they were served that version (or a version-less run against the built-in default);
+    // any other run is grouped by its step number instead of guessing a question.
+    const active = await loadActiveDefinition(db, tenantId);
+    const funnel = await readQuizRunFunnel(db, tenantId);
+    let runs: QuizRunsSummary = { available: false };
+    if (funnel.available) {
+      const c = funnel.counts;
+      const n = (k: string): number => c[k] ?? 0;
+      const completed = n('completed') + n('confirmed') + n('corrected') + n('unconfirmed');
+      const groups = new Map<
+        string,
+        { question_id: string | null; step: number | null; prompt: TextBag | null; count: number }
+      >();
+      for (const d of funnel.dismissed) {
+        const trusted = d.definition_version === active.version;
+        const q = trusted ? pendingQuestion(active.definition, d.answer_path, d.last_step) : null;
+        const key = q ? `q:${q.id}` : `s:${String(d.last_step)}`;
+        const g = groups.get(key);
+        if (g) g.count += 1;
+        else
+          groups.set(key, {
+            question_id: q?.id ?? null,
+            step: q ? null : d.last_step,
+            prompt: q?.prompt ?? null,
+            count: 1,
+          });
+      }
+      const dismissedSample = funnel.dismissed.length;
+      runs = {
+        available: true,
+        funnel: {
+          shown: Object.values(c).reduce((a, b) => a + b, 0),
+          completed,
+          confirmed: n('confirmed'),
+          corrected: n('corrected'),
+          unconfirmed: n('unconfirmed'),
+          dismissed: n('dismissed'),
+        },
+        drop_off: [...groups.values()]
+          .sort((a, b) => b.count - a.count)
+          .map((g) => ({ ...g, share: dismissedSample === 0 ? 0 : g.count / dismissedSample })),
+      };
+    }
+
     const body: QuizAnalyticsResponse = {
       tenant_id: tenantId,
       total_completions: totalRows[0]?.cnt ?? 0,
@@ -135,6 +213,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       by_branch: byBranch
         .map((r) => ({ branch: r.branch, count: r.cnt }))
         .sort((a, b) => b.count - a.count),
+      branch_labels: branchLabels(active.definition),
+      runs,
     };
     return NextResponse.json(body, { status: 200 });
   } catch (err: unknown) {

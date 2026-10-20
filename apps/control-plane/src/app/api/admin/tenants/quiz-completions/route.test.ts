@@ -44,6 +44,12 @@ vi.mock('@estalara/db', () => ({
     language: 'qc.language',
     createdAt: 'qc.created_at',
   },
+  quizDefinitions: {
+    tenantId: 'qd.tenant_id',
+    version: 'qd.version',
+    isActive: 'qd.is_active',
+    definition: 'qd.definition',
+  },
 }));
 
 vi.mock('drizzle-orm', () => ({
@@ -55,12 +61,13 @@ vi.mock('drizzle-orm', () => ({
     val: parts.find((p) => 'val' in p)?.val,
     parts,
   })),
+  inArray: vi.fn((col: unknown, vals: unknown) => ({ inArray: col, vals })),
   isNotNull: vi.fn((col: unknown) => ({ isNotNull: col })),
   desc: vi.fn((col: unknown) => ({ desc: col })),
   sql: Object.assign(
     // Tagged-template call: sql`count(*)::int` → opaque marker.
     (strings: TemplateStringsArray) => ({ sql: strings.join('') }),
-    { raw: (s: string) => ({ sql: s }) },
+    { raw: (s: string) => ({ sql: s }), join: (parts: unknown[]) => ({ join: parts }) },
   ),
 }));
 
@@ -72,6 +79,7 @@ vi.mock('@/lib/session-auth', async (importOriginal) => {
 vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn() }));
 
 import { createAdminClient } from '@estalara/db';
+import { DEFAULT_QUIZ_DEFINITION_V2 } from '@estalara/shared';
 import { resolveTenantAccess, type TenantAccess } from '@/lib/session-auth';
 import { GET } from './route';
 
@@ -113,6 +121,9 @@ function staffAccess(
 
 interface FakeDb {
   queue: unknown[];
+  /** Result of the raw `quiz_runs` read (`execute`): rows, or an Error to throw. */
+  executeResult: unknown;
+  execute: ReturnType<typeof vi.fn>;
   whereVals: unknown[];
   limits: number[];
   offsets: number[];
@@ -122,14 +133,22 @@ interface FakeDb {
 function makeDb(queue: unknown[]): FakeDb {
   const state: FakeDb = {
     queue: [...queue],
+    executeResult: [],
+    execute: vi.fn(),
     whereVals: [],
     limits: [],
     offsets: [],
     select: vi.fn(),
   };
 
+  state.execute.mockImplementation(() =>
+    state.executeResult instanceof Error
+      ? Promise.reject(state.executeResult)
+      : Promise.resolve(state.executeResult),
+  );
   state.select.mockImplementation(() => {
-    const result = state.queue.shift();
+    // The C4 text lookups come after the five page reads; an unprogrammed one reads as no rows.
+    const result = state.queue.length > 0 ? state.queue.shift() : [];
     const chain = {
       from: () => chain,
       where: (w: { val: unknown }) => {
@@ -225,6 +244,15 @@ describe('GET /api/admin/tenants/quiz-completions', () => {
       q2_answer: 2,
       q3_answer: 1,
       path_reported: true,
+      answer_path: PAGE_ROW.answerPath,
+      // no definition row, no quiz_runs row: resolved against the built-in default, approximate
+      path_text: expect.any(Array),
+      archetype_label: {
+        en: 'Long-term rental investment',
+        pl: 'Inwestycja pod najem długoterminowy',
+      },
+      definition_version: null,
+      definition_source: 'approximate',
       language: 'en',
       created_at: '2026-08-15T10:00:00.000Z',
     });
@@ -247,8 +275,9 @@ describe('GET /api/admin/tenants/quiz-completions', () => {
     mockResolve.mockResolvedValue(staffAccess(TENANT_A));
     const db = makeDb([[], [{ cnt: 0 }], [], [], [{ cnt: 0 }]]);
     await GET(makeRequest({ tenant_id: TENANT_A }));
-    // Five queries (page, total, by_archetype, by_branch, not-reported) — five fenced where()s.
-    expect(db.whereVals).toEqual([TENANT_A, TENANT_A, TENANT_A, TENANT_A, TENANT_A]);
+    // Five page queries (page, total, by_archetype, by_branch, not-reported) plus the active
+    // definition lookup (FOLLOW-1362 C4) — six fenced where()s.
+    expect(db.whereVals).toEqual(Array(6).fill(TENANT_A));
   });
 
   it('clamps limit to 200 and applies offset; bad params fall back to defaults', async () => {
@@ -261,7 +290,8 @@ describe('GET /api/admin/tenants/quiz-completions', () => {
     const body = (await res.json()) as QuizCompletionsResponse;
     expect(body.limit).toBe(200); // clamped
     expect(body.offset).toBe(0); // fallback
-    expect(db.limits).toEqual([200]);
+    // the page query, then the active-definition lookup (limit 1, FOLLOW-1362 C4)
+    expect(db.limits).toEqual([200, 1]);
     expect(db.offsets).toEqual([0]);
   });
 
@@ -315,5 +345,107 @@ describe('GET /api/admin/tenants/quiz-completions', () => {
     expect(res.status).toBe(500);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('internal_error');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FOLLOW-1362 C4 — the walk as text
+
+/** The default definition with a recognisable root prompt, as a tenant's edited version. */
+const EDITED_DEFINITION = {
+  ...DEFAULT_QUIZ_DEFINITION_V2,
+  questions: DEFAULT_QUIZ_DEFINITION_V2.questions.map((q) =>
+    q.id === 'q_purpose'
+      ? { ...q, prompt_i18n: { en: 'EDITED PROMPT', pl: 'EDYTOWANE PYTANIE' } }
+      : q,
+  ),
+};
+
+const TEXT_ROW = {
+  ...PAGE_ROW,
+  answerPath: [
+    { question_id: 'q_purpose', answer_index: 2 },
+    { question_id: 't_second', answer_indexes: [0, 2] },
+  ],
+};
+
+const PAGE_QUEUE = (row: unknown): unknown[] => [[row], [{ cnt: 1 }], [], [], [{ cnt: 0 }]];
+
+describe('GET /api/admin/tenants/quiz-completions - answer text (FOLLOW-1362 C4)', () => {
+  it('resolves question prompts and answer labels, a multi step lists every trait', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    makeDb(PAGE_QUEUE(TEXT_ROW));
+    const res = await GET(makeRequest({ tenant_id: TENANT_A }));
+    const body = (await res.json()) as QuizCompletionsResponse;
+    const row = body.completions[0];
+    expect(row?.answer_path).toEqual(TEXT_ROW.answerPath);
+    expect(row?.path_text?.[0]?.prompt?.en).toBe('What will this property be for?');
+    expect(row?.path_text?.[0]?.prompt?.pl).toBe('Do czego ma służyć ta nieruchomość?');
+    expect(row?.path_text?.[0]?.answers[0]?.label?.en).toBe(
+      "A holiday or second home — I'll mainly live elsewhere",
+    );
+    expect(row?.path_text?.[1]?.answers.map((a) => a.index)).toEqual([0, 2]);
+    expect(row?.path_text?.[1]?.answers.every((a) => a.label !== null)).toBe(true);
+    // The leaf's display name comes from the confirmation block.
+    expect(row?.archetype_label?.en).toBe(
+      DEFAULT_QUIZ_DEFINITION_V2.confirm?.names_i18n.yield_hunter?.en,
+    );
+  });
+
+  it('a session whose quiz_runs row pins a version resolves against THAT version', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    const db = makeDb([
+      ...PAGE_QUEUE(TEXT_ROW),
+      [], // active definition: none
+      [{ version: 3, definition: EDITED_DEFINITION }], // the pinned version
+    ]);
+    db.executeResult = [{ session_id: TEXT_ROW.sessionId, definition_version: 3 }];
+    const res = await GET(makeRequest({ tenant_id: TENANT_A }));
+    const row = ((await res.json()) as QuizCompletionsResponse).completions[0];
+    expect(row?.definition_source).toBe('pinned');
+    expect(row?.definition_version).toBe(3);
+    expect(row?.path_text?.[0]?.prompt?.en).toBe('EDITED PROMPT');
+    // the version lookup is tenant-fenced like every other query
+    expect(db.whereVals.every((v) => v === TENANT_A)).toBe(true);
+  });
+
+  it('a legacy session (no quiz_runs row) is resolved against the ACTIVE definition, approximate', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    makeDb([...PAGE_QUEUE(TEXT_ROW), [{ version: 5, definition: EDITED_DEFINITION }]]);
+    const res = await GET(makeRequest({ tenant_id: TENANT_A }));
+    const row = ((await res.json()) as QuizCompletionsResponse).completions[0];
+    expect(row?.definition_source).toBe('approximate');
+    expect(row?.definition_version).toBe(5);
+    expect(row?.path_text?.[0]?.prompt?.en).toBe('EDITED PROMPT');
+  });
+
+  it('a pinned version that no longer exists falls back to approximate', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    const db = makeDb([...PAGE_QUEUE(TEXT_ROW), [], []]);
+    db.executeResult = [{ session_id: TEXT_ROW.sessionId, definition_version: 9 }];
+    const res = await GET(makeRequest({ tenant_id: TENANT_A }));
+    const row = ((await res.json()) as QuizCompletionsResponse).completions[0];
+    expect(row?.definition_source).toBe('approximate');
+  });
+
+  it('quiz_runs missing (42P01) never crashes: 200, rows approximate', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    const db = makeDb(PAGE_QUEUE(TEXT_ROW));
+    db.executeResult = Object.assign(new Error('relation "quiz_runs" does not exist'), {
+      code: '42P01',
+    });
+    const res = await GET(makeRequest({ tenant_id: TENANT_A }));
+    expect(res.status).toBe(200);
+    const row = ((await res.json()) as QuizCompletionsResponse).completions[0];
+    expect(row?.definition_source).toBe('approximate');
+    expect(row?.path_text).not.toBeNull();
+  });
+
+  it('a row without a reported path has no text', async () => {
+    mockResolve.mockResolvedValue(staffAccess(TENANT_A));
+    makeDb(PAGE_QUEUE({ ...PAGE_ROW, answerPath: null }));
+    const res = await GET(makeRequest({ tenant_id: TENANT_A }));
+    const row = ((await res.json()) as QuizCompletionsResponse).completions[0];
+    expect(row?.path_text).toBeNull();
   });
 });

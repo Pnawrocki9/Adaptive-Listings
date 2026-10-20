@@ -175,6 +175,84 @@ describe('QuizCompletionsViewer', () => {
     expect(screen.getByText(/11 completions excluded/)).toBeDefined();
   });
 
+  // ─── FOLLOW-1362 C4 ───────────────────────────────────────────────────────
+
+  function withRow(extra: Record<string, unknown>): unknown {
+    const base = (SAMPLE as { completions: Record<string, unknown>[] }).completions[0];
+    return { ...(SAMPLE as Record<string, unknown>), completions: [{ ...base, ...extra }] };
+  }
+
+  const WALK = [
+    {
+      question_id: 'q_purpose',
+      prompt: { en: 'What will this property be for?', pl: 'Do czego ma służyć?' },
+      answers: [{ index: 2, label: { en: 'A holiday home', pl: 'Dom wakacyjny' } }],
+    },
+    {
+      question_id: 't_second',
+      prompt: { en: 'Anything else?', pl: 'Coś jeszcze?' },
+      answers: [
+        { index: 0, label: { en: 'I will let it out', pl: 'Będę wynajmować' } },
+        { index: 2, label: { en: 'I work from home', pl: 'Pracuję z domu' } },
+        { index: 7, label: null },
+      ],
+    },
+  ];
+
+  async function renderWith(body: unknown): Promise<void> {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(body) }),
+    );
+    render(<QuizCompletionsViewer tenantId={TENANT_ID} />);
+    await waitFor(() => {
+      expect(screen.getByRole('table')).toBeDefined();
+    });
+  }
+
+  it('shows question and answer TEXT (EN with PL beside it), every trait of a multi step', async () => {
+    await renderWith(
+      withRow({
+        path_text: WALK,
+        archetype_label: { en: 'Long-term rental investment', pl: 'Najem długoterminowy' },
+        definition_source: 'pinned',
+        definition_version: 3,
+      }),
+    );
+    const cell = screen.getByTestId('walk-text');
+    expect(cell.textContent).toContain('What will this property be for?');
+    expect(cell.textContent).toContain('A holiday home');
+    expect(cell.textContent).toContain('Dom wakacyjny');
+    expect(cell.textContent).toContain('I will let it out');
+    expect(cell.textContent).toContain('I work from home');
+    // an index the definition no longer has is said, not hidden
+    expect(cell.textContent).toContain('answer #7');
+    expect(screen.getByText('Long-term rental investment')).toBeDefined();
+    // PL as a tooltip too
+    expect(screen.getByTitle('Dom wakacyjny')).toBeDefined();
+  });
+
+  it('a version-pinned row shows its definition version and no approximate badge', async () => {
+    await renderWith(
+      withRow({ path_text: WALK, definition_source: 'pinned', definition_version: 3 }),
+    );
+    expect(screen.getByText('definition v3')).toBeDefined();
+    expect(screen.queryByTestId('approximate-badge')).toBeNull();
+  });
+
+  it('a legacy row resolved against the current definition carries the approximate badge', async () => {
+    await renderWith(
+      withRow({ path_text: WALK, definition_source: 'approximate', definition_version: 5 }),
+    );
+    expect(screen.getByTestId('approximate-badge').textContent).toBe('approximate');
+  });
+
+  it('keeps the raw index columns, so a row without text still shows what was recorded', async () => {
+    await renderWith(withRow({ path_text: null }));
+    expect(screen.queryByTestId('walk-text')).toBeNull();
+    expect(screen.getByText('2')).toBeDefined(); // q2_answer
+  });
+
   it('Next issues a new GET with the advanced offset (fenced to the tenant)', async () => {
     const fetchMock = vi
       .fn()

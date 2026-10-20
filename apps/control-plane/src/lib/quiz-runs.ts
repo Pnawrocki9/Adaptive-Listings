@@ -306,3 +306,95 @@ export async function readQuizRunsForSession(
     }),
   );
 }
+
+/**
+ * Staff read (FOLLOW-1362 C4): the `definition_version` each session's quiz was SERVED with, so
+ * the completions viewer can resolve answer indexes against the definition the buyer actually saw.
+ * One entry per session (the newest run that carries a version). A missing table (42P01) reads as
+ * `available: false` with no versions - never an error (the viewer then falls back to the active
+ * definition and marks the row "approximate").
+ */
+export async function readQuizRunVersionsForSessions(
+  db: SqlExecutor,
+  tenantId: string,
+  sessionIds: readonly string[],
+): Promise<{ available: boolean; versions: Map<string, number> }> {
+  const versions = new Map<string, number>();
+  const ids = [...new Set(sessionIds)].filter((s) => s !== '');
+  if (ids.length === 0) return { available: true, versions };
+  let result: unknown;
+  try {
+    result = await db.execute(sql`
+      select distinct on (session_id) session_id, definition_version
+      from quiz_runs
+      where tenant_id = ${tenantId}::uuid
+        and session_id in (${sql.join(
+          ids.map((id) => sql`${id}::text`),
+          sql`, `,
+        )})
+        and definition_version is not null
+      order by session_id, shown_at desc
+    `);
+  } catch (err: unknown) {
+    if (!isQuizRunsTableMissing(err)) throw err;
+    logMissingTableOnce('admin/quiz-completions');
+    return { available: false, versions };
+  }
+  for (const r of executedRows(result)) {
+    if (typeof r.session_id === 'string' && r.definition_version !== null) {
+      versions.set(r.session_id, Number(r.definition_version));
+    }
+  }
+  return { available: true, versions };
+}
+
+/** One dismissed run, as the drop-off table needs it. */
+interface DismissedQuizRun {
+  last_step: number | null;
+  answer_path: unknown;
+  definition_version: number | null;
+}
+
+/** The run funnel of one tenant: counts per final status plus the dismissed runs' positions. */
+type QuizRunFunnel =
+  | { available: false }
+  | { available: true; counts: Record<string, number>; dismissed: DismissedQuizRun[] };
+
+/** The most recent dismissed runs read for the drop-off table (bounds the payload). */
+const DISMISSED_SAMPLE = 5000;
+
+/**
+ * Staff read (FOLLOW-1362 C4): final-status counts of every `quiz_runs` row of the tenant and the
+ * newest {@link DISMISSED_SAMPLE} dismissed runs. A missing table (42P01) is `available: false`.
+ */
+export async function readQuizRunFunnel(db: SqlExecutor, tenantId: string): Promise<QuizRunFunnel> {
+  let counted: unknown;
+  let dismissedRows: unknown;
+  try {
+    counted = await db.execute(sql`
+      select status, count(*)::int as cnt from quiz_runs
+      where tenant_id = ${tenantId}::uuid group by status
+    `);
+    dismissedRows = await db.execute(sql`
+      select last_step, answer_path, definition_version from quiz_runs
+      where tenant_id = ${tenantId}::uuid and status = 'dismissed'
+      order by shown_at desc limit ${DISMISSED_SAMPLE}
+    `);
+  } catch (err: unknown) {
+    if (!isQuizRunsTableMissing(err)) throw err;
+    logMissingTableOnce('admin/quiz-analytics');
+    return { available: false };
+  }
+  const counts: Record<string, number> = {};
+  for (const r of executedRows(counted)) counts[String(r.status)] = Number(r.cnt);
+  const optNum = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
+  return {
+    available: true,
+    counts,
+    dismissed: executedRows(dismissedRows).map((r) => ({
+      last_step: optNum(r.last_step),
+      answer_path: jsonValue(r.answer_path),
+      definition_version: optNum(r.definition_version),
+    })),
+  };
+}

@@ -1,7 +1,8 @@
 /**
- * FOLLOW-1365 — when the 1 s init config fetch fails, the quiz card waits for ONE late 8 s fetch
- * and renders the SERVED definition (switcher, confirm step, its hash on the run pings), through
- * the real `init()`. Both fail → the built-in; init fetch ok → no second fetch.
+ * FOLLOW-1365 / FOLLOW-1369 — ONE quiz-config request (15 s from boot) is raced against the 1 s
+ * init budget. Answered in time → merged at init; slower → the same promise is awaited by the quiz
+ * card, which renders the SERVED definition (switcher, confirm step, its hash on the run pings),
+ * through the real `init()`. Never answered → the built-in; always exactly one request.
  *
  * @module packages/sdk/src/__tests__/follow-1365.test
  */
@@ -48,6 +49,24 @@ function mockFetch(configResults: (object | null)[]): ReturnType<typeof vi.fn> {
 const configCalls = (f: ReturnType<typeof vi.fn>): number =>
   f.mock.calls.filter(([u]) => typeof u === 'string' && u.includes('/quiz/public-config')).length;
 
+/** One `/quiz/public-config` call that answers after `delayMs` (honours the abort signal). */
+function mockSlowFetch(delayMs: number): ReturnType<typeof vi.fn> {
+  const base = mockFetch([SERVED]);
+  return vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+    if (!url.includes('/quiz/public-config')) return base(url, init) as Promise<unknown>;
+    base(url, init);
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => {
+        resolve({ ok: true, status: 200, json: () => Promise.resolve(SERVED) });
+      }, delayMs);
+      init?.signal?.addEventListener('abort', () => {
+        clearTimeout(t);
+        reject(new Error('aborted'));
+      });
+    });
+  });
+}
+
 function runHashes(f: ReturnType<typeof vi.fn>): unknown[] {
   return f.mock.calls
     .filter(([u]) => typeof u === 'string' && u.includes('/quiz/run'))
@@ -58,7 +77,7 @@ function runHashes(f: ReturnType<typeof vi.fn>): unknown[] {
     );
 }
 
-async function boot(f: ReturnType<typeof vi.fn>): Promise<ShadowRoot> {
+async function boot(f: ReturnType<typeof vi.fn>, advanceMs = 0): Promise<ShadowRoot> {
   localStorage.setItem('estalara_consent', 'granted');
   sessionStorage.setItem(
     '__estalara_session__',
@@ -71,22 +90,28 @@ async function boot(f: ReturnType<typeof vi.fn>): Promise<ShadowRoot> {
   document.head.appendChild(script);
   vi.stubGlobal('fetch', f);
   await _initForTest();
+  if (advanceMs > 0) await vi.advanceTimersByTimeAsync(advanceMs);
   let root: ShadowRoot | null = null;
-  await vi.waitFor(() => {
-    document.querySelectorAll('[data-estalara-host]').forEach((host) => {
-      if (host.shadowRoot?.querySelector('.estalara-quiz-card')) root = host.shadowRoot;
-    });
-    expect(root).not.toBeNull();
-  });
+  await vi.waitFor(
+    () => {
+      document.querySelectorAll('[data-estalara-host]').forEach((host) => {
+        if (host.shadowRoot?.querySelector('.estalara-quiz-card')) root = host.shadowRoot;
+      });
+      expect(root).not.toBeNull();
+    },
+    { timeout: 5_000 },
+  );
   return root as unknown as ShadowRoot;
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
   sessionStorage.clear();
   localStorage.clear();
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   const w = window as Window & { __estalaraTeardown?: () => void };
   w.__estalaraTeardown?.();
   delete w.__estalaraTeardown;
@@ -100,21 +125,33 @@ afterEach(() => {
 });
 
 describe('FOLLOW-1365 late quiz config', () => {
-  it('init fetch fails, late fetch succeeds → served definition, its hash on the run ping', async () => {
-    const f = mockFetch([null, SERVED]);
-    const root = await boot(f);
-    expect(configCalls(f)).toBe(2);
-    // The served v2 tree carries the EN | PL switcher; the built-in does not.
+  it('response after 1 s but within budget → ONE call, served definition, its hash on the ping', async () => {
+    const f = mockSlowFetch(9_000);
+    const root = await boot(f, 9_000);
+    expect(configCalls(f)).toBe(1);
     expect(root.querySelector('.estalara-quiz-lang')).not.toBeNull();
     await vi.waitFor(() => {
       expect(runHashes(f)).toEqual([HASH]);
     });
+    expect(configCalls(f)).toBe(1);
   });
 
-  it('both fetches fail → built-in definition, no switcher, exactly two attempts', async () => {
+  it('no response within 15 s → built-in definition, no switcher, exactly one attempt', async () => {
+    const f = mockSlowFetch(20_000);
+    const root = await boot(f, 16_000);
+    expect(configCalls(f)).toBe(1);
+    expect(root.querySelector('.estalara-quiz-lang')).toBeNull();
+    await vi.waitFor(() => {
+      expect(runHashes(f)).toHaveLength(1);
+    });
+    expect(runHashes(f)).not.toContain(HASH);
+    expect(configCalls(f)).toBe(1);
+  });
+
+  it('request fails fast → built-in definition, exactly one attempt', async () => {
     const f = mockFetch([null]);
     const root = await boot(f);
-    expect(configCalls(f)).toBe(2);
+    expect(configCalls(f)).toBe(1);
     expect(root.querySelector('.estalara-quiz-lang')).toBeNull();
     await vi.waitFor(() => {
       expect(runHashes(f)).toHaveLength(1);
@@ -122,7 +159,7 @@ describe('FOLLOW-1365 late quiz config', () => {
     expect(runHashes(f)).not.toContain(HASH);
   });
 
-  it('init fetch succeeds → no second fetch', async () => {
+  it('response within 1 s → one call, merged at init (no late wait)', async () => {
     const f = mockFetch([SERVED]);
     const root = await boot(f);
     expect(configCalls(f)).toBe(1);

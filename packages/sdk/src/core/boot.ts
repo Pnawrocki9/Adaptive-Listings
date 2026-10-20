@@ -248,31 +248,41 @@ export async function boot(queue: CollectedEvent[]): Promise<BootContext | null>
   if (config.decisionApiUrl) {
     mark('config-fetch-start');
     const apiUrl = config.decisionApiUrl;
-    const [fetchedQuizConfig, fetchedWeights] = await Promise.all([
-      fetchQuizConfig(
-        config.decisionApiUrl,
-        config.apiKey,
-        intentStateRehydrated,
-        1_000,
-        config.debug,
-      ),
+    // FOLLOW-1369: ONE request (15 s from boot) raced against the 1 s init budget; if it is
+    // still pending after 1 s the same promise becomes `lateConfig` (one preflight, one GET).
+    const quizRequest = fetchQuizConfig(
+      apiUrl,
+      config.apiKey,
+      intentStateRehydrated,
+      15_000,
+      config.debug,
+    );
+    let budgetTimer: ReturnType<typeof setTimeout> | undefined;
+    const [raced, fetchedWeights] = await Promise.all([
+      Promise.race([
+        quizRequest,
+        new Promise<'slow'>((resolve) => {
+          budgetTimer = setTimeout(() => {
+            resolve('slow');
+          }, 1_000);
+        }),
+      ]),
       // 3b: fetched even when rehydrated; not applied then.
-      fetchIntentWeights(config.decisionApiUrl, config.apiKey, 1_000, config.debug),
+      fetchIntentWeights(apiUrl, config.apiKey, 1_000, config.debug),
     ]);
+    clearTimeout(budgetTimer);
 
     mark('config-fetch-end');
-    config = mergeQuizConfig(config, fetchedQuizConfig);
+    config = mergeQuizConfig(config, raced === 'slow' ? null : raced);
     intentOverrides = resolveIntentOverrides(fetchedWeights);
 
-    if (fetchedQuizConfig === null) {
-      // FOLLOW-1365: one late attempt, awaited by the quiz card only; never blocks init.
+    if (raced === 'slow') {
+      // Awaited by the quiz card only; never blocks init.
       const base = config;
-      lateConfig = fetchQuizConfig(apiUrl, base.apiKey, false, 8_000, base.debug).then((late) =>
-        late ? mergeQuizConfig(base, late) : null,
-      );
+      lateConfig = quizRequest.then((late) => (late ? mergeQuizConfig(base, late) : null));
     }
 
-    if (config.debug && fetchedQuizConfig === null) {
+    if (config.debug && (raced === 'slow' || raced === null)) {
       console.warn('[Estalara] fetchQuizConfig returned null — using snippet/default fallback');
     }
   }

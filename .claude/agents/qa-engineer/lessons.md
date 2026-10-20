@@ -446,8 +446,8 @@ signals" is green when the signals never reached the SDK — so it needs two `li
 events at ingest AND `signal_count` +2, plus a parity row proving each signal really moves an
 UNCONFIRMED leaf. (2) Picking "the follow-up" by its hint would make "carries the pre-correction
 hint" unreachable — the pick uses a post-fold state stamp the request carries (`traits`), never the
-graded fields. (3) FOLLOW-1352's "sent after the fold was SEEN" floor would exclude a request the SDK
-sends in the same task as the fold.
+graded fields. (3) FOLLOW-1352's "sent after the fold was SEEN" floor would exclude a request the
+SDK sends in the same task as the fold.
 
 **A guardrail I'd add:** a selection helper must be tested with a fixture where the "right-looking"
 request is NOT the selected one — if selection and grading read the same field, the RED row is dead.

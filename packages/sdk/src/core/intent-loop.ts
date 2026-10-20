@@ -63,7 +63,8 @@ export interface IntentLoop {
  * @param ctx - The boot context; `ctx.state` is updated in place.
  */
 export function createIntentLoop(ctx: BootContext): IntentLoop {
-  const { config, session: currentSession, overrides: intentOverrides, queue } = ctx;
+  let config = ctx.config;
+  const { session: currentSession, overrides: intentOverrides, queue } = ctx;
 
   // FOLLOW-208: Per-session listing view counter, incremented inside the listing.viewed
   // branch of the setupObservers callback below.
@@ -129,7 +130,7 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
   }
 
   function wire(adapt: AdaptLoop): () => void {
-    const quizConfig: QuizWidgetConfig = {
+    const buildQuizConfig = (): QuizWidgetConfig => ({
       accentColor: config.accentColor,
       language: config.language,
       // FOLLOW-639 / ADR-0019 D5: walk the tenant's served editable tree, or the built-in
@@ -158,7 +159,7 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
       showAttribution: config.brand?.whiteLabel !== true,
       // Per-brand card placement (ADR-0019 D2) [FOLLOW-640].
       ...(config.quizPlacement ? { placement: config.quizPlacement } : {}),
-    };
+    });
 
     let quizTriggered = false;
     let runPings: Promise<void> = Promise.resolve();
@@ -222,6 +223,18 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
 
     // Quiz auto-opens; `quiz.enabled === false` disables it [FOLLOW-1015, FOLLOW-102].
     function openQuiz(): void {
+      // FOLLOW-1365: the init fetch failed — wait (once) for the 8 s retry, then open with
+      // whatever it served; null / still failing keeps the snippet + built-in config.
+      const late = ctx.lateConfig;
+      if (late) {
+        ctx.lateConfig = null;
+        void late.then((merged) => {
+          if (ctx.lifetime.signal.aborted) return;
+          if (merged) config = merged;
+          openQuiz();
+        });
+        return;
+      }
       // §H.9: suppresses the completion event too [FOLLOW-409].
       if (ctx.optedOut) return;
       if (config.quiz?.enabled === false) return;
@@ -233,7 +246,7 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
       quizTriggered = true;
       renderQuizWidget(
         shadowHost.root,
-        quizConfig,
+        buildQuizConfig(),
         (resolvedArchetype, answerPath, outcome: QuizRunOutcome) => {
           // FOLLOW-1357: called once, after the confirmation step; the FINAL archetype is
           // applied — the leaf, the buyer's correction, or `neutral` for "None of these".

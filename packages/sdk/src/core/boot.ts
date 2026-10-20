@@ -55,6 +55,8 @@ export interface BootContext {
   state: IntentState;
   /** Server-supplied intent-engine overrides, or SDK defaults (ADR-0012). */
   overrides: IntentEngineOverrides;
+  /** Set when the 1 s init config fetch failed: one 8 s retry, merged; null on failure [FOLLOW-1365]. */
+  lateConfig?: Promise<SdkConfig | null> | null;
   /** This instance's lifetime (FOLLOW-1306 F-24); aborted on teardown. */
   lifetime: AbortController;
   /** Register a host listener bound to {@link lifetime}. */
@@ -242,8 +244,10 @@ export async function boot(queue: CollectedEvent[]): Promise<BootContext | null>
 
   // 3a quiz config + 3b intent weights in parallel, 1 s each (ADR-0011, ADR-0012).
   let intentOverrides: IntentEngineOverrides = resolveIntentOverrides(null);
+  let lateConfig: BootContext['lateConfig'] = null;
   if (config.decisionApiUrl) {
     mark('config-fetch-start');
+    const apiUrl = config.decisionApiUrl;
     const [fetchedQuizConfig, fetchedWeights] = await Promise.all([
       fetchQuizConfig(
         config.decisionApiUrl,
@@ -259,6 +263,14 @@ export async function boot(queue: CollectedEvent[]): Promise<BootContext | null>
     mark('config-fetch-end');
     config = mergeQuizConfig(config, fetchedQuizConfig);
     intentOverrides = resolveIntentOverrides(fetchedWeights);
+
+    if (fetchedQuizConfig === null) {
+      // FOLLOW-1365: one late attempt, awaited by the quiz card only; never blocks init.
+      const base = config;
+      lateConfig = fetchQuizConfig(apiUrl, base.apiKey, false, 8_000, base.debug).then((late) =>
+        late ? mergeQuizConfig(base, late) : null,
+      );
+    }
 
     if (config.debug && fetchedQuizConfig === null) {
       console.warn('[Estalara] fetchQuizConfig returned null — using snippet/default fallback');
@@ -301,6 +313,7 @@ export async function boot(queue: CollectedEvent[]): Promise<BootContext | null>
     optedOut: profilingOptedOut,
     state: currentIntentState,
     overrides: intentOverrides,
+    lateConfig,
     lifetime,
     on: (target, type, fn) => {
       target.addEventListener(type, fn, { signal: lifetime.signal });

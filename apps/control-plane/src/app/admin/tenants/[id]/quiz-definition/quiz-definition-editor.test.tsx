@@ -19,21 +19,44 @@ import { StaffQuizDefinitionEditor } from './quiz-definition-editor';
 
 const TENANT_ID = '22222222-2222-4222-8222-222222222222';
 
-// A valid definition reaching only yield_hunter + flip_investor (rest unreachable → warning).
+// A lint-clean (EN + PL, confirm block) definition reaching only yield_hunter + flip_investor
+// (rest unreachable → warning). FOLLOW-1362 C2: authoring lint now blocks Save, so the fixture
+// carries the PL texts and confirmation the editor requires.
 const VALID_DEF: QuizDefinition = {
   schema_version: 1,
   root: 'q_gate',
-  languages: ['en'],
+  languages: ['en', 'pl'],
   questions: [
     {
       id: 'q_gate',
-      prompt_i18n: { en: 'What are you after?' },
+      prompt_i18n: { en: 'What are you after?', pl: 'Czego szukasz?' },
       answers: [
-        { id: 'a_yield', label_i18n: { en: 'Yield' }, weights: { yield_hunter: 1 }, next: null },
-        { id: 'a_flip', label_i18n: { en: 'Flip' }, weights: { flip_investor: 1 }, next: null },
+        {
+          id: 'a_yield',
+          label_i18n: { en: 'Yield', pl: 'Zysk' },
+          weights: { yield_hunter: 1 },
+          next: null,
+        },
+        {
+          id: 'a_flip',
+          label_i18n: { en: 'Flip', pl: 'Flip PL' },
+          weights: { flip_investor: 1 },
+          next: null,
+        },
       ],
     },
   ],
+  confirm: {
+    names_i18n: {
+      yield_hunter: { en: 'Yield hunter', pl: 'Łowca zysku' },
+      flip_investor: { en: 'Flipper', pl: 'Flipper PL' },
+    },
+    sentences_i18n: {
+      yield_hunter: { en: 'You want rental income', pl: 'Chcesz dochodu z najmu' },
+      flip_investor: { en: 'You want to renovate and resell', pl: 'Chcesz remontować i sprzedać' },
+    },
+    alternatives: {},
+  },
 };
 
 beforeEach(() => {

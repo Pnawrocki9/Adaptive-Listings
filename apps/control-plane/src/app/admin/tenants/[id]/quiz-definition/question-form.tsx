@@ -2,35 +2,32 @@
 
 /**
  * QuizQuestionForm — structured, form-based editor over a quiz draft's QUESTIONS
- * (FOLLOW-1003).
+ * (FOLLOW-1003, extended by FOLLOW-1362 C2).
  *
- * The CEO's report that prompted this: the quiz-definition surface existed but was
- * a raw JSON textarea — there was no view where "the quiz questions live and can be
- * edited". This form renders every question and answer of the CURRENT draft as
- * plain inputs (question prompt, answer labels — the text staff actually rewords)
- * and calls back with an immutably-updated definition on every edit. The parent
- * editor keeps the JSON textarea as the single source of truth and the advanced
- * surface: structure changes (add/remove questions or answers, branching, extra
- * locales) stay JSON edits, and weights stay the "Suggest weights (AI)" flow —
- * this form deliberately edits the `en` text layer only, showing weights and
- * branching read-only so the reworder can see what their edit affects.
+ * C2 turns the English-text-only form into the full structured editor: every question is a
+ * {@link QuestionCard} (EN | PL side by side, "PL n/m" meter, kind, rename, remove), every answer
+ * an {@link AnswerRow} (`next` dropdown, "Resolves to" picker, traits, collapsed Advanced
+ * weights); this component adds the question list, "Add question" and the language switches.
+ * The parent editor keeps the JSON textarea as the single source of truth and the advanced
+ * surface; this form is a pure view over the draft (`onChange` receives the new draft).
  *
- * Pure component: no fetches, no persistence — the parent's Save remains the only
- * mutation path (audited, versioned PUT).
+ * Pure component: no fetches, no persistence — the parent's Save remains the only mutation path
+ * (audited, versioned PUT).
  *
  * @module apps/control-plane/src/app/admin/tenants/[id]/quiz-definition/question-form
  */
 
+import { useState } from 'react';
+
 import type { QuizDefinition } from '@estalara/shared';
+
+import type { OnDraftChange } from './answer-row';
+import { addQuestion, setLocaleText, toggleLanguage } from './definition-ops';
+import { QuestionCard } from './question-card';
 
 /** Immutably set a question's `en` prompt. Exported for direct unit testing. */
 export function updatePrompt(def: QuizDefinition, qid: string, value: string): QuizDefinition {
-  return {
-    ...def,
-    questions: def.questions.map((q) =>
-      q.id === qid ? { ...q, prompt_i18n: { ...q.prompt_i18n, en: value } } : q,
-    ),
-  };
+  return setLocaleText(def, { qid }, 'en', value);
 }
 
 /** Immutably set an answer's `en` label. Exported for direct unit testing. */
@@ -40,86 +37,81 @@ export function updateLabel(
   aid: string,
   value: string,
 ): QuizDefinition {
-  return {
-    ...def,
-    questions: def.questions.map((q) =>
-      q.id === qid
-        ? {
-            ...q,
-            answers: q.answers.map((a) =>
-              a.id === aid ? { ...a, label_i18n: { ...a.label_i18n, en: value } } : a,
-            ),
-          }
-        : q,
-    ),
-  };
-}
-
-function weightsSummary(weights: Record<string, number>): string {
-  const entries = Object.entries(weights);
-  if (entries.length === 0) return '—';
-  return entries.map(([k, v]) => `${k}: ${String(v)}`).join(', ');
+  return setLocaleText(def, { qid, aid }, 'en', value);
 }
 
 export function QuizQuestionForm({
   definition,
   onChange,
+  readOnly = false,
 }: {
   definition: QuizDefinition;
   onChange: (next: QuizDefinition) => void;
+  readOnly?: boolean;
 }): React.JSX.Element {
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const handle: OnDraftChange = (next, message) => {
+    setNotice(message ?? null);
+    onChange(next);
+  };
+
   return (
     <div data-testid="question-form" className="mb-6 space-y-4">
       <p className="text-xs text-gray-500">
-        Edit question and answer text directly (English). Branching and weights are shown for
-        context — change structure in the JSON below, and derive weights with “Suggest weights (AI)”
-        after rewording.
+        Every text needs an English and a Polish version. Pick where each answer leads; an answer
+        that ends the quiz resolves to an archetype. Use “Suggest weights (AI)” after rewording.
       </p>
-      {definition.questions.map((q) => (
-        <div key={q.id} className="rounded-xl border border-gray-200 bg-white p-4">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="font-mono text-xs text-gray-400">{q.id}</span>
-            {definition.root === q.id && (
-              <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">
-                root
-              </span>
-            )}
-          </div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">Question</label>
+      <div className="flex items-center gap-4 text-xs text-gray-600">
+        <span>Languages:</span>
+        <label className="flex items-center gap-1">
+          <input type="checkbox" checked disabled /> EN
+        </label>
+        <label className="flex items-center gap-1">
+          <input type="checkbox" checked disabled /> PL
+        </label>
+        <label className="flex items-center gap-1" title="No ES texts yet: buyers see English">
           <input
-            type="text"
-            data-testid={`qf-prompt-${q.id}`}
-            value={q.prompt_i18n.en ?? ''}
-            onChange={(e) => {
-              onChange(updatePrompt(definition, q.id, e.target.value));
+            type="checkbox"
+            data-testid="lang-es"
+            checked={definition.languages.includes('es')}
+            disabled={readOnly}
+            onChange={() => {
+              handle(toggleLanguage(definition, 'es'));
             }}
-            className="mb-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-          />
-          <div className="space-y-2">
-            {q.answers.map((a) => (
-              <div key={a.id} className="rounded-lg border border-gray-100 bg-gray-50 p-2">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    data-testid={`qf-label-${q.id}-${a.id}`}
-                    value={a.label_i18n.en ?? ''}
-                    onChange={(e) => {
-                      onChange(updateLabel(definition, q.id, a.id, e.target.value));
-                    }}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  />
-                  <span className="shrink-0 font-mono text-xs text-gray-400">
-                    {a.next === null ? 'END' : `→ ${a.next}`}
-                  </span>
-                </div>
-                <p className="mt-1 pl-1 font-mono text-[11px] text-gray-400" title="weights">
-                  {weightsSummary(a.weights)}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
+          />{' '}
+          ES (falls back to EN)
+        </label>
+      </div>
+      {notice !== null && (
+        <p
+          role="status"
+          data-testid="form-notice"
+          className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800"
+        >
+          {notice}
+        </p>
+      )}
+      {definition.questions.map((q) => (
+        <QuestionCard
+          key={q.id}
+          definition={definition}
+          question={q}
+          readOnly={readOnly}
+          onChange={handle}
+        />
       ))}
+      <button
+        type="button"
+        data-testid="add-question"
+        disabled={readOnly || definition.questions.length >= 40}
+        onClick={() => {
+          handle(addQuestion(definition), 'Question added. Point an answer at it to link it in.');
+        }}
+        className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+      >
+        + Add question
+      </button>
     </div>
   );
 }

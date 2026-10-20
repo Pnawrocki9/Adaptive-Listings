@@ -56733,3 +56733,26 @@ cross_ref: [plan Faza Q §B/KQ2/KQ3, PREREG, FOLLOW-1358]
 `/admin/tenants/[id]/quiz-accuracy`; the verdict (PASS/FAIL) goes to MASTER_DESIGN §Snapshot.0 —
 this is checkpoint **KQ3**, owned by the CTO, not the PM. Source:
 `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md`.
+
+## FOLLOW-1364 — retention job for `quiz_runs` and `quiz_completions` (ESC-086 condition C6)
+
+source_retro: — (compliance review of FOLLOW-1358, 2026-10-20) source_ticket: FOLLOW-1358
+recommended_agent: backend-engineer (Sonnet) priority: P1 estimated_hours: 6 tag: product
+depends_on: [FOLLOW-1358] blocks: [FOLLOW-1346] promoted_to_queue: true
+
+**What.** Neither `quiz_runs` nor `quiz_completions` has an enforced TTL (the ROPA retention table
+says so honestly since v2.19). Before `quiz_runs` exists in production (CTO handover row 18) a daily
+job must delete rows older than the retention period the CEO/DPO set (ESC-086 OPEN (a); 13 months
+proposed, the `events`/`conversion_labels` precedent): a cron route under `api/cron/` with the same
+auth as `lift-snapshot`, one statement per table, idempotent, a count logged per run, 42P01 on
+`quiz_runs` tolerated (table may not exist yet). Update the ROPA retention schedule and DPIA §2.5
+with the number; handover row 18's verify query uses it. Localhost: `localhost-up.sh` schedules
+nothing — document the manual invocation.
+
+AC:
+
+- [ ] A route test deletes only rows older than N days in both tables and leaves younger rows.
+- [ ] ROPA retention table and DPIA §2.5 carry the ruled period; handover row 18 reads the same N.
+- [ ] `check-staff-write-atomicity.sh`, consent family and `check-measured-premises.mjs` pass.
+
+cross_ref: [ESC-086 C6/C7, FOLLOW-1358, FOLLOW-1346 (handover v1 depends on it)]

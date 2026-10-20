@@ -87,6 +87,34 @@ by DSR erase/access/portability; retention equal to `quiz_completions`; ROPA/DPI
 **Not changed:** the decision API request/response contract beyond the additive `traits` field; the
 canonical list of 18 archetype ids; `quiz_completions`.
 
+**Compliance review of Q3 (FOLLOW-1358, PR #1053) — 2026-10-20, compliance-engineer (Opus): APPROVE
+WITH CONDITIONS.** Verified: opt-out and non-profiling consent write nothing; minimisation as listed
+(run uuid, answer indexes, closed-list archetype/trait ids, timings rounded to 100 ms and capped; no
+IP, UA or free text; unknown keys stripped); tenant from the API key, `(tenant_id, session_id)`
+fence, RLS equal to H001; DSR erase/access/portability on the same key, 42P01 tolerated for
+`quiz_runs` only; public-config carries no personal data. **Correction to the privacy paragraph
+above:** `session_id` is the random per-tab UUID v4 (ESC-070, `packages/sdk/src/core/session.ts`),
+not a "hashed fingerprint". Conditions **before merge** (closed on PR #1053 by the
+backend-engineer): C1 no drizzle query or params reach Sentry or logs from `quiz/run` (FOLLOW-1353
+pattern); C2 the fingerprint wording corrected in ROPA, DPIA, H002 and `quiz-run.ts`; C3 lawful
+basis = the SDK banner consent (Activities 1/7, not Activity 16), and the route accepts `consented`
+only; C4 ROPA records Supabase EU (Frankfurt), DPIA §2.5 row and §3.1 purpose (c) mapping. **Before
+Q2 merges:** C5 `consent_state` required on `POST /api/quiz/run` (absent → 204), the SDK always
+sends it. **Before production:** C6 a retention period set by the CEO/DPO and an enforced deletion
+job for `quiz_runs` AND `quiz_completions` (**FOLLOW-1364**, before-go-live `depends_on`; 13 months
+proposed, the `events`/`conversion_labels` precedent); C7 CTO_HANDOVER row 18 gates H002 on that job
+and on the first ping-sending SDK build; C8 Privacy Notice §1 discloses quiz answers, the
+confirmation, the accuracy purpose and the retention; whether the consent BANNER sentence must widen
+(which changes `consent_text_hash`) is a question for counsel/DPO via the CEO. Until C6–C8 close,
+`quiz_runs` stays on localhost. Informational (not blocking): the v2 default asks familial status
+(`has_children`) and offers retiree/student-parent answers — fair-housing exposure; package Q5 must
+pass the protected-class scan before any copy keyed on those traits ships, and the US pilot block
+(FOLLOW-034) holds.
+
+**OPEN for the CEO (2026-10-20):** (a) the retention period for `quiz_runs` and `quiz_completions`
+(proposal: 13 months, matching `events`); (b) whether the consent banner sentence is widened now
+(hash change, re-consent) or the §1 notice sentence suffices until counsel answers.
+
 ---
 
 ## RESOLVED — ESC-085: single tenant (app.estalara.com only) — multi-tenant functions, foreign-site onboarding/detection, `/dashboard`, registrations, demo sessions and Stripe removed; GO deferred, production = CTO handover; the lift definition D-J [FOLLOW-1319]

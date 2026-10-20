@@ -56756,3 +56756,29 @@ AC:
 - [ ] `check-staff-write-atomicity.sh`, consent family and `check-measured-premises.mjs` pass.
 
 cross_ref: [ESC-086 C6/C7, FOLLOW-1358, FOLLOW-1346 (handover v1 depends on it)]
+
+## FOLLOW-1365 — SDK falls back to the built-in quiz tree when public-config answers slower than 1 s
+
+source_retro: — (Q2 series, README §5.32) source_ticket: FOLLOW-1357 recommended_agent: sdk-engineer
+(Sonnet) priority: P1 estimated_hours: 4 tag: product depends_on: [FOLLOW-1357] blocks:
+[FOLLOW-1361] promoted_to_queue: true
+
+**What.** `fetchQuizConfig` (`packages/sdk/src/core/quiz-config.ts:140`) aborts after 1000 ms and
+`init()` then walks the built-in EN-only tree without a `confirm` block. On localhost (`next dev`,
+~1 s plus a CORS preflight) that happens on every run, so the served v2 tree, its PL texts, the
+language switcher and the confirmation step are never exercised; in production a slow cold start
+would do the same silently, and the accuracy measurement would count runs on a different definition
+(`builtin-en-v2`). The quiz opens 30 s after load, so the definition does not need the 1 s init
+budget: keep the init fetch as is for brand/language, and when it failed or timed out, re-fetch the
+quiz slice once (longer timeout, e.g. 8 s) before the card renders; never block the page; keep the
+bundle within 43,136 B (headroom 232 B).
+
+AC:
+
+- [ ] Vitest: an init fetch that times out followed by a successful late fetch renders the SERVED
+      definition (its hash is reported); a late fetch that also fails falls back to the built-in.
+- [ ] FOLLOW-819 series on the PR: `quiz_runs.definition_hash` = the served v2 hash and at least one
+      `confirmed` row per GREEN run (the harness loop already clicks confirm).
+- [ ] `build:check` ≤ 43,136 B.
+
+cross_ref: [README §5.32, FOLLOW-1357, FOLLOW-1361 (AC(10) needs it), KQ1]

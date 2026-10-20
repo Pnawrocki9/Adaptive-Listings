@@ -3170,6 +3170,32 @@ together with AC(10) in Faza Q package Q6. **Design note** (superseded by Faza Q
 recompute strips it; the quiz plan (`docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` §B) keeps that scale for
 chat-without-quiz only and anchors a confirmed quiz leaf. The caveats of §5.23 (a)–(d) apply.
 
+### 5.32 — 2026-10-20 (Faza Q package Q2 FOLLOW-1357 series at branch HEAD `39208e88`, EXECUTED ×6) — **three consecutive `run=GREEN` with `total=7` (runs 4, 5, 6), each `[FRESH]`; runs 1–3 `run=UNMEASURED` (holdout draws, neutral per §P.0) — the per-PR series of the quiz widget v2 (#1055, merged as `9df1ffb4`)**
+
+**MANUAL, run by the PM.** Full `scripts/dev/localhost-up.sh` from a clean checkout of the PR branch
+(a first bring-up failed at step 11: the `:8081` grounding probe timed out with ~1.1 GB free while
+`next dev` compiled; the second bring-up passed every step). One control plane, never restarted;
+artefact copied and `--check-staleness` after every run.
+
+| Run | Started (UTC)            | `TALLY`                                                   | `--check-staleness`                                        |
+| --- | ------------------------ | --------------------------------------------------------- | ---------------------------------------------------------- |
+| 1   | 2026-10-20T07:11:00.617Z | `TALLY green=5 red=0 unmeasured=2 total=7 run=UNMEASURED` | `[FRESH]` run1.json: harnessSha 39208e88… ancestor of HEAD |
+| 2   | 2026-10-20T07:15:04.559Z | `TALLY green=2 red=0 unmeasured=5 total=7 run=UNMEASURED` | `[FRESH]` run2.json: harnessSha 39208e88… ancestor of HEAD |
+| 3   | 2026-10-20T07:17:00.673Z | `TALLY green=2 red=0 unmeasured=5 total=7 run=UNMEASURED` | `[FRESH]` run3.json: harnessSha 39208e88… ancestor of HEAD |
+| 4   | 2026-10-20T07:18:37.609Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`      | `[FRESH]` run4.json: harnessSha 39208e88… ancestor of HEAD |
+| 5   | 2026-10-20T07:20:11.716Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`      | `[FRESH]` run5.json: harnessSha 39208e88… ancestor of HEAD |
+| 6   | 2026-10-20T07:21:49.496Z | `TALLY green=7 red=0 unmeasured=0 total=7 run=GREEN`      | `[FRESH]` run6.json: harnessSha 39208e88… ancestor of HEAD |
+
+On the same stack, `quiz_runs` (H002, applied by the bring-up) held 6 `shown` + 6 `completed` rows,
+one `definition_hash`, 3 `step_ms` entries and the trait each run picked — the Q3 recording path
+works end to end with consent-gated pings. AC(1) adapted to `first_time_buyer` (the harness's
+first-answer walk on the v3 tree), `llm_tweaked`. **Finding (pre-existing, FOLLOW-1365):** every run
+walked the SDK's BUILT-IN tree (`definition_hash` `builtin-en-v2`, no confirmation step), because
+`fetchQuizConfig`'s 1000 ms timeout (`packages/sdk/src/core/quiz-config.ts:140`) aborts against the
+local `next dev` control plane (~1 s plus a ~0.5 s CORS preflight); the served v2 tree with its
+`confirm` block was never exercised. AC(10) and checkpoint KQ1 need it fixed first. The caveats of
+§5.23 (a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

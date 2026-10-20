@@ -59,11 +59,10 @@ function sumProbs(p: ArchetypeProbabilities): number {
  * Build a non-neutral state with yield_hunter as the top archetype.
  *
  * Constructs probabilities manually so that yield_hunter = 0.60 and the
- * distribution is valid (sums to 1.0). quiz_answered=false ensures confidence =
- * rawProbability (no QUIZ_CONFIDENCE_BONUS cap), making the dwell boost visible.
+ * distribution is valid (sums to 1.0). Confidence = the raw probability (since FOLLOW-1359 no
+ * path but a chat fold without a quiz scales it), making the dwell boost visible.
  *
- * applyQuizLeaf sets confidence = 1.0 (capped), which the dwell boost cannot exceed.
- * We avoid that by constructing the state directly with a sub-1.0 probability.
+ * Constructed directly rather than via applyQuizLeaf so the leaf mass is a round 0.60.
  */
 function makeYieldHunterState(): IntentState {
   const yieldProb = 0.6;
@@ -303,15 +302,11 @@ describe('applyDwellSignal — AC7: returned IntentState has the same shape', ()
   });
 
   it('quiz_answered is preserved (true input → true output)', () => {
-    // Build a quiz-leaf state where quiz_answered=true but confidence < 1.0
-    // (lower quiz probability so the 1.2x bonus does not cap at 1.0).
-    // Use applyQuizLeaf with a low-probability archetype result, OR just check
-    // that the field is faithfully copied regardless of confidence direction.
+    // A quiz-leaf state (quiz_answered=true, 0.72 since FOLLOW-1359): the field is
+    // faithfully copied regardless of confidence direction.
     const leafState = applyQuizLeaf(initIntentState(), 'yield_hunter');
     expect(leafState.quiz_answered).toBe(true);
-    // Dwell boost on a quiz_answered=true state — confidence is capped at 1.0
-    // (QUIZ_CONFIDENCE_BONUS), so confidence may not change visibly, but
-    // quiz_answered must be preserved.
+    // Dwell boost on a quiz_answered=true state — quiz_answered must be preserved.
     const result = applyDwellSignal(leafState, 90_000);
     expect(result.quiz_answered).toBe(true);
   });

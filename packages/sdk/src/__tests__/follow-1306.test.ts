@@ -245,7 +245,7 @@ describe('F-05 — state transforms keep the Rule R bookkeeping', () => {
     await boot();
     const state = persisted();
     expect(state?.chatPriorAppliedAt).toBe(STAMP_1);
-    expect(state?.probabilities.yield_hunter).toBeCloseTo(0.85, 10); // not re-folded
+    expect(state?.probabilities.yield_hunter).toBeCloseTo(0.72, 10); // not re-folded (0.72: FOLLOW-1359)
   });
 });
 
@@ -406,5 +406,41 @@ describe('F-04 — a fold that crosses the server gate draws one follow-up', () 
     expect(state?.confidence).toBeCloseTo(0.48404744074873984, 8);
     // Only the chat refresh that carried the extraction.
     expect(sent).toHaveLength(before + 1);
+  });
+});
+
+describe('FOLLOW-1359 — a confirmed quiz leaf holds against the chat; an unconfirmed one does not', () => {
+  /** Boot on a family_buyer quiz state, then one chat message carrying the rental-yield record. */
+  async function contradictedLeaf(
+    evidence: 'completed' | 'confirmed' | 'corrected',
+  ): Promise<number> {
+    persistIntentState(sessionId, applyQuizLeaf(initIntentState(), 'family_buyer', evidence));
+    await boot();
+    const before = sent.length;
+    shadow = { dims: YIELD_DIMS, stamp: STAMP_1 };
+    sendChat('What rental yield does this flat make, and how is the income taxed?');
+    await vi.advanceTimersByTimeAsync(2_600 + 2_600 + 60_000);
+    expect(persisted()?.chatPriorAppliedAt).toBe(STAMP_1);
+    return sent.length - before;
+  }
+
+  it('confirmed: τ = 0.5 keeps family_buyer above the gate — no follow-up request', async () => {
+    expect(await contradictedLeaf('confirmed')).toBe(1); // only the chat refresh
+    const state = persisted();
+    expect(state?.archetype).toBe('family_buyer');
+    expect(state?.confidence).toBeGreaterThan(0.6);
+  });
+
+  it('corrected: the same anchor as confirmed — no follow-up request', async () => {
+    expect(await contradictedLeaf('corrected')).toBe(1);
+    expect(persisted()?.archetype).toBe('family_buyer');
+  });
+
+  it('completed (× / no step): the fold drops below the gate — one follow-up carries it', async () => {
+    expect(await contradictedLeaf('completed')).toBe(2); // chat refresh + ONE follow-up
+    const state = persisted();
+    expect(state?.archetype).toBe('family_buyer');
+    expect(state?.confidence).toBeLessThan(0.6);
+    expect(sent.at(-1)!.confidence).toBeCloseTo(state!.confidence, 10);
   });
 });

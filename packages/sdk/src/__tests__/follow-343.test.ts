@@ -18,7 +18,8 @@
  *   AC1: No DOM mutation / reorder applied below the floor; neutral layout preserved.
  *   AC2: Floor value is a named constant (importable) and tested at the boundary
  *        (0.499… = no-op, 0.5 = applies).
- *   AC3: No regression to the quiz/drift path: quiz leaf resolves at 0.85 (above floor).
+ *   AC3: No regression to the quiz/drift path: quiz leaf resolves at 0.72 (above floor;
+ *        0.85 before FOLLOW-1359).
  *   AC4: signal_count >= 2 alternative gate allows adaptation even below confidence floor.
  *
  * Test strategy:
@@ -304,13 +305,13 @@ describe('AC2 — at/above floor: applyDirectives IS called (FOLLOW-343)', () =>
 });
 
 // ===========================================================================
-// AC3 — Quiz / drift path: confidence 0.85 is always above the floor
+// AC3 — Quiz / drift path: confidence 0.72 (`completed`, FOLLOW-1359) is above the floor
 // ===========================================================================
 
-describe('AC3 — quiz leaf at 0.85 is above floor — no regression (FOLLOW-343)', () => {
-  it('DOES mutate DOM when the session was quiz-answered (confidence 0.85)', async () => {
+describe('AC3 — quiz leaf at 0.72 is above floor — no regression (FOLLOW-343)', () => {
+  it('DOES mutate DOM when the session was quiz-answered (confidence 0.72)', async () => {
     // Simulate a session where the quiz was already answered on a previous listing page
-    // (Listing A → applyQuizLeaf sets confidence=0.85, persisted to sessionStorage).
+    // (Listing A → applyQuizLeaf sets confidence=0.72, persisted to sessionStorage).
     const quizState = applyQuizLeaf(initIntentState(), 'family_buyer');
     persistIntentState(SESSION_ID, quizState);
 
@@ -322,20 +323,22 @@ describe('AC3 — quiz leaf at 0.85 is above floor — no regression (FOLLOW-343
       decisionUrl: 'https://decision.estalara.com/api',
     });
 
-    // Decision API returns 0.85 (quiz leaf level)
-    stubFetchWithConfidence(0.85);
+    // Decision API returns 0.72 (quiz leaf level)
+    stubFetchWithConfidence(0.72);
 
     await _initForTest();
 
-    // Quiz leaf is well above floor (0.85 >= 0.5) — DOM MUST be adapted
+    // Quiz leaf is well above floor (0.72 >= 0.5) — DOM MUST be adapted
     expect(slotEl.textContent).toBe(ADAPTED_TEXT);
   });
 
-  it('quiz leaf confidence (0.85) satisfies floor (0.5) by a margin of 0.35', () => {
+  it('quiz leaf confidence (0.72) satisfies floor (0.5) by a margin of 0.22', () => {
     // Invariant test: ensures quiz leaf confidence ALWAYS exceeds the floor, even if
     // the floor value is bumped in the future. If DOM_ADAPT_CONFIDENCE_FLOOR is raised
-    // above 0.85 this test goes RED — intentional (the quiz path would break).
-    const quizLeafConfidence = 0.85;
+    // above 0.72 this test goes RED — intentional (the quiz path would break). Read from the
+    // real fold, not a literal (FOLLOW-1359).
+    const quizLeafConfidence = applyQuizLeaf(initIntentState(), 'family_buyer').confidence;
+    expect(quizLeafConfidence).toBe(0.72);
     expect(quizLeafConfidence).toBeGreaterThanOrEqual(DOM_ADAPT_CONFIDENCE_FLOOR);
   });
 });

@@ -169,6 +169,11 @@ describe('FOLLOW-1357 through the real init()', () => {
     expect(stored.state).toMatchObject({
       archetype: 'family_buyer',
       quiz_traits: ['has_children'],
+      // FOLLOW-1359 (§E.4.4 v3.0): `confirmed` folds the leaf at 0.90; confidence = posterior.
+      confidence: 0.9,
+      probabilities: { family_buyer: 0.9 },
+      quiz_answered: true,
+      quiz_confirmed: true,
     });
 
     await vi.waitFor(() => {
@@ -220,7 +225,13 @@ describe('FOLLOW-1357 through the real init()', () => {
     const stored = JSON.parse(
       sessionStorage.getItem(intentStateStorageKey(SESSION_ID)) ?? '{}',
     ) as { state?: unknown };
-    expect(stored.state).toMatchObject({ archetype: 'neutral', quiz_traits: [] });
+    // FOLLOW-1359: the pre-quiz state, unpinned, flagged `quiz_rejected`.
+    expect(stored.state).toMatchObject({
+      archetype: 'neutral',
+      quiz_traits: [],
+      quiz_answered: false,
+      quiz_rejected: true,
+    });
 
     window.dispatchEvent(new Event('beforeunload'));
     await vi.waitFor(() => {
@@ -231,6 +242,60 @@ describe('FOLLOW-1357 through the real init()', () => {
       step: 'corrected',
       archetype: 'neutral',
       resolved_archetype: 'yield_hunter',
+    });
+  });
+
+  it('FOLLOW-1359: a correction folds the CHOSEN archetype at 0.90; the leaf gets the rest', async () => {
+    const fetchMock = mockFetch();
+    const root = await bootQuiz(fetchMock);
+    click(root, '.estalara-quiz-answer', 3); // invest
+    click(root, '.estalara-quiz-answer', 0); // long → yield_hunter
+    click(root, '.estalara-quiz-cta');
+    click(root, '.estalara-quiz-cta'); // no traits
+    click(root, '.estalara-quiz-reject');
+    click(root, '.estalara-quiz-option', 1); // flip_investor
+
+    await vi.waitFor(() => {
+      expect(bodiesTo(fetchMock, '/quiz/run').map((b) => b.event)).toContain('corrected');
+    });
+    const stored = JSON.parse(
+      sessionStorage.getItem(intentStateStorageKey(SESSION_ID)) ?? '{}',
+    ) as { state?: { probabilities: Record<string, number> } };
+    expect(stored.state).toMatchObject({
+      archetype: 'flip_investor',
+      confidence: 0.9,
+      quiz_confirmed: true,
+    });
+    expect(stored.state?.probabilities.flip_investor).toBe(0.9);
+    expect(stored.state?.probabilities.yield_hunter).toBeCloseTo(0.1 / 17, 12);
+    await vi.waitFor(() => {
+      expect(bodiesTo(fetchMock, '/adapt').some((b) => b.archetype_hint === 'flip_investor')).toBe(
+        true,
+      );
+    });
+  });
+
+  it('FOLLOW-1359: × on the result screen folds the leaf as `completed` (0.72, unconfirmed)', async () => {
+    const fetchMock = mockFetch();
+    const root = await bootQuiz(fetchMock);
+    click(root, '.estalara-quiz-answer', 3); // invest
+    click(root, '.estalara-quiz-answer', 0); // long → yield_hunter
+    click(root, '.estalara-quiz-cta');
+    click(root, '.estalara-quiz-cta'); // no traits
+    click(root, '.estalara-quiz-close');
+
+    await vi.waitFor(() => {
+      expect(bodiesTo(fetchMock, '/quiz/run').map((b) => b.event)).toContain('unconfirmed');
+    });
+    const stored = JSON.parse(
+      sessionStorage.getItem(intentStateStorageKey(SESSION_ID)) ?? '{}',
+    ) as { state?: unknown };
+    expect(stored.state).toMatchObject({
+      archetype: 'yield_hunter',
+      confidence: 0.72,
+      probabilities: { yield_hunter: 0.72 },
+      quiz_answered: true,
+      quiz_confirmed: false,
     });
   });
 

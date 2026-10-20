@@ -273,6 +273,9 @@ export interface ApplyContext {
 // ── Module-level state ──
 
 /** Fingerprints of directives already applied in this session (idempotency). */
+/** Ceiling on the `similarity` sent to /api/adapt: the route's playbook-branch threshold [ESC-087]. */
+const SENT_SIMILARITY_CAP = 0.85;
+
 const appliedFingerprints = new Set<string>();
 
 // Resilience observers per directive type, on top of the fingerprints [FOLLOW-791].
@@ -763,7 +766,12 @@ export async function fetchDirectives(
     if (intentState !== undefined) {
       body.archetype_hint = intentState.archetype;
       body.confidence = intentState.confidence;
-      body.similarity = intentState.probabilities[intentState.archetype];
+      // ESC-087 (CEO 2026-10-20, option 1): capped at the route's playbook threshold so a confirmed
+      // 0.90 quiz leaf keeps the LLM branch; the calibrated posterior stays in state and quiz_runs.
+      body.similarity = Math.min(
+        intentState.probabilities[intentState.archetype],
+        SENT_SIMILARITY_CAP,
+      );
       // Quiz traits, additive (ESC-086 item 4; the route's body schema strips it today).
       if (intentState.quiz_traits) body.traits = intentState.quiz_traits;
     }

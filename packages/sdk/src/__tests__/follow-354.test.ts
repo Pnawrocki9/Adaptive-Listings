@@ -338,16 +338,16 @@ describe('AC-2 — at/above floor: /adapt/description fetched (FOLLOW-354)', () 
     expect(calledUrl).toContain('locale=en');
   });
 
-  it('DOES call /adapt/description at quiz-leaf confidence (0.85) — regression guard', async () => {
-    // Ensures quiz-leaf confidence (0.85) always clears the description floor (0.5).
-    // If DOM_ADAPT_CONFIDENCE_FLOOR is raised above 0.85 in the future, this test
+  it('DOES call /adapt/description at quiz-leaf confidence (0.72) — regression guard', async () => {
+    // Ensures quiz-leaf confidence (0.72, `completed`, FOLLOW-1359) clears the floor (0.5).
+    // If DOM_ADAPT_CONFIDENCE_FLOOR is raised above 0.72 in the future, this test
     // goes RED along with AC-3 in follow-343.test.ts — both must fail together.
     insertDescriptionDom(LISTING_ID);
     seedSession();
     localStorage.setItem('estalara_consent', 'granted');
     insertScriptTag();
 
-    const mockFetch = stubFetchDistinct(0.85);
+    const mockFetch = stubFetchDistinct(0.72);
 
     await _initForTest();
 

@@ -208,15 +208,16 @@ describe('full classification flow', () => {
 });
 
 describe('applyQuizLeaf (FOLLOW-201)', () => {
-  it('sets target archetype to ~0.85 probability', () => {
+  // FOLLOW-1359 (§E.4.4 v3.0): the default evidence is `completed` — 0.72, rest 0.28 / 17.
+  it('sets target archetype to 0.72 probability (completed)', () => {
     const s = applyQuizLeaf(initIntentState(), 'family_buyer');
-    expect(s.probabilities.family_buyer).toBeCloseTo(0.85, 5);
+    expect(s.probabilities.family_buyer).toBeCloseTo(0.72, 5);
   });
 
-  it('all other archetypes share remaining 0.15 uniformly', () => {
+  it('all other archetypes share remaining 0.28 uniformly', () => {
     const s = applyQuizLeaf(initIntentState(), 'family_buyer');
     const otherCount = ARCHETYPE_NAMES.length - 1; // 17
-    const expectedOtherProb = 0.15 / otherCount;
+    const expectedOtherProb = 0.28 / otherCount;
     for (const k of ARCHETYPE_NAMES) {
       if (k === 'family_buyer') continue;
       expect(s.probabilities[k]).toBeCloseTo(expectedOtherProb, 5);
@@ -234,11 +235,9 @@ describe('applyQuizLeaf (FOLLOW-201)', () => {
     expect(s.archetype).toBe('flip_investor');
   });
 
-  it('confidence is Math.min(0.85 * QUIZ_CONFIDENCE_BONUS, 1.0) — approximately 1.0', () => {
+  it('confidence is the leaf posterior 0.72 — no quiz bonus (FOLLOW-1359)', () => {
     const s = applyQuizLeaf(initIntentState(), 'luxury_buyer');
-    // 0.85 * 1.2 = 1.02, capped at 1.0
-    expect(s.confidence).toBeCloseTo(1.0, 5);
-    expect(s.confidence).toBeLessThanOrEqual(1.0);
+    expect(s.confidence).toBe(0.72);
   });
 
   it('sets quiz_answered to true', () => {
@@ -268,9 +267,10 @@ describe('applyQuizLeaf (FOLLOW-201)', () => {
   it('works for all 18 archetypes without throwing', () => {
     const base = initIntentState();
     for (const archetype of ARCHETYPE_NAMES) {
+      if (archetype === 'neutral') continue; // unpinned — follow-1359.test.ts
       const s = applyQuizLeaf(base, archetype);
       expect(s.archetype).toBe(archetype);
-      expect(s.probabilities[archetype]).toBeCloseTo(0.85, 5);
+      expect(s.probabilities[archetype]).toBeCloseTo(0.72, 5);
     }
   });
 });

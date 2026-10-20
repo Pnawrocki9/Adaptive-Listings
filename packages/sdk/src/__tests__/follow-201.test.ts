@@ -17,6 +17,7 @@ import { DRIFT_HOLD_COUNT } from '../index.js';
 import {
   ARCHETYPE_NAMES,
   applyBehavioralSignal,
+  applyDriftCandidate,
   applyQuizLeaf,
   detectMismatch,
   initIntentState,
@@ -65,9 +66,9 @@ function runDriftMachine(cycles: (Archetype | null)[]): {
         driftCandidateCount = 1;
       }
 
-      if (driftCandidateCount >= DRIFT_HOLD_COUNT) {
+      if (driftCandidateCount >= DRIFT_HOLD_COUNT && mismatchCandidate !== 'neutral') {
         // `mismatchCandidate` is the confirmed drift archetype (Archetype, never null).
-        currentIntentState = applyQuizLeaf(currentIntentState, mismatchCandidate);
+        currentIntentState = applyDriftCandidate(currentIntentState, mismatchCandidate);
         overrideTriggered = true;
         driftCandidateArchetype = null;
         driftCandidateCount = 0;
@@ -148,14 +149,32 @@ describe('drift detection counter logic (FOLLOW-201 AC3 / AC4)', () => {
     expect(result.driftCandidateArchetype).toBe('family_buyer');
   });
 
-  it('override via applyQuizLeaf sets quiz_answered=true and target archetype at 0.85', () => {
+  it('override via applyDriftCandidate pins the target at the completed mass 0.72, source drift', () => {
     const result = runDriftMachine(['family_buyer', 'family_buyer', 'family_buyer']);
 
     expect(result.finalIntentState.archetype).toBe('family_buyer');
-    expect(result.finalIntentState.probabilities.family_buyer).toBeCloseTo(0.85, 5);
+    // FOLLOW-1359 (§E.4.5 v3.0): the `completed` mass, confidence = the posterior.
+    expect(result.finalIntentState.probabilities.family_buyer).toBeCloseTo(0.72, 5);
     expect(result.finalIntentState.quiz_answered).toBe(true);
-    // Confidence is capped at 1.0 (0.85 * 1.2 = 1.02)
-    expect(result.finalIntentState.confidence).toBeLessThanOrEqual(1.0);
+    expect(result.finalIntentState.confidence).toBeCloseTo(0.72, 5);
+    expect(result.finalIntentState.source).toBe('drift');
+    expect(result.finalIntentState.quiz_confirmed).toBe(false);
+  });
+
+  it('three `neutral` drift cycles never re-pin neutral (FOLLOW-1359, §E.4.5)', () => {
+    const result = runDriftMachine(['neutral', 'neutral', 'neutral']);
+
+    expect(result.overrideTriggered).toBe(false);
+    expect(result.finalIntentState.archetype).toBe('yield_hunter');
+  });
+
+  it('detectMismatch never reports a `neutral` behavioural leader (FOLLOW-1359)', () => {
+    // Three page views: BASE_PRIOR's neutral 0.37 stays the behavioural leader.
+    let behavioral = initIntentState();
+    for (let i = 0; i < 3; i++) behavioral = applyBehavioralSignal(behavioral, 'listing.viewed');
+    expect(behavioral.archetype).toBe('neutral');
+    expect(behavioral.signal_count).toBe(3);
+    expect(detectMismatch('yield_hunter', behavioral, 'sess-neutral')).toBeNull();
   });
 });
 
@@ -240,9 +259,14 @@ describe('applyQuizLeaf works for all 18 archetypes (FOLLOW-201 AC1)', () => {
     it(`archetype=${archetype} → correct probability distribution`, () => {
       const s = applyQuizLeaf(initIntentState(), archetype);
       expect(s.archetype).toBe(archetype);
-      expect(s.probabilities[archetype]).toBeCloseTo(0.85, 5);
       expect(s.quiz_answered).toBe(true);
-      expect(s.confidence).toBeLessThanOrEqual(1.0);
+      if (archetype === 'neutral') {
+        // FOLLOW-1359: a neutral leaf pins nothing — the pre-quiz distribution stays.
+        expect(s.probabilities).toEqual(initIntentState().probabilities);
+      } else {
+        expect(s.probabilities[archetype]).toBeCloseTo(0.72, 5);
+        expect(s.confidence).toBeCloseTo(0.72, 5);
+      }
     });
   }
 });

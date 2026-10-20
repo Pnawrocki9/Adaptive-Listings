@@ -284,6 +284,17 @@ Response type: `QuizAccuracyResponse` exported from the route file; arithmetic i
 Consumer: the staff tab `/admin/tenants/[id]/quiz-accuracy` and the monthly watch
 `GET /api/cron/quiz-accuracy-watch` (`CRON_SECRET`, Sentry warning).
 
+### GET /api/cron/quiz-retention
+
+FOLLOW-1364 (ESC-086 C6). Vercel Cron, daily `15 4 * * *` UTC,
+`Authorization: Bearer ${CRON_SECRET}` (constant-time compare; unset secret = 401). Deletes
+`quiz_runs` (`shown_at`) and `quiz_completions` (`created_at`) rows older than 13 months (CEO ruling
+2026-10-20), tenant-agnostic, in batches of 5 000, idempotent. Response type `QuizRetentionResponse`
+exported from the route file: 200
+`{data_source: 'postgres', retention_months: 13, quiz_runs: {deleted, skipped?: 'table_missing'}, quiz_completions: {deleted}}`;
+`data_source: 'not_configured'` when no database is set; 500 `quiz_retention_failed` plus one
+sanitised Sentry exception. Localhost: invoke by hand with the secret; nothing schedules it.
+
 - Every 200 carries `data_source: 'quiz_runs'`. A database without H002 answers 200
   `{available: false, code: 'quiz_runs_table_missing', message}` (never an empty report); a thrown
   read is 500 + Sentry. `from` is inclusive, `to` exclusive (ISO date or datetime, on `shown_at`).

@@ -8,8 +8,8 @@
 --   dla CTO"): this table exists only on localhost until the CTO applies it. Localhost:
 --   `scripts/dev/localhost-up.sh` applies every docs/handover/migrations/*.sql file to
 --   `al_pg_local` (step 4). Production: docs/handover/CTO_HANDOVER.md section 4 (the quiz_runs row)
---   (row 18) - apply it ONLY together with the deployed retention job FOLLOW-1364 (N-day window,
---   N set by the CEO/DPO), and before any SDK build that sends the pings is served. The control
+--   (row 18) - apply it ONLY together with the deployed retention job FOLLOW-1364 (13 months,
+--   CEO ruling 2026-10-20), and before any SDK build that sends the pings is served. The control
 --   plane deploys on every merge to main; until this file is applied `POST /api/quiz/run` answers
 --   503 `quiz_runs_table_missing` (one Sentry event per ping) and the SDK, which sends the ping
 --   fire-and-forget, drops it - no buyer-visible effect. The DSR routes treat the missing table as

@@ -250,6 +250,24 @@ Example 3 — tenant with an active quiz definition (200):
 The staff write path is `PUT /api/admin/tenants/quiz-definition?tenant_id=<uuid>` (ADR-0018 §3a
 staff-atomic-audited, `action: 'quiz_definition.update'`).
 
+**Staff quiz-definition API (FOLLOW-1362 C1, ESC-086 item 5).** All under
+`/api/admin/tenants/quiz-definition`, staff-only via `resolveTenantAccess` with `?tenant_id=<uuid>`
+as the single tenant fence. Reads: any staff rank. Writes: `estalara:ops`+ (decision Q-H; 403
+otherwise), each ONE transaction whose first statement is
+`pg_advisory_xact_lock(hashtext('quiz_definitions'), hashtext(tenant_id::text))`, then the
+`max(version)` / active-row read, the mutation and the `staff_audit_log` row (rolled back together).
+Audit payloads carry a version pair and `sha256` (`computeQuizDefinitionHash` of the serve-schema
+parse), never the definition blob. History is append-only: no row is ever deleted or re-activated in
+place. Response types are exported from each route file.
+
+| Method + path                      | Body / query                                                                 | Result                                                                                                                                                                                                                       | Audit `action`                                                                                                     |
+| ---------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `GET …/quiz-definition`            | —                                                                            | `QuizDefinitionState`: `version`, `definition`, `warnings`, `can_write`, `lint`, `invalid_active` + `raw` (the stored JSON when the active row fails the serve schema)                                                       | —                                                                                                                  |
+| `PUT …/quiz-definition`            | `{definition, base_version?: number \| null, source?: 'editor' \| 'import'}` | new version `max + 1`; 400 `validation_failed` with `issues[]` (lint codes) when `QuizDefinitionAuthoringSchema` fails (no write); 409 `version_conflict` when `base_version` is not the active version                      | `quiz_definition.update` `{before: {version, sha256}, after: {version, root, sha256, questions, answers}, source}` |
+| `GET …/quiz-definition/versions`   | `&version=<n>` optional                                                      | newest 50 `{version, is_active, created_at, created_by, question_count, answer_count, sha256, valid}`; with `version`: that row + `definition`, `raw`, `lint` (404 when the tenant has no such version)                      | —                                                                                                                  |
+| `PUT …/quiz-definition/activate`   | `{from_version, base_version: number \| null}`                               | restore = COPY of `from_version` as version `max + 1`, parsed with the SERVE schema only (lint returned, not enforced); 404 cross-tenant/missing, 409 `version_conflict` / `already_active`, 422 `invalid_source_definition` | `quiz_definition.restore` `{before, after, restored_from}`                                                         |
+| `PUT …/quiz-definition/deactivate` | `{base_version?: number \| null}` optional                                   | active row set inactive → `GET /api/quiz/public-config` serves `DEFAULT_QUIZ_DEFINITION_V2`; 409 `no_active_definition` / `version_conflict`                                                                                 | `quiz_definition.revert_to_default` `{before: {version, sha256}, after: {version: null}}`                          |
+
 Producer: `apps/control-plane/src/app/api/quiz/public-config/route.ts`. Consumer:
 `packages/sdk/src/core/quiz-config.ts` (`fetchQuizConfig`) → `packages/sdk/src/index.ts`
 (`mergeQuizConfig`) → `packages/sdk/src/ui/quiz-widget.ts` (the card auto-opens since FOLLOW-1015;

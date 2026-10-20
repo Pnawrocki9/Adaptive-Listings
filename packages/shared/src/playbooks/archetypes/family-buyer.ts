@@ -19,7 +19,7 @@ export const familyBuyerPlaybook: PlaybookEntry = {
     {
       slot: 'cta',
       en: 'Get the Moving-Up Guide',
-      pl: 'Pobierz poradnik przeprowadzki na większe',
+      pl: 'Pobierz poradnik: przeprowadzka do większego lokum',
       es: 'Descarga la guía para mudarte a algo más grande',
     },
     {

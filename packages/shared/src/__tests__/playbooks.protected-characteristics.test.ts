@@ -11,11 +11,13 @@
  * which decide which listing cards are promoted.
  *
  * NOT SCANNED, deliberately: `copy_template` (voice instructions to a model; they contain these
- * words only as prohibitions: "never call an area family-friendly"), `description`, `signals` and
- * `feature_priority` (internal, never rendered), and the trait add-ons (pinned by
- * `playbook-traits.test.ts`).
+ * words only as prohibitions: "never call an area family-friendly") and the trait add-ons (pinned
+ * by `playbook-traits.test.ts`). NOT SCANNED, KNOWN GAP: `description`, `signals` and
+ * `feature_priority`. `description` and `signals` DO reach the LLM prompts
+ * (`apps/control-plane/src/lib/llm-gateway.ts`), so this is a gap, not an exemption; a follow-up
+ * scrubs and scans them.
  *
- * NOT IN THE LIST, deliberately (a compliance decision, not an oversight): `expat` (a residence
+ * NOT IN THE LIST, deliberately (pending a compliance ruling): `expat` (a residence
  * status, not a national origin), `retire*` (a life stage, not an age). The list is stems matched
  * at a word start, diacritics folded, so "children" and "dzieci" are caught but "familiar" is not.
  */
@@ -51,6 +53,8 @@ const PROTECTED_STEMS: Record<Locale, readonly string[]> = {
     'immigrant',
     'migrant',
     'foreigner',
+    'foreign',
+    'catchment',
     'race',
     'racial',
     // religion
@@ -90,7 +94,8 @@ const PROTECTED_STEMS: Record<Locale, readonly string[]> = {
     'etnicz',
     'narodowosc',
     'imigrant',
-    'obcokrajowc',
+    'obcokraj',
+    'cudzoziem',
     'rasa',
     'rasow',
     'religi',

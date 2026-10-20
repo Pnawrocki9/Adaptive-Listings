@@ -152,10 +152,10 @@ describe('getPlaybook — spot checks for key archetypes', () => {
     expect(headlineSlot?.variants?.en.some((v) => /moving up/i.test(v))).toBe(true);
   });
 
-  it('lifestyle_expat headline mentions expat community', () => {
+  it('lifestyle_expat headline is relocation framing, no resident claim [FOLLOW-1366]', () => {
     const playbook = getPlaybook('lifestyle_expat');
     const headlineSlot = playbook.slots.find((s) => s.slot === 'headline');
-    expect(headlineSlot?.en).toContain('Expat Community');
+    expect(headlineSlot?.en).toContain('Relocation Ready');
   });
 
   it('first_time_buyer has 3 slots (headline, cta, feature)', () => {

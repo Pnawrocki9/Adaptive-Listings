@@ -7,12 +7,12 @@ export const lifestyleExpatPlaybook: PlaybookEntry = {
   slots: [
     {
       slot: 'headline',
-      en: 'Expat Community — {neighborhood} | International Services Nearby',
+      en: 'Relocation Ready — {neighborhood}',
       variants: {
         en: [
-          'Expat Community — {neighborhood} | International Services Nearby',
+          'Relocation Ready — {neighborhood}',
           'International Living — English Services, Expat Network Active',
-          'Relocation Ready — {neighborhood} | Healthcare & Expat Community',
+          'Settling In — {neighborhood}',
         ],
       },
     },

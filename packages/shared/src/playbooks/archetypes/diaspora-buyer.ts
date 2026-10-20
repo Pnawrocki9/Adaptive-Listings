@@ -19,8 +19,8 @@ export const diasporaBuyerPlaybook: PlaybookEntry = {
     {
       slot: 'cta',
       en: 'Speak with a Relocation Specialist',
-      pl: 'Porozmawiaj ze specjalistą od przeprowadzek',
-      es: 'Habla con un especialista en traslados',
+      pl: 'Porozmawiaj z doradcą ds. relokacji',
+      es: 'Habla con un especialista en reubicación',
     },
     { slot: 'feature', en: 'Remote Purchase Guide' },
   ],

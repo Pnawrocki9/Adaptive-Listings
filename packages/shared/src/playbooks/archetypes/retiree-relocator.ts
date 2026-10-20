@@ -11,7 +11,7 @@ export const retireeRelocatorPlaybook: PlaybookEntry = {
         en: [
           'Retire in the Sun — Mild Climate, Relaxed Pace',
           'Retire Abroad — Warm Climate, Healthcare Close, Low Cost of Living',
-          'Relaxed Living — Established Expat Retiree Community',
+          'Relaxed Living — A Calmer Pace',
         ],
       },
     },

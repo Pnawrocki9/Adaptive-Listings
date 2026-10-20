@@ -21,7 +21,7 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## OPEN — ESC-088: the quiz trait `has_children` puts self-declared familial status into the signal space — does the 2026-05-14 fair-housing ruling still hold, and may it shape copy? [FOLLOW-1360]
+## RESOLVED — ESC-088: the quiz trait `has_children` puts self-declared familial status into the signal space — does the 2026-05-14 fair-housing ruling still hold, and may it shape copy? [FOLLOW-1360]
 
 **Filed by:** pm-orchestrator (from the Opus grounding/fair-housing review of PR #1064, 2026-10-20)
 **Date:** 2026-10-20 **Affects:** `packages/shared/src/quiz-default-v2.ts` (trait screens),
@@ -52,11 +52,16 @@ boost (FOLLOW-1366).
 **Required action:** CEO decides 1/2/3 and sends the question to outside counsel; the ruling is
 recorded here before go-live (K7). FOLLOW-1360 may merge on localhost under option 1.
 
-**Resolution:** _(open)_
+**Resolution:** 2026-10-20, CEO (Piotr Nawrocki): **option 3 — keep `has_children` as built.** The
+trait keeps weighting physical listing facts (bedrooms, garden, storage) in the copy; schools are
+excluded and the familial-steering refusal runs on every request in EN/PL/ES (FOLLOW-1360 review
+C1–C3). The fair-housing risk the 2026-05-14 ruling's premise no longer covers is accepted by the
+CEO; the CTO handover records it for counsel before any US-market use. FOLLOW-1366 (retire the
+pre-existing family/diaspora strings and the school-district boost) proceeds.
 
 ---
 
-## OPEN — ESC-087: a CONFIRMED quiz result (0.90) routes the buyer to the playbook branch without the LLM — confirmed buyers get less adaptation [FOLLOW-1359]
+## RESOLVED — ESC-087: a CONFIRMED quiz result (0.90) routes the buyer to the playbook branch without the LLM — confirmed buyers get less adaptation [FOLLOW-1359]
 
 **Filed by:** pm-orchestrator **Date:** 2026-10-20 **Affects:** FOLLOW-1359 (Faza Q Q4, PR #1060,
 not merged), `packages/sdk/src/core/adapt.ts:766`, `apps/control-plane/src/app/api/adapt/route.ts`
@@ -87,7 +92,12 @@ opposite of the plan. The fold itself works (served v2 tree, `confirmed` rows, A
 
 **Required action:** CEO picks an option. Until then FOLLOW-1359 stays open and Q6 (AC(10)) waits.
 
-**Resolution:** _(open)_
+**Resolution:** 2026-10-20, CEO (Piotr Nawrocki), after a plain-language explanation by the PM (the
+choice does not change archetype-identification accuracy — it decides whether a confirmed buyer gets
+LLM adaptation): **option 1 now + option 3 as a separate ticket.** The SDK sends
+`similarity = min(posterior, 0.85)` (FOLLOW-1359, PR #1060, commit `c4e2c3ff`); the calibrated 0.90
+stays in the SDK state and in `quiz_runs`. Option 3 — the playbook branch only when every slot is
+grounded, otherwise the LLM, for all sessions — is **FOLLOW-1368**, after KQ2, with its own series.
 
 ---
 
@@ -185,9 +195,11 @@ MUST NOT reference protected characteristics, family status and national origin 
 premise that no protected-class identity enters the signal space, which the `has_children` trait now
 challenges (ESC-088).]**
 
-**OPEN for the CEO (2026-10-20):** (a) the retention period for `quiz_runs` and `quiz_completions`
-(proposal: 13 months, matching `events`); (b) whether the consent banner sentence is widened now
-(hash change, re-consent) or the §1 notice sentence suffices until counsel answers.
+**RESOLVED by the CEO 2026-10-20:** (a) retention = **13 months** for `quiz_runs` and
+`quiz_completions` (FOLLOW-1364 enforces it); (b) the privacy-notice §1 sentence now, the banner
+sentence only after counsel. **Originally OPEN:** (a) the retention period for `quiz_runs` and
+`quiz_completions` (proposal: 13 months, matching `events`); (b) whether the consent banner sentence
+is widened now (hash change, re-consent) or the §1 notice sentence suffices until counsel answers.
 
 ---
 

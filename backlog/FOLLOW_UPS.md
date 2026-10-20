@@ -56826,3 +56826,25 @@ AC:
 - [ ] The first run after a bring-up reports the served `definition_hash`.
 
 cross_ref: [FOLLOW-1361, FOLLOW-1365, FOLLOW-1233/1246, #1055 (description-floor spec precedent)]
+
+## FOLLOW-1368 — `/api/adapt`: playbook branch only when every slot is grounded, otherwise the LLM (ESC-087 option 3)
+
+source_retro: — (ESC-087, CEO ruling 2026-10-20) source_ticket: FOLLOW-1359 recommended_agent:
+ml-engineer (Opus) priority: P2 estimated_hours: 6 tag: product depends_on: [FOLLOW-1359] blocks: []
+promoted_to_queue: true
+
+**What.** Today `/api/adapt` sends every request with `similarity > 0.85` to branch 2 — the
+archetype playbook without the LLM — where template copy the listing cannot ground is withheld
+(§E.7.0), so a high-similarity session often gets no adaptation at all (measured for a confirmed
+quiz leaf, ESC-087). The SDK-side cap (FOLLOW-1359) fixes quiz sessions only. Change the route so
+branch 2 serves the playbook only when every served slot survives the §E.7.0 withhold; otherwise
+fall through to the LLM tweak band (branch 3). Measure the judge/LLM cost delta and p95 latency on
+localhost.
+
+AC:
+
+- [ ] Route tests: a fully grounded playbook is still served without an LLM call; a playbook whose
+      slots would be withheld falls through to `llm_tweaked`.
+- [ ] FOLLOW-819 series 3× GREEN `[FRESH]`; cost/latency delta recorded in the PR.
+
+cross_ref: [ESC-087, FOLLOW-1359, ESC-076 / §E.7.0]

@@ -132,6 +132,12 @@ export default async function TenantLandingPage({ params }: TenantLandingPagePro
             Quiz Completions
           </Link>
           <Link
+            href={`/admin/tenants/${tenant.id}/quiz-accuracy`}
+            className="text-purple-600 underline hover:text-purple-800"
+          >
+            Quiz Accuracy
+          </Link>
+          <Link
             href={`/admin/tenants/${tenant.id}/demo`}
             className="text-purple-600 underline hover:text-purple-800"
           >

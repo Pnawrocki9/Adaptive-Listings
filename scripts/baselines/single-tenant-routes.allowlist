@@ -10,6 +10,7 @@ apps/control-plane/src/app/admin/tenants/[id]/listings/[listingId]/answers/page.
 apps/control-plane/src/app/admin/tenants/[id]/listings/page.tsx
 apps/control-plane/src/app/admin/tenants/[id]/optout-widget/page.tsx
 apps/control-plane/src/app/admin/tenants/[id]/page.tsx
+apps/control-plane/src/app/admin/tenants/[id]/quiz-accuracy/page.tsx
 apps/control-plane/src/app/admin/tenants/[id]/quiz-completions/page.tsx
 apps/control-plane/src/app/admin/tenants/[id]/quiz-definition/page.tsx
 apps/control-plane/src/app/admin/tenants/[id]/quiz/page.tsx
@@ -33,6 +34,7 @@ apps/control-plane/src/app/api/admin/labels/export/route.ts
 apps/control-plane/src/app/api/admin/labels/route.ts
 apps/control-plane/src/app/api/admin/tenants/al-state/route.ts
 apps/control-plane/src/app/api/admin/tenants/optout-widget/route.ts
+apps/control-plane/src/app/api/admin/tenants/quiz-accuracy/route.ts
 apps/control-plane/src/app/api/admin/tenants/quiz-completions/route.ts
 apps/control-plane/src/app/api/admin/tenants/quiz-definition/activate/route.ts
 apps/control-plane/src/app/api/admin/tenants/quiz-definition/deactivate/route.ts
@@ -52,6 +54,7 @@ apps/control-plane/src/app/api/canary/adaptation-writes/route.ts
 apps/control-plane/src/app/api/config/route.ts
 apps/control-plane/src/app/api/crm/outcome/route.ts
 apps/control-plane/src/app/api/cron/lift-snapshot/route.ts
+apps/control-plane/src/app/api/cron/quiz-accuracy-watch/route.ts
 apps/control-plane/src/app/api/dashboard/analytics/lift/export/route.ts
 apps/control-plane/src/app/api/dashboard/analytics/lift/history/route.ts
 apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts

@@ -28,6 +28,7 @@ import { sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { QUIZ_RUN_MAX_MS } from '@estalara/shared';
 import type { QuizRunPing } from '@estalara/shared';
+import type { AccuracyRun, FunnelGroupRow, HashSummary } from '@/lib/quiz-accuracy';
 
 /** Wire code for "H002 has not been applied to this database yet" (Rule K.2: loud, not empty). */
 export const QUIZ_RUNS_TABLE_MISSING = 'quiz_runs_table_missing';
@@ -396,5 +397,139 @@ export async function readQuizRunFunnel(db: SqlExecutor, tenantId: string): Prom
       answer_path: jsonValue(r.answer_path),
       definition_version: optNum(r.definition_version),
     })),
+  };
+}
+
+/** Filters of the accuracy read; `null` = unfiltered. `from` inclusive, `to` exclusive (ISO). */
+interface QuizAccuracyFilters {
+  from: string | null;
+  to: string | null;
+  definitionHash: string | null;
+  language: string | null;
+}
+
+/** What the accuracy report is computed from (see `buildQuizAccuracyReport`). */
+type QuizAccuracyData =
+  | { available: false }
+  | {
+      available: true;
+      /** The hash the rows below belong to; `null` when the tenant has no hashed run in range. */
+      definitionHash: string | null;
+      hashes: HashSummary[];
+      runs: AccuracyRun[];
+      funnelRows: FunnelGroupRow[];
+      /** True when more than {@link ACCURACY_ROW_CAP} runs matched; only the oldest are returned. */
+      truncated: boolean;
+    };
+
+/** Upper bound on the runs read for one report (oldest first; the verdict needs only 400). */
+const ACCURACY_ROW_CAP = 20_000;
+
+/**
+ * Staff read (FOLLOW-1363): the rows behind the quiz-accuracy report of ONE definition hash.
+ *
+ * Eligibility is PREREG §2: `status` confirmed / corrected (+ unconfirmed for the pessimistic
+ * variant), `resolved_archetype` not null and not `neutral`, one `definition_hash`
+ * (the requested one, else the hash with the most decided rows in range), fenced to the tenant.
+ * `quiz_runs` carries no staff / ops-key marker, so staff traffic cannot be excluded row by row:
+ * only the tenant-level exclusion is implemented (the harness tenant is another tenant id, so it
+ * never enters this tenant's read). Staff / ops-key sessions on the production tenant would need a
+ * marker column on H002 - not available, reported as a limitation of the report.
+ *
+ * A missing table (42P01) is `available: false` - never an error, never an empty report.
+ */
+export async function readQuizAccuracyData(
+  db: SqlExecutor,
+  tenantId: string,
+  filters: QuizAccuracyFilters,
+): Promise<QuizAccuracyData> {
+  const inRange = sql`(${filters.from}::timestamptz is null or shown_at >= ${filters.from}::timestamptz)
+        and (${filters.to}::timestamptz is null or shown_at < ${filters.to}::timestamptz)`;
+  const decidedNonNeutral = sql`status in ('confirmed', 'corrected')
+        and resolved_archetype is not null and resolved_archetype <> 'neutral'`;
+  let hashResult: unknown;
+  try {
+    hashResult = await db.execute(sql`
+      select definition_hash as hash, max(definition_version)::int as version,
+             count(*) filter (where ${decidedNonNeutral})::int as n,
+             max(shown_at) as last_shown
+      from quiz_runs
+      where tenant_id = ${tenantId}::uuid and definition_hash is not null and ${inRange}
+      group by definition_hash
+      order by n desc, last_shown desc
+    `);
+  } catch (err: unknown) {
+    if (!isQuizRunsTableMissing(err)) throw err;
+    logMissingTableOnce('admin/quiz-accuracy');
+    return { available: false };
+  }
+  const hashes: HashSummary[] = executedRows(hashResult).map((r) => ({
+    hash: String(r.hash),
+    version: r.version === null || r.version === undefined ? null : Number(r.version),
+    n: Number(r.n),
+  }));
+  const definitionHash = filters.definitionHash ?? hashes[0]?.hash ?? null;
+  if (definitionHash === null) {
+    return { available: true, definitionHash, hashes, runs: [], funnelRows: [], truncated: false };
+  }
+
+  const scope = sql`tenant_id = ${tenantId}::uuid and definition_hash = ${definitionHash}::text
+        and (${filters.language}::text is null or language = ${filters.language}::text)
+        and ${inRange}`;
+  let funnelResult: unknown;
+  let runResult: unknown;
+  try {
+    funnelResult = await db.execute(sql`
+      select to_char(shown_at at time zone 'UTC', 'YYYY-MM') as month, status,
+             coalesce(resolved_archetype = 'neutral', false) as neutral,
+             case when status = 'dismissed' then last_step end as last_step,
+             count(*)::int as cnt
+      from quiz_runs
+      where ${scope}
+      group by 1, 2, 3, 4
+    `);
+    runResult = await db.execute(sql`
+      select status, resolved_archetype, confirmed_archetype, language,
+             to_char(shown_at at time zone 'UTC', 'YYYY-MM') as month,
+             (select sum(x) from unnest(step_ms) as x)::int as step_total_ms, result_ms
+      from quiz_runs
+      where ${scope}
+        and status in ('confirmed', 'corrected', 'unconfirmed')
+        and resolved_archetype is not null and resolved_archetype <> 'neutral'
+      order by shown_at asc, id asc
+      limit ${ACCURACY_ROW_CAP + 1}
+    `);
+  } catch (err: unknown) {
+    if (!isQuizRunsTableMissing(err)) throw err;
+    logMissingTableOnce('admin/quiz-accuracy');
+    return { available: false };
+  }
+  const optNum = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
+  const optStr = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+  const rows = executedRows(runResult);
+  const truncated = rows.length > ACCURACY_ROW_CAP;
+  return {
+    available: true,
+    definitionHash,
+    hashes,
+    truncated,
+    funnelRows: executedRows(funnelResult).map((r) => ({
+      month: String(r.month),
+      status: String(r.status),
+      neutral: r.neutral === true,
+      last_step: optNum(r.last_step),
+      count: Number(r.cnt),
+    })),
+    runs: rows.slice(0, ACCURACY_ROW_CAP).map(
+      (r): AccuracyRun => ({
+        status: String(r.status) as AccuracyRun['status'],
+        resolved_archetype: String(r.resolved_archetype),
+        confirmed_archetype: optStr(r.confirmed_archetype),
+        language: optStr(r.language),
+        month: String(r.month),
+        step_total_ms: optNum(r.step_total_ms),
+        result_ms: optNum(r.result_ms),
+      }),
+    ),
   };
 }

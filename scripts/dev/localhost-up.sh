@@ -414,7 +414,7 @@ start_bg control-plane-3000 3000 "$REPO_ROOT/apps/control-plane" \
 wait_for "control plane :3000" 240 curl -s -o /dev/null -m 60 http://localhost:3000/
 
 # ---- 10. warm the routes (README 6.6: cold compile > the preflight's 8 s timeout) --------------
-step "10/11 warm /api/adapt and the admin rollup route (README 6.6)"
+step "10/11 warm /api/adapt, the admin rollup route and the quiz public config (README 6.6, FOLLOW-1367)"
 curl -s -o /dev/null -m 180 -X POST -H 'content-type: application/json' -d '{}' \
   http://localhost:3000/api/adapt || die "warm-up POST /api/adapt did not complete in 180 s"
 log "/api/adapt warm"
@@ -425,6 +425,24 @@ log "admin rollup warm"
 # Second pass: the probe must answer inside its 8 s budget now.
 curl -s -o /dev/null -m 8 -X POST -H 'content-type: application/json' -d '{}' \
   http://localhost:3000/api/adapt || die "/api/adapt still slower than 8 s after warm-up"
+# FOLLOW-1367: the quiz's public config. Its cold compile (4-27 s measured) outlasts the SDK's
+# fetch (1 s, one 8 s retry), so the first run after a bring-up walked the built-in tree
+# (builtin-en-v2, no result screen) and AC(10) could not be measured. Warm it with the fixture
+# page's own key and Origin, then require the harness's own check: 200, data_source db, a served
+# sha-256 definition_hash and a confirm block.
+FIXTURE_PAGE_KEY="$(sed -n 's/.*data-api-key="\([^"]*\)".*/\1/p' \
+  "$REPO_ROOT/tests/e2e/follow-819/fixture-listing.html" | head -n 1)"
+[ -n "$FIXTURE_PAGE_KEY" ] || die "could not read data-api-key from fixture-listing.html"
+curl -s -o /dev/null -m 180 -H "Authorization: Bearer $FIXTURE_PAGE_KEY" \
+  -H 'Origin: http://localhost:5173' http://localhost:3000/api/quiz/public-config ||
+  die "warm-up GET /api/quiz/public-config did not complete in 180 s"
+LISTING_URL=http://localhost:5173/fixture-listing.html \
+  node --input-type=module -e '
+    globalThis.FOLLOW1186_IMPORT_ONLY = true;
+    const h = await import("./tests/e2e/follow-819/differentiator-e2e.mjs");
+    const q = await h.assertServedQuizConfig({ timeoutMs: 8000 });
+    console.log(`    quiz public-config warm: ${q.reason} (${q.ms} ms)`);
+  ' || die "GET /api/quiz/public-config does not serve the quiz tree (see the message above)"
 
 # ---- 11. preflight: the harness's OWN probes, imported from the harness (not re-implemented) ----
 step "11/11 preflight: assertRealControlPlane + assertDemoModeOn + assertGroundingSource + assertIngestReachable + assertConversionEmitter"

@@ -90,7 +90,7 @@ describe('StaffQuizDefinitionEditor', () => {
       expect(screen.getByTestId('unreachable-warning')).toBeDefined();
     });
     // Save is enabled for a valid definition.
-    const saveButton = screen.getByRole('button', { name: /save definition/i });
+    const saveButton = screen.getByRole('button', { name: /publish/i });
     expect(saveButton).toHaveProperty('disabled', false);
   });
 
@@ -120,7 +120,7 @@ describe('StaffQuizDefinitionEditor', () => {
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeDefined();
     });
-    const saveButton = screen.getByRole('button', { name: /save definition/i });
+    const saveButton = screen.getByRole('button', { name: /publish/i });
     expect(saveButton).toHaveProperty('disabled', true);
   });
 
@@ -139,7 +139,7 @@ describe('StaffQuizDefinitionEditor', () => {
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeDefined();
     });
-    const saveButton = screen.getByRole('button', { name: /save definition/i });
+    const saveButton = screen.getByRole('button', { name: /publish/i });
     expect(saveButton).toHaveProperty('disabled', true);
   });
 });

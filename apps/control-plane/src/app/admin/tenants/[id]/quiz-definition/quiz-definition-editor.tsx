@@ -20,6 +20,11 @@
  * version) and `source: 'editor'`; a 409 `version_conflict` shows "someone else published
  * version N — reload".
  *
+ * FOLLOW-1362 C3: "Publish…" opens {@link PublishDialog} (diff vs active + propagation notice)
+ * before the PUT; {@link useLocalDraft} autosaves to localStorage and guards unload;
+ * {@link ImportExport} loads a file into the DRAFT only (`source: 'import'` on publish);
+ * {@link QuizSimulator} and {@link VersionsPanel} sit below the form.
+ *
  * Every fetch carries `?tenant_id=<tenantId>` so the staff route fences its `createAdminClient()`
  * queries to that tenant (ADR-0018 §2 invariant 5). The write is PUT (create-a-new-active-version
  * semantics); the route performs the mutation + `staff_audit_log` insert in one transaction.
@@ -38,34 +43,30 @@ import { DEFAULT_QUIZ_DEFINITION_V2 } from '@estalara/shared';
 
 import type { QuizDefinitionState } from '@/app/api/admin/tenants/quiz-definition/route';
 
-import { applySuggestions } from './apply-suggestions';
 import { ConfirmationTab } from './confirmation-tab';
+import { EditorBanners } from './editor-banners';
+import { ImportExport } from './import-export';
 import { LintPanel } from './lint-panel';
+import { PublishDialog } from './publish-dialog';
 import { QuizQuestionForm } from './question-form';
+import { QuizSimulator } from './quiz-simulator';
+import { useLocalDraft } from './use-local-draft';
+import { errorOf, useSuggestWeights, type WriteErrorBody } from './use-suggest-weights';
 import { validateDraft } from './validate-draft';
-import { WeightSuggestionsPanel, type SuggestResponse } from './weight-suggestions-panel';
-
-/** The error envelope of a failed write (`409 version_conflict`, `400 validation_failed`, …). */
-interface WriteErrorBody {
-  error?:
-    | string
-    | { code?: string; message?: string; issues?: QuizLintIssue[]; active_version?: number | null };
-}
-
-function errorOf(
-  body: WriteErrorBody,
-  fallback: string,
-): { code?: string | undefined; message: string } {
-  if (typeof body.error === 'string') return { message: body.error };
-  return { code: body.error?.code, message: body.error?.message ?? fallback };
-}
+import { VersionsPanel } from './versions-panel';
+import { WeightSuggestionsPanel } from './weight-suggestions-panel';
 
 const BUILT_IN_DEFAULT_JSON = JSON.stringify(DEFAULT_QUIZ_DEFINITION_V2, null, 2);
 
-const BANNER = 'mb-4 rounded-lg px-4 py-3 text-sm';
-
 export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): React.JSX.Element {
   const [text, setText] = useState<string>('');
+  // The loaded version's text — what "unchanged" means for the local draft and the unload guard.
+  const [baseline, setBaseline] = useState<string>('');
+  // The loaded active definition (null = none saved → buyers get the built-in default).
+  const [activeDef, setActiveDef] = useState<QuizDefinition | null>(null);
+  // 'import' once a file was loaded into the draft; sent as `source` on publish.
+  const [source, setSource] = useState<'editor' | 'import'>('editor');
+  const [publishOpen, setPublishOpen] = useState(false);
   const [version, setVersion] = useState<number | null>(null);
   const [canWrite, setCanWrite] = useState(true);
   // `raw` of an active row that no longer parses (Rule K.2) — blocks editing until acknowledged.
@@ -79,21 +80,15 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
   const [conflict, setConflict] = useState<{ activeVersion: number | null } | null>(null);
   const [tab, setTab] = useState<'questions' | 'confirmation'>('questions');
   const [retryNonce, setRetryNonce] = useState(0);
-  // FOLLOW-1002 — suggest-weights state. `suggest` holds the LAST proposal set;
-  // it is cleared on apply (the draft now embodies it) but deliberately kept
-  // across hand-edits so staff can compare while tweaking.
-  const [suggestStatus, setSuggestStatus] = useState<'idle' | 'loading' | 'error'>('idle');
-  const [suggestErrorMsg, setSuggestErrorMsg] = useState('');
-  const [suggest, setSuggest] = useState<SuggestResponse | null>(null);
 
   const url = `/api/admin/tenants/quiz-definition?tenant_id=${encodeURIComponent(tenantId)}`;
-  const suggestUrl = `/api/admin/tenants/quiz-definition/suggest-weights?tenant_id=${encodeURIComponent(tenantId)}`;
 
   useEffect(() => {
     setLoadStatus('loading');
     setLoadErrorMsg('');
     setConflict(null);
     setServerIssues([]);
+    setSource('editor');
     void fetch(url)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${String(r.status)}`);
@@ -106,11 +101,18 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
         if (d.invalid_active === true) {
           // The stored row fails the serve schema: show it, never swap in a starter silently.
           setInvalidActive({ raw: d.raw ?? null });
+          setActiveDef(null);
           setText('');
+          setBaseline('');
         } else {
           setInvalidActive(null);
           // No saved row → buyers are served the built-in default, so that IS the baseline.
-          setText(d.definition ? JSON.stringify(d.definition, null, 2) : BUILT_IN_DEFAULT_JSON);
+          const loaded = d.definition
+            ? JSON.stringify(d.definition, null, 2)
+            : BUILT_IN_DEFAULT_JSON;
+          setActiveDef(d.definition ?? null);
+          setText(loaded);
+          setBaseline(loaded);
         }
         setLoadStatus('loaded');
       })
@@ -132,8 +134,26 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
     validation.lintErrors.length === 0 &&
     saveStatus !== 'saving';
 
+  const localDraft = useLocalDraft({
+    tenantId,
+    baseVersion: version,
+    text,
+    baseline,
+    ready: loadStatus === 'loaded' && canWrite && invalidActive === null,
+  });
+
+  const suggestWeights = useSuggestWeights({
+    tenantId,
+    definition: validation.definition,
+    loaded: loadStatus === 'loaded',
+    onApply: (merged) => {
+      setText(JSON.stringify(merged, null, 2));
+    },
+  });
+
   async function handleSave(): Promise<void> {
     if (!canSave || validation.definition === null) return;
+    setPublishOpen(false);
     setSaveStatus('saving');
     setSaveErrorMsg('');
     setServerIssues([]);
@@ -145,7 +165,7 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
         body: JSON.stringify({
           definition: validation.definition,
           base_version: version,
-          source: 'editor',
+          source,
         }),
       });
       if (!res.ok) {
@@ -164,6 +184,10 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
       }
       const saved = (await res.json()) as { version?: number | null };
       setVersion(saved.version ?? null);
+      setActiveDef(validation.definition);
+      setBaseline(text);
+      setSource('editor');
+      localDraft.clear();
       setSaveStatus('saved');
       setTimeout(() => {
         setSaveStatus('idle');
@@ -174,120 +198,31 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
     }
   }
 
-  // FOLLOW-1002: ask the LLM for weight proposals derived from the CURRENT draft.
-  async function handleSuggest(): Promise<void> {
-    if (validation.definition === null || loadStatus !== 'loaded') return;
-    setSuggestStatus('loading');
-    setSuggestErrorMsg('');
-    try {
-      const res = await fetch(suggestUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ definition: validation.definition }),
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as WriteErrorBody;
-        setSuggestErrorMsg(errorOf(body, 'Failed to get suggestions.').message);
-        setSuggestStatus('error');
-        return;
-      }
-      setSuggest((await res.json()) as SuggestResponse);
-      setSuggestStatus('idle');
-    } catch {
-      setSuggestErrorMsg('Network error. Please try again.');
-      setSuggestStatus('error');
-    }
-  }
-
-  // FOLLOW-1002: merge the proposed weights into the draft (weights ONLY —
-  // prompts/labels/branching untouched). Persisting still requires Save.
-  function handleApplySuggestions(): void {
-    if (validation.definition === null || suggest === null) return;
-    const merged = applySuggestions(validation.definition, suggest.suggestions);
-    setText(JSON.stringify(merged, null, 2));
-    setSuggest(null);
-  }
-
   function updateDraft(next: QuizDefinition): void {
     setText(JSON.stringify(next, null, 2));
   }
 
+  function reload(): void {
+    setRetryNonce((n) => n + 1);
+  }
+
   return (
     <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
-      {loadStatus === 'error' && (
-        <div role="alert" className="mb-6 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-          <p>Failed to load quiz definition: {loadErrorMsg}</p>
-          <p className="mt-1 text-xs">
-            Saving is disabled until the definition loads successfully — this prevents overwriting
-            the tenant&apos;s real quiz with a starter template.
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              setRetryNonce((n) => n + 1);
-            }}
-            className="mt-2 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100"
-          >
-            Retry
-          </button>
-        </div>
-      )}
-
-      {invalidActive !== null && (
-        <div
-          role="alert"
-          data-testid="invalid-active-banner"
-          className={`${BANNER} border border-red-300 bg-red-50 text-red-800`}
-        >
-          <p className="font-semibold">
-            The active quiz definition (version {String(version)}) is invalid.
-          </p>
-          <p className="mt-1">
-            Buyers are being served the built-in default instead. Editing is blocked until you
-            decide: reload, or load the built-in default as a new draft (saving then replaces
-            version {String(version)}). The stored JSON:
-          </p>
-          <pre
-            data-testid="invalid-active-raw"
-            className="mt-2 max-h-64 overflow-auto rounded bg-white p-2 font-mono text-xs"
-          >
-            {JSON.stringify(invalidActive.raw, null, 2)}
-          </pre>
-        </div>
-      )}
-
-      {conflict !== null && (
-        <div
-          role="alert"
-          data-testid="version-conflict"
-          className={`${BANNER} bg-amber-50 text-amber-900`}
-        >
-          {conflict.activeVersion === null
-            ? 'Someone else reverted this quiz to the built-in default — reload to continue.'
-            : `Someone else published version ${String(conflict.activeVersion)} — reload to continue.`}{' '}
-          Your draft was not saved.
-          <button
-            type="button"
-            data-testid="reload-definition"
-            onClick={() => {
-              setRetryNonce((n) => n + 1);
-            }}
-            className="ml-3 rounded-lg border border-amber-400 bg-white px-3 py-1 font-medium"
-          >
-            Reload
-          </button>
-        </div>
-      )}
-
-      {!canWrite && loadStatus === 'loaded' && (
-        <div
-          role="status"
-          data-testid="read-only-banner"
-          className={`${BANNER} bg-gray-100 text-gray-700`}
-        >
-          Read-only: saving quiz changes needs the ops staff rank.
-        </div>
-      )}
+      <EditorBanners
+        loadStatus={loadStatus}
+        loadErrorMsg={loadErrorMsg}
+        invalidActive={invalidActive}
+        version={version}
+        conflict={conflict}
+        canWrite={canWrite}
+        localDraft={localDraft.pending}
+        onReload={reload}
+        onRestoreDraft={() => {
+          const restored = localDraft.restore();
+          if (restored !== null) setText(restored);
+        }}
+        onDiscardDraft={localDraft.discard}
+      />
 
       <div className="mb-3 flex items-center justify-between gap-4">
         <p className="text-sm text-gray-600">
@@ -301,6 +236,7 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
           disabled={loadStatus !== 'loaded' || !canWrite}
           onClick={() => {
             setInvalidActive(null);
+            setSource('editor');
             setText(BUILT_IN_DEFAULT_JSON);
           }}
           className="shrink-0 rounded-lg border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-40"
@@ -308,6 +244,19 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
           Load built-in default
         </button>
       </div>
+
+      {loadStatus === 'loaded' && (
+        <ImportExport
+          tenantId={tenantId}
+          version={version}
+          draftText={text}
+          canWrite={canWrite && invalidActive === null}
+          onImport={(imported) => {
+            setText(imported);
+            setSource('import');
+          }}
+        />
+      )}
 
       <div className="mb-3 flex gap-2 border-b border-gray-200 text-sm">
         {(['questions', 'confirmation'] as const).map((t) => (
@@ -409,47 +358,75 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
       )}
 
       {/* FOLLOW-1002 — LLM weight suggestions (advisory; nothing persists until Save). */}
-      {suggestStatus === 'error' && (
+      {suggestWeights.status === 'error' && (
         <div role="alert" className="mt-3 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-          Suggestion request failed: {suggestErrorMsg}
+          Suggestion request failed: {suggestWeights.errorMsg}
         </div>
       )}
-      {suggest !== null && (
-        <WeightSuggestionsPanel suggest={suggest} onApply={handleApplySuggestions} />
+      {suggestWeights.suggest !== null && (
+        <WeightSuggestionsPanel suggest={suggestWeights.suggest} onApply={suggestWeights.apply} />
       )}
 
       <div className="mt-4 flex items-center gap-4">
         {canWrite && (
           <button
             type="button"
-            onClick={() => void handleSave()}
+            data-testid="publish-open"
+            onClick={() => {
+              setPublishOpen(true);
+            }}
             disabled={!canSave}
             className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
-            {saveStatus === 'saving' ? 'Saving…' : 'Save Definition'}
+            {saveStatus === 'saving' ? 'Publishing…' : 'Publish…'}
           </button>
         )}
         {canWrite && (
           <button
             type="button"
             data-testid="suggest-weights"
-            onClick={() => void handleSuggest()}
+            onClick={() => void suggestWeights.request()}
             disabled={
               loadStatus !== 'loaded' ||
               invalidActive !== null ||
               validation.definition === null ||
-              suggestStatus === 'loading'
+              suggestWeights.status === 'loading'
             }
             title="Ask the LLM to derive answer→archetype weights from the current question wording"
             className="rounded-lg border border-indigo-300 bg-white px-5 py-2 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-50 disabled:opacity-50"
           >
-            {suggestStatus === 'loading' ? 'Asking model…' : 'Suggest weights (AI)'}
+            {suggestWeights.status === 'loading' ? 'Asking model…' : 'Suggest weights (AI)'}
           </button>
         )}
         {saveStatus === 'saved' && (
           <span className="text-sm font-medium text-green-600">Definition saved!</span>
         )}
       </div>
+
+      {publishOpen && validation.definition !== null && (
+        <PublishDialog
+          draft={validation.definition}
+          activeDefinition={activeDef}
+          activeVersion={version}
+          source={source}
+          busy={saveStatus === 'saving'}
+          onConfirm={() => void handleSave()}
+          onCancel={() => {
+            setPublishOpen(false);
+          }}
+        />
+      )}
+
+      <QuizSimulator definition={validation.definition} />
+      {loadStatus === 'loaded' && (
+        <VersionsPanel
+          tenantId={tenantId}
+          canWrite={canWrite}
+          activeVersion={version}
+          activeDefinition={activeDef}
+          onChanged={reload}
+        />
+      )}
     </div>
   );
 }

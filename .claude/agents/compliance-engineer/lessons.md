@@ -214,3 +214,11 @@ being written to Redis without any disclosure review. The schema contract should
   (`isEstalaraTenant` at both gates) and made the merge order explicit. **Guardrail I'd add:** a
   docs ticket whose `depends_on` is an unmerged PR must name the merge order in the commit body and
   verify each behavioural sentence against that PR's head, not against main.
+
+- **2026-10-20 / FOLLOW-1358 (review of PR #1053, `quiz_runs`)** · APPROVE WITH CONDITIONS. The
+  disclosure "`session_id` is a SHA-256 device fingerprint" drifted from ESC-086's privacy paragraph
+  into the ROPA, the DPIA, the H002 header and the schema doc comments without anyone grepping
+  `packages/sdk/src/core/session.ts` — the shipped identifier has been a random per-tab UUID v4
+  since FOLLOW-1106/ESC-070, and the DPIA §2.2.1 already said so. **Guardrail I'd add:** every
+  sentence that names what an identifier IS must cite the producing line of code, and a review greps
+  that line before accepting the sentence; an escalation's prose is a claim, not a source.

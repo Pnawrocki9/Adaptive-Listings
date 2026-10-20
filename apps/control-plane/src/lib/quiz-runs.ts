@@ -53,10 +53,12 @@ export class QuizRunsTableMissingError extends Error {
   /** Always {@link QUIZ_RUNS_TABLE_MISSING}; the route puts it on the wire. */
   readonly code = QUIZ_RUNS_TABLE_MISSING;
 
-  constructor(cause: unknown) {
-    super('quiz_runs does not exist: apply docs/handover/migrations/H002_quiz_runs.sql', {
-      cause,
-    });
+  /**
+   * Deliberately keeps NO `cause`: the driver error's message carries the failed query and its
+   * params (session_id, answers), and error sinks serialise the cause chain (FOLLOW-1358 C1).
+   */
+  constructor() {
+    super('quiz_runs does not exist: apply docs/handover/migrations/H002_quiz_runs.sql');
     this.name = 'QuizRunsTableMissingError';
   }
 }
@@ -188,7 +190,7 @@ export async function recordQuizRunEvent(
       returning r.id
     `);
   } catch (err: unknown) {
-    if (isQuizRunsTableMissing(err)) throw new QuizRunsTableMissingError(err);
+    if (isQuizRunsTableMissing(err)) throw new QuizRunsTableMissingError();
     throw err;
   }
   return { applied: executedRows(result).length > 0 };

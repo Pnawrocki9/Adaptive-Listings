@@ -8,8 +8,8 @@
  * confirmation screen. The control plane folds the pings into ONE `quiz_runs` row with a
  * forward-only state machine (`apps/control-plane/src/lib/quiz-runs.ts`).
  *
- * Privacy (ESC-086 privacy check): every field is pseudonymous or a closed list — the hashed device
- * fingerprint `session_id`, a random run UUID, answer INDEXES (never answer text), canonical
+ * Privacy (ESC-086 privacy check): every field is pseudonymous or a closed list — `session_id` (the
+ * random per-tab session UUID v4, Activity 2, ESC-070), a random run UUID, answer INDEXES (never answer text), canonical
  * archetype and trait ids, timings in whole milliseconds (the server rounds them to 100 ms). There is
  * no free-text field: `confirmed_archetype: 'none_of_these'` is an enum value. Unknown keys are
  * stripped (Zod default), so a newer SDK cannot smuggle a field into storage.
@@ -74,12 +74,13 @@ function buildQuizRunPingSchema() {
       event: z.enum(QUIZ_RUN_EVENTS),
       /** Must equal the tenant of the API key; the server never writes a body-supplied tenant. */
       tenant_id: z.string().uuid(),
-      /** The same SHA-256 device fingerprint the completion ping sends. */
+      /** The random per-tab session UUID v4 (Activity 2, ESC-070) the completion ping sends. */
       session_id: z.string().min(1).max(512),
       /**
-       * The visitor's consent state as the SDK knows it. When present it must allow profiling
-       * (`consented` | `legitimate-interest`, the ingest `consent-gate.ts` rule for `quiz.event`),
-       * otherwise the route writes nothing. The SDK sends no ping without consent in the first place.
+       * The visitor's banner consent state as the SDK knows it. The SDK must ALWAYS send it: the
+       * route writes only on `consented` and answers 204 with nothing written when it is absent or
+       * anything else, `legitimate-interest` included (FOLLOW-1358 compliance conditions C3/C5).
+       * Optional in the schema only so a missing value is a silent 204, not a 400.
        */
       consent_state: ConsentStateSchema.optional(),
       language: QuizLanguageSchema.optional(),

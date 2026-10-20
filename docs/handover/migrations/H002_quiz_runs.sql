@@ -8,7 +8,8 @@
 --   dla CTO"): this table exists only on localhost until the CTO applies it. Localhost:
 --   `scripts/dev/localhost-up.sh` applies every docs/handover/migrations/*.sql file to
 --   `al_pg_local` (step 4). Production: docs/handover/CTO_HANDOVER.md section 4 (the quiz_runs row)
---   - apply it BEFORE enabling the quiz confirmation step for the production tenant. The control
+--   (row 18) - apply it ONLY together with the deployed retention job FOLLOW-1364 (N-day window,
+--   N set by the CEO/DPO), and before any SDK build that sends the pings is served. The control
 --   plane deploys on every merge to main; until this file is applied `POST /api/quiz/run` answers
 --   503 `quiz_runs_table_missing` (one Sentry event per ping) and the SDK, which sends the ping
 --   fire-and-forget, drops it - no buyer-visible effect. The DSR routes treat the missing table as
@@ -23,7 +24,8 @@
 --   terminal status wins; a replay or a backward step changes nothing). `id` is the run UUID the
 --   SDK draws when the quiz card renders. Read by the DSR access/portability routes, erased by DSR
 --   erase on (tenant_id, session_id), and by the quiz-accuracy report (FOLLOW-1363).
---   Pseudonymous only: the hashed device fingerprint `session_id` (the same key as
+--   Pseudonymous only: `session_id` = the random per-tab session UUID v4 (Activity 2, ESC-070;
+--   the same key as
 --   quiz_completions), answer INDEXES, closed-list archetype and trait ids, timings rounded to
 --   100 ms and capped at 600000 ms. No IP address, no user agent, no free text.
 --
@@ -35,7 +37,7 @@ CREATE TABLE IF NOT EXISTS quiz_runs (
   -- quiz_run_id: the random UUID the SDK draws when the card renders (not generated here).
   id                  uuid        PRIMARY KEY,
   tenant_id           uuid        NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  -- SHA-256 device fingerprint, the same value quiz_completions.session_id carries (DSR key).
+  -- Random per-tab session UUID v4 (Activity 2, ESC-070); same key as quiz_completions (DSR key).
   session_id          text        NOT NULL,
   language            text,
   -- sha-256 hex of the served definition (lib computeQuizDefinitionHash) or an SDK fallback label.
@@ -54,7 +56,9 @@ CREATE TABLE IF NOT EXISTS quiz_runs (
   -- Canonical trait ids (packages/shared/src/traits.ts).
   traits              jsonb,
   -- Milliseconds per question, rounded to 100 ms, each capped at 600000.
-  step_ms             integer[],
+  step_ms             integer[]
+    CHECK (step_ms IS NULL OR (cardinality(step_ms) <= 40
+           AND 0 <= ALL (step_ms) AND 600000 >= ALL (step_ms))),
   -- Milliseconds on the confirmation screen, rounded to 100 ms, capped at 600000.
   result_ms           integer     CHECK (result_ms IS NULL OR result_ms BETWEEN 0 AND 600000),
   -- Archetype ids offered after "Not quite", in display order.

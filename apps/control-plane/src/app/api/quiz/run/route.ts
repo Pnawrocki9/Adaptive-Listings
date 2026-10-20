@@ -20,9 +20,10 @@
  * Privacy gates, both answering 204 with nothing written:
  *   - §H.9 opt-out: `?profiling_opt_out=1` (the completion route's defence-in-depth gate; checked
  *     after auth so an opted-out request still needs a valid key);
- *   - profiling consent: when the body carries `consent_state`, it must be `consented` or
- *     `legitimate-interest` — the rule `apps/ingest/src/consent-gate.ts` applies to `quiz.event`
- *     (profiling class). The SDK sends no ping without consent in the first place.
+ *   - consent: `consent_state` is REQUIRED and must be `consented` (the SDK banner consent,
+ *     `public/consent-text.json`). Absent, `legitimate-interest` or anything else → 204 and nothing
+ *     written: no LIA covers quiz-accuracy measurement (compliance review of FOLLOW-1358,
+ *     2026-10-20, conditions C3/C5). The SDK sends no ping without consent in the first place.
  *
  * Responses:
  *   200 { applied }               — the ping was folded (`applied: false` = replay / illegal step).
@@ -33,7 +34,10 @@
  *   503 quiz_runs_table_missing   — H002 not applied yet (CTO_HANDOVER §4); Sentry capture.
  *   500 INTERNAL_ERROR            — any other database failure; Sentry capture (Rule K.2).
  * Sentry captures are registered with `afterResponse` (`after()`, FOLLOW-433) so they flush on
- * Vercel without delaying the answer.
+ * Vercel without delaying the answer. Neither Sentry nor the log ever receives the driver error:
+ * drizzle's `DrizzleQueryError` message carries the failed query AND its params (session_id,
+ * answer_path, traits), and Sentry serialises the `cause` chain. Both sinks get a fresh `Error`
+ * naming only the wire code and the SQLSTATE, with no `cause` (condition C1, FOLLOW-1353 pattern).
  *
  * CORS: listed origins via `middleware.ts` (`SDK_CORS_PREFIXES`), like the completion route.
  *
@@ -56,11 +60,19 @@ import {
   recordQuizRunEvent,
 } from '@/lib/quiz-runs';
 
-/** Consent states under which a profiling-class write has a lawful basis (ingest consent-gate). */
-const PROFILING_ALLOWED_CONSENT_STATES: ReadonlySet<string> = new Set([
-  'consented',
-  'legitimate-interest',
-]);
+/** The only consent state under which a run is written (banner consent; no LIA covers it). */
+const WRITE_ALLOWED_CONSENT_STATE = 'consented';
+
+/** The first SQLSTATE-shaped `code` in the error's `cause` chain, or `'unknown'`. Nothing else. */
+function sqlStateOf(err: unknown): string {
+  let cursor: unknown = err;
+  for (let depth = 0; depth < 5 && cursor !== null && typeof cursor === 'object'; depth++) {
+    const code = (cursor as { code?: unknown }).code;
+    if (typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code)) return code;
+    cursor = (cursor as { cause?: unknown }).cause;
+  }
+  return 'unknown';
+}
 
 // ─── HMAC + tenant resolution (mirrors api/quiz/completion/route.ts) ─────────
 
@@ -169,10 +181,13 @@ async function verifyAndResolveTenant(
 function fail(err: unknown, tenantId: string, requestId: string): NextResponse {
   const tableMissing = err instanceof QuizRunsTableMissingError;
   const code = tableMissing ? QUIZ_RUNS_TABLE_MISSING : 'quiz_run_write_failed';
-  console.error('[quiz/run] write failed:', code, err instanceof Error ? err.message : String(err));
+  const sqlState = tableMissing ? '42P01' : sqlStateOf(err);
+  // C1: a sanitised error — code + SQLSTATE only, no message from the driver, no `cause`.
+  const safe = new Error(`quiz_run ${code} (sqlstate ${sqlState})`);
+  console.error('[quiz/run] write failed:', code, `sqlstate=${sqlState}`);
   afterResponse(() => {
-    Sentry.captureException(err, {
-      tags: { route: 'quiz/run', tenant_id: tenantId, error_code: code },
+    Sentry.captureException(safe, {
+      tags: { route: 'quiz/run', tenant_id: tenantId, error_code: code, sqlstate: sqlState },
     });
     return Promise.resolve();
   });
@@ -284,11 +299,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   const ping = parsed.data;
 
-  // Profiling consent (ingest consent-gate rule for quiz.event): no lawful basis → nothing written.
-  if (
-    ping.consent_state !== undefined &&
-    !PROFILING_ALLOWED_CONSENT_STATES.has(ping.consent_state)
-  ) {
+  // Consent (C3/C5): required, and only `consented` writes. Absent or anything else → nothing.
+  if (ping.consent_state !== WRITE_ALLOWED_CONSENT_STATE) {
     return new NextResponse(null, { status: 204 });
   }
 

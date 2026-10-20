@@ -121,6 +121,7 @@ function ping(overrides: Record<string, unknown> = {}): Record<string, unknown> 
     definition_hash: 'f'.repeat(64),
     definition_version: null,
     sdk_version: '0.9.0',
+    consent_state: 'consented',
     ...overrides,
   };
 }
@@ -423,16 +424,27 @@ describe('auth, tenant fence and privacy gates', () => {
     expect((await POST(noKey)).status).toBe(401);
   });
 
-  it('204 and no row without a profiling lawful basis; consented / legitimate-interest write', async () => {
+  it('204 and no row unless consent_state is `consented` — absent and legitimate-interest included [C3/C5]', async () => {
     await freshDb();
-    for (const state of ['none', 'session-only']) {
+    for (const state of ['none', 'session-only', 'legitimate-interest', undefined]) {
       expect((await POST(opsRequest(ping({ consent_state: state })))).status).toBe(204);
     }
     expect(await runRows()).toEqual([]);
-    expect(await send(ping({ consent_state: 'legitimate-interest' }))).toEqual({
+    expect(await send(ping({ consent_state: 'consented' }))).toEqual({
       status: 200,
       applied: true,
     });
+  });
+
+  it('stores nothing beyond the schema: ip / user_agent / unknown keys are dropped', async () => {
+    await freshDb();
+    expect(
+      await send(ping({ ip: '203.0.113.7', user_agent: 'Mozilla/5.0 probe', note: 'free text' })),
+    ).toEqual({ status: 200, applied: true });
+    const dump = JSON.stringify((await pg!.query(`SELECT * FROM quiz_runs`)).rows);
+    for (const leaked of ['203.0.113.7', 'Mozilla/5.0 probe', 'free text']) {
+      expect(dump).not.toContain(leaked);
+    }
   });
 });
 
@@ -452,8 +464,43 @@ describe('missing table (H002 not applied)', () => {
       { tags: Record<string, string> },
     ];
     expect(ctx.tags).toMatchObject({ route: 'quiz/run', error_code: 'quiz_runs_table_missing' });
+    assertSanitised();
+  });
+
+  it('500 path: a failing query never hands its params to Sentry or the log [C1]', async () => {
+    const db = await freshDb();
+    // Any non-42P01 failure: the driver error message is "Failed query: insert … params: …".
+    await db.exec(`ALTER TABLE quiz_runs ADD CONSTRAINT quiz_runs_boom CHECK (false) NOT VALID`);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const res = await POST(
+      opsRequest(ping({ answer_path: [{ question_id: 'q_x', answer_index: 3 }] })),
+    );
+    expect(res.status).toBe(500);
+    await vi.waitFor(() => {
+      expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    });
+    const [captured, ctx] = mockCaptureException.mock.calls[0] as [
+      Error,
+      { tags: Record<string, string> },
+    ];
+    expect(ctx.tags).toMatchObject({ error_code: 'quiz_run_write_failed', sqlstate: '23514' });
+    expect(captured.message).toContain('23514');
+    assertSanitised();
   });
 });
+
+/** C1: the captured error (message + whole cause chain) and every console.error line hold no params. */
+function assertSanitised(): void {
+  const [captured] = mockCaptureException.mock.calls[0] as [Error];
+  expect(captured.cause).toBeUndefined();
+  const seen: string[] = [captured.message, captured.stack ?? ''];
+  const logged = vi.mocked(console.error).mock.calls.flat().map(String);
+  for (const text of [...seen, ...logged]) {
+    expect(text).not.toContain(SESSION);
+    expect(text).not.toContain(RUN_ID);
+    expect(text).not.toMatch(/params|Failed query|q_x/);
+  }
+}
 
 describe('the handover migration H002', () => {
   it('is idempotent, enables RLS with a tenant policy, and enforces the confirmed_archetype CHECK', async () => {
@@ -478,6 +525,14 @@ describe('the handover migration H002', () => {
       db.query(
         `insert into quiz_runs (id, tenant_id, session_id, status)
          values (gen_random_uuid(), $1, 's', 'finished')`,
+        [TENANT_ID],
+      ),
+    ).rejects.toThrow(/check/i);
+    // Each step_ms element is capped DB-side too (0..600000).
+    await expect(
+      db.query(
+        `insert into quiz_runs (id, tenant_id, session_id, status, step_ms)
+         values (gen_random_uuid(), $1, 's', 'shown', '{100,700000}')`,
         [TENANT_ID],
       ),
     ).rejects.toThrow(/check/i);

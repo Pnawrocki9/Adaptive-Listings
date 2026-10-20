@@ -118,6 +118,11 @@ export const IntentSnapshotPayloadSchema = z.object({
   quiz_leaf: z.string().nullable(),
   /** Count of buyer chat turns observed this session. */
   chat_turns: z.number().int().nonnegative(),
+  /**
+   * Buyer traits recorded by the quiz (canonical ids, `packages/shared/src/traits.ts`); absent
+   * until the quiz completes (ESC-086 item 4, FOLLOW-1357). Additive — older SDKs omit it.
+   */
+  traits: z.array(z.string().min(1).max(64)).max(16).optional(),
   /** Delta summary from the last signal before this snapshot. */
   last_signal_delta: LastSignalDeltaSchema,
 });

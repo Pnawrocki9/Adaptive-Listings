@@ -72,6 +72,8 @@ export function emitIntentSnapshot(state: IntentState, ctx: IntentSnapshotContex
     quiz_completed: ctx.quizCompleted,
     quiz_leaf: ctx.quizLeaf,
     chat_turns: ctx.chatTurns,
+    // Quiz traits once the quiz completed (ESC-086 item 4) [FOLLOW-1357].
+    ...(state.quiz_traits ? { traits: state.quiz_traits } : {}),
     // last_signal_delta is omitted here — the SDK does not currently track
     // per-signal deltas.  The field is optional in IntentSnapshotPayloadSchema,
     // so omitting it is valid and avoids a forward-compat leak.

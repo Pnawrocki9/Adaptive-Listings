@@ -88,6 +88,11 @@ export function mergeQuizConfig(
     // FOLLOW-639 / ADR-0019 D5: overlay the optional editable quiz definition. Absent → key
     // omitted so the SDK walks its built-in DEFAULT_QUIZ_DEFINITION (byte-identical, D4/D5).
     ...(fetched.quiz_definition ? { quizDefinition: fetched.quiz_definition } : {}),
+    // FOLLOW-1357: forward the served definition's identity (Q3 computes it; never hashed here).
+    ...(fetched.definition_hash ? { quizDefinitionHash: fetched.definition_hash } : {}),
+    ...(fetched.definition_version !== undefined
+      ? { quizDefinitionVersion: fetched.definition_version }
+      : {}),
     // FOLLOW-640 / ADR-0019 D2: overlay the optional quiz placement. Absent → key omitted
     // so renderQuizWidget uses DEFAULT_QUIZ_PLACEMENT (byte-identical, D4).
     ...(fetched.quiz_placement ? { quizPlacement: fetched.quiz_placement } : {}),

@@ -105,9 +105,9 @@ describe('quiz card placement + non-blocking overlay (FOLLOW-640 / FOLLOW-1015)'
     const { css } = renderCard();
     const block = css.slice(css.indexOf('.estalara-quiz-overlay'));
     const overlayRule = block.slice(0, block.indexOf('}'));
-    expect(overlayRule).not.toContain('inset: 0');
+    expect(overlayRule).not.toMatch(/inset:\s*0/);
     expect(overlayRule).not.toMatch(/background:\s*rgba\(0,\s*0,\s*0/);
-    expect(overlayRule).toContain('position: fixed');
+    expect(overlayRule).toMatch(/position:\s*fixed/); // FOLLOW-1357: the CSS is minified
   });
 });
 

@@ -1,26 +1,46 @@
 /**
- * Quiz widget v3.0 — definition-driven walker + built-in default tree (FOLLOW-639 / ADR-0019 D5).
+ * Quiz widget — the built-in default tree and the definition-driven walk (FOLLOW-639 /
+ * ADR-0019 D5; built-in replaced by the v3.0 tree in FOLLOW-1357).
  *
  * Covers:
- *   - PARITY: the built-in `DEFAULT_QUIZ_DEFINITION`, walked + reduced by argmax, resolves the
- *     SAME archetype the old hardcoded `resolveArchetype()` switch did for all 17 non-neutral
- *     leaves + the neutral skip (proves byte-for-byte behavior for an unconfigured tenant).
- *   - the default definition passes the shared hard-integrity schema and has zero unreachable
- *     archetypes.
- *   - the generic walker on a CUSTOM served tree resolves the expected leaf.
- *   - `resolveLabel` i18n fallback to 'en'.
+ *   - the built-in `DEFAULT_QUIZ_DEFINITION` IS `DEFAULT_QUIZ_DEFINITION_V2` (same ids, structure,
+ *     weights and traits) with its EN texts only and no `confirm` block, passes the serve schema
+ *     and leaves no result unreachable;
+ *   - PARITY v3.0: every root→leaf path of the built-in resolves the same leaf as the served
+ *     EN + PL default, and the 12 results + neutral are each reached by their documented path;
+ *   - PARITY legacy: a served definition with the pre-FOLLOW-1357 shape (fixture) still resolves
+ *     the 17 old leaves + the neutral skip;
+ *   - the generic walker on a CUSTOM served tree, and `resolveLabel` i18n fallback to 'en'.
  */
 
 import { describe, expect, it } from 'vitest';
 
 import type { QuizDefinition } from '@estalara/shared';
-import { QuizDefinitionSchema, computeUnreachableArchetypes } from '@estalara/shared';
+import {
+  DEFAULT_QUIZ_DEFINITION_V2,
+  QuizDefinitionSchema,
+  computeUnreachableArchetypes,
+  enumerateQuizPaths,
+} from '@estalara/shared';
 
 import {
   DEFAULT_QUIZ_DEFINITION,
   resolveArchetypeFromPath,
   resolveLabel,
 } from '../ui/quiz-widget.js';
+import { LEGACY_QUIZ_DEFINITION } from './fixtures/legacy-quiz-definition.js';
+
+/** Deep copy keeping only the `en` entry of every i18n bag. */
+function enOnly(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(enOnly);
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>);
+    return Object.fromEntries(
+      entries.filter(([k]) => k !== 'pl' && k !== 'es').map(([k, v]) => [k, enOnly(v)]),
+    );
+  }
+  return value;
+}
 
 // ─── DEFAULT_QUIZ_DEFINITION — integrity ──────────────────────────────────────
 
@@ -29,19 +49,64 @@ describe('DEFAULT_QUIZ_DEFINITION', () => {
     expect(QuizDefinitionSchema.safeParse(DEFAULT_QUIZ_DEFINITION).success).toBe(true);
   });
 
-  it('reaches all 17 non-neutral archetypes (zero unreachable)', () => {
+  it('leaves no result unreachable (the five trait-only ids are allow-listed)', () => {
     expect(computeUnreachableArchetypes(DEFAULT_QUIZ_DEFINITION)).toEqual([]);
+  });
+
+  it('is DEFAULT_QUIZ_DEFINITION_V2 with EN texts only and no confirm block', () => {
+    const { confirm, ...v2 } = DEFAULT_QUIZ_DEFINITION_V2;
+    expect(confirm).toBeDefined();
+    expect(DEFAULT_QUIZ_DEFINITION).toEqual({ ...(enOnly(v2) as object), languages: ['en'] });
+    expect(DEFAULT_QUIZ_DEFINITION.confirm).toBeUndefined();
   });
 });
 
-// ─── PARITY: default-definition walk === the old resolveArchetype() switch ─────
-//
-// The path arrays are the answer INDICES chosen at each question, replacing the old
-// (branch, q2Answer, q3Answer) tuples. Q1 index selects the branch; then Q2 (+ Q3).
+// ─── PARITY v3.0: the built-in resolves what the served default resolves ───────
 
-describe('parity — DEFAULT_QUIZ_DEFINITION resolves the old leaves', () => {
+describe('parity v3.0 — DEFAULT_QUIZ_DEFINITION resolves the v3.0 results', () => {
+  const walk = (path: (number | number[])[]): string =>
+    resolveArchetypeFromPath(DEFAULT_QUIZ_DEFINITION, path);
+
+  it('every path of the served EN + PL default resolves the same leaf on the built-in', () => {
+    const { paths, truncated } = enumerateQuizPaths(DEFAULT_QUIZ_DEFINITION_V2);
+    expect(truncated).toBe(false);
+    expect(paths.length).toBeGreaterThan(0);
+    for (const path of paths) expect(walk(path.selections)).toBe(path.leaf);
+  });
+
+  it.each([
+    [[0, 0, []], 'first_time_buyer'],
+    [[0, 1, []], 'family_buyer'],
+    [[0, 2, []], 'downsizer'],
+    [[1, 0, []], 'diaspora_buyer'],
+    [[1, 1, []], 'retiree_relocator'],
+    [[1, 2, []], 'lifestyle_expat'],
+    [[2, []], 'second_home_buyer'],
+    [[3, 0, []], 'yield_hunter'],
+    [[3, 1, []], 'vacation_rental_investor'],
+    [[3, 2, []], 'flip_investor'],
+    [[3, 3, []], 'commercial_investor'],
+    [[3, 4, [0, 3]], 'yield_hunter'],
+    [[4, [1]], 'student_parent'],
+    [[5], 'neutral'],
+  ] as [(number | number[])[], string][])('path %j → %s', (path, leaf) => {
+    expect(walk(path)).toBe(leaf);
+  });
+
+  it('a trait screen never changes the result', () => {
+    expect(walk([0, 1, [0, 1, 2]])).toBe(walk([0, 1, []]));
+  });
+});
+
+// ─── PARITY: a served LEGACY definition still resolves the old leaves ──────────
+//
+// The pre-FOLLOW-1357 built-in tree is now a fixture: a tenant row authored to its shape must
+// keep resolving exactly what the old resolveArchetype() switch did. The path arrays are the
+// answer INDICES chosen at each question. Q1 index selects the branch; then Q2 (+ Q3).
+
+describe('parity — a served legacy definition resolves the old leaves', () => {
   const walk = (indices: number[]): string =>
-    resolveArchetypeFromPath(DEFAULT_QUIZ_DEFINITION, indices);
+    resolveArchetypeFromPath(LEGACY_QUIZ_DEFINITION, indices);
 
   it('Q1-D (skip) → neutral', () => {
     expect(walk([3])).toBe('neutral');

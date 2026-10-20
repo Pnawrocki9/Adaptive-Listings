@@ -146,14 +146,17 @@ describe('renderQuizWidget — reports the walk it took (FOLLOW-1020)', () => {
       },
     );
 
-    // "Just browsing" is the root's fourth answer and is itself a leaf.
+    // FOLLOW-1357 (v3.0 built-in): Investment → long-term rental → the trait screen, where the
+    // second option is ticked. A trait step is recorded as the list of ticked indexes.
     answer(root, 3);
+    answer(root, 0);
+    answer(root, 1);
 
-    expect(resolved).toBe('neutral');
+    expect(resolved).toBe('yield_hunter');
     expect(path).not.toBeNull();
     const walked = path as unknown as QuizAnswerPath;
-    expect(walked.question_ids).toEqual(['q1_gate']);
-    expect(walked.answer_indexes).toEqual([3]);
+    expect(walked.question_ids).toEqual(['q_purpose', 'q_invest', 't_invest']);
+    expect(walked.answer_indexes).toEqual([3, 0, [1]]);
     // The arrays pair positionally — a length mismatch would silently misattribute answers.
     expect(walked.question_ids).toHaveLength(walked.answer_indexes.length);
   });

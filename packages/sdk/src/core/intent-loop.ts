@@ -15,8 +15,8 @@ import {
   markQuizDismissed,
 } from '../ui/quiz-session-state.js';
 import { DEFAULT_QUIZ_DEFINITION, renderQuizWidget } from '../ui/quiz-widget.js';
-import type { QuizWidgetConfig } from '../ui/quiz-widget.js';
-import { postQuizCompletionPing } from './adapt.js';
+import type { QuizRunOutcome, QuizWidgetConfig } from '../ui/quiz-widget.js';
+import { postQuizCompletionPing, postQuizRunPing } from './adapt.js';
 import {
   applyBehavioralSignal,
   applyDwellSignal,
@@ -133,8 +133,24 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
       accentColor: config.accentColor,
       language: config.language,
       // FOLLOW-639 / ADR-0019 D5: walk the tenant's served editable tree, or the built-in
-      // default when none is configured (byte-identical to pre-ADR-0019 for every path).
+      // default when none is configured.
       definition: config.quizDefinition ?? DEFAULT_QUIZ_DEFINITION,
+      // FOLLOW-1357: the served definition's identity, forwarded (the built-in reports its own).
+      ...(config.quizDefinition
+        ? {
+            definitionHash: config.quizDefinitionHash,
+            definitionVersion: config.quizDefinitionVersion ?? null,
+          }
+        : {}),
+      // FOLLOW-1357: every run transition → POST /api/quiz/run, chained per instance so the
+      // server sees them in order (its state machine is forward-only); consent / opt-out
+      // gating and the identity fields (tenant, session, SDK version, consent) live in
+      // postQuizRunPing.
+      onRunEvent: (ping) => {
+        runPings = runPings.then(() =>
+          postQuizRunPing(config, currentSession.sessionId, ping, ctx.optedOut),
+        );
+      },
       // Brand logo; null renders none (ADR-0019) [FOLLOW-623].
       logoUrl: config.brand?.logoUrl ?? null,
       // FOLLOW-651: render the "Powered by Estalara" attribution unless white-label. First
@@ -145,6 +161,7 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
     };
 
     let quizTriggered = false;
+    let runPings: Promise<void> = Promise.resolve();
 
     // 6. Observers; pass the inquiry selector or inquiry.started never fires [FOLLOW-097].
 
@@ -217,21 +234,23 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
       renderQuizWidget(
         shadowHost.root,
         quizConfig,
-        (resolvedArchetype, answerPath) => {
-          // Apply the quiz leaf; never show the quiz again [FOLLOW-199].
+        (resolvedArchetype, answerPath, outcome: QuizRunOutcome) => {
+          // FOLLOW-1357: called once, after the confirmation step; the FINAL archetype is
+          // applied — the leaf, the buyer's correction, or `neutral` for "None of these".
+          const final = outcome.final_archetype;
+          // Apply the quiz result; never show the quiz again [FOLLOW-199].
           markQuizCompleted();
           // K.3.6 FOLLOW-266: update snapshot context so intent.snapshot payloads
           // reflect quiz completion state on the next 5-signal boundary or beforeunload.
           snapshotCtx.quizCompleted = true;
-          snapshotCtx.quizLeaf = resolvedArchetype;
-          ctx.state = applyQuizLeaf(ctx.state, resolvedArchetype);
-          // Seed the SoT from a NON-neutral leaf only (ADR-0014) [FOLLOW-554].
-          if (resolvedArchetype !== 'neutral') {
-            persistResolvedArchetype(
-              currentSession.sessionId,
-              resolvedArchetype,
-              ctx.state.confidence,
-            );
+          snapshotCtx.quizLeaf = final;
+          // The fold is unchanged here (0.85); package Q4 (FOLLOW-1359) changes it. Traits ride
+          // the state: persisted, sent on /api/adapt and intent.snapshot (ESC-086 item 4).
+          ctx.state = { ...applyQuizLeaf(ctx.state, final), quiz_traits: outcome.traits };
+          // Seed the SoT from a NON-neutral result only — "None of these" pins nothing
+          // (ADR-0014) [FOLLOW-554].
+          if (final !== 'neutral') {
+            persistResolvedArchetype(currentSession.sessionId, final, ctx.state.confidence);
           }
           onIntentUpdate();
           if (config.debug) {
@@ -245,19 +264,30 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
             config,
             currentSession.sessionId,
             ctx.state.archetype,
-            quizConfig.language,
+            outcome.language,
             ctx.optedOut,
             answerPath,
           );
 
+          // ESC-086 item 1: one quiz.event per run — `completed` without a confirmation step,
+          // else how the result screen closed; `archetype` is the final one [FOLLOW-1357].
+          const confirmation = outcome.confirmation;
           queue.push({
             type: 'quiz.event',
             payload: {
-              step: 'completed',
+              step:
+                confirmation === null
+                  ? 'completed'
+                  : confirmation === 'none_of_these'
+                    ? 'corrected'
+                    : confirmation,
               // The quiz opens itself [FOLLOW-1015].
               trigger: 'auto_open',
               archetype: ctx.state.archetype,
               confidence: ctx.state.confidence,
+              quiz_run_id: outcome.quiz_run_id,
+              resolved_archetype: resolvedArchetype,
+              definition_hash: outcome.definition_hash,
             },
             ts: Date.now(),
           });

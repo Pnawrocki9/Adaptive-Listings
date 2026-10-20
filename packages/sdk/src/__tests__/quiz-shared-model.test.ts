@@ -7,7 +7,8 @@
  *     `computeUnreachableArchetypes` on BOTH default trees (the EN-only built-in and the
  *     EN + PL `DEFAULT_QUIZ_DEFINITION_V2`);
  *   - the built-in tree passes the SERVE schema with no errors but FAILS the authoring schema
- *     only because it has no PL text — which is why FOLLOW-1357 (Q2) replaces it.
+ *     only because it has no PL text and no `confirm` block (FOLLOW-1357: the v3.0 tree, EN
+ *     only — the served EN + PL default carries both).
  */
 
 import { describe, expect, it } from 'vitest';
@@ -69,11 +70,13 @@ describe('the SDK built-in default vs the serve and authoring schemas', () => {
     expect(QuizDefinitionSchema.safeParse(DEFAULT_QUIZ_DEFINITION).success).toBe(true);
   });
 
-  it('has no unreachable result to warn about (all 17 archetypes are assigned)', () => {
+  it('has no unreachable result to warn about (the trait-only ids are allow-listed)', () => {
     expect(computeUnreachableArchetypes(DEFAULT_QUIZ_DEFINITION)).toEqual([]);
   });
 
-  it('fails the authoring schema ONLY for no PL, no confirm block and EN-only languages — Q2 replaces it', () => {
+  // FOLLOW-1357: the built-in is the v3.0 tree, EN only and without `confirm` (bundle budget) —
+  // the served EN + PL default carries both. Those three are its ONLY authoring errors.
+  it('fails the authoring schema ONLY for no PL, no confirm block and EN-only languages', () => {
     const parsed = QuizDefinitionAuthoringSchema.safeParse(DEFAULT_QUIZ_DEFINITION);
     expect(parsed.success).toBe(false);
     const { errors } = lintQuizDefinition(DEFAULT_QUIZ_DEFINITION);
@@ -88,8 +91,8 @@ describe('the SDK built-in default vs the serve and authoring schemas', () => {
     expect(missing.every((e) => e.path[e.path.length - 1] === 'pl')).toBe(true);
   });
 
-  it('is authored to the old override scheme, so it carries ambiguous paths (warnings)', () => {
+  it('carries exactly one weighted answer per path, so no ambiguous-path warning', () => {
     const { warnings } = lintQuizDefinition(DEFAULT_QUIZ_DEFINITION);
-    expect(warnings.some((w) => w.code === 'ambiguous_path')).toBe(true);
+    expect(warnings.some((w) => w.code === 'ambiguous_path')).toBe(false);
   });
 });

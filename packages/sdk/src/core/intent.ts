@@ -3,7 +3,7 @@
  * @module @estalara/sdk/core/intent
  */
 
-import type { IntentWeights } from '@estalara/shared';
+import type { IntentWeights, TraitId } from '@estalara/shared';
 
 export type Archetype =
   // Investors
@@ -94,6 +94,11 @@ export interface IntentState {
   chatPriorAppliedAt?: string;
   /** Confident quiz-vs-chat disagreement; metadata, not an override [FOLLOW-100]. */
   chat_mismatch?: { quiz_archetype: Archetype; chat_archetype: Archetype };
+  /**
+   * Buyer traits the quiz recorded, canonical order (ESC-086 item 4) [FOLLOW-1357]. Persisted
+   * with the state (`carry` keeps it); sent as `traits` on `/api/adapt` and `intent.snapshot`.
+   */
+  quiz_traits?: TraitId[];
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────

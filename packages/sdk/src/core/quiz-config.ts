@@ -42,6 +42,7 @@
 import type { PresentationConfigResponse } from '@estalara/shared';
 import { PresentationConfigResponseSchema } from '@estalara/shared';
 import { buildEndpoint } from './endpoint.js';
+import { QUIZ_LANGUAGE_STORAGE_KEY } from '../ui/quiz-session-state.js';
 
 /**
  * sessionStorage key for the cached quiz public config.
@@ -94,7 +95,7 @@ function writeCachedQuizConfig(config: PresentationConfigResponse): void {
 }
 
 /**
- * Erase the cached quiz config from sessionStorage.
+ * Erase the cached quiz config (and the buyer's quiz-language choice) from sessionStorage.
  * Called on consent denial / withdrawal so no cached data survives without consent.
  * Mode A compliance: no sessionStorage data may persist after consent denial.
  *
@@ -103,6 +104,8 @@ function writeCachedQuizConfig(config: PresentationConfigResponse): void {
 export function eraseCachedQuizConfig(): void {
   try {
     sessionStorage.removeItem(QUIZ_CONFIG_CACHE_KEY);
+    // The EN | PL switcher choice goes with it (FOLLOW-1357).
+    sessionStorage.removeItem(QUIZ_LANGUAGE_STORAGE_KEY);
   } catch {
     // sessionStorage unavailable — nothing to erase
   }

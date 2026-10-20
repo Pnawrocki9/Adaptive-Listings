@@ -4594,6 +4594,25 @@ async function main() {
       quizSteps.push({ step, answers, ctaPresent, ctaEnabled });
       await sleep(1200);
 
+      // FOLLOW-1357: with a served confirmation block the leaf click opens the result screen
+      // instead of closing the card. That screen IS the completion (the leaf click stays
+      // `quizCompletedAt`); the buyer then confirms. The correction and × paths are AC(10), Q6.
+      const resultShown = await page
+        .locator('.estalara-quiz-result')
+        .first()
+        .isVisible()
+        .catch(() => false);
+      if (resultShown) {
+        quizCompleted = true;
+        quizCompletedAt = lastQuizClickAt;
+        await page
+          .locator('.estalara-quiz-confirm')
+          .first()
+          .click({ timeout: 3000 })
+          .catch(() => {});
+        break;
+      }
+
       // The card is torn down by cleanup() on completion — its disappearance is the completion
       // signal, and it is read from the DOM rather than inferred from a step count.
       const stillOpen = await quizCard

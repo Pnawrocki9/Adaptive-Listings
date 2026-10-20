@@ -8,14 +8,20 @@
  * What is computed over WHICH rows (the PREREG fixes a single analysis on a fixed sample, so the
  * headline cannot simply be "all rows so far"):
  *
- * - HEADLINE (§3) — the FIRST {@link N_REQUIRED} decided rows of the selected hash in
- *   `shown_at` order (ties by id). Fewer than 400 decided rows is `INSUFFICIENT_N`; once 400 exist a
- *   later row can never change the verdict. PASS iff the two-sided 95 % Wilson LOWER bound of
+ * - HEADLINE (§3) — the FIRST {@link N_REQUIRED} decided rows of the selected hash in DECISION
+ *   order: `updated_at` (frozen at the terminal transition, the upsert's WHERE blocks later
+ *   updates), ties by id (PREREG Amendment 1 A3). Fewer than 400 decided rows is `INSUFFICIENT_N`;
+ *   a run shown earlier but decided after the 400th does not enter the sample, so once 400 exist
+ *   later decisions cannot change the verdict. PASS iff the two-sided 95 % Wilson LOWER bound of
  *   confirmed / (confirmed + corrected) is >= 0.90 (372/400 passes, 371/400 fails).
  * - FUTILITY (§3) — looks at EXACTLY the first 130 and the first 200 decided rows; a Wilson UPPER
  *   bound < 0.90 at either look is `FUTILE` (stop, fix the tree, which changes the hash). Computed
  *   on the chronological prefixes, so the answer is the same whenever the tab is opened.
- * - PESSIMISTIC (§3) — the same sample window with the `unconfirmed` runs in it counted as wrong.
+ * - ANALYSIS WINDOW (A1) — runs whose decision (or last-status) time is at or before the decision
+ *   time of the 400th decided row (all runs while fewer than 400 are decided). RESPONSE RATE =
+ *   decided / (non-neutral runs that reached the result screen) inside it; a non-neutral run still
+ *   `completed` there counts as NOT responding. PESSIMISTIC (§3) counts `unconfirmed` AND such
+ *   abandoned `completed` runs in the window as wrong.
  * - SECONDARY (§4) — per-leaf precision/recall, macro recall, confusion matrix, language, speed
  *   tertile and monthly rows are computed over ALL decided rows in scope (a per-class claim needs
  *   n_true >= 100, which 400 rows spread over 12 classes cannot give) and are reported, never gated.
@@ -32,7 +38,7 @@
 import { minSuccessesForLowerBound, wilsonInterval } from '@estalara/shared';
 
 /** Fixed sample size of the pre-registered analysis (PREREG §3). */
-const N_REQUIRED = 400;
+export const N_REQUIRED = 400;
 /** Decided-row counts at which the futility rule looks (PREREG §3). */
 const FUTILITY_LOOKS: readonly number[] = [130, 200];
 /** Required Wilson lower bound for PASS and the futility upper-bound threshold (PREREG §3). */
@@ -52,12 +58,11 @@ const MONTHLY_WARN_MIN_DECIDED = 100;
 /** The correction target when the buyer rejects every offered archetype. */
 const NONE_OF_THESE = 'none_of_these';
 
-/** A terminal confirmation outcome that enters the report. */
-type AccuracyRunStatus = 'confirmed' | 'corrected' | 'unconfirmed';
+/** A decided outcome that enters the report. */
+type AccuracyRunStatus = 'confirmed' | 'corrected';
 
 /**
- * One non-neutral run that reached a confirmation outcome, in chronological order.
- * `confirmed` / `corrected` are the "decided" rows; `unconfirmed` only feeds the pessimistic variant.
+ * One decided (confirmed / corrected) non-neutral run, in DECISION order (`updated_at`, id).
  */
 export interface AccuracyRun {
   status: AccuracyRunStatus;
@@ -147,7 +152,7 @@ export interface QuizAccuracyReport {
     verdict_binding: boolean;
   };
   /** Unconfirmed runs inside the analysed window counted as wrong (PREREG §3 validity). */
-  pessimistic: Proportion & { unconfirmed: number; would_pass: boolean };
+  pessimistic: Proportion & { unconfirmed: number; abandoned: number; would_pass: boolean };
   /** All decided rows in scope, descriptive monitoring only (PREREG §7). */
   all_decided: Proportion;
   macro_recall: {
@@ -174,8 +179,9 @@ export interface QuizAccuracyReport {
   };
   monthly: MonthlyRow[];
   response_rate: {
+    /** Decided runs inside the analysis window (A1). */
     decided: number;
-    /** Completed runs that were asked to confirm (`completed - completed_neutral`). */
+    /** Non-neutral runs that reached the result screen inside the analysis window. */
     asked: number;
     rate: number | null;
     min_rate: number;
@@ -225,25 +231,9 @@ function proportion(correct: number, n: number): Proportion {
   };
 }
 
-function isDecided(r: AccuracyRun): boolean {
-  return r.status === 'confirmed' || r.status === 'corrected';
-}
-
 /** The buyer's true label of a decided run. */
 function trueLabel(r: AccuracyRun): string {
   return r.status === 'confirmed' ? r.resolved_archetype : (r.confirmed_archetype ?? NONE_OF_THESE);
-}
-
-/** Chronological prefix ending at the `limit`-th decided row (unconfirmed runs before it stay). */
-function analysedWindow(runs: readonly AccuracyRun[], limit: number): AccuracyRun[] {
-  const out: AccuracyRun[] = [];
-  let decided = 0;
-  for (const r of runs) {
-    if (decided === limit) break; // everything after the last sample row is outside the window
-    if (isDecided(r)) decided += 1;
-    out.push(r);
-  }
-  return out;
 }
 
 function countCorrect(runs: readonly AccuracyRun[]): number {
@@ -341,29 +331,44 @@ function buildSpeed(decided: readonly AccuracyRun[]): SpeedTertile[] {
   });
 }
 
+/** Non-neutral runs of one status inside the analysis window (PREREG Amendment 1 A1). */
+export interface WindowCount {
+  status: 'completed' | 'confirmed' | 'corrected' | 'unconfirmed';
+  count: number;
+}
+
 /** Input of {@link buildQuizAccuracyReport}; produced by `readQuizAccuracyData`. */
 interface QuizAccuracyInput {
   /** The selected hash (`null` when the tenant has no run with a hash). */
   definitionHash: string | null;
   hashes: HashSummary[];
-  /** Non-neutral confirmed / corrected / unconfirmed runs of the hash, oldest first. */
+  /** Non-neutral confirmed / corrected runs of the hash in decision order (`updated_at`, id). */
   runs: AccuracyRun[];
   funnelRows: FunnelGroupRow[];
+  /**
+   * Non-neutral runs that reached the result screen inside the analysis window, by final status
+   * (`completed` = abandoned). The reader cuts the window at the 400th decided row.
+   */
+  windowCounts: WindowCount[];
   filters: { from: string | null; to: string | null; language: string | null };
 }
 
 /** Compute the full report (pure). */
 export function buildQuizAccuracyReport(input: QuizAccuracyInput): QuizAccuracyReport {
-  const { runs, funnelRows } = input;
-  const decided = runs.filter(isDecided);
+  const { funnelRows } = input;
+  const decided = input.runs;
 
   // Headline: the pre-registered fixed sample.
   const sample = decided.slice(0, N_REQUIRED);
   const { verdict, looks } = verdictOf(decided);
   const headlineProp = proportion(countCorrect(sample), sample.length);
-  const window = analysedWindow(runs, N_REQUIRED);
-  const pessimisticRuns = window;
-  const pessimisticProp = proportion(countCorrect(pessimisticRuns), pessimisticRuns.length);
+  const inWindow = (status: WindowCount['status']): number =>
+    input.windowCounts.filter((w) => w.status === status).reduce((a, w) => a + w.count, 0);
+  const windowAsked = input.windowCounts.reduce((a, w) => a + w.count, 0);
+  const unconfirmedInWindow = inWindow('unconfirmed');
+  const abandonedInWindow = inWindow('completed');
+  // Pessimistic: only `confirmed` is right; unconfirmed and abandoned `completed` runs are wrong.
+  const pessimisticProp = proportion(inWindow('confirmed'), windowAsked);
 
   // Funnel.
   const sumWhere = (pred: (f: FunnelGroupRow) => boolean): number =>
@@ -381,7 +386,6 @@ export function buildQuizAccuracyReport(input: QuizAccuracyInput): QuizAccuracyR
   }
   const completed = sumWhere(reachedResult);
   const completedNeutral = sumWhere((f) => reachedResult(f) && f.neutral);
-  const asked = completed - completedNeutral;
 
   // Labels: every archetype seen as predicted or as a true label.
   const labelSet = new Set<string>();
@@ -436,7 +440,7 @@ export function buildQuizAccuracyReport(input: QuizAccuracyInput): QuizAccuracyR
     };
   });
 
-  const rate = asked === 0 ? null : decided.length / asked;
+  const rate = windowAsked === 0 ? null : sample.length / windowAsked;
   const threshold = minSuccessesForLowerBound(N_REQUIRED, PASS_BOUND);
 
   return {
@@ -467,7 +471,8 @@ export function buildQuizAccuracyReport(input: QuizAccuracyInput): QuizAccuracyR
     },
     pessimistic: {
       ...pessimisticProp,
-      unconfirmed: pessimisticRuns.filter((r) => r.status === 'unconfirmed').length,
+      unconfirmed: unconfirmedInWindow,
+      abandoned: abandonedInWindow,
       would_pass: pessimisticProp.n >= N_REQUIRED && pessimisticProp.wilson95.lo >= PASS_BOUND,
     },
     all_decided: proportion(countCorrect(decided), decided.length),
@@ -490,8 +495,8 @@ export function buildQuizAccuracyReport(input: QuizAccuracyInput): QuizAccuracyR
     },
     monthly,
     response_rate: {
-      decided: decided.length,
-      asked,
+      decided: sample.length,
+      asked: windowAsked,
       rate,
       min_rate: RESPONSE_RATE_MIN,
       valid: rate === null ? null : rate >= RESPONSE_RATE_MIN,

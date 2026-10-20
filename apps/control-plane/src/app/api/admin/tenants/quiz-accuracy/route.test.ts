@@ -91,6 +91,8 @@ interface Seed {
   language?: string | null;
   /** First minute offset (shown_at = 2026-11-01 + offset minutes) so ordering is controlled. */
   offset?: number;
+  /** Minutes between shown_at and the decision (`updated_at`); default 0. */
+  decidedAfter?: number;
   month?: string;
 }
 
@@ -99,12 +101,13 @@ async function seedDecided(n: number, correct: number, s: Seed = {}): Promise<vo
   const offset = s.offset ?? 0;
   await pg!.query(
     `INSERT INTO quiz_runs (id, tenant_id, session_id, language, definition_hash, definition_version,
-        status, resolved_archetype, confirmed_archetype, step_ms, result_ms, shown_at)
+        status, resolved_archetype, confirmed_archetype, step_ms, result_ms, shown_at, updated_at)
      SELECT gen_random_uuid(), $1::uuid, 's' || g, $2::text, $3::text, $4::int,
         CASE WHEN g <= $5 THEN 'confirmed' ELSE 'corrected' END, 'yield_hunter',
         CASE WHEN g <= $5 THEN 'yield_hunter' ELSE 'none_of_these' END,
         ARRAY[3000, 3000, 3000], CASE WHEN g % 10 = 0 THEN 900 ELSE 4000 END,
-        $6::timestamptz + (g + $7) * interval '1 minute'
+        $6::timestamptz + (g + $7) * interval '1 minute',
+        $6::timestamptz + (g + $7 + $9) * interval '1 minute'
      FROM generate_series(1, $8::int) AS g`,
     [
       s.tenant ?? TENANT,
@@ -115,18 +118,26 @@ async function seedDecided(n: number, correct: number, s: Seed = {}): Promise<vo
       `${s.month ?? '2026-11'}-01T00:00:00Z`,
       offset,
       n,
+      s.decidedAfter ?? 0,
     ],
   );
 }
 
-async function seedStatus(status: string, n: number, resolved: string | null, hash = HASH_A) {
+async function seedStatus(
+  status: string,
+  n: number,
+  resolved: string | null,
+  hash = HASH_A,
+  updatedAt = '2026-10-15T00:00:00Z',
+) {
   await pg!.query(
     `INSERT INTO quiz_runs (id, tenant_id, session_id, definition_hash, status, resolved_archetype,
-        last_step, shown_at)
+        last_step, shown_at, updated_at)
      SELECT gen_random_uuid(), $1::uuid, 'x' || g || $2::text, $3::text, $2::text, $4::text,
-            CASE WHEN $2::text = 'dismissed' THEN g % 2 END, timestamptz '2026-10-15T00:00:00Z'
+            CASE WHEN $2::text = 'dismissed' THEN g % 2 END, timestamptz '2026-10-15T00:00:00Z',
+            $6::timestamptz
      FROM generate_series(1, $5::int) AS g`,
-    [TENANT, status, hash, resolved, n],
+    [TENANT, status, hash, resolved, n, updatedAt],
   );
 }
 
@@ -208,12 +219,34 @@ describe('verdict through the route (SQL executed on PGlite)', () => {
     expect(available((await get()).body).headline.verdict).toBe('FAIL');
   });
 
-  it('the first 400 by shown_at decide; later rows do not change the verdict', async () => {
+  it('the first 400 by DECISION time decide; later decisions do not change the verdict', async () => {
     await seedDecided(400, 380);
     await seedDecided(300, 0, { offset: 1000 }); // chronologically after
     const b = available((await get()).body);
     expect(b.headline).toMatchObject({ decided: 700, analysed_n: 400, verdict: 'PASS' });
     expect(b.all_decided.n).toBe(700);
+  });
+
+  it('a run shown earlier but decided after the 400th does not displace the sample (C1)', async () => {
+    await seedDecided(400, 371); // 371/400 -> FAIL
+    // shown 1000 minutes BEFORE every other run, decided 5000 minutes AFTER them: ordering by
+    // shown_at would put this confirmed run into the first 400 and flip FAIL to PASS (372/400).
+    await seedDecided(1, 1, { offset: -1000, decidedAfter: 5000 });
+    const h = available((await get()).body).headline;
+    expect(h).toMatchObject({ decided: 401, analysed_n: 400, correct: 371, verdict: 'FAIL' });
+  });
+
+  it('the analysis window cuts response rate and pessimistic at the 400th decision (C4)', async () => {
+    await seedDecided(400, 380); // decided 2026-11-01 .. +400 min
+    await seedStatus('unconfirmed', 20, 'yield_hunter'); // last status 10-15: inside
+    await seedStatus('completed', 10, 'yield_hunter', HASH_A, '2026-10-16T00:00:00Z'); // inside
+    await seedStatus('unconfirmed', 50, 'yield_hunter', HASH_A, '2026-12-01T00:00:00Z'); // after
+    await seedStatus('completed', 5, 'neutral'); // neutral is never asked
+    const b = available((await get()).body);
+    expect(b.pessimistic).toMatchObject({ n: 430, correct: 380, unconfirmed: 20, abandoned: 10 });
+    expect(b.response_rate).toMatchObject({ decided: 400, asked: 430 });
+    expect(b.response_rate.rate).toBeCloseTo(400 / 430);
+    expect(b.response_rate.valid).toBe(true);
   });
 
   it('INSUFFICIENT_N on a small local sample', async () => {
@@ -250,7 +283,7 @@ describe('eligibility (PREREG §2) and the funnel', () => {
       { step: 0, count: 3 },
       { step: 1, count: 3 },
     ]);
-    expect(b.pessimistic).toMatchObject({ n: 15, correct: 9, unconfirmed: 5 });
+    expect(b.pessimistic).toMatchObject({ n: 17, correct: 9, unconfirmed: 5, abandoned: 2 });
     // asked = completed(22) - neutral(5) = 17; decided 10
     expect(b.response_rate).toMatchObject({ decided: 10, asked: 17 });
   });

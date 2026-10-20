@@ -64,4 +64,30 @@ rate < 60 %. Any definition change restarts the series.
 
 ## Amendments
 
-_(none)_
+### Amendment 1 — 2026-10-20 (pre-data: H002 not applied in production, zero production `quiz_runs` rows)
+
+Written before any production data, after the Opus statistics review of FOLLOW-1363. It specifies
+the existing rules; it does not change the metric, n, thresholds or the futility rule.
+
+- A1 Response rate. Denominator = runs on a non-neutral leaf that reached the result screen (status
+  completed, confirmed, corrected or unconfirmed). Neutral leaves are never asked to confirm, so
+  they are not in it. Numerator = decided runs. Both are computed over the analysis window: runs
+  whose decision (or last status) time is at or before the decision time of the 400th decided row. A
+  non-neutral run still `completed` at the analysis counts as not responding. The pessimistic
+  variant counts both `unconfirmed` runs and such abandoned `completed` runs as wrong.
+- A2 Staff/ops exclusion. `quiz_runs` has no staff marker. Harness and ops-key traffic is excluded
+  by tenant (the harness tenant). Staff and founders must not take the production quiz on the frozen
+  hash. Any production session known to belong to staff is listed here by `session_id` before the
+  analysis is run, without looking at its outcome, and is excluded. The residual risk (unlisted
+  staff sessions, forged or automated pings) is disclosed next to the verdict.
+- A3 Sample order and finality. "First 400 decided rows" means ordered by decision time
+  (`updated_at` at the terminal transition), ties broken by `id`. The futility looks use the same
+  order. The CTO runs the analysis once, when the 400th decided row exists and no earlier-shown run
+  on the hash is still non-terminal or the runs older than the quiz run maximum have aged out. The
+  record holds the 400 run ids, the counts and the verdict. Later DSR erasures or late rows do not
+  reopen it.
+- A4 Binding hash. The verdict binds only for the hash the CTO freezes at KQ3, recorded here before
+  its first production row. With the verdict, report how many earlier hashes reached n = 130 and
+  their futility outcomes.
+- A5 κ. The backoffice tab does not compute §5. Until κ is reported, any PASS is stated as
+  "self-reported, κ pending".

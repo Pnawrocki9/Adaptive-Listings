@@ -28,7 +28,8 @@ import { sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { QUIZ_RUN_MAX_MS } from '@estalara/shared';
 import type { QuizRunPing } from '@estalara/shared';
-import type { AccuracyRun, FunnelGroupRow, HashSummary } from '@/lib/quiz-accuracy';
+import { N_REQUIRED } from '@/lib/quiz-accuracy';
+import type { AccuracyRun, FunnelGroupRow, HashSummary, WindowCount } from '@/lib/quiz-accuracy';
 
 /** Wire code for "H002 has not been applied to this database yet" (Rule K.2: loud, not empty). */
 export const QUIZ_RUNS_TABLE_MISSING = 'quiz_runs_table_missing';
@@ -406,6 +407,11 @@ interface QuizAccuracyFilters {
   to: string | null;
   definitionHash: string | null;
   language: string | null;
+  /**
+   * Default-hash rule when `definitionHash` is null: the hash with the most decided rows (the
+   * report), or the most recently shown one (the monthly watch).
+   */
+  preferRecentHash?: boolean;
 }
 
 /** What the accuracy report is computed from (see `buildQuizAccuracyReport`). */
@@ -418,18 +424,19 @@ type QuizAccuracyData =
       hashes: HashSummary[];
       runs: AccuracyRun[];
       funnelRows: FunnelGroupRow[];
+      /** Analysis-window counts for the response rate and the pessimistic variant (A1). */
+      windowCounts: WindowCount[];
       /** True when more than {@link ACCURACY_ROW_CAP} runs matched; only the oldest are returned. */
       truncated: boolean;
     };
 
-/** Upper bound on the runs read for one report (oldest first; the verdict needs only 400). */
+/** Upper bound on the runs read for one report (decision order; the verdict needs only 400). */
 const ACCURACY_ROW_CAP = 20_000;
 
 /**
  * Staff read (FOLLOW-1363): the rows behind the quiz-accuracy report of ONE definition hash.
  *
- * Eligibility is PREREG §2: `status` confirmed / corrected (+ unconfirmed for the pessimistic
- * variant), `resolved_archetype` not null and not `neutral`, one `definition_hash`
+ * Eligibility is PREREG §2: `status` confirmed / corrected, `resolved_archetype` not null and not `neutral`, one `definition_hash`
  * (the requested one, else the hash with the most decided rows in range), fenced to the tenant.
  * `quiz_runs` carries no staff / ops-key marker, so staff traffic cannot be excluded row by row:
  * only the tenant-level exclusion is implemented (the harness tenant is another tenant id, so it
@@ -452,11 +459,11 @@ export async function readQuizAccuracyData(
     hashResult = await db.execute(sql`
       select definition_hash as hash, max(definition_version)::int as version,
              count(*) filter (where ${decidedNonNeutral})::int as n,
-             max(shown_at) as last_shown
+             rank() over (order by max(shown_at) desc)::int as recency
       from quiz_runs
       where tenant_id = ${tenantId}::uuid and definition_hash is not null and ${inRange}
       group by definition_hash
-      order by n desc, last_shown desc
+      order by n desc, recency
     `);
   } catch (err: unknown) {
     if (!isQuizRunsTableMissing(err)) throw err;
@@ -468,9 +475,22 @@ export async function readQuizAccuracyData(
     version: r.version === null || r.version === undefined ? null : Number(r.version),
     n: Number(r.n),
   }));
-  const definitionHash = filters.definitionHash ?? hashes[0]?.hash ?? null;
+  const rows0 = executedRows(hashResult);
+  const recent = rows0.find((r) => Number(r.recency) === 1);
+  const defaultHash = filters.preferRecentHash
+    ? (recent?.hash as string | undefined)
+    : hashes[0]?.hash;
+  const definitionHash = filters.definitionHash ?? defaultHash ?? null;
   if (definitionHash === null) {
-    return { available: true, definitionHash, hashes, runs: [], funnelRows: [], truncated: false };
+    return {
+      available: true,
+      definitionHash,
+      hashes,
+      runs: [],
+      funnelRows: [],
+      windowCounts: [],
+      truncated: false,
+    };
   }
 
   const scope = sql`tenant_id = ${tenantId}::uuid and definition_hash = ${definitionHash}::text
@@ -478,6 +498,8 @@ export async function readQuizAccuracyData(
         and ${inRange}`;
   let funnelResult: unknown;
   let runResult: unknown;
+  let cutoffResult: unknown;
+  let windowResult: unknown;
   try {
     funnelResult = await db.execute(sql`
       select to_char(shown_at at time zone 'UTC', 'YYYY-MM') as month, status,
@@ -494,10 +516,30 @@ export async function readQuizAccuracyData(
              (select sum(x) from unnest(step_ms) as x)::int as step_total_ms, result_ms
       from quiz_runs
       where ${scope}
-        and status in ('confirmed', 'corrected', 'unconfirmed')
-        and resolved_archetype is not null and resolved_archetype <> 'neutral'
-      order by shown_at asc, id asc
+        and ${decidedNonNeutral}
+      order by updated_at asc, id asc
       limit ${ACCURACY_ROW_CAP + 1}
+    `);
+    // Decision time of the 400th decided row (A3): `updated_at` freezes at the terminal
+    // transition because the upsert's WHERE blocks later updates. Text keeps microseconds.
+    cutoffResult = await db.execute(sql`
+      select updated_at::text as ts, id::text as id from quiz_runs
+      where ${scope} and ${decidedNonNeutral}
+      order by updated_at asc, id asc
+      offset ${N_REQUIRED - 1} limit 1
+    `);
+    const cutoff = executedRows(cutoffResult)[0];
+    // Analysis window (A1): non-neutral runs that reached the result screen with a decision (or
+    // last-status) time at or before the cutoff; every such run when fewer than 400 are decided.
+    windowResult = await db.execute(sql`
+      select status, count(*)::int as cnt from quiz_runs
+      where ${scope}
+        and status in ('completed', 'confirmed', 'corrected', 'unconfirmed')
+        and resolved_archetype is not null and resolved_archetype <> 'neutral'
+        and (${cutoff ? String(cutoff.ts) : null}::timestamptz is null
+             or (updated_at, id) <= (${cutoff ? String(cutoff.ts) : null}::timestamptz,
+                                     ${cutoff ? String(cutoff.id) : null}::uuid))
+      group by status
     `);
   } catch (err: unknown) {
     if (!isQuizRunsTableMissing(err)) throw err;
@@ -513,6 +555,10 @@ export async function readQuizAccuracyData(
     definitionHash,
     hashes,
     truncated,
+    windowCounts: executedRows(windowResult).map((r) => ({
+      status: String(r.status) as WindowCount['status'],
+      count: Number(r.cnt),
+    })),
     funnelRows: executedRows(funnelResult).map((r) => ({
       month: String(r.month),
       status: String(r.status),

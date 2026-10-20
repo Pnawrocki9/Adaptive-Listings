@@ -28,6 +28,22 @@ const VERDICT_STYLE: Record<Report['headline']['verdict'], string> = {
   INSUFFICIENT_N: 'bg-gray-100 text-gray-700',
 };
 
+/**
+ * The verdict as displayed. A PASS is only green when the validity conditions hold: a narrowed
+ * sample is "SUBSET — not the verdict", and a response rate below 60 % voids the claim (PREREG §3).
+ */
+function verdictBadge(r: Report): { label: string; style: string } {
+  const h = r.headline;
+  if (!h.verdict_binding) {
+    return { label: 'SUBSET — not the verdict', style: 'bg-amber-100 text-amber-800' };
+  }
+  if (r.response_rate.valid === false) {
+    const label = h.verdict === 'PASS' ? 'PASS — VOID' : `${h.verdict} — response rate invalid`;
+    return { label, style: 'bg-amber-100 text-amber-800' };
+  }
+  return { label: h.verdict, style: VERDICT_STYLE[h.verdict] };
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mb-6 rounded-lg border border-gray-200 bg-white p-4">
@@ -100,6 +116,7 @@ export function QuizAccuracyView({ tenantId }: { tenantId: string }): React.JSX.
 
   const r = data;
   const h = r.headline;
+  const badge = verdictBadge(r);
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-end gap-4 text-sm">
@@ -145,6 +162,13 @@ export function QuizAccuracyView({ tenantId }: { tenantId: string }): React.JSX.
         </p>
       )}
 
+      <p data-testid="caveats" className="mb-4 rounded bg-gray-50 px-3 py-2 text-xs text-gray-600">
+        Not shown here: Cohen’s κ (PREREG §5) is computed offline and is still pending. Below κ 0.6
+        the claim is “self-reported” only, and any PASS reads “self-reported, κ pending”. Staff
+        traffic is not excluded row by row (PREREG Amendment 1 A2); the sample is the first 400
+        decided runs in decision order (A3).
+      </p>
+
       <Section title="Headline (PREREG §3)">
         <div data-testid="headline" className="flex flex-wrap items-center gap-6">
           <div>
@@ -161,9 +185,9 @@ export function QuizAccuracyView({ tenantId }: { tenantId: string }): React.JSX.
           </div>
           <span
             data-testid="verdict"
-            className={`rounded px-3 py-1 text-sm font-semibold ${VERDICT_STYLE[h.verdict]}`}
+            className={`rounded px-3 py-1 text-sm font-semibold ${badge.style}`}
           >
-            {h.verdict}
+            {badge.label}
           </span>
           <div className="text-sm text-gray-700">
             n = {h.decided} of {h.n_required} required
@@ -187,14 +211,17 @@ export function QuizAccuracyView({ tenantId }: { tenantId: string }): React.JSX.
         </ul>
         <dl className="mt-3 grid grid-cols-1 gap-2 text-xs text-gray-700 md:grid-cols-3">
           <div data-testid="pessimistic">
-            <dt className="font-medium">Pessimistic (unconfirmed = wrong)</dt>
+            <dt className="font-medium">
+              Pessimistic (unconfirmed {r.pessimistic.unconfirmed} + abandoned{' '}
+              {r.pessimistic.abandoned} = wrong)
+            </dt>
             <dd>
               {pct(r.pessimistic.accuracy)} ({r.pessimistic.correct}/{r.pessimistic.n}), Wilson{' '}
               {interval(r.pessimistic.wilson95)}
             </dd>
           </div>
           <div data-testid="response-rate">
-            <dt className="font-medium">Response rate (decided / asked)</dt>
+            <dt className="font-medium">Response rate (decided / asked, analysis window)</dt>
             <dd>
               {pct(r.response_rate.rate)} ({r.response_rate.decided}/{r.response_rate.asked}){' '}
               {r.response_rate.valid === false && (

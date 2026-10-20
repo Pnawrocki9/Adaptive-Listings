@@ -67,16 +67,22 @@ async function freshDb(withTable = true): Promise<void> {
 }
 
 /** `n` decided rows in October 2026, `correct` of them confirmed; `completed` extra unasked-for. */
-async function seedOctober(n: number, correct: number, extraCompleted = 0): Promise<void> {
+async function seedOctober(
+  n: number,
+  correct: number,
+  extraCompleted = 0,
+  hash = HASH,
+  start = '2026-10-05T00:00:00Z',
+): Promise<void> {
   await pg!.query(
     `INSERT INTO quiz_runs (id, tenant_id, session_id, definition_hash, status, resolved_archetype,
         confirmed_archetype, shown_at)
      SELECT gen_random_uuid(), $1::uuid, 's' || g, $2::text,
         CASE WHEN g <= $3 THEN 'confirmed' ELSE 'corrected' END, 'yield_hunter',
         CASE WHEN g <= $3 THEN 'yield_hunter' ELSE 'none_of_these' END,
-        timestamptz '2026-10-05T00:00:00Z' + g * interval '1 minute'
+        $5::timestamptz + g * interval '1 minute'
      FROM generate_series(1, $4::int) AS g`,
-    [ESTALARA_TENANT_ID, HASH, correct, n],
+    [ESTALARA_TENANT_ID, hash, correct, n, start],
   );
   if (extraCompleted > 0) {
     await pg!.query(
@@ -157,6 +163,27 @@ describe('monthly warning (PREREG §7)', () => {
     expect(mockCaptureMessage.mock.calls[0]![1]).toMatchObject({
       extra: { upper_bound_below_target: false, response_rate_below_min: true },
     });
+  });
+});
+
+describe('hash choice and truncation (C5)', () => {
+  it('watches the most recently shown hash, not the one with the most decided rows', async () => {
+    // older hash: lots of healthy rows in September; current hash: 100 weak rows in October
+    await seedOctober(300, 297, 0, 'd'.repeat(64), '2026-09-01T00:00:00Z');
+    await seedOctober(100, 80, 25, HASH);
+    const body = (await (await GET(authed())).json()) as { decided: number; warned: boolean };
+    expect(body).toMatchObject({ decided: 100, warned: true });
+    expect(mockCaptureMessage.mock.calls[0]![1]).toMatchObject({
+      extra: { definition_hash: HASH, truncated: false },
+    });
+  });
+
+  it('a truncated read warns even when the month looks healthy', async () => {
+    await seedOctober(20_001, 20_001);
+    const body = (await (await GET(authed())).json()) as { truncated: boolean; warned: boolean };
+    expect(body).toMatchObject({ truncated: true, warned: true });
+    expect(mockCaptureMessage).toHaveBeenCalledTimes(1);
+    expect(mockCaptureMessage.mock.calls[0]![1]).toMatchObject({ extra: { truncated: true } });
   });
 });
 

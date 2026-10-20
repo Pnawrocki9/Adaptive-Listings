@@ -73,6 +73,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       to: null,
       definitionHash: null,
       language: null,
+      // The watch follows the hash currently being served, not the one with the most rows.
+      preferRecentHash: true,
     });
     if (!data.available) {
       return NextResponse.json({
@@ -88,23 +90,26 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       hashes: data.hashes,
       runs: data.runs,
       funnelRows: data.funnelRows,
+      windowCounts: data.windowCounts,
       filters: { from: null, to: null, language: null },
     });
     const row = report.monthly.find((m) => m.month === month);
     const warn = row?.warn;
     const warned = Boolean(warn && (warn.upper_bound_below_target || warn.response_rate_below_min));
-    if (row && warn && warned) {
+    // A truncated read means the monthly rows cover only the oldest runs: warn, never stay silent.
+    if (data.truncated || (row && warn && warned)) {
       Sentry.captureMessage('quiz accuracy monthly warning', {
         level: 'warning',
         tags: { cron: 'quiz-accuracy-watch', month },
         extra: {
           definition_hash: report.definition_hash,
-          decided: row.decided,
-          accuracy: row.accuracy,
-          wilson95: row.wilson95,
-          response_rate: row.response_rate,
-          upper_bound_below_target: warn.upper_bound_below_target,
-          response_rate_below_min: warn.response_rate_below_min,
+          truncated: data.truncated,
+          decided: row?.decided ?? null,
+          accuracy: row?.accuracy ?? null,
+          wilson95: row?.wilson95 ?? null,
+          response_rate: row?.response_rate ?? null,
+          upper_bound_below_target: warn?.upper_bound_below_target ?? false,
+          response_rate_below_min: warn?.response_rate_below_min ?? false,
         },
       });
     }
@@ -113,7 +118,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       available: true,
       month,
       decided: row?.decided ?? 0,
-      warned,
+      truncated: data.truncated,
+      warned: warned || data.truncated,
     });
   } catch (err: unknown) {
     Sentry.captureException(err, {

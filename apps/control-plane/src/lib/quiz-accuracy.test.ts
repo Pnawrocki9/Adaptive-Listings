@@ -46,12 +46,29 @@ function spread(n: number, correct: number): AccuracyRun[] {
   });
 }
 
-function report(runs: AccuracyRun[], funnelRows: FunnelGroupRow[] = []) {
+type WindowCounts = QuizAccuracyInput['windowCounts'];
+
+/**
+ * `extraWindow` = non-neutral runs in the analysis window that are NOT decided (unconfirmed /
+ * abandoned `completed`); the decided part of the window is derived from the first 400 rows.
+ */
+function report(
+  runs: AccuracyRun[],
+  funnelRows: FunnelGroupRow[] = [],
+  extraWindow: WindowCounts = [],
+) {
+  const sampleRows = runs.slice(0, 400);
+  const confirmed = sampleRows.filter((r) => r.status === 'confirmed').length;
   const input: QuizAccuracyInput = {
     definitionHash: 'h1',
     hashes: [{ hash: 'h1', version: 3, n: runs.length }],
     runs,
     funnelRows,
+    windowCounts: [
+      { status: 'confirmed', count: confirmed },
+      { status: 'corrected', count: sampleRows.length - confirmed },
+      ...extraWindow,
+    ],
     filters: FILTERS,
   };
   return buildQuizAccuracyReport(input);
@@ -134,6 +151,7 @@ describe('verdict (PREREG §3)', () => {
       hashes: [],
       runs: spread(400, 372),
       funnelRows: [],
+      windowCounts: [],
       filters: { from: null, to: null, language: 'pl' },
     });
     expect(r.headline.verdict_binding).toBe(false);
@@ -141,29 +159,40 @@ describe('verdict (PREREG §3)', () => {
   });
 });
 
-describe('pessimistic variant (PREREG §3)', () => {
-  it('counts unconfirmed runs inside the 400-row window as wrong', () => {
-    const rows = [
-      ...spread(400, 372),
-      // after the 400th decided row: outside the window, ignored
-      run({ status: 'unconfirmed' }),
-    ];
-    // 20 unconfirmed interleaved at the start -> inside the window
-    const early = Array.from({ length: 20 }, () => run({ status: 'unconfirmed' }));
-    const r = report([...early, ...rows]);
+describe('pessimistic variant and response rate (PREREG §3, Amendment 1 A1)', () => {
+  it('counts unconfirmed AND abandoned completed runs in the window as wrong', () => {
+    const r = report(
+      spread(400, 372),
+      [],
+      [
+        { status: 'unconfirmed', count: 15 },
+        { status: 'completed', count: 5 },
+      ],
+    );
     expect(r.headline.verdict).toBe('PASS');
-    expect(r.pessimistic.unconfirmed).toBe(20);
-    expect(r.pessimistic.n).toBe(420);
-    expect(r.pessimistic.correct).toBe(372);
+    expect(r.pessimistic).toMatchObject({ unconfirmed: 15, abandoned: 5, n: 420, correct: 372 });
     expect(r.pessimistic.would_pass).toBe(false);
     expect(r.pessimistic.wilson95.lo).toBeLessThan(0.9);
   });
 
-  it('equals the headline when nothing is unconfirmed', () => {
+  it('equals the headline when nothing else is in the window', () => {
     const r = report(spread(400, 380));
-    expect(r.pessimistic.unconfirmed).toBe(0);
+    expect(r.pessimistic).toMatchObject({ unconfirmed: 0, abandoned: 0 });
     expect(r.pessimistic.accuracy).toBe(r.headline.accuracy);
     expect(r.pessimistic.would_pass).toBe(true);
+  });
+
+  it('response rate is decided / (decided + unconfirmed + abandoned) in the window', () => {
+    const ok = report(spread(400, 380), [], [{ status: 'completed', count: 250 }]);
+    expect(ok.response_rate).toMatchObject({ decided: 400, asked: 650, valid: true });
+    expect(ok.response_rate.rate).toBeCloseTo(400 / 650);
+    // 400 / 700 = 0.571 < 0.60: an abandoned `completed` run counts as not responding
+    const void_ = report(spread(400, 380), [], [{ status: 'completed', count: 300 }]);
+    expect(void_.response_rate.valid).toBe(false);
+  });
+
+  it('response rate is null with nothing asked', () => {
+    expect(report([]).response_rate).toMatchObject({ asked: 0, rate: null, valid: null });
   });
 });
 
@@ -297,11 +326,10 @@ describe('funnel, response rate, splits', () => {
     });
   });
 
-  it('response rate = decided / asked (neutral completions are never asked)', () => {
-    expect(r.response_rate).toMatchObject({ decided: 70, asked: 80, min_rate: 0.6, valid: true });
-    expect(r.response_rate.rate).toBeCloseTo(70 / 80);
-    const low = report(spread(70, 60), [f('completed', 130)]);
-    expect(low.response_rate.valid).toBe(false);
+  it('the funnel keeps counting neutral completions as completed, never as asked', () => {
+    expect(r.funnel.completed).toBe(84);
+    expect(r.funnel.completed_neutral).toBe(4);
+    expect(r.response_rate.min_rate).toBe(0.6);
   });
 
   it('splits by language with an "unknown" bucket', () => {

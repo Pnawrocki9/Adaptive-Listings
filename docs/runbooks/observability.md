@@ -281,9 +281,11 @@ call (`tags.kind: spend_cap`, `area: description`, `extra.daily_spend_usd`); the
 | `quiz accuracy monthly warning` | the monthly watch (`/api/cron/quiz-accuracy-watch`, FOLLOW-1363,
 PREREG §7) found that the previous UTC month of the production quiz had at least 100 decided runs
 and either a Wilson 95 % upper bound below 0.90 or a response rate (decided / asked) below 60 %
-(`tags.month`, `extra.wilson95`, `extra.response_rate`, `extra.definition_hash`). Level `warning`,
-at most once a month. Open the staff tab `/admin/tenants/[id]/quiz-accuracy` to see which condition
-fired; a definition change restarts the series | **none** |
+(`tags.month`, `extra.wilson95`, `extra.response_rate`, `extra.definition_hash`). It also fires with
+`extra.truncated: true` when the read hit its row cap (the monthly rows then cover only the oldest
+runs). The watch follows the most recently shown hash. Level `warning`, at most once a month. Open
+the staff tab `/admin/tenants/[id]/quiz-accuracy` to see which condition fired; a definition change
+restarts the series | **none** |
 
 A `/api/adapt` pre-LLM stall has no named event any more (FOLLOW-1290 removed the segment timer):
 read it from p95 of the `POST /api/adapt` transaction in Sentry performance.

@@ -119,6 +119,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       hashes: data.hashes,
       runs: data.runs,
       funnelRows: data.funnelRows,
+      windowCounts: data.windowCounts,
       filters: { from: filters.from, to: filters.to, language: filters.language },
     });
     const body: QuizAccuracyResponse = {

@@ -18,3 +18,13 @@ Guardrail I'd add: a Rule-I friendly habit for pure-lib packages - keep constant
 un-exported unless a non-test file imports them (the gate counts test-only importers as zero); and
 when a statistic has a threshold, derive the test boundary from the formula (n = 130 -> 110, n = 200
 -> 171), never from a remembered number - my first guess (113) was wrong.
+
+### Opus review follow-up (C1-C5)
+
+Ordering a "first N" sample by the time a row was SHOWN is wrong when the unit is a decision: a run
+shown earlier but decided later displaces rows already in the sample. Order by the terminal
+transition (`updated_at`, frozen by the upsert's WHERE) and make the window cut in SQL with a
+(updated_at, id) tuple compare, not in JS on millisecond-rounded timestamps. A validity flag
+(response rate, subset filter) must change the verdict BADGE, not sit in a side panel: a green PASS
+next to a red footnote is how a void claim gets quoted. Guardrail: any "verdict" field a UI renders
+needs a test that the badge text changes when each validity flag flips.

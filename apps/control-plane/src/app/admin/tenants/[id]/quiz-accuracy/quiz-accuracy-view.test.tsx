@@ -31,6 +31,7 @@ function response(
   n: number,
   correct: number,
   language: string | null = null,
+  abandoned = 0,
 ): QuizAccuracyResponse {
   return {
     available: true,
@@ -43,6 +44,11 @@ function response(
       runs: runs(n, correct),
       funnelRows: [
         { month: '2026-11', status: 'completed', neutral: false, last_step: null, count: n },
+      ],
+      windowCounts: [
+        { status: 'confirmed', count: correct },
+        { status: 'corrected', count: n - correct },
+        ...(abandoned > 0 ? [{ status: 'completed' as const, count: abandoned }] : []),
       ],
       filters: { from: null, to: null, language },
     }),
@@ -97,6 +103,44 @@ describe('QuizAccuracyView', () => {
     await waitFor(() => {
       expect(screen.getByText(/NOT the pre-registered analysis/)).toBeDefined();
     });
+    // C2: the badge itself never says PASS for a subset
+    expect(screen.getByTestId('verdict').textContent).toBe('SUBSET — not the verdict');
+  });
+
+  it('a PASS with a response rate below 60 % is VOID, not green (C2)', async () => {
+    mockFetch(response(400, 380, null, 300)); // 400 / 700 = 57 %
+    render(<QuizAccuracyView tenantId={TENANT_ID} />);
+    await waitFor(() => {
+      expect(screen.getByTestId('verdict').textContent).toBe('PASS — VOID');
+    });
+    expect(screen.getByTestId('verdict').className).not.toContain('green');
+  });
+
+  it('FAIL with an invalid response rate says so; a valid PASS stays green', async () => {
+    mockFetch(response(400, 360, null, 300));
+    const { unmount } = render(<QuizAccuracyView tenantId={TENANT_ID} />);
+    await waitFor(() => {
+      expect(screen.getByTestId('verdict').textContent).toBe('FAIL — response rate invalid');
+    });
+    unmount();
+    mockFetch(response(400, 380));
+    render(<QuizAccuracyView tenantId={TENANT_ID} />);
+    await waitFor(() => {
+      expect(screen.getByTestId('verdict').textContent).toBe('PASS');
+    });
+    expect(screen.getByTestId('verdict').className).toContain('green');
+  });
+
+  it('always shows the pending-κ and staff-traffic caveat (C3)', async () => {
+    mockFetch(response(40, 38));
+    render(<QuizAccuracyView tenantId={TENANT_ID} />);
+    await waitFor(() => {
+      expect(screen.getByTestId('caveats').textContent).toContain('κ');
+    });
+    const text = screen.getByTestId('caveats').textContent;
+    expect(text).toContain('still pending');
+    expect(text).toContain('self-reported');
+    expect(text).toContain('Staff traffic is not excluded row by row');
   });
 
   it('language selector issues a new fenced GET', async () => {

@@ -290,13 +290,18 @@ Consumer: the staff tab `/admin/tenants/[id]/quiz-accuracy` and the monthly watc
 - One `definition_hash` per report (the requested one, else the hash with the most decided rows in
   range); `definition_hashes[{hash, version, n}]` lists the choices. Decided = `confirmed` +
   `corrected`, `resolved_archetype <> 'neutral'`.
-- `headline`: verdict over the FIRST 400 decided rows by `shown_at` (`analysed_n`); `decided` counts
-  all. `PASS` iff the Wilson 95 % lower bound ≥ 0.90 (372/400), `FAIL` otherwise at 400, `FUTILE`
-  when the Wilson upper bound of the first 130 or first 200 rows is < 0.90 (`futility_looks[]`),
-  `INSUFFICIENT_N` below 400. `verdict_binding` is false when `from`, `to` or `language` narrows the
-  sample (the numbers then describe a subset).
-- `pessimistic`: the same window with `unconfirmed` runs counted as wrong. `all_decided`: all rows,
-  monitoring only. `response_rate`: decided / (completed − completed_neutral), valid at ≥ 0.60.
+- `headline`: verdict over the FIRST 400 decided rows in DECISION order (`updated_at`, ties by id;
+  PREREG Amendment 1 A3), `analysed_n`; `decided` counts all. `PASS` iff the Wilson 95 % lower bound
+  ≥ 0.90 (372/400), `FAIL` otherwise at 400, `FUTILE` when the Wilson upper bound of the first 130
+  or first 200 rows is < 0.90 (`futility_looks[]`), `INSUFFICIENT_N` below 400. `verdict_binding` is
+  false when `from`, `to` or `language` narrows the sample (the tab then shows "SUBSET — not the
+  verdict").
+- `response_rate` (A1): decided / (non-neutral runs that reached the result screen) inside the
+  ANALYSIS WINDOW (decision or last-status time ≤ that of the 400th decided row; everything while
+  fewer than 400 are decided); a non-neutral run still `completed` there counts as not responding;
+  valid at ≥ 0.60 (the tab shows a PASS as "PASS — VOID" otherwise). `pessimistic`: the same window
+  with `unconfirmed` and abandoned `completed` runs counted as wrong (`unconfirmed`, `abandoned`).
+  `all_decided`: all rows, monitoring only.
 - Secondary (all decided rows, never gated): `per_leaf[]` (precision, recall, Wilson CIs,
   `claimable` at n_true ≥ 100, `flagged` when claimable and recall lower bound < 0.80),
   `macro_recall` (classes with ≥ 30 true labels), `confusion{labels, columns, matrix}` with a

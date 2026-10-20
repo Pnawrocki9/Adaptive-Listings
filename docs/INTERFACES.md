@@ -274,6 +274,43 @@ Producer: `apps/control-plane/src/app/api/quiz/public-config/route.ts`. Consumer
 `quiz-trigger.ts` is now `quiz-session-state.ts` and holds the completed/dismissed flags only).
 NOTE: the `quiz_placement` slice has had no SDK consumer since that change — see FOLLOW-1016.
 
+## Quiz Accuracy Report (FOLLOW-1363, Faza Q package Q8)
+
+`GET /api/admin/tenants/quiz-accuracy?tenant_id=<uuid>&from=&to=&definition_hash=&language=` —
+staff-only (`resolveTenantAccess` with the staff override, any staff rank), read-only, computed on
+read from `quiz_runs` (H002). Implements `docs/decisions/PREREG-quiz-accuracy-2026-10.md` §2–§4, §7.
+Response type: `QuizAccuracyResponse` exported from the route file; arithmetic in
+`apps/control-plane/src/lib/quiz-accuracy.ts`; SQL in `readQuizAccuracyData` (`lib/quiz-runs.ts`).
+Consumer: the staff tab `/admin/tenants/[id]/quiz-accuracy` and the monthly watch
+`GET /api/cron/quiz-accuracy-watch` (`CRON_SECRET`, Sentry warning).
+
+- Every 200 carries `data_source: 'quiz_runs'`. A database without H002 answers 200
+  `{available: false, code: 'quiz_runs_table_missing', message}` (never an empty report); a thrown
+  read is 500 + Sentry. `from` is inclusive, `to` exclusive (ISO date or datetime, on `shown_at`).
+- One `definition_hash` per report (the requested one, else the hash with the most decided rows in
+  range); `definition_hashes[{hash, version, n}]` lists the choices. Decided = `confirmed` +
+  `corrected`, `resolved_archetype <> 'neutral'`.
+- `headline`: verdict over the FIRST 400 decided rows in DECISION order (`updated_at`, ties by id;
+  PREREG Amendment 1 A3), `analysed_n`; `decided` counts all. `PASS` iff the Wilson 95 % lower bound
+  ≥ 0.90 (372/400), `FAIL` otherwise at 400, `FUTILE` when the Wilson upper bound of the first 130
+  or first 200 rows is < 0.90 (`futility_looks[]`), `INSUFFICIENT_N` below 400. `verdict_binding` is
+  false when `from`, `to` or `language` narrows the sample (the tab then shows "SUBSET — not the
+  verdict").
+- `response_rate` (A1): decided / (non-neutral runs that reached the result screen) inside the
+  ANALYSIS WINDOW (decision or last-status time ≤ that of the 400th decided row; everything while
+  fewer than 400 are decided); a non-neutral run still `completed` there counts as not responding;
+  valid at ≥ 0.60 (the tab shows a PASS as "PASS — VOID" otherwise). `pessimistic`: the same window
+  with `unconfirmed` and abandoned `completed` runs counted as wrong (`unconfirmed`, `abandoned`).
+  `all_decided`: all rows, monitoring only.
+- Secondary (all decided rows, never gated): `per_leaf[]` (precision, recall, Wilson CIs,
+  `claimable` at n_true ≥ 100, `flagged` when claimable and recall lower bound < 0.80),
+  `macro_recall` (classes with ≥ 30 true labels), `confusion{labels, columns, matrix}` with a
+  `none_of_these` column, `by_language`, `by_speed_tertile` (summed `step_ms`), `fast_yes`
+  (`result_ms` < 1500 among confirmed, reported, never excluded), `monthly[]` with the §7 warn
+  flags.
+- Limitation: `quiz_runs` has no staff / ops-key marker, so only the tenant-level exclusion (harness
+  tenant) is implemented; staff sessions on the production tenant cannot be told apart.
+
 ## Chat-Intent Shadow Key Contract (`shadow:{tenant_id}:{session_id}:chat_intent`)
 
 Cross-runtime shared-cache contract. **Producer:** Python — `write_shadow_intent`

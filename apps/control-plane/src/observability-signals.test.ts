@@ -213,6 +213,11 @@
  * rows of one site each: `…/quiz-definition/versions/route.ts` (history read),
  * `…/activate/route.ts` (restore transaction) and `…/deactivate/route.ts` (revert transaction).
  * It is now **107 in 68**.
+ *
+ * FOLLOW-1363 (Faza Q package Q8) added two rows: `app/api/admin/tenants/quiz-accuracy/route.ts`
+ * (1 site - the staff accuracy report's `quiz_runs` read failing) and
+ * `app/api/cron/quiz-accuracy-watch/route.ts` (2 - the monthly read failing, and the PREREG §7
+ * warning itself, a named signal). No existing row moved. It is now **110 in 70**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -226,7 +231,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 107;
+const TOTAL_SITES = 110;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -343,6 +348,13 @@ const REGISTER: CaptureSiteGroup[] = [
     consumer: NO_CHANNEL,
   },
   {
+    file: 'app/api/admin/tenants/quiz-accuracy/route.ts',
+    sites: 1,
+    meaning:
+      'The quiz accuracy report could not read `quiz_runs` (a configured database that threw; a missing table is a visible `available: false`, not a capture) - the staff tab shows its K.2 error state instead of an empty report. (FOLLOW-1363)',
+    consumer: NO_CHANNEL,
+  },
+  {
     file: 'app/api/admin/tenants/quiz-completions/route.ts',
     sites: 1,
     meaning:
@@ -451,6 +463,13 @@ const REGISTER: CaptureSiteGroup[] = [
     sites: 1,
     meaning:
       'The daily lift snapshot failed — ClickHouse query (`clickhouse_query_failed`), the Postgres write (`lift_snapshot_write_failed`), or `lift_daily_snapshots` not created yet (`lift_snapshot_table_missing`, the CTO handover step); the pilot lift history has a gap for that day until the cron is re-run (FOLLOW-1338).',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'app/api/cron/quiz-accuracy-watch/route.ts',
+    sites: 2,
+    meaning:
+      'The monthly quiz-accuracy watch either could not read `quiz_runs` (`quiz_accuracy_read_failed`, exception) or raised its PREREG §7 warning (named signal `quiz accuracy monthly warning`): the previous UTC month had >= 100 decided runs and a Wilson upper bound < 0.90 or a response rate < 60 %. (FOLLOW-1363)',
     consumer: NO_CHANNEL,
   },
   {
@@ -726,6 +745,12 @@ interface NamedSignal {
  * `first_party_tenant_id_*` signals were retired with `lib/brand-identity.ts` (FOLLOW-1332).
  */
 const NAMED_SIGNALS: NamedSignal[] = [
+  {
+    name: 'quiz accuracy monthly warning',
+    meaning:
+      'The previous UTC month of the production quiz had at least 100 decided runs and either a Wilson 95 % upper bound below 0.90 or a response rate (decided / asked) below 60 % (`tags.month`, `extra.wilson95`, `extra.response_rate`, `extra.definition_hash`). Level `warning`; monthly, at most once per run. A definition change restarts the series. (FOLLOW-1363 / PREREG §7)',
+    consumer: NO_CHANNEL,
+  },
   {
     name: 'adapt unresolved placeholder token',
     meaning:

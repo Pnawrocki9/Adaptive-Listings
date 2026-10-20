@@ -71,7 +71,8 @@ describe('FOLLOW-639 — quiz_definition overlay + walk', () => {
     const merged = mergeQuizConfig(baseConfig, response());
     expect(merged.quizDefinition).toBeUndefined();
     const def = merged.quizDefinition ?? DEFAULT_QUIZ_DEFINITION;
-    // The default tree still resolves the legacy leaves (byte-identical).
-    expect(resolveArchetypeFromPath(def, [0, 0, 0])).toBe('yield_hunter');
+    // FOLLOW-1357: the built-in is the v3.0 tree (EN) — Investment → long-term rental → no trait.
+    expect(def).toBe(DEFAULT_QUIZ_DEFINITION);
+    expect(resolveArchetypeFromPath(def, [3, 0, []])).toBe('yield_hunter');
   });
 });

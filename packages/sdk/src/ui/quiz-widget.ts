@@ -1,55 +1,100 @@
 /**
- * Quiz widget v3.0 — generic definition-driven tree walker (FOLLOW-639 / ADR-0019 D5).
+ * Quiz widget v2 — definition-driven walk on the shared state machine, trait screen,
+ * self-confirmation + one correction, EN | PL switcher, run pings (MASTER_DESIGN §E.4 v3.0,
+ * FOLLOW-1357; walker history: FOLLOW-639 / ADR-0019 D5).
  *
- * The answer→archetype mapping is no longer a hardcoded `resolveArchetype()` switch over
- * fixed `QUIZ_CONTENT`: it now lives in DATA — a `QuizDefinition` (the tenant's served,
- * fully editable tree, or the built-in `DEFAULT_QUIZ_DEFINITION` fallback). This renderer is
- * a GENERIC walker that:
- *   1. Starts at `definition.root` and follows each selected answer's `next` until a leaf
- *      (`next: null`), accumulating the selected answers' `weights` vectors.
- *   2. Reduces the accumulated vector to a SINGLE resolved archetype by argmax
- *      (`reduceWeightsToArchetype`, the ONE shared source of truth for the reduction; empty /
- *      all-zero ⇒ `neutral`, ties broken by canonical order).
+ * The answer→archetype mapping lives in DATA — a `QuizDefinition` (the tenant's served tree, or
+ * the built-in `DEFAULT_QUIZ_DEFINITION`). The widget asks `nextStep` (`@estalara/shared`
+ * `quiz-walk.ts`, the ONE walker shared with the admin simulator) what to show:
+ *   - `question` — a `single` question (root: a click commits; otherwise select then CTA) or a
+ *     `multi` trait screen (checkboxes, chrome "None of these" exclusive, CTA always enabled;
+ *     always the last question, recorded as `number[]`);
+ *   - `confirm`  — the result screen: "Based on your answers: **{name}** — {sentence}. Is that
+ *     right?" with two equal buttons; "Not quite" offers the leaf's `alternatives` + "None of
+ *     these — show me everything" (= `neutral`, `none_of_these`); exactly one correction; × or
+ *     `pagehide` applies the leaf as `unconfirmed`;
+ *   - `done`     — no confirmation (a `neutral` leaf, or no `confirm` texts for the leaf — e.g.
+ *     an old served row): the run stays `completed`.
  *
- * The downstream persistence contract is otherwise UNCHANGED (ADR-0019 D5): `onComplete` still
- * feeds `applyQuizLeaf` → `persistResolvedArchetype` (non-neutral only, FOLLOW-554) →
- * `postQuizCompletionPing`; the mapping SOURCE moved from code to data, and FOLLOW-1020 added
- * the walked path as a second argument so the completion row records HOW the archetype was
- * reached, not only that it was.
+ * Classes the FOLLOW-819 harness relies on: answers (single and trait options) are
+ * `.estalara-quiz-answer`; the result screen is `.estalara-quiz-result` with
+ * `.estalara-quiz-confirm` / `.estalara-quiz-reject` / `.estalara-quiz-option` — never
+ * `.estalara-quiz-answer`, which the harness loop clicks.
  *
- * `DEFAULT_QUIZ_DEFINITION` reproduces the pre-ADR-0019 tree EXACTLY (the same 17 non-neutral
- * leaves + neutral skip), expressed in the definition format and reduced by the same argmax —
- * so an unconfigured tenant resolves the identical archetype for every path (proven by the
- * parity test). It is EN-only (ADR-0019 D6 "minimal EN-only default tree"); the previous
- * PL/ES `QUIZ_CONTENT` strings move server-side (a brand localises by saving a definition with
- * its own `label_i18n`), banking the net-bundle-win the ADR sequences before FOLLOW-641.
+ * `onComplete(leaf, path, outcome)` fires ONCE per run, after the confirmation is resolved
+ * (ESC-086 item 4). `config.onRunEvent` receives every run transition (`shown`, `dismissed`,
+ * `completed`, `confirmed`, `corrected`, `unconfirmed`) for `POST /api/quiz/run`.
  *
  * @module @estalara/sdk/ui/quiz-widget
  */
 
-import type { QuizDefinition, QuizLanguage, QuizQuestion, WidgetPlacement } from '@estalara/shared';
+import type {
+  CanonicalArchetypeId,
+  QuizAnswer,
+  QuizDefinition,
+  QuizLanguage,
+  QuizPathStep,
+  TraitId,
+  WidgetPlacement,
+} from '@estalara/shared';
 import {
   DEFAULT_QUIZ_PLACEMENT,
+  QUIZ_RUN_MAX_MS,
   longestPathFrom,
+  nextStep,
   resolveArchetypeFromPath,
   resolveLabel,
 } from '@estalara/shared';
 
 import type { Archetype } from '../core/intent.js';
-import type { QuizAnswerPath } from '../core/adapt.js';
+import { quizAnswerSteps } from '../core/adapt.js';
+import type { QuizAnswerPath, QuizRunPingFields } from '../core/adapt.js';
 import { placementToCss } from './placement.js';
+import { readQuizLanguage, writeQuizLanguage } from './quiz-session-state.js';
 
-/** A resolved leaf archetype (one of the 17 non-neutral archetypes, or 'neutral'). */
+/** A resolved leaf archetype (a canonical non-neutral archetype, or 'neutral'). */
 export type QuizResolvedArchetype = Archetype;
+
+/**
+ * How the buyer answered the result screen (ESC-086 item 4); `null` = no confirmation step was
+ * offered (a `neutral` leaf, or a definition without `confirm` texts for the leaf).
+ */
+export type QuizConfirmation = 'confirmed' | 'corrected' | 'unconfirmed' | 'none_of_these';
+
+/** The third `onComplete` argument (ESC-086 item 4) [FOLLOW-1357]. */
+export interface QuizRunOutcome {
+  confirmation: QuizConfirmation | null;
+  /** The archetype to apply: the leaf, the chosen alternative, or `neutral` ("None of these"). */
+  final_archetype: QuizResolvedArchetype;
+  /** Traits the walk recorded, canonical order. */
+  traits: TraitId[];
+  quiz_run_id: string;
+  definition_hash: string;
+  /** The active quiz language at the end of the run (the switcher wins over `quiz_config`). */
+  language: QuizLanguage;
+}
+
+/** `definition_hash` the built-in fallback reports (the SDK never hashes, ESC-086 item 3). */
+export const BUILTIN_QUIZ_DEFINITION_HASH = 'builtin-en-v2';
 
 export interface QuizWidgetConfig {
   accentColor: string;
+  /** `quiz_config.language`; a buyer's EN | PL switcher choice (sessionStorage) overrides it. */
   language: QuizLanguage;
   /**
    * The quiz tree to walk — the tenant's served `quiz_definition` slice, or
    * `DEFAULT_QUIZ_DEFINITION` when the tenant configured none (ADR-0019 D4/D5).
    */
   definition: QuizDefinition;
+  /**
+   * Forwarded public-config `definition_hash` of the served definition. Absent →
+   * `'builtin-en-v2'` for the built-in default, `'unhashed'` for a served one [FOLLOW-1357].
+   */
+  definitionHash?: string | undefined;
+  /** Forwarded public-config `definition_version`; absent → `null` [FOLLOW-1357]. */
+  definitionVersion?: number | null | undefined;
+  /** Receives every run transition (`POST /api/quiz/run`); absent → nothing is reported. */
+  onRunEvent?: (ping: QuizRunPingFields) => void;
   /**
    * Tenant brand logo URL shown atop the quiz card (FOLLOW-623 / ADR-0019).
    *
@@ -66,31 +111,47 @@ export interface QuizWidgetConfig {
   /**
    * Where the card is anchored (FOLLOW-640 / ADR-0019 D2). Absent → `DEFAULT_QUIZ_PLACEMENT`
    * (bottom-left 24/96, which clears the opt-out toggle beneath it).
-   *
-   * FOLLOW-1015 made this field load-bearing again. It previously positioned the sticky
-   * trigger; when that was deleted the card was a centered full-viewport modal and
-   * `quiz_placement` had no consumer at all. The card is corner-anchored now, so the served
-   * slice drives real pixels again.
    */
   placement?: WidgetPlacement;
 }
 
-// ─── UI chrome i18n (question/answer strings live in the definition) ────────────
+// ─── UI chrome i18n (question/answer/confirmation texts live in the definition) ──
 
 /**
- * Widget CHROME labels — the small non-content strings (CTA + skip) not carried by the
- * definition. Kept multilingual (tiny) so a served non-EN definition still gets localised
- * chrome. Question/answer text comes from the definition's `prompt_i18n` / `label_i18n`.
+ * Widget CHROME labels — the non-content strings not carried by the definition (the trait
+ * screen's "None of these", the confirmation template and buttons, the correction texts —
+ * `quiz-default-v2.ts` module doc). EN / PL / ES so a served definition gets localised chrome.
  */
 const CHROME_LABELS: Record<
   QuizLanguage,
-  { next: string; finish: string; skip: string; intro: string }
+  {
+    next: string;
+    finish: string;
+    skip: string;
+    intro: string;
+    cont: string;
+    none: string;
+    basedOn: string;
+    isRight: string;
+    yes: string;
+    no: string;
+    which: string;
+    noneAll: string;
+  }
 > = {
   en: {
     next: '→',
     finish: 'Find my match',
     skip: 'Skip',
     intro: "Answer a few quick questions so we can show you listings that fit what you're after.",
+    cont: 'Continue',
+    none: 'None of these',
+    basedOn: 'Based on your answers:',
+    isRight: 'Is that right?',
+    yes: "Yes, that's me",
+    no: 'Not quite',
+    which: 'Which fits you better?',
+    noneAll: 'None of these — show me everything',
   },
   pl: {
     next: '→',
@@ -98,6 +159,14 @@ const CHROME_LABELS: Record<
     skip: 'Pomiń',
     intro:
       'Odpowiedz na kilka krótkich pytań, żebyśmy mogli pokazywać Ci oferty dopasowane do tego, czego szukasz.',
+    cont: 'Dalej',
+    none: 'Żadne z powyższych',
+    basedOn: 'Na podstawie Twoich odpowiedzi:',
+    isRight: 'Zgadza się?',
+    yes: 'Tak, to ja',
+    no: 'Nie do końca',
+    which: 'Co pasuje lepiej?',
+    noneAll: 'Żadne — pokaż wszystkie oferty',
   },
   es: {
     next: '→',
@@ -105,520 +174,598 @@ const CHROME_LABELS: Record<
     skip: 'Omitir',
     intro:
       'Responde unas preguntas rápidas para que podamos mostrarte propiedades que encajen con lo que buscas.',
+    cont: 'Continuar',
+    none: 'Ninguna de estas',
+    basedOn: 'Según tus respuestas:',
+    isRight: '¿Es correcto?',
+    yes: 'Sí, soy yo',
+    no: 'No exactamente',
+    which: '¿Cuál encaja mejor contigo?',
+    noneAll: 'Ninguna — muéstrame todo',
   },
 };
 
-// ─── Built-in default definition (EN-only) — reproduces the pre-ADR-0019 tree ──
+// ─── Built-in default definition — the v3.0 tree, EN only ─────────────────────
+
+/** A single-choice answer with EN text (the `answer()` shape of `quiz-default-v2.ts`). */
+function answer(
+  id: string,
+  en: string,
+  weights: Record<string, number>,
+  next: string | null,
+  traits?: TraitId[],
+): QuizAnswer {
+  return { id, label_i18n: { en }, weights, next, ...(traits ? { traits } : {}) };
+}
+
+/** A trait-screen answer: no weights, ends the walk, records `trait`. */
+function traitAnswer(trait: TraitId, en: string): QuizAnswer {
+  return answer(trait, en, {}, null, [trait]);
+}
+
+function buildDefaultQuizDefinition(): QuizDefinition {
+  const traitPrompt = { en: 'Anything else that applies? (optional — tick all that fit)' };
+  const children = traitAnswer('has_children', 'Children will live with me');
+  const wfh = traitAnswer('works_from_home', "I'll work from home 2+ days a week");
+  const premium = traitAnswer('premium', "I'm looking at the top end of the market");
+  const residency = traitAnswer(
+    'residency_goal',
+    'I want residency through this purchase (e.g. golden visa)',
+  );
+  const abroad = traitAnswer(
+    'buying_from_abroad',
+    'I live in a different country than the property',
+  );
+  return {
+    schema_version: 1,
+    root: 'q_purpose',
+    languages: ['en'],
+    questions: [
+      {
+        id: 'q_purpose',
+        prompt_i18n: { en: 'What will this property be for?' },
+        answers: [
+          answer('main_here', 'My main home, in the country where I live now', {}, 'q_home'),
+          answer(
+            'main_move',
+            "My main home, in a country I'm moving to (or back to)",
+            {},
+            'q_move',
+            ['buying_from_abroad'],
+          ),
+          answer(
+            'second',
+            "A holiday or second home — I'll mainly live elsewhere",
+            { second_home_buyer: 1 },
+            't_second',
+          ),
+          answer('invest', 'An investment — to rent out or resell', {}, 'q_invest'),
+          answer(
+            'student',
+            'A home for my child who is studying',
+            { student_parent: 1 },
+            't_student',
+          ),
+          answer('unsure', 'Not sure yet — just looking', {}, null),
+        ],
+      },
+      {
+        id: 'q_home',
+        prompt_i18n: { en: 'Which fits you best?' },
+        answers: [
+          answer('first', 'This will be my first own home', { first_time_buyer: 1 }, 't_home'),
+          answer(
+            'up',
+            "I've owned before — now I need more space or a better home",
+            { family_buyer: 1 },
+            't_home',
+          ),
+          answer(
+            'down',
+            "I've owned before — now I want something smaller and easier to look after",
+            { downsizer: 1 },
+            't_home',
+          ),
+        ],
+      },
+      {
+        id: 'q_move',
+        prompt_i18n: { en: 'Which describes you?' },
+        answers: [
+          answer('return', "I'm moving back to my home country", { diaspora_buyer: 1 }, 't_move'),
+          answer('retire', "I'm retired or about to retire", { retiree_relocator: 1 }, 't_move'),
+          answer(
+            'work',
+            "I'll keep working there — a job, my own business or remotely",
+            { lifestyle_expat: 1 },
+            't_move',
+          ),
+        ],
+      },
+      {
+        id: 'q_invest',
+        prompt_i18n: { en: 'How should it earn money?' },
+        answers: [
+          answer('long', 'Long-term rental to tenants', { yield_hunter: 1 }, 't_invest'),
+          answer(
+            'short',
+            'Holiday / short-term rental (e.g. Airbnb)',
+            { vacation_rental_investor: 1 },
+            't_invest',
+          ),
+          answer('flip', 'Renovate and resell', { flip_investor: 1 }, 't_invest'),
+          answer(
+            'commercial',
+            'Commercial premises (shop, office, warehouse)',
+            { commercial_investor: 1 },
+            't_invest',
+          ),
+          answer('inv_undecided', 'Not decided yet', { yield_hunter: 1 }, 't_invest'),
+        ],
+      },
+      {
+        id: 't_home',
+        kind: 'multi',
+        prompt_i18n: traitPrompt,
+        answers: [children, wfh, premium],
+      },
+      {
+        id: 't_move',
+        kind: 'multi',
+        prompt_i18n: traitPrompt,
+        answers: [children, wfh, premium, residency],
+      },
+      {
+        id: 't_second',
+        kind: 'multi',
+        prompt_i18n: traitPrompt,
+        answers: [
+          traitAnswer('will_let', "I'll rent it out when I'm not using it"),
+          abroad,
+          wfh,
+          residency,
+          premium,
+        ],
+      },
+      {
+        id: 't_invest',
+        kind: 'multi',
+        prompt_i18n: traitPrompt,
+        answers: [
+          traitAnswer('seasoned_investor', 'I already own other investment property'),
+          abroad,
+          residency,
+          premium,
+        ],
+      },
+      {
+        id: 't_student',
+        kind: 'multi',
+        prompt_i18n: traitPrompt,
+        answers: [abroad, traitAnswer('will_let', 'Other students will rent rooms there too')],
+      },
+    ],
+  };
+}
 
 /**
- * The built-in default quiz tree (ADR-0019 D5/D6), expressed in the `QuizDefinition` format
- * and reduced by the shared argmax so it resolves the SAME archetype as the old
- * `resolveArchetype()` switch for every path (parity test: `quiz-widget.test.ts`).
- *
- * Weight scheme: a branch/gate answer contributes `{}` (0); a base own-use answer contributes
- * `1` to its archetype; an override own-use Q3 answer contributes `2` so it beats the base on
- * argmax (the old "Q3-B → luxury, Q3-C → remote, else confirm base" rule); leaf answers on the
- * investor/cross-border branches contribute `1` to their single archetype.
+ * The built-in default quiz tree: the v3.0 tree of `DEFAULT_QUIZ_DEFINITION_V2` (same ids,
+ * structure, weights and traits) with its EN texts only and no `confirm` block — the served
+ * EN + PL definition carries the confirmation texts; the built-in is the offline fallback and
+ * its gzip budget (ESC-080) does not fit them [FOLLOW-1357]. Pinned against the shared default
+ * by `quiz-widget.test.ts`.
  */
-export const DEFAULT_QUIZ_DEFINITION: QuizDefinition = {
-  schema_version: 1,
-  root: 'q1_gate',
-  languages: ['en'],
-  questions: [
-    {
-      id: 'q1_gate',
-      prompt_i18n: { en: 'What are you looking for?' },
-      answers: [
-        {
-          id: 'invest',
-          label_i18n: { en: 'Investment property' },
-          weights: {},
-          next: 'inwestor_q2',
-        },
-        {
-          id: 'home',
-          label_i18n: { en: 'A home for myself or my family' },
-          weights: {},
-          next: 'own_use_q2',
-        },
-        {
-          id: 'abroad',
-          label_i18n: { en: 'Buying abroad / cross-border' },
-          weights: {},
-          next: 'cross_border_q2',
-        },
-        { id: 'browse', label_i18n: { en: 'Just browsing' }, weights: {}, next: null },
-      ],
-    },
-    {
-      id: 'inwestor_q2',
-      prompt_i18n: { en: 'What is your investment focus?' },
-      answers: [
-        {
-          id: 'yield',
-          label_i18n: { en: 'Rental income (yield)' },
-          weights: {},
-          next: 'inwestor_q3',
-        },
-        {
-          id: 'vacation',
-          label_i18n: { en: 'Vacation rental' },
-          weights: { vacation_rental_investor: 1 },
-          next: null,
-        },
-        {
-          id: 'flip',
-          label_i18n: { en: 'Flip / renovation' },
-          weights: { flip_investor: 1 },
-          next: null,
-        },
-        {
-          id: 'commercial',
-          label_i18n: { en: 'Commercial / portfolio' },
-          weights: { commercial_investor: 1 },
-          next: null,
-        },
-      ],
-    },
-    {
-      id: 'inwestor_q3',
-      prompt_i18n: { en: 'What is your target return?' },
-      answers: [
-        {
-          id: 'steady',
-          label_i18n: { en: 'Steady yield above market average' },
-          weights: { yield_hunter: 1 },
-          next: null,
-        },
-        {
-          id: 'portfolio',
-          label_i18n: { en: 'Long-term portfolio growth' },
-          weights: { portfolio_builder: 1 },
-          next: null,
-        },
-        {
-          id: 'golden',
-          label_i18n: { en: 'Golden visa / residency pathway' },
-          weights: { golden_visa_buyer: 1 },
-          next: null,
-        },
-      ],
-    },
-    {
-      id: 'own_use_q2',
-      prompt_i18n: { en: 'What describes your situation best?' },
-      answers: [
-        {
-          id: 'first_time',
-          label_i18n: { en: 'First-time buyer' },
-          weights: { first_time_buyer: 1 },
-          next: 'own_use_q3',
-        },
-        {
-          id: 'family',
-          label_i18n: { en: 'Growing family' },
-          weights: { family_buyer: 1 },
-          next: 'own_use_q3',
-        },
-        {
-          id: 'upsize',
-          label_i18n: { en: 'Upsizing' },
-          weights: { upsizer: 1 },
-          next: 'own_use_q3',
-        },
-        {
-          id: 'downsize',
-          label_i18n: { en: 'Downsizing' },
-          weights: { downsizer: 1 },
-          next: 'own_use_q3',
-        },
-      ],
-    },
-    {
-      id: 'own_use_q3',
-      prompt_i18n: { en: 'What matters most to you?' },
-      answers: [
-        { id: 'location', label_i18n: { en: 'Location and community' }, weights: {}, next: null },
-        {
-          id: 'luxury',
-          label_i18n: { en: 'Luxury finishes and prestige' },
-          weights: { luxury_buyer: 2 },
-          next: null,
-        },
-        {
-          id: 'remote',
-          label_i18n: { en: 'Remote-work setup' },
-          weights: { remote_worker: 2 },
-          next: null,
-        },
-        { id: 'value', label_i18n: { en: 'Value for money' }, weights: {}, next: null },
-      ],
-    },
-    {
-      id: 'cross_border_q2',
-      prompt_i18n: { en: 'Why are you buying abroad?' },
-      answers: [
-        {
-          id: 'retiring',
-          label_i18n: { en: 'Retiring or relocating' },
-          weights: {},
-          next: 'cross_border_q3',
-        },
-        {
-          id: 'second_home',
-          label_i18n: { en: 'Second / holiday home' },
-          weights: { second_home_buyer: 1 },
-          next: null,
-        },
-        {
-          id: 'student',
-          label_i18n: { en: 'Supporting a student' },
-          weights: { student_parent: 1 },
-          next: null,
-        },
-      ],
-    },
-    {
-      id: 'cross_border_q3',
-      prompt_i18n: { en: 'What is your primary goal?' },
-      answers: [
-        {
-          id: 'settle',
-          label_i18n: { en: 'Retire and settle permanently' },
-          weights: { retiree_relocator: 1 },
-          next: null,
-        },
-        {
-          id: 'connected',
-          label_i18n: { en: 'Stay connected to home country' },
-          weights: { diaspora_buyer: 1 },
-          next: null,
-        },
-        {
-          id: 'lifestyle',
-          label_i18n: { en: 'Lifestyle and travel base' },
-          weights: { lifestyle_expat: 1 },
-          next: null,
-        },
-      ],
-    },
-  ],
-};
+export const DEFAULT_QUIZ_DEFINITION: QuizDefinition = buildDefaultQuizDefinition();
 
 // ─── Pure walk helpers (moved to @estalara/shared — FOLLOW-1356) ────────────────
 
 /**
- * `resolveLabel` and `resolveArchetypeFromPath` now live in `@estalara/shared`
- * (`schemas/quiz-walk.ts`), shared with the admin simulator and the editor lint. Re-exported
- * under the same names so this module's importers and tests are unchanged.
+ * `resolveLabel` and `resolveArchetypeFromPath` live in `@estalara/shared`
+ * (`schemas/quiz-walk.ts`). Re-exported under the same names so existing importers keep working.
  */
 export { resolveArchetypeFromPath, resolveLabel };
+
+/** A random v4 uuid: `crypto.randomUUID`, else a `Math.random` fallback in the same format. */
+export function newQuizRunId(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (c) =>
+      (+c ^ ((Math.random() * 16) & (15 >> (+c / 4)))).toString(16),
+    );
+  }
+}
 
 // ─── Renderer ─────────────────────────────────────────────────────────────────
 
 /**
  * Render the definition-driven quiz widget into the given Shadow Root.
- * Returns a cleanup function.
+ *
+ * @param onComplete - Called once at the end of the run: the walk's leaf, the walked path and
+ *   the outcome (confirmation, final archetype, traits, run id, definition hash).
+ * @param onDismiss - Called on Skip / × before the leaf.
+ * @returns A cleanup function.
  */
 export function renderQuizWidget(
   shadowRoot: ShadowRoot,
   config: QuizWidgetConfig,
-  onComplete: (resolvedArchetype: QuizResolvedArchetype, path: QuizAnswerPath) => void,
+  onComplete: (
+    resolvedArchetype: QuizResolvedArchetype,
+    path: QuizAnswerPath,
+    outcome: QuizRunOutcome,
+  ) => void,
   onDismiss: () => void,
 ): () => void {
   try {
     const def = config.definition;
-    const byId = new Map<string, QuizQuestion>(def.questions.map((q) => [q.id, q]));
-    const chrome = CHROME_LABELS[config.language];
+    const confirm = def.confirm;
+    const byId = new Map(def.questions.map((q) => [q.id, q]));
+    const hash =
+      config.definitionHash ??
+      (def === DEFAULT_QUIZ_DEFINITION ? BUILTIN_QUIZ_DEFINITION_HASH : 'unhashed');
+    const runId = newQuizRunId();
+    // The switcher lists the definition's languages that carry texts (CEO ruling Q-D).
+    const langs = def.languages.filter((l) => byId.get(def.root)?.prompt_i18n[l]);
+    const stored = readQuizLanguage();
+    let lang: QuizLanguage = langs.find((l) => l === stored) ?? config.language;
+    const text = (bag: Partial<Record<QuizLanguage, string>> | undefined): string =>
+      bag ? resolveLabel(bag, lang) : '';
 
     const style = document.createElement('style');
-    style.textContent = `
-      /* FOLLOW-1015: corner-anchored and sized to the card - deliberately NOT the
-         full-viewport dimming scrim (inset:0 + rgba(0,0,0,.45)) this used to be. That was
-         fine when the visitor CLICKED a trigger to open the quiz (an explicit, modal
-         interaction), but the card auto-opens now, so a backdrop would dim and freeze the
-         tenant's whole page on every single load until the visitor closed it. Only the
-         card's own box may take pointer events; everything around it stays clickable. */
-      .estalara-quiz-overlay {
-        position: fixed;
-        ${placementToCss(config.placement ?? DEFAULT_QUIZ_PLACEMENT)};
-        width: min(400px, calc(100vw - 32px));
-        z-index: 2147483647;
-        pointer-events: auto;
-      }
-      .estalara-quiz-card {
-        background: #fff;
-        border-radius: 16px;
-        padding: 28px 24px 24px;
-        width: 100%;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.22);
-        position: relative;
-      }
-      .estalara-quiz-close {
-        position: absolute;
-        top: 12px;
-        right: 16px;
-        background: transparent;
-        border: none;
-        font-size: 20px;
-        cursor: pointer;
-        color: #6b7280;
-        line-height: 1;
-      }
-      .estalara-quiz-logo {
-        display: block;
-        max-height: 32px;
-        max-width: 160px;
-        margin: 0 auto 16px;
-        object-fit: contain;
-      }
-      /* FOLLOW-1015: the quiz now opens on its own, with no trigger button to explain it,
-         so the first step states why the questions are being asked. Root step only. */
-      .estalara-quiz-intro {
-        font-size: 14px;
-        line-height: 1.5;
-        color: #4b5563;
-        margin: 0 0 14px;
-      }
-      .estalara-quiz-question {
-        font-size: 16px;
-        font-weight: 600;
-        color: #111827;
-        margin: 0 0 16px;
-      }
-      .estalara-quiz-answers {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        margin-bottom: 20px;
-      }
-      .estalara-quiz-answer {
-        padding: 12px 16px;
-        border: 2px solid #e5e7eb;
-        border-radius: 10px;
-        background: #fff;
-        font-size: 14px;
-        text-align: left;
-        cursor: pointer;
-        transition: border-color 0.15s, background 0.15s;
-        color: #374151;
-      }
-      .estalara-quiz-answer:hover,
-      .estalara-quiz-answer.selected {
-        border-color: ${config.accentColor};
-        background: #f0f4ff;
-      }
-      .estalara-quiz-cta {
-        width: 100%;
-        padding: 12px;
-        background: ${config.accentColor};
-        color: #fff;
-        border: none;
-        border-radius: 9999px;
-        font-size: 15px;
-        font-weight: 600;
-        cursor: pointer;
-        opacity: 0.5;
-        transition: opacity 0.15s;
-      }
-      .estalara-quiz-cta:enabled { opacity: 1; }
-      .estalara-quiz-skip {
-        display: block;
-        margin: 12px auto 0;
-        background: transparent;
-        border: none;
-        color: #9ca3af;
-        font-size: 13px;
-        cursor: pointer;
-        text-decoration: underline;
-      }
-      .estalara-quiz-progress {
-        font-size: 12px;
-        color: #9ca3af;
-        margin-bottom: 12px;
-      }
-      .estalara-quiz-attribution {
-        display: block;
-        margin: 14px auto 0;
-        text-align: center;
-        font-size: 10px;
-        color: #b0b4bd;
-        letter-spacing: 0.02em;
-      }
-    `;
+    // Minified on purpose: a template literal ships verbatim (indentation and comments included)
+    // and the gzip budget is tight (ESC-080) [FOLLOW-1357]. FOLLOW-1015: the overlay is
+    // corner-anchored and sized to the card - deliberately NOT a full-viewport dimming scrim, which
+    // would freeze the tenant's page on every load now that the card opens on its own. The intro
+    // line explains the auto-opened card. The confirm / reject / option buttons share the answer
+    // look, so the two result buttons carry equal visual weight (MASTER_DESIGN §E.4.2).
+    const accent = config.accentColor;
+    const choice =
+      '.estalara-quiz-answer,.estalara-quiz-confirm,.estalara-quiz-reject,.estalara-quiz-option';
+    style.textContent =
+      `.estalara-quiz-overlay{position:fixed;${placementToCss(config.placement ?? DEFAULT_QUIZ_PLACEMENT)};width:min(400px,calc(100vw - 32px));z-index:2147483647;pointer-events:auto}` +
+      '.estalara-quiz-card{background:#fff;border-radius:16px;padding:28px 24px 24px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.22);position:relative}' +
+      '.estalara-quiz-close{position:absolute;top:12px;right:16px;background:0 0;border:none;font-size:20px;cursor:pointer;color:#6b7280;line-height:1}' +
+      '.estalara-quiz-lang{position:absolute;top:10px;left:16px}' +
+      '.estalara-quiz-lang button{background:0 0;border:none;padding:2px 4px;font-size:12px;cursor:pointer;color:#9ca3af}' +
+      '.estalara-quiz-lang [aria-pressed=true]{color:#111827;font-weight:600}' +
+      '.estalara-quiz-logo{display:block;max-height:32px;max-width:160px;margin:0 auto 16px;object-fit:contain}' +
+      '.estalara-quiz-intro{font-size:14px;line-height:1.5;color:#4b5563;margin:0 0 14px}' +
+      '.estalara-quiz-question{font-size:16px;font-weight:600;color:#111827;margin:0 0 16px}' +
+      '.estalara-quiz-result{font-weight:400;line-height:1.5}' +
+      '.estalara-quiz-answers{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}' +
+      `${choice}{padding:12px 16px;border:2px solid #e5e7eb;border-radius:10px;background:#fff;font-size:14px;text-align:left;cursor:pointer;transition:border-color .15s,background .15s;color:#374151}` +
+      `${choice.replace(/,|$/g, ':hover,')}.estalara-quiz-answer.selected{border-color:${accent};background:#f0f4ff}` +
+      ".estalara-quiz-answer[role=checkbox]::before{content:'\\2610  '}" +
+      ".estalara-quiz-answer[aria-checked=true]::before{content:'\\2611  '}" +
+      `.estalara-quiz-cta{width:100%;padding:12px;background:${accent};color:#fff;border:none;border-radius:9999px;font-size:15px;font-weight:600;cursor:pointer;opacity:.5;transition:opacity .15s}` +
+      '.estalara-quiz-cta:enabled{opacity:1}' +
+      '.estalara-quiz-skip{display:block;margin:12px auto 0;background:0 0;border:none;color:#9ca3af;font-size:13px;cursor:pointer;text-decoration:underline}' +
+      '.estalara-quiz-progress{font-size:12px;color:#9ca3af;margin-bottom:12px}' +
+      '.estalara-quiz-attribution{display:block;margin:14px auto 0;text-align:center;font-size:10px;color:#b0b4bd;letter-spacing:.02em}';
     shadowRoot.appendChild(style);
 
     // ── State ──────────────────────────────────────────────────────────────────
     //
-    // currentId:     the question currently shown (starts at the definition root).
-    // answerPath:    the answer INDEX chosen at each visited question, in root→leaf order.
-    //                The resolved archetype is `resolveArchetypeFromPath(def, answerPath)` — the
-    //                SAME pure walk the parity tests assert, so the renderer and the tests share
-    //                one reduction implementation (no drift).
-    // selectedIndex: the answer highlighted on the CURRENT (non-root) question, or null.
-    //
-    // The root question navigates immediately on click (no CTA), matching the pre-ADR-0019
-    // Q1 gate; non-root questions select then CTA-advance.
+    // path / questionPath: the selections and the question each was made on, root→leaf, pushed
+    //   together so they cannot drift (FOLLOW-1020). `nextStep(def, { path })` decides what
+    //   comes next — the same pure walk the shared tests and the admin simulator use.
+    // stepMs: ms on each committed step (rounded to 100, capped); stepAt: when the current
+    //   question was first shown (a re-render for a selection or a language switch keeps it).
+    // selected / ticks / none: the pending selection on the current single / multi question.
+    // resultAt: when the result screen was first shown (0 = not shown).
     let currentId: string = def.root;
-    const answerPath: number[] = [];
-    // FOLLOW-1020: the question that was on screen for each entry of `answerPath`, pushed in
-    // the same place so the two arrays cannot drift out of alignment.
+    const path: QuizPathStep[] = [];
     const questionPath: string[] = [];
-    let selectedIndex: number | null = null;
+    const stepMs: number[] = [];
+    let stepAt = Date.now();
+    let selected: number | null = null;
+    let ticks: number[] = [];
+    let none = false;
+    let resultAt = 0;
+    let leaf: QuizResolvedArchetype = 'neutral';
+    let traits: TraitId[] = [];
+    let offered: CanonicalArchetypeId[] | undefined;
+    let ended = false;
+    let screen: () => void = renderQuestion;
 
     const overlay = document.createElement('div');
     overlay.className = 'estalara-quiz-overlay';
-
     const card = document.createElement('div');
     card.className = 'estalara-quiz-card';
 
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'estalara-quiz-close';
-    closeBtn.textContent = '×';
-    closeBtn.setAttribute('aria-label', 'Close');
-    closeBtn.addEventListener('click', () => {
-      cleanup();
-      onDismiss();
+    function el<K extends keyof HTMLElementTagNameMap>(
+      tag: K,
+      cls: string,
+      content?: string,
+    ): HTMLElementTagNameMap[K] {
+      const node = document.createElement(tag);
+      node.className = cls;
+      if (content !== undefined) node.textContent = content;
+      return node;
+    }
+    function button(cls: string, content: string, onClick: () => void): HTMLButtonElement {
+      const btn = el('button', cls, content);
+      btn.addEventListener('click', onClick);
+      return btn;
+    }
+    const ms = (since: number): number =>
+      Math.min(QUIZ_RUN_MAX_MS, Math.round((Date.now() - since) / 100) * 100);
+    const walked = (): QuizAnswerPath => ({
+      question_ids: [...questionPath],
+      answer_indexes: path.map((s) => (Array.isArray(s) ? [...s] : s)),
     });
-
-    /** Record the selected answer and either advance to its `next` or complete at a leaf. */
-    function applyAnswer(answerIndex: number): void {
-      const q = byId.get(currentId);
-      if (!q) return;
-      const ans = q.answers[answerIndex];
-      if (!ans) return;
-      answerPath.push(answerIndex);
-      questionPath.push(currentId);
-      if (ans.next === null || !byId.has(ans.next)) {
-        cleanup();
-        onComplete(resolveArchetypeFromPath(def, answerPath), {
-          question_ids: [...questionPath],
-          answer_indexes: [...answerPath],
-        });
-        return;
-      }
-      currentId = ans.next;
-      selectedIndex = null;
-      buildStep();
+    function ping(
+      event: QuizRunPingFields['event'],
+      fields: Partial<QuizRunPingFields> = {},
+    ): void {
+      config.onRunEvent?.({
+        quiz_run_id: runId,
+        event,
+        language: lang,
+        definition_hash: hash,
+        definition_version: config.definitionVersion ?? null,
+        ...fields,
+      });
     }
 
-    function buildStep(): void {
-      const q = byId.get(currentId);
-      if (!q) {
-        // Malformed definition (should be impossible post-validation) — resolve from the path.
-        cleanup();
-        onComplete(resolveArchetypeFromPath(def, answerPath), {
-          question_ids: [...questionPath],
-          answer_indexes: [...answerPath],
-        });
+    const closeBtn = button('estalara-quiz-close', '×', () => {
+      if (resultAt) resolve('unconfirmed', null, leaf);
+      else dismiss();
+    });
+    closeBtn.setAttribute('aria-label', 'Close');
+
+    function dismiss(): void {
+      if (ended) return;
+      ended = true;
+      ping('dismissed', { last_step: path.length });
+      cleanup();
+      onDismiss();
+    }
+
+    function finish(confirmation: QuizConfirmation | null, final: QuizResolvedArchetype): void {
+      if (ended) return;
+      ended = true;
+      cleanup();
+      onComplete(leaf, walked(), {
+        confirmation,
+        final_archetype: final,
+        traits,
+        quiz_run_id: runId,
+        definition_hash: hash,
+        language: lang,
+      });
+    }
+
+    /** Close the result screen: one ping, then `onComplete` (idempotent via `ended`). */
+    function resolve(
+      event: 'confirmed' | 'corrected' | 'unconfirmed',
+      confirmed: QuizRunPingFields['confirmed_archetype'] | null,
+      final: QuizResolvedArchetype,
+    ): void {
+      if (ended) return;
+      ping(event, {
+        resolved_archetype: leaf,
+        result_ms: ms(resultAt),
+        ...(offered ? { offered } : {}),
+        ...(confirmed ? { confirmed_archetype: confirmed } : {}),
+      });
+      finish(confirmed === 'none_of_these' ? 'none_of_these' : event, final);
+    }
+
+    // × is not the only way off the result screen: navigating away resolves it too.
+    const onPageHide = (): void => {
+      if (resultAt) resolve('unconfirmed', null, leaf);
+    };
+
+    function commit(step: QuizPathStep): void {
+      path.push(step);
+      questionPath.push(currentId);
+      stepMs.push(ms(stepAt));
+      stepAt = Date.now();
+      selected = null;
+      ticks = [];
+      none = false;
+      advance();
+    }
+
+    function advance(): void {
+      const ns = nextStep(def, { path });
+      if (ns.kind === 'question') {
+        currentId = ns.questionId;
+        screen = renderQuestion;
+        screen();
         return;
       }
-      const isRoot = currentId === def.root;
+      leaf = ns.leaf;
+      traits = ns.traits;
+      ping('completed', {
+        resolved_archetype: leaf,
+        ...(path.length ? { answer_path: quizAnswerSteps(walked()) } : {}),
+        traits,
+        step_ms: [...stepMs],
+      });
+      if (ns.kind === 'confirm') {
+        resultAt = Date.now();
+        screen = renderResult;
+        screen();
+      } else {
+        finish(null, leaf);
+      }
+    }
 
+    /** Close button, EN | PL switcher and logo — the top of every screen. */
+    function head(): void {
       card.innerHTML = '';
       card.appendChild(closeBtn);
-
-      // FOLLOW-623 / ADR-0019: brand logo atop the card when configured. Re-appended each step
-      // because buildStep() clears the card. Absent/null → no logo (byte-identical).
+      if (langs.length > 1) {
+        const switcher = el('div', 'estalara-quiz-lang');
+        for (const l of langs) {
+          const b = button('', l.toUpperCase(), () => {
+            lang = l;
+            writeQuizLanguage(l);
+            screen();
+          });
+          b.setAttribute('aria-pressed', String(l === lang));
+          switcher.appendChild(b);
+        }
+        card.appendChild(switcher);
+      }
+      // FOLLOW-623 / ADR-0019: brand logo atop the card when configured.
       if (config.logoUrl) {
-        const logo = document.createElement('img');
-        logo.className = 'estalara-quiz-logo';
+        const logo = el('img', 'estalara-quiz-logo');
         logo.src = config.logoUrl;
         logo.alt = '';
         logo.setAttribute('aria-hidden', 'true');
         card.appendChild(logo);
       }
+    }
 
-      const totalSteps = answerPath.length + longestPathFrom(def, currentId);
-      const progress = document.createElement('div');
-      progress.className = 'estalara-quiz-progress';
-      progress.textContent = `${String(answerPath.length + 1)} / ${String(totalSteps)}`;
-      card.appendChild(progress);
-
-      // FOLLOW-1015: intro line on the first step only. The quiz auto-opens now, so this is
-      // the visitor's only explanation of why they are being asked; on later steps they have
-      // already engaged and it would just push the answers down.
-      if (isRoot) {
-        const intro = document.createElement('p');
-        intro.className = 'estalara-quiz-intro';
-        intro.textContent = chrome.intro;
-        card.appendChild(intro);
-      }
-
-      const question = document.createElement('p');
-      question.className = 'estalara-quiz-question';
-      question.textContent = resolveLabel(q.prompt_i18n, config.language);
-      card.appendChild(question);
-
-      const answersDiv = document.createElement('div');
-      answersDiv.className = 'estalara-quiz-answers';
-
-      q.answers.forEach((ans, idx) => {
-        const btn = document.createElement('button');
-        btn.className = 'estalara-quiz-answer';
-        if (!isRoot && selectedIndex === idx) {
-          btn.classList.add('selected');
-        }
-        btn.textContent = resolveLabel(ans.label_i18n, config.language);
-        btn.addEventListener('click', () => {
-          if (isRoot) {
-            // Root: navigate / complete immediately on click (matches the old Q1 gate).
-            applyAnswer(idx);
-          } else {
-            selectedIndex = idx;
-            buildStep();
-          }
-        });
-        answersDiv.appendChild(btn);
-      });
-      card.appendChild(answersDiv);
-
-      // Non-root questions show a CTA that advances/completes the selected answer.
-      if (!isRoot) {
-        const selectedAnswer = selectedIndex !== null ? q.answers[selectedIndex] : undefined;
-        const isLeafSelected = selectedAnswer?.next === null;
-        const cta = document.createElement('button');
-        cta.className = 'estalara-quiz-cta';
-        cta.textContent = isLeafSelected ? chrome.finish : chrome.next;
-        cta.disabled = selectedIndex === null;
-        cta.addEventListener('click', () => {
-          if (selectedIndex !== null) applyAnswer(selectedIndex);
-        });
-        card.appendChild(cta);
-      }
-
-      const skip = document.createElement('button');
-      skip.className = 'estalara-quiz-skip';
-      skip.textContent = chrome.skip;
-      skip.addEventListener('click', () => {
-        cleanup();
-        onDismiss();
-      });
-      card.appendChild(skip);
-
-      // FOLLOW-651: discreet "Powered by Estalara" attribution, rendered BY DEFAULT in the card
-      // footer. Suppressed only when the caller passes `showAttribution: false` (i.e.
-      // `brand.white_label === true`). Re-appended each step because buildStep() clears the card.
-      // Distinct class from `.estalara-quiz-logo` — the logo is NOT clobbered.
+    /** FOLLOW-651: "Powered by Estalara" unless white-label. */
+    function attribution(): void {
       if (config.showAttribution !== false) {
-        const attribution = document.createElement('div');
-        attribution.className = 'estalara-quiz-attribution';
-        attribution.textContent = 'Powered by Estalara';
-        card.appendChild(attribution);
+        card.appendChild(el('div', 'estalara-quiz-attribution', 'Powered by Estalara'));
       }
     }
 
-    buildStep();
+    function renderQuestion(): void {
+      const q = byId.get(currentId);
+      if (!q) return; // nextStep only names questions that exist
+      const chrome = CHROME_LABELS[lang];
+      const multi = q.kind === 'multi';
+      const isRoot = currentId === def.root;
+      head();
+
+      // The progress counter counts questions only — the confirmation is not a step.
+      card.appendChild(
+        el(
+          'div',
+          'estalara-quiz-progress',
+          `${String(path.length + 1)} / ${String(path.length + longestPathFrom(def, currentId))}`,
+        ),
+      );
+      // FOLLOW-1015: intro line on the first step only (the card opened on its own).
+      if (isRoot) card.appendChild(el('p', 'estalara-quiz-intro', chrome.intro));
+      card.appendChild(el('p', 'estalara-quiz-question', text(q.prompt_i18n)));
+
+      const answers = el('div', 'estalara-quiz-answers');
+      const option = (label: string, on: boolean, onClick: () => void): void => {
+        const btn = button(
+          on ? 'estalara-quiz-answer selected' : 'estalara-quiz-answer',
+          label,
+          onClick,
+        );
+        if (multi) {
+          btn.setAttribute('role', 'checkbox');
+          btn.setAttribute('aria-checked', String(on));
+        }
+        answers.appendChild(btn);
+      };
+      q.answers.forEach((ans, idx) => {
+        const on = multi ? ticks.includes(idx) : selected === idx;
+        option(text(ans.label_i18n), on, () => {
+          if (multi) {
+            // a trait tick clears the exclusive "None of these"
+            none = false;
+            ticks = on ? ticks.filter((i) => i !== idx) : [...ticks, idx];
+          } else if (isRoot) {
+            // Root: commit immediately on click (the original Q1 gate).
+            commit(idx);
+            return;
+          } else {
+            selected = idx;
+          }
+          renderQuestion();
+        });
+      });
+      // The trait screen's exclusive "None of these" is chrome, not part of the definition.
+      if (multi) {
+        option(chrome.none, none, () => {
+          none = !none;
+          ticks = [];
+          renderQuestion();
+        });
+      }
+      card.appendChild(answers);
+
+      // Non-root single questions and trait screens commit through the CTA; a trait screen's
+      // CTA is always enabled (the screen is optional).
+      if (multi || !isRoot) {
+        const pick = selected === null ? undefined : q.answers[selected];
+        const cta = button(
+          'estalara-quiz-cta',
+          multi ? chrome.cont : pick?.next === null ? chrome.finish : chrome.next,
+          () => {
+            if (multi) commit([...ticks].sort((a, b) => a - b));
+            else if (selected !== null) commit(selected);
+          },
+        );
+        cta.disabled = !multi && selected === null;
+        card.appendChild(cta);
+      }
+
+      card.appendChild(button('estalara-quiz-skip', chrome.skip, dismiss));
+      attribution();
+    }
+
+    function renderResult(): void {
+      const chrome = CHROME_LABELS[lang];
+      head();
+      const p = el('p', 'estalara-quiz-question estalara-quiz-result');
+      p.append(
+        `${chrome.basedOn} `,
+        el('strong', '', text(confirm?.names_i18n[leaf])),
+        ` — ${text(confirm?.sentences_i18n[leaf])}. ${chrome.isRight}`,
+      );
+      card.appendChild(p);
+      const choices = el('div', 'estalara-quiz-answers');
+      choices.append(
+        button('estalara-quiz-confirm', chrome.yes, () => {
+          resolve('confirmed', leaf, leaf);
+        }),
+        button('estalara-quiz-reject', chrome.no, () => {
+          screen = renderCorrection;
+          screen();
+        }),
+      );
+      card.appendChild(choices);
+      attribution();
+    }
+
+    function renderCorrection(): void {
+      const chrome = CHROME_LABELS[lang];
+      head();
+      card.appendChild(el('p', 'estalara-quiz-question estalara-quiz-result', chrome.which));
+      // The alternatives are canonical ids (serve-schema guardrail 5).
+      offered = (confirm?.alternatives[leaf] ?? []).filter(
+        (a) => confirm?.names_i18n[a],
+      ) as CanonicalArchetypeId[];
+      const options = el('div', 'estalara-quiz-answers');
+      for (const alt of offered) {
+        options.appendChild(
+          button('estalara-quiz-option', text(confirm?.names_i18n[alt]), () => {
+            resolve('corrected', alt, alt);
+          }),
+        );
+      }
+      options.appendChild(
+        button('estalara-quiz-option', chrome.noneAll, () => {
+          resolve('corrected', 'none_of_these', 'neutral');
+        }),
+      );
+      card.appendChild(options);
+      attribution();
+    }
+
     overlay.appendChild(card);
     shadowRoot.appendChild(overlay);
+    window.addEventListener('pagehide', onPageHide);
+    ping('shown');
+    advance();
 
     function cleanup(): void {
-      try {
-        overlay.remove();
-        style.remove();
-      } catch {
-        // already removed
-      }
+      window.removeEventListener('pagehide', onPageHide);
+      overlay.remove();
+      style.remove();
     }
 
     return cleanup;

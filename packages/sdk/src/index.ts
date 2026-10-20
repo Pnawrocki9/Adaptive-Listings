@@ -17,14 +17,15 @@ import {
 } from './core/adapt-description.js';
 import { mark } from './core/boot-timing.js';
 import type { IntentState } from './core/intent.js';
+import { SDK_VERSION } from './core/version.js';
 
 // init() phases live in core/*; re-exported to keep the public surface [FOLLOW-1296].
 export { mergeQuizConfig } from './core/boot.js';
 export { DRIFT_HOLD_COUNT, detectPageType, detectListingId } from './core/adapt-loop.js';
 export type { PageType } from './core/adapt-loop.js';
 
-/** Current SDK version string. */
-export const SDK_VERSION = '0.0.0' as const;
+// Current SDK version string; lives in core/version.ts so the quiz run pings can read it.
+export { SDK_VERSION };
 
 /** Event queue flushed every BATCH_INTERVAL_MS or on page unload. */
 const eventQueue: CollectedEvent[] = [];

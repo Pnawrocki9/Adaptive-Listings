@@ -74,3 +74,28 @@ export function markQuizCompleted(): void {
     // sessionStorage unavailable — ignore
   }
 }
+
+/**
+ * The buyer's EN | PL quiz-language choice (CEO ruling Q-D, FOLLOW-1357) — sessionStorage, one
+ * namespaced key; it overrides `quiz_config.language` for the quiz texts and chrome. Erased with
+ * the cached quiz config on consent denial (`eraseCachedQuizConfig`).
+ */
+export const QUIZ_LANGUAGE_STORAGE_KEY = '__estalara_quiz_language__';
+
+/** Read the buyer's quiz-language choice, or `null`. */
+export function readQuizLanguage(): string | null {
+  try {
+    return sessionStorage.getItem(QUIZ_LANGUAGE_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Remember the buyer's quiz-language choice for the rest of the tab session. */
+export function writeQuizLanguage(language: string): void {
+  try {
+    sessionStorage.setItem(QUIZ_LANGUAGE_STORAGE_KEY, language);
+  } catch {
+    // sessionStorage unavailable — the choice lasts for this card only
+  }
+}

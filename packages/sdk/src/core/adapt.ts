@@ -12,8 +12,11 @@ import type {
   ReorderDirective,
   ArchetypeId,
   QuizLanguage,
+  QuizRunPing,
 } from '@estalara/shared';
 import type { CollectedEvent } from './events.js';
+import { mapConsentState } from './events.js';
+import { SDK_VERSION } from './version.js';
 import type { IntentState } from './intent.js';
 import { applyChatIntentPrior } from './intent.js';
 import { adaptResponseSchema } from './adapt-schema.js';
@@ -56,29 +59,53 @@ function deriveQuizCompletionUrl(config: SdkConfig): string | null {
   return buildEndpoint(config.decisionApiUrl, '/quiz/completion');
 }
 
-/** The buyer's root→leaf quiz walk, ids paired with answers (ADR-0019) [FOLLOW-1020]. */
+/**
+ * The buyer's root→leaf quiz walk, ids paired with answers (ADR-0019) [FOLLOW-1020]. A trait
+ * (`multi`) step's entry is the list of ticked indexes, `[]` for "None of these" [FOLLOW-1357].
+ */
 export interface QuizAnswerPath {
   question_ids: string[];
-  answer_indexes: number[];
+  answer_indexes: (number | number[])[];
+}
+
+/** One walk step on the wire: `answer_index` (single) or `answer_indexes` (trait screen). */
+export type QuizAnswerStep =
+  | { question_id: string; answer_index: number }
+  | { question_id: string; answer_indexes: number[] };
+
+/**
+ * The walk as wire steps (`QuizRunPingSchema` `answer_path`, FOLLOW-1358): a single-choice step
+ * keeps the `quiz_completions` shape `{ question_id, answer_index }`, a trait step is
+ * `{ question_id, answer_indexes }` [FOLLOW-1357].
+ * @internal
+ */
+export function quizAnswerSteps(path: QuizAnswerPath): QuizAnswerStep[] {
+  return path.question_ids.flatMap((question_id, i): QuizAnswerStep[] => {
+    const a = path.answer_indexes[i];
+    if (a === undefined) return [];
+    return [
+      typeof a === 'number' ? { question_id, answer_index: a } : { question_id, answer_indexes: a },
+    ];
+  });
 }
 
 /**
  * Quiz walk → completion-row fields [FOLLOW-1020].
+ * `quiz_completions` is unchanged by Faza Q (ESC-086 item 4) and its route takes a NUMBER per
+ * step, so a trait step is left out here — `quiz_runs` records it [FOLLOW-1357].
  * @param path - The root→leaf walk from the quiz widget.
  * @returns The subset of completion-row fields the path determines.
  * @internal
  */
 function quizPathFields(path: QuizAnswerPath): Record<string, unknown> {
-  const [q1, q2, q3] = path.answer_indexes;
+  const pairs = quizAnswerSteps(path).filter((p) => 'answer_index' in p);
+  const [q1, q2, q3] = pairs.map((p) => ('answer_index' in p ? p.answer_index : undefined));
   return {
     branch: path.question_ids[1] ?? null,
     ...(q1 !== undefined ? { q1_answer: q1 } : {}),
     q2_answer: q2 ?? null,
     q3_answer: q3 ?? null,
-    answer_path: path.question_ids.map((questionId, i) => ({
-      question_id: questionId,
-      answer_index: path.answer_indexes[i],
-    })),
+    answer_path: pairs,
   };
 }
 
@@ -135,6 +162,64 @@ export function postQuizCompletionPing(
         err instanceof Error ? err.message : String(err),
       );
     });
+}
+
+// ── Quiz run ping (FOLLOW-1357) ──
+
+/** A run transition as the quiz widget reports it; `postQuizRunPing` adds the identity fields. */
+export type QuizRunPingFields = Omit<
+  QuizRunPing,
+  'tenant_id' | 'session_id' | 'sdk_version' | 'consent_state'
+>;
+
+/**
+ * POST /api/quiz/run — one quiz-run transition (ESC-086 item 2), HMAC-signed like the
+ * completion ping; the body is `QuizRunPingSchema` (FOLLOW-1358 parses it). Adds `tenant_id`
+ * (the REAL `config.tenantId` — the route answers 403 on a mismatch with the API key's tenant),
+ * `session_id`, `sdk_version` and the current `consent_state`. Fire-and-forget with `keepalive`
+ * (a `pagehide` ping must survive the unload); no retry; resolves (never rejects) once the
+ * request settled or was skipped. Sends NOTHING without profiling consent, under the §H.9
+ * opt-out or without a tenant id — enforced client-side so no body leaves the page [FOLLOW-1357].
+ * @param config            - SDK configuration (needs apiKey, decisionApiUrl and tenantId).
+ * @param sessionId         - Current session identifier (the completion ping's).
+ * @param fields            - The run transition the widget reported.
+ * @param profilingOptedOut - §H.9 opt-out: when true nothing is sent.
+ */
+export function postQuizRunPing(
+  config: SdkConfig,
+  sessionId: string,
+  fields: QuizRunPingFields,
+  profilingOptedOut: boolean,
+): Promise<void> {
+  const consent = getConsentState();
+  if (profilingOptedOut || consent !== 'granted' || !config.decisionApiUrl || !config.tenantId) {
+    return Promise.resolve();
+  }
+  const runUrl = buildEndpoint(config.decisionApiUrl, '/quiz/run');
+  const body: QuizRunPing = {
+    ...fields,
+    tenant_id: config.tenantId,
+    session_id: sessionId,
+    sdk_version: SDK_VERSION,
+    consent_state: mapConsentState(consent),
+  };
+  const json = JSON.stringify(body);
+  return computeHmacSha256Hex(config.apiKey, json)
+    .then((signatureHex) =>
+      signatureHex === null
+        ? undefined
+        : fetch(runUrl, {
+            method: 'POST',
+            keepalive: true,
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${config.apiKey}`,
+              'X-Estalara-Signature': signatureHex,
+            },
+            body: json,
+          }).then(() => undefined),
+    )
+    .catch(() => undefined);
 }
 
 /**
@@ -679,6 +764,8 @@ export async function fetchDirectives(
       body.archetype_hint = intentState.archetype;
       body.confidence = intentState.confidence;
       body.similarity = intentState.probabilities[intentState.archetype];
+      // Quiz traits, additive (ESC-086 item 4; the route's body schema strips it today).
+      if (intentState.quiz_traits) body.traits = intentState.quiz_traits;
     }
 
     // Detail pages send listing_id [FOLLOW-194].

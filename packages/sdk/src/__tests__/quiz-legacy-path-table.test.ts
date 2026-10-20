@@ -5,11 +5,15 @@
  * FOLLOW-1357 (Q2): valid prefixes of length 0-3, invalid indexes (-1, 99) at every position,
  * and over-long paths (lengths 4-6, where the walk has already ended). An invalid index stops
  * the walk and keeps what was accumulated so far; an empty accumulation is `neutral`.
+ *
+ * FOLLOW-1357: the v3.0 tree replaced the legacy one as the built-in; the legacy tree lives on as
+ * a fixture (`fixtures/legacy-quiz-definition.ts`) because served rows may still have its shape.
  */
 
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_QUIZ_DEFINITION, resolveArchetypeFromPath } from '../ui/quiz-widget.js';
+import { resolveArchetypeFromPath } from '../ui/quiz-widget.js';
+import { LEGACY_QUIZ_DEFINITION } from './fixtures/legacy-quiz-definition.js';
 
 const LEGACY_TABLE: [number[], string][] = [
   [[], 'neutral'],
@@ -107,6 +111,6 @@ describe('resolveArchetypeFromPath on the legacy tree (pinned before the Q2 widg
   });
 
   it.each(LEGACY_TABLE)('path %j resolves to %s', (path, expected) => {
-    expect(resolveArchetypeFromPath(DEFAULT_QUIZ_DEFINITION, path)).toBe(expected);
+    expect(resolveArchetypeFromPath(LEGACY_QUIZ_DEFINITION, path)).toBe(expected);
   });
 });

@@ -133,6 +133,17 @@ const REGISTRY: Site[] = [
     note: 'FOLLOW-936 — the second instance. Listed origins, not wildcard: HMAC-signed, writes tenant-scoped rows.',
   },
   {
+    file: 'core/adapt.ts',
+    expr: 'fetch(runUrl',
+    path: '/api/quiz/run',
+    producer: 'middleware',
+    // Authenticates inline like quiz/completion, so its origin gate lives in the route.
+    enforcedIn: 'apps/control-plane/src/app/api/quiz/run/route.ts',
+    actualResponse: 'listed',
+    methods: ['POST'],
+    note: 'FOLLOW-1357 (sender) / FOLLOW-1358 (route + middleware prefix). Listed origins, not wildcard: HMAC-signed, writes tenant-scoped quiz_runs rows.',
+  },
+  {
     file: 'core/adapt-description.ts',
     expr: 'fetch(url',
     path: '/api/adapt/description',

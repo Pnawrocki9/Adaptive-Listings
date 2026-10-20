@@ -124,6 +124,15 @@ export interface SdkConfig {
   quizDefinition?: QuizDefinition;
 
   /**
+   * Identity of the served quiz definition (ESC-086 item 3, FOLLOW-1357): the
+   * top-level `definition_hash` (sha-256 hex) and `definition_version` of the public-config
+   * response, FORWARDED on the `POST /api/quiz/run` pings and `quiz.event` — the SDK never
+   * hashes. Absent when the server sends none (pre-FOLLOW-1358 control planes).
+   */
+  quizDefinitionHash?: string;
+  quizDefinitionVersion?: number | null;
+
+  /**
    * Per-tenant quiz card placement (FOLLOW-640 / ADR-0019 D2). Anchored the sticky trigger
    * until FOLLOW-1015 deleted it; it now anchors the auto-opening quiz card itself.
    *

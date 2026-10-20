@@ -186,7 +186,7 @@ let groundingSource = null;
  * @param {string} name - What was asserted, in one line.
  * @param {boolean} ok  - Whether it held.
  * @param {unknown} evidence - The observation the verdict rests on.
- * @param {'holdout'|'window'|null} [unmeasured] - FOLLOW-1240: when the predicate failed for a reason
+ * @param {'holdout'|'window'|'config'|null} [unmeasured] - FOLLOW-1240: when the predicate failed for a reason
  *        already known at record time, the line prints `[UNMEASURED]` instead of `[FAIL]`. `ok` is
  *        stored unchanged; the final grade is `gradeRun()`'s, over the same facts.
  */
@@ -1011,7 +1011,7 @@ export function evaluateAc4Frozen({
  * @param {{ac: string, evidence?: any}} result
  * @param {{adaptedArmDrewHoldout: boolean|null, adaptedResponsesArrivedAfterVerdict: number,
  *   chatArmDrewHoldout?: boolean|null}} facts
- * @returns {'holdout'|'window'|null}
+ * @returns {'holdout'|'window'|'config'|null}
  */
 function unmeasuredBecause(result, facts) {
   const holdout = facts.adaptedArmDrewHoldout === true;
@@ -1053,9 +1053,47 @@ function unmeasuredBecause(result, facts) {
       const onlyTheDraw = unmet.length === 1 && unmet[0] === 'chatArmDrewHoldout';
       return facts.chatArmDrewHoldout === true && onlyTheDraw ? 'holdout' : null;
     }
+    case 'AC(10)': {
+      // FOLLOW-1361: (a) and (b) each redraw up to AC10_MAX_DRAWS sessions; a sub-session whose last
+      // draw was still holdout is the only excusable entry. Anything else unmet stays RED.
+      // FOLLOW-1369: a sub-session whose served config never reached the browser (builtin tree,
+      // no completed public-config GET) is an UNMET PRECONDITION too, not an SDK verdict.
+      const unmet = Array.isArray(ev.unmetPreconditions) ? ev.unmetPreconditions : [];
+      const excusable = (u) => AC10_HOLDOUT_UNMET.includes(u) || AC10_CONFIG_UNMET_RE.test(u);
+      if (unmet.length === 0 || !unmet.every(excusable)) return null;
+      return unmet.some((u) => AC10_HOLDOUT_UNMET.includes(u)) ? 'holdout' : 'config';
+    }
     default:
       return null;
   }
+}
+
+/**
+ * Every AC a full run grades, in record order (FOLLOW-1361: AC(10) makes it eight; AC(6) is the
+ * manual-runbook criterion and is never recorded, AC(9) does not exist). `main()` records any of
+ * these that a run did not evaluate as RED (`missingGradedAcs()`), so `TALLY total=8` cannot be
+ * reached by a run that silently skipped one, and a TALLY with another total is not a full run.
+ */
+export const GRADED_ACS = Object.freeze([
+  'AC(1)',
+  'AC(2)',
+  'AC(3)',
+  'AC(4)',
+  'AC(5)',
+  'AC(7)',
+  'AC(8)',
+  'AC(10)',
+]);
+
+/**
+ * The graded ACs absent from `results`, in `GRADED_ACS` order. Pure.
+ *
+ * @param {ReadonlyArray<{ac: string}>} results
+ * @returns {string[]}
+ */
+export function missingGradedAcs(results) {
+  const seen = new Set(results.map((r) => r.ac));
+  return GRADED_ACS.filter((ac) => !seen.has(ac));
 }
 
 /**
@@ -1163,7 +1201,9 @@ function printHoldoutWarning(sessionId, evidence) {
 //
 // THE SESSION IS ITS OWN. A fresh browser context with no quiz answer, so the baseline archetype is
 // whatever behaviour-free init yields and the message is the only archetype-bearing input. Running
-// it inside the quiz session would start from `yield_hunter` at p=0.85 and could not show a change.
+// it inside the quiz session would start from the confirmed quiz leaf at 0.90 (FOLLOW-1359: the
+// leaf folds at 0.72 when completed, 0.90 when confirmed or corrected; chat is tempered by τ = 0.5
+// against a confirmed leaf) and could not show a change.
 
 const CHAT_NLP_ORIGIN = (process.env.CHAT_NLP_ORIGIN ?? 'http://localhost:8090').replace(/\/$/, '');
 const SHADOW_REDIS_URL = (process.env.SHADOW_REDIS_URL ?? 'http://localhost:8079').replace(
@@ -1791,8 +1831,24 @@ async function driveChatArm(browser) {
   const postOf = new WeakMap();
   const pending = [];
 
+  // FOLLOW-1369: the page's /api/quiz/public-config OPTIONS + GET with timings, from network events.
+  const configNet = { options: [], get: [] };
+  const configOf = new WeakMap();
   context.on('request', (req) => {
-    if (req.method() !== 'POST') return;
+    const m = req.method();
+    if ((m === 'GET' || m === 'OPTIONS') && req.url().includes('/api/quiz/public-config')) {
+      const e = {
+        method: m,
+        startedMono: performance.now(),
+        finishedMono: null,
+        status: null,
+        failure: null,
+      };
+      configOf.set(req, e);
+      (m === 'GET' ? configNet.get : configNet.options).push(e);
+      return;
+    }
+    if (m !== 'POST') return;
     let sent = null;
     try {
       sent = JSON.parse(req.postData() ?? 'null');
@@ -2236,6 +2292,971 @@ async function driveChatArm(browser) {
     obs.ingestPosts = posts;
     await context.close().catch(() => {});
   }
+}
+
+// ─── FOLLOW-1367: AC(5)'s CTA click must not land on the quiz card ──────────────────────────
+
+/**
+ * Make sure no quiz card overlays the page before AC(5) clicks the fixture CTA (FOLLOW-1367).
+ *
+ * In one Q5-series run the served v2 card (616 px tall on this viewport) was still open and
+ * `[data-estalara-cta]` never became clickable within 5 s → `cta_not_clicked`. The SDK e2e spec hit
+ * the same overlay and fixed it by seeding the dismissed cooldown (#1055); this session needs its
+ * quiz, so the card is closed instead, the way a buyer closes it: first a short wait for its own
+ * unmount (the AC(1) loop's confirm may still be resolving), then the card's own `×`
+ * (`.estalara-quiz-close`), then a wait for it to be gone. Never `force: true` (FOLLOW-1075: a
+ * forced click lands on whatever covers the target and reports success). A `×` on the result screen
+ * resolves it as `unconfirmed`; that is after AC(1)/AC(2) were graded, and the request it draws is
+ * counted in `responsesArrivedAfterVerdict` like any other.
+ *
+ * @param {import('playwright').Page} page
+ * @returns {Promise<{visibleBefore: boolean, screen: 'result'|'question'|null,
+ *   action: 'none'|'waited'|'closed_with_x', cleared: boolean}>}
+ */
+async function closeQuizCardBeforeCta(page) {
+  const card = page.locator('.estalara-quiz-card').first();
+  if (!(await card.isVisible().catch(() => false))) {
+    return { visibleBefore: false, screen: null, action: 'none', cleared: true };
+  }
+  const onResult = await page
+    .locator('.estalara-quiz-result')
+    .first()
+    .isVisible()
+    .catch(() => false);
+  const screen = onResult ? 'result' : 'question';
+  const gone = (timeout) =>
+    card
+      .waitFor({ state: 'hidden', timeout })
+      .then(() => true)
+      .catch(() => false);
+  if (await gone(2000)) return { visibleBefore: true, screen, action: 'waited', cleared: true };
+  await page
+    .locator('.estalara-quiz-close')
+    .first()
+    .click({ timeout: 3000 })
+    .catch(() => {});
+  return { visibleBefore: true, screen, action: 'closed_with_x', cleared: await gone(10000) };
+}
+
+// ─── FOLLOW-1361: AC(10), the quiz confirmation path (Faza Q package Q6, MASTER_DESIGN §E.4.10) ──
+//
+// Three sub-sessions, each in its own fresh browser context, walk the SERVED quiz tree to its result
+// screen (`.estalara-quiz-result`) through real clicks and then close it three ways:
+//
+//   (a) confirm — `.estalara-quiz-confirm`: a `quiz_runs` row `confirmed` on the served hash, the
+//       SDK state at the leaf at the confirmed mass (0.90), the first `/api/adapt` request after the
+//       fold carrying the leaf at 0.90 and the capped similarity (0.85, ESC-087) and answered
+//       ADAPTED by AC(1)'s own predicate; then two contrary behaviour signals, dispatched the way a
+//       host page dispatches them, leave the leaf and its 0.90 unchanged;
+//   (b) correct — `.estalara-quiz-reject` ("Not quite"), then an alternative read off the DOM: a row
+//       `corrected` with the walked leaf and the chosen alternative, and the first request after the
+//       correction folded carrying the CHOSEN archetype at 0.90, answered ADAPTED for it;
+//   (c) × on the result screen — the negative control: a row `unconfirmed`, no
+//       `confirmed_archetype`, the SDK state at the completed mass (0.72).
+//
+// NOTHING IS INJECTED. The leaf, the offered alternatives and the chosen one are read from the
+// widget's own text and mapped to archetype ids through the served definition's `confirm.names_i18n`;
+// the row is read from Postgres (`quiz_runs`, written by `POST /api/quiz/run` from the SDK's pings);
+// the state is the SDK's own persisted envelope (read-only, the way AC(8) reads it); the request and
+// the response are what crossed the wire. The fold masses and the similarity cap are read from the
+// SDK source (`readQuizFoldConstants()`), never typed in here.
+//
+// WHICH REQUEST IS "THE FIRST AFTER THE FOLD" — the FOLLOW-1352 rule, adapted to what the code does.
+// `intent-loop.ts` `onComplete` folds the result (`applyQuizLeaf`), persists it, and calls
+// `adapt.refresh()` UNCONDITIONALLY, in the same click task, for every outcome (confirmed,
+// corrected, ×). There is no chat-style follow-up and no hint-change condition: the refresh is
+// drawn because the quiz resolved. A harness poll of the persisted state can therefore never see
+// the fold BEFORE that request leaves (FOLLOW-1352's `foldSeenMono` floor would exclude the very
+// request it exists to find). The state stamp the request itself carries is used instead: the fold
+// writes `quiz_traits` into the state, and `fetchDirectives()` sends `traits` iff the state has it,
+// so `traits` on a request body is a field only a post-fold state can produce. The pick
+// (`pickFirstRequestAfterQuizFold()`) takes the first request SENT at or after the decisive click
+// that carries it, and refuses (reason, never a guess) when the fold was not observed in the
+// persisted state or when a request sent BEFORE the click already carried `traits` (the marker would
+// then prove nothing). It never selects on the hint or the confidence it is about to grade, so "the
+// follow-up carries the pre-correction hint" stays a reachable RED.
+//
+// HOLDOUT. (a) and (b) need an ADAPTED response, which a held-out session cannot receive by design.
+// The draw is read off the page-load `/api/adapt` response BEFORE the quiz is walked, and such a
+// session is replaced by a fresh context, at most `AC10_MAX_DRAWS` sessions per sub-session; every
+// draw is recorded. Only when the last one drew holdout too is the sub-session UNMEASURED (as AC(8)
+// is), and only if nothing else failed. (c) grades no adaptation and keeps its first session.
+
+/** How many fresh sessions (a) and (b) may draw before a holdout draw is graded UNMEASURED. */
+export const AC10_MAX_DRAWS = 3;
+/** How long the auto-opening quiz card may take to mount (the late-config retry is 8 s). */
+const AC10_QUIZ_MOUNT_MS = 30000;
+/** How long the decisive click may take to show up as the fold in the persisted state. */
+const AC10_FOLD_WAIT_MS = 10000;
+/** How long the `quiz_runs` row may take to reach its terminal status (fire-and-forget ping). */
+const AC10_ROW_WAIT_MS = 15000;
+/** How long the contrary signals may take to reach ingest (the SDK flushes every 2 s). */
+const AC10_CONTRARY_WAIT_MS = 8000;
+/** Equality for the fold masses: they are assigned as literals, never computed. */
+const MASS_EPSILON = 1e-9;
+
+/** The SDK's built-in fallback tree reports this hash (quiz-widget.ts); it has no result screen. */
+const BUILTIN_QUIZ_HASH = 'builtin-en-v2';
+
+const SDK_INTENT_PATH = new URL('../../../packages/sdk/src/core/intent.ts', import.meta.url);
+const SDK_ADAPT_PATH = new URL('../../../packages/sdk/src/core/adapt.ts', import.meta.url);
+
+/**
+ * The quiz fold masses and the sent-similarity cap, read out of the SDK source — the same "read,
+ * don't copy" rule as `readServerConfidenceGate()`. Pure over the two sources so a test can hand it
+ * an edited copy; throws when a constant is no longer there.
+ *
+ * @param {{intentSrc: string, adaptSrc: string}} src
+ * @returns {{completed: number, confirmed: number, similarityCap: number, source: string}}
+ */
+export function readQuizFoldConstants({ intentSrc, adaptSrc }) {
+  const read = (src, name, file) => {
+    const m = new RegExp(`const\\s+${name}\\s*=\\s*([0-9.]+)\\s*;`).exec(src);
+    if (!m) throw new Error(`Could not read ${name} from packages/sdk/src/core/${file}.`);
+    return Number(m[1]);
+  };
+  return {
+    completed: read(intentSrc, 'QUIZ_COMPLETED_MASS', 'intent.ts'),
+    confirmed: read(intentSrc, 'QUIZ_CONFIRMED_MASS', 'intent.ts'),
+    similarityCap: read(adaptSrc, 'SENT_SIMILARITY_CAP', 'adapt.ts'),
+    source:
+      'packages/sdk/src/core/intent.ts QUIZ_COMPLETED_MASS / QUIZ_CONFIRMED_MASS; ' +
+      'packages/sdk/src/core/adapt.ts SENT_SIMILARITY_CAP',
+  };
+}
+
+/** `readQuizFoldConstants()` over the files on disk. */
+export async function readQuizFoldConstantsFromSdk() {
+  return readQuizFoldConstants({
+    intentSrc: await readFile(SDK_INTENT_PATH, 'utf8'),
+    adaptSrc: await readFile(SDK_ADAPT_PATH, 'utf8'),
+  });
+}
+
+/**
+ * The archetype id whose display name (any language) in the served `confirm.names_i18n` is `text`,
+ * or null. The widget renders `names_i18n[id]` in the active language; matching every language
+ * keeps the read independent of the EN | PL switcher.
+ *
+ * @param {Record<string, Record<string, string>>|null|undefined} names
+ * @param {string|null|undefined} text
+ * @returns {string|null}
+ */
+export function archetypeFromDisplayName(names, text) {
+  const t = typeof text === 'string' ? text.trim() : '';
+  if (!names || t === '') return null;
+  const hits = Object.entries(names).filter(([, bag]) =>
+    Object.values(bag ?? {}).some((v) => typeof v === 'string' && v.trim() === t),
+  );
+  return hits.length === 1 ? hits[0][0] : null;
+}
+
+/**
+ * The two contrary behaviour signals for a confirmed leaf: a 3-bedroom bookmark pushes
+ * `family_buyer` / `upsizer` (`applyBehavioralSignal`, intent.ts), so it is contrary to every
+ * other leaf; for those two it would be concordant, and a commercial bookmark is used instead.
+ * Sent as the host page's `estalara:listing:favorited` detail (`intent-loop.ts` listener).
+ *
+ * @param {string|null} leaf
+ * @returns {{bedroomCount?: number, listingType?: string}}
+ */
+export function contrarySignalFor(leaf) {
+  return leaf === 'family_buyer' || leaf === 'upsizer'
+    ? { listingType: 'commercial' }
+    : { bedroomCount: 3 };
+}
+
+/**
+ * The first `/api/adapt` request the SDK sent after the quiz result folded — see the section header
+ * for why the marker is `traits` on the request body and the floor is the decisive click. Pure.
+ *
+ * @param {{calls: Array<{seq: number, requestedMono?: number|null, traitsSent?: boolean}>,
+ *   resolveClickMono: number|null|undefined, foldSeen: boolean}} args
+ * @returns {{next: object|null, reason: 'resolve_click_not_recorded'|'fold_not_observed'|
+ *   'fold_marker_not_unique'|'none_sent_after_fold'|null, notGradedSeqs: number[]}}
+ */
+export function pickFirstRequestAfterQuizFold({ calls, resolveClickMono, foldSeen }) {
+  if (typeof resolveClickMono !== 'number') {
+    return { next: null, reason: 'resolve_click_not_recorded', notGradedSeqs: [] };
+  }
+  if (foldSeen !== true) return { next: null, reason: 'fold_not_observed', notGradedSeqs: [] };
+  const sentAfter = (c) =>
+    typeof c.requestedMono === 'number' && c.requestedMono >= resolveClickMono;
+  const before = calls.filter((c) => !sentAfter(c));
+  if (before.some((c) => c.traitsSent === true)) {
+    return {
+      next: null,
+      reason: 'fold_marker_not_unique',
+      notGradedSeqs: before.filter((c) => c.traitsSent === true).map((c) => c.seq),
+    };
+  }
+  const after = calls.filter(sentAfter);
+  const eligible = after.filter((c) => c.traitsSent === true);
+  return {
+    next: eligible[0] ?? null,
+    reason: eligible.length > 0 ? null : 'none_sent_after_fold',
+    notGradedSeqs: after.filter((c) => c.traitsSent !== true).map((c) => c.seq),
+  };
+}
+
+/**
+ * The served quiz definition, as the SDK fetches it: `GET /api/quiz/public-config` with the
+ * fixture's own key and the fixture page's `Origin`. Never throws.
+ *
+ * @param {{timeoutMs?: number}} [options]
+ * @returns {Promise<{status: number|null, body: any, error: string|null, ms: number}>}
+ */
+export async function fetchServedQuizConfig({ timeoutMs = 30000 } = {}) {
+  const started = performance.now();
+  try {
+    const apiKey = await readFixtureApiKey();
+    const res = await fetch(`${DECISION_ORIGIN}/api/quiz/public-config`, {
+      headers: { Authorization: `Bearer ${apiKey}`, Origin: new URL(LISTING_URL).origin },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const body = await res.json().catch(() => null);
+    return { status: res.status, body, error: null, ms: Math.round(performance.now() - started) };
+  } catch (err) {
+    return {
+      status: null,
+      body: null,
+      error: String(err),
+      ms: Math.round(performance.now() - started),
+    };
+  }
+}
+
+/**
+ * Whether a public-config answer serves the tree AC(10) walks: 200, `data_source: 'db'` (a
+ * `fallback` answer carries no definition and the SDK walks its built-in tree), a sha-256
+ * `definition_hash` that is not the built-in label, and a `confirm` block (no block = no result
+ * screen). Pure.
+ *
+ * @param {{status: number|null, body: any, error?: string|null}} probe
+ * @returns {{ok: boolean, reason: string, definitionHash: string|null,
+ *   names: Record<string, Record<string, string>>|null}}
+ */
+export function evaluateServedQuizConfig(probe) {
+  const b = probe?.body ?? null;
+  const hash = typeof b?.definition_hash === 'string' ? b.definition_hash : null;
+  const names = b?.quiz_definition?.confirm?.names_i18n ?? null;
+  const fail = (reason) => ({ ok: false, reason, definitionHash: hash, names });
+  if (probe?.status !== 200) {
+    return fail(`HTTP ${String(probe?.status)}${probe?.error ? ` (${probe.error})` : ''}`);
+  }
+  if (b?.data_source !== 'db') return fail(`data_source=${String(b?.data_source)}`);
+  if (hash === null || !/^[0-9a-f]{64}$/.test(hash)) {
+    return fail(`definition_hash=${String(hash)} is not a served sha-256`);
+  }
+  if (!names || Object.keys(names).length === 0) {
+    return fail('the served definition has no confirm block (no result screen)');
+  }
+  return {
+    ok: true,
+    reason: `200, data_source db, definition_hash ${hash}`,
+    definitionHash: hash,
+    names,
+  };
+}
+
+/**
+ * Bring-up and preflight form (FOLLOW-1367): throws unless public-config serves the tree.
+ *
+ * @param {{timeoutMs?: number}} [options]
+ * @returns {Promise<{definitionHash: string, ms: number, reason: string}>}
+ */
+export async function assertServedQuizConfig(options) {
+  const probe = await fetchServedQuizConfig(options);
+  const v = evaluateServedQuizConfig(probe);
+  if (!v.ok) {
+    throw new Error(
+      `GET ${DECISION_ORIGIN}/api/quiz/public-config does not serve the quiz tree: ${v.reason}. ` +
+        'The SDK would walk its built-in tree (builtin-en-v2, no result screen) and AC(10) is RED.',
+    );
+  }
+  return { definitionHash: v.definitionHash, ms: probe.ms, reason: v.reason };
+}
+
+/** The AC(1) predicate's archetype must also be the one the request asked for (STOP rule). */
+const adaptedFor = (body, archetype, serverGate) =>
+  isAdaptedResponse(body, serverGate) && body.archetype === archetype;
+
+const near = (x, y) =>
+  typeof x === 'number' && typeof y === 'number' && Math.abs(x - y) < MASS_EPSILON;
+
+/** Unmet entries that are the holdout draw itself — the only ones `gradeRun()` may excuse. */
+export const AC10_HOLDOUT_UNMET = Object.freeze(['a:drewHoldout', 'b:drewHoldout']);
+
+/** FOLLOW-1369: an unmet entry saying the served config never reached the browser (`a:`..`c:`). */
+export const AC10_CONFIG_UNMET_RE = /^[abc]:servedConfigNeverReachedBrowser\(/;
+
+/**
+ * FOLLOW-1369: did the served quiz config fail to reach the browser? True (as the timings string)
+ * only when the SHOWN ping reported the built-in tree (`builtin-en-v2`, falling back to the run
+ * row's hash when no ping was captured) AND the page's `/api/quiz/public-config` GET never
+ * completed with a 200. A GET that DID complete while the card still used the built-in tree is an
+ * SDK defect and stays RED (returns null). No network record (`configNet` absent) is not classified.
+ *
+ * @param {object} s - one sub-session's observations
+ * @returns {string|null} the OPTIONS/GET timings when unserved, else null
+ */
+export function servedConfigNeverReachedBrowser(s) {
+  const net = s?.configNet ?? null;
+  if (net === null || typeof net !== 'object') return null;
+  const pings = Array.isArray(s.pings) ? s.pings : [];
+  const shown = pings.find((x) => x.event === 'shown');
+  const hash = shown ? shown.definition_hash : (s.row?.definition_hash ?? null);
+  if (hash !== BUILTIN_QUIZ_HASH) return null;
+  const gets = Array.isArray(net.get) ? net.get : [];
+  if (gets.some((g) => g.finishedMono !== null && g.failure === null && g.status === 200)) {
+    return null;
+  }
+  const fmt = (e) =>
+    `${e.method} ${e.status === null ? 'no-response' : String(e.status)} ` +
+    (e.finishedMono === null
+      ? 'pending'
+      : `${String(Math.round(e.finishedMono - e.startedMono))}ms`) +
+    (e.failure ? ` ${e.failure}` : '');
+  const opts = Array.isArray(net.options) ? net.options : [];
+  const all = [...opts, ...gets].map(fmt);
+  return all.length > 0 ? all.join('; ') : 'no public-config request seen';
+}
+
+/**
+ * The conjuncts every sub-session shares: the widget ran on the served tree and a row exists.
+ *
+ * @returns {string[]} unmet entries, prefixed
+ */
+function ac10CommonUnmet(p, s, served) {
+  const unmet = [];
+  // FOLLOW-1369: the served config never reached the page — every other conjunct (and a throw
+  // while walking the built-in tree) is then meaningless, so it is the ONLY entry.
+  const unreached = servedConfigNeverReachedBrowser(s);
+  if (unreached !== null) return [`${p}:servedConfigNeverReachedBrowser(${unreached})`];
+  if (s.error) return [`${p}:threw`];
+  if (s.quizShown !== true) unmet.push(`${p}:quizNotShown`);
+  if (s.resultShown !== true) unmet.push(`${p}:resultScreenNotShown`);
+  if (!s.leaf || s.leaf === 'neutral') unmet.push(`${p}:leafNotReadFromResultScreen`);
+  const row = s.row ?? null;
+  if (row === null) {
+    unmet.push(s.rowError ? `${p}:quizRunRowUnreadable` : `${p}:quizRunRowMissing`);
+    return unmet;
+  }
+  if (row.definition_hash === BUILTIN_QUIZ_HASH) unmet.push(`${p}:builtinTreeWalked`);
+  else if (served.ok && row.definition_hash !== served.definitionHash) {
+    unmet.push(`${p}:definitionHashNotServed=${String(row.definition_hash)}`);
+  }
+  if (row.resolved_archetype !== s.leaf) {
+    unmet.push(`${p}:rowResolvedArchetype=${String(row.resolved_archetype)}`);
+  }
+  const steps = Array.isArray(row.answer_path) ? row.answer_path.length : null;
+  if (!Array.isArray(row.step_ms) || row.step_ms.length === 0 || row.step_ms.length !== steps) {
+    unmet.push(`${p}:stepMs=${JSON.stringify(row.step_ms)}/answerPath=${String(steps)}`);
+  }
+  return unmet;
+}
+
+/**
+ * The follow-up conjuncts for (a) and (b): the first request after the fold carries `archetype` at
+ * the confirmed mass and the capped similarity, and its response is ADAPTED for `archetype`.
+ */
+function ac10FollowUpUnmet(p, s, archetype, preFoldLeaf, fold, serverGate) {
+  const unmet = [];
+  const req = s.followUp?.request ?? null;
+  if (req === null) return [`${p}:noFollowUp(${String(s.followUp?.reason ?? 'not_observed')})`];
+  if (req.archetypeHint !== archetype) {
+    unmet.push(
+      preFoldLeaf !== null && req.archetypeHint === preFoldLeaf && archetype !== preFoldLeaf
+        ? `${p}:followUpCarriesPreCorrectionHint=${String(req.archetypeHint)}`
+        : `${p}:followUpHint=${String(req.archetypeHint)}`,
+    );
+  }
+  if (!near(req.confidence, fold.confirmed)) {
+    unmet.push(`${p}:followUpConfidence=${String(req.confidence)}`);
+  }
+  if (!near(req.similarity, fold.similarityCap)) {
+    unmet.push(`${p}:followUpSimilarity=${String(req.similarity)}`);
+  }
+  if (s.drewHoldout === true) {
+    unmet.push(`${p}:drewHoldout`);
+  } else if (!adaptedFor(s.followUp?.body ?? null, archetype, serverGate)) {
+    const b = s.followUp?.body ?? null;
+    unmet.push(
+      `${p}:followUpNotAdapted(${String(b?.source ?? null)}/${String(b?.fallback_reason ?? '')}` +
+        ` ${String(b?.archetype ?? null)} @ ${String(b?.confidence ?? null)})`,
+    );
+  }
+  return unmet;
+}
+
+/**
+ * AC(10)'s verdict, as a pure function over what `driveAc10()` observed (FOLLOW-1361).
+ *
+ * GREEN needs every conjunct of all three sub-sessions (see the section header): (a) and (b) are
+ * the paths the plan grades, (c) is their negative control — a × must NOT read as a confirmation.
+ * Each unmet conjunct is one entry, prefixed `a:` / `b:` / `c:`, so a red names its sub-session.
+ * `served:*` entries say the served tree was not available to grade against at all.
+ *
+ * UNMEASURED only when every unmet entry is a holdout draw of (a) or (b) (`AC10_HOLDOUT_UNMET`) —
+ * the run then drew `AC10_MAX_DRAWS` held-out sessions in a row for that sub-session.
+ *
+ * @param {object} obs - `driveAc10()`'s return value.
+ * @param {{value: number}} serverGate
+ * @returns {{ok: boolean, name: string, summary: string, evidence: object}}
+ */
+export function evaluateAc10(obs, serverGate) {
+  const fold = obs.fold;
+  const served = evaluateServedQuizConfig(obs.servedConfig ?? null);
+  const unmet = [];
+  if (!served.ok) unmet.push(`served:${served.reason}`);
+  const a = obs.sessions?.confirm ?? { error: 'not run' };
+  const b = obs.sessions?.correct ?? { error: 'not run' };
+  const c = obs.sessions?.dismiss ?? { error: 'not run' };
+
+  // (a) confirm
+  const ua = ac10CommonUnmet('a', a, served);
+  if (!a.error && servedConfigNeverReachedBrowser(a) === null) {
+    if (a.row) {
+      if (a.row.status !== 'confirmed') ua.push(`a:rowStatus=${String(a.row.status)}`);
+      if (a.row.confirmed_archetype !== a.leaf) {
+        ua.push(`a:rowConfirmedArchetype=${String(a.row.confirmed_archetype)}`);
+      }
+    }
+    const st = a.stateAtFold ?? null;
+    if (
+      !st ||
+      st.archetype !== a.leaf ||
+      !near(st.confidence, fold.confirmed) ||
+      !st.quiz_confirmed
+    ) {
+      ua.push(
+        `a:stateAtFold=${JSON.stringify(st && { archetype: st.archetype, confidence: st.confidence, quiz_confirmed: st.quiz_confirmed ?? null })}`,
+      );
+    }
+    ua.push(...ac10FollowUpUnmet('a', a, a.leaf, null, fold, serverGate));
+    const k = a.contrary ?? null;
+    const applied =
+      k !== null &&
+      k.bookmarkEventsEmitted >= 2 &&
+      typeof k.signalCountBefore === 'number' &&
+      typeof k.stateAfter?.signal_count === 'number' &&
+      k.stateAfter.signal_count - k.signalCountBefore >= 2;
+    if (!applied) {
+      ua.push(
+        `a:contrarySignalsNotApplied(emitted=${String(k?.bookmarkEventsEmitted ?? null)}, ` +
+          `signal_count ${String(k?.signalCountBefore ?? null)}→${String(k?.stateAfter?.signal_count ?? null)})`,
+      );
+    } else {
+      if (k.stateAfter.archetype !== a.leaf)
+        ua.push(`a:leafDrifted=${String(k.stateAfter.archetype)}`);
+      if (!near(k.stateAfter.confidence, fold.confirmed)) {
+        ua.push(`a:leafLostMass=${String(k.stateAfter.confidence)}`);
+      }
+    }
+  }
+  unmet.push(...ua);
+
+  // (b) correct
+  const ub = ac10CommonUnmet('b', b, served);
+  if (!b.error && servedConfigNeverReachedBrowser(b) === null) {
+    const chosen = b.chosen ?? null;
+    if (!chosen || chosen === b.leaf || chosen === 'neutral') {
+      ub.push(`b:noAlternativeChosen=${String(chosen)}`);
+    }
+    if (!Array.isArray(b.offered) || b.offered.length === 0 || !b.offered.includes(chosen)) {
+      ub.push(`b:offeredFromDom=${JSON.stringify(b.offered ?? null)}`);
+    }
+    if (b.row) {
+      if (b.row.status !== 'corrected') ub.push(`b:rowStatus=${String(b.row.status)}`);
+      if (b.row.confirmed_archetype !== chosen) {
+        ub.push(`b:rowConfirmedArchetype=${String(b.row.confirmed_archetype)}`);
+      }
+      if (JSON.stringify(b.row.offered ?? null) !== JSON.stringify(b.offered ?? null)) {
+        ub.push(`b:rowOffered=${JSON.stringify(b.row.offered ?? null)}`);
+      }
+    }
+    const st = b.stateAtFold ?? null;
+    if (
+      !st ||
+      st.archetype !== chosen ||
+      !near(st.confidence, fold.confirmed) ||
+      !st.quiz_confirmed
+    ) {
+      ub.push(
+        `b:stateAtFold=${JSON.stringify(st && { archetype: st.archetype, confidence: st.confidence, quiz_confirmed: st.quiz_confirmed ?? null })}`,
+      );
+    }
+    ub.push(...ac10FollowUpUnmet('b', b, chosen, b.leaf ?? null, fold, serverGate));
+  }
+  unmet.push(...ub);
+
+  // (c) × on the result screen — the negative control
+  const uc = ac10CommonUnmet('c', c, served);
+  if (!c.error && servedConfigNeverReachedBrowser(c) === null) {
+    if (c.row) {
+      if (c.row.status !== 'unconfirmed') uc.push(`c:rowStatus=${String(c.row.status)}`);
+      if (c.row.confirmed_archetype !== null) {
+        uc.push(`c:rowConfirmedArchetype=${String(c.row.confirmed_archetype)}`);
+      }
+    }
+    const st = c.stateAtFold ?? null;
+    if (
+      !st ||
+      st.archetype !== c.leaf ||
+      !near(st.confidence, fold.completed) ||
+      st.quiz_confirmed
+    ) {
+      uc.push(
+        `c:stateAtFold=${JSON.stringify(st && { archetype: st.archetype, confidence: st.confidence, quiz_confirmed: st.quiz_confirmed ?? null })}`,
+      );
+    }
+  }
+  unmet.push(...uc);
+
+  const ok = unmet.length === 0;
+  const line = (p, s, extra) =>
+    s.error
+      ? `${p}: threw`
+      : `${p}: ${String(s.leaf)}${extra}, row ${String(s.row?.status ?? 'none')}, follow-up ` +
+        String(s.followUp?.body?.source ?? s.followUp?.reason ?? '—');
+  const summary =
+    `${line('(a) confirm', a, '')}; ${line('(b) correct', b, ` → ${String(b.chosen ?? null)}`)}; ` +
+    `${line('(c) ×', c, '')}; served hash ${String(served.definitionHash)}; ` +
+    `unmet: [${unmet.join(', ')}]`;
+  return {
+    ok,
+    name:
+      'quiz confirmation path on the served tree: (a) confirm → quiz_runs confirmed, SDK state ' +
+      `${String(fold.confirmed)}, the first /api/adapt after the fold ADAPTED, two contrary signals ` +
+      'leave the leaf; (b) correct → corrected, the first request after the correction folded ' +
+      `serves the chosen archetype; (c) × → unconfirmed at ${String(fold.completed)}`,
+    summary,
+    evidence: {
+      fold,
+      servedConfig: { ok: served.ok, reason: served.reason, definitionHash: served.definitionHash },
+      unmetPreconditions: unmet,
+      sessions: { confirm: a, correct: b, dismiss: c },
+    },
+  };
+}
+
+/**
+ * One AC(10) sub-session: a fresh context, the page, and every request the grade needs. Asserts
+ * nothing; `evaluateAc10()` grades what it returns.
+ *
+ * @param {import('playwright').Browser} browser
+ * @param {'confirm'|'correct'|'dismiss'} kind
+ * @param {{names: Record<string, Record<string, string>>|null}} served
+ * @returns {Promise<object>}
+ */
+async function driveAc10Session(browser, kind, served) {
+  const draws = [];
+  for (let attempt = 1; ; attempt++) {
+    const s = await openAc10Session(browser);
+    draws.push({ sessionId: s.obs.sessionId, drewHoldout: s.obs.drewHoldout });
+    const redraw = kind !== 'dismiss' && s.obs.drewHoldout === true && attempt < AC10_MAX_DRAWS;
+    if (redraw) {
+      await s.close();
+      continue;
+    }
+    try {
+      await resolveAc10Session(s, kind, served);
+    } catch (err) {
+      s.obs.error = String(err && err.stack ? err.stack : err);
+    } finally {
+      await s.close();
+    }
+    // FOLLOW-1369: the served config never reached this page → UNMEASURED for this draw; redraw.
+    const unreached = servedConfigNeverReachedBrowser(s.obs);
+    draws[draws.length - 1].servedConfigNeverReachedBrowser = unreached;
+    if (unreached !== null && attempt < AC10_MAX_DRAWS) continue;
+    return { ...s.obs, draws };
+  }
+}
+
+/** Open a fresh context on the fixture page and record its first `/api/adapt` answer. */
+async function openAc10Session(browser) {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const calls = [];
+  const callOf = new WeakMap();
+  const ingest = [];
+  const pings = [];
+  const pending = [];
+  context.on('request', (req) => {
+    if (req.method() !== 'POST') return;
+    let sent = null;
+    try {
+      sent = JSON.parse(req.postData() ?? 'null');
+    } catch {
+      /* recorded with no body */
+    }
+    const url = req.url();
+    if (url.startsWith(DECISION_ORIGIN) && /\/adapt(\?|$)/.test(url)) {
+      const entry = {
+        seq: calls.length + 1,
+        requestedAt: Date.now(),
+        requestedMono: performance.now(),
+        sessionId: sent?.session_id ?? null,
+        archetypeHint: sent?.archetype_hint ?? null,
+        confidence: sent?.confidence ?? null,
+        similarity: sent?.similarity ?? null,
+        traitsSent: Array.isArray(sent?.traits),
+        status: null,
+        receivedMono: null,
+        body: null,
+        failure: null,
+      };
+      callOf.set(req, entry);
+      calls.push(entry);
+    } else if (url.startsWith(`${INGEST_ORIGIN}/v1/events`)) {
+      const events = Array.isArray(sent?.events) ? sent.events : [];
+      ingest.push({ requestedMono: performance.now(), types: events.map((e) => e.type) });
+    } else if (url.startsWith(DECISION_ORIGIN) && url.includes('/api/quiz/run')) {
+      pings.push({
+        event: sent?.event ?? null,
+        quiz_run_id: sent?.quiz_run_id ?? null,
+        definition_hash: sent?.definition_hash ?? null,
+        resolved_archetype: sent?.resolved_archetype ?? null,
+        confirmed_archetype: sent?.confirmed_archetype ?? null,
+        offered: sent?.offered ?? null,
+      });
+    }
+  });
+  context.on('response', (res) => {
+    const net = configOf.get(res.request());
+    if (net) net.status = res.status();
+    const call = callOf.get(res.request());
+    if (!call) return;
+    call.status = res.status();
+    pending.push(
+      res.text().then(
+        (t) => {
+          try {
+            call.body = JSON.parse(t.slice(0, 20000));
+          } catch {
+            call.failure = `non-JSON body: ${t.slice(0, 200)}`;
+          }
+          call.receivedMono = performance.now();
+        },
+        (e) => {
+          call.failure = String(e);
+          call.receivedMono = performance.now();
+        },
+      ),
+    );
+  });
+  context.on('requestfinished', (req) => {
+    const net = configOf.get(req);
+    if (net) net.finishedMono = performance.now();
+  });
+  context.on('requestfailed', (req) => {
+    const net = configOf.get(req);
+    if (net) {
+      net.finishedMono = performance.now();
+      net.failure = req.failure()?.errorText ?? 'request failed';
+    }
+    const entry = callOf.get(req);
+    if (entry) entry.failure = req.failure()?.errorText ?? 'request failed';
+  });
+  await context.addInitScript(
+    ([key]) => {
+      try {
+        window.localStorage.setItem(key, 'granted');
+      } catch {
+        /* storage unavailable — the quiz never opens and the sub-session is RED */
+      }
+    },
+    [CONSENT_STORAGE_KEY],
+  );
+  let page;
+  try {
+    page = await context.newPage();
+    await page.goto(LISTING_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  } catch (err) {
+    await context.close().catch(() => {});
+    throw err;
+  }
+  await pollUntil(() => calls.some((c) => c.body !== null), CHAT_ARM_PAGE_BUDGET_MS);
+  await Promise.all(pending);
+  const loadBodies = calls.filter((c) => c.body !== null).map((c) => c.body);
+  const obs = {
+    sessionId: calls.find((c) => c.sessionId)?.sessionId ?? null,
+    drewHoldout: holdoutFromResponses(loadBodies).drewHoldout,
+    quizShown: false,
+    resultShown: false,
+    walk: [],
+    leafText: null,
+    leaf: null,
+    offeredTexts: null,
+    offered: null,
+    chosenText: null,
+    chosen: null,
+    resolveAction: null,
+    stateAtFold: null,
+    followUp: null,
+    contrary: null,
+    row: null,
+    rows: null,
+    rowError: null,
+    pings,
+    configNet,
+    calls: [],
+  };
+  const readState = async () =>
+    page
+      .evaluate(
+        (key) => {
+          try {
+            return JSON.parse(window.sessionStorage.getItem(key) ?? 'null')?.state ?? null;
+          } catch {
+            return null;
+          }
+        },
+        `estalara_intent_${String(obs.sessionId)}`,
+      )
+      .catch(() => null);
+  return {
+    page,
+    calls,
+    ingest,
+    pending,
+    obs,
+    readState,
+    close: async () => {
+      obs.calls = calls.map((c) => ({
+        seq: c.seq,
+        requestedMono: c.requestedMono,
+        receivedMono: c.receivedMono,
+        archetypeHint: c.archetypeHint,
+        confidenceSent: c.confidence,
+        similaritySent: c.similarity,
+        traitsSent: c.traitsSent,
+        status: c.status,
+        failure: c.failure,
+        archetype: c.body?.archetype ?? null,
+        confidence: c.body?.confidence ?? null,
+        source: c.body?.source ?? null,
+        holdoutGroup: c.body?.holdout_group ?? null,
+      }));
+      await context.close().catch(() => {});
+    },
+  };
+}
+
+/**
+ * Walk the quiz to its result screen with real clicks (the AC(1) loop's interaction model: a root
+ * click commits; a non-root answer selects and `.estalara-quiz-cta` commits; a trait screen ticks
+ * its first option), resolve it as `kind` says, and record the fold, the follow-up, the row.
+ */
+async function resolveAc10Session(s, kind, served) {
+  const { page, obs } = s;
+  const card = page.locator('.estalara-quiz-card').first();
+  const result = page.locator('.estalara-quiz-result').first();
+  obs.quizShown = await card
+    .waitFor({ state: 'visible', timeout: AC10_QUIZ_MOUNT_MS })
+    .then(() => true)
+    .catch(() => false);
+  if (!obs.quizShown) return;
+  for (let step = 0; step < 8; step++) {
+    if (await result.isVisible().catch(() => false)) break;
+    const answers = page.locator('.estalara-quiz-answer');
+    const n = await answers.count().catch(() => 0);
+    if (n === 0) break;
+    await answers
+      .first()
+      .click({ timeout: 3000 })
+      .catch(() => {});
+    await sleep(300);
+    const cta = page.locator('.estalara-quiz-cta').first();
+    const ctaEnabled =
+      (await cta.count().catch(() => 0)) > 0 && (await cta.isEnabled().catch(() => false));
+    if (ctaEnabled) {
+      await cta.click({ timeout: 3000 }).catch(() => {});
+    }
+    obs.walk.push({ step, answers: n, ctaEnabled });
+    await sleep(600);
+  }
+  obs.resultShown = await result.isVisible().catch(() => false);
+  if (!obs.resultShown) return;
+  obs.leafText = await page
+    .locator('.estalara-quiz-result strong')
+    .first()
+    .textContent({ timeout: 3000 })
+    .catch(() => null);
+  obs.leaf = archetypeFromDisplayName(served.names, obs.leafText);
+
+  let resolveClickMono = null;
+  if (kind === 'confirm') {
+    resolveClickMono = performance.now();
+    await page.locator('.estalara-quiz-confirm').first().click({ timeout: 3000 });
+    obs.resolveAction = 'confirm';
+  } else if (kind === 'dismiss') {
+    resolveClickMono = performance.now();
+    await page.locator('.estalara-quiz-close').first().click({ timeout: 3000 });
+    obs.resolveAction = 'close_x';
+  } else {
+    await page.locator('.estalara-quiz-reject').first().click({ timeout: 3000 });
+    const options = page.locator('.estalara-quiz-option');
+    await options.first().waitFor({ state: 'visible', timeout: 5000 });
+    const texts = (await options.allTextContents()).map((t) => t.trim());
+    const ids = texts.map((t) => archetypeFromDisplayName(served.names, t));
+    // The chrome "None of these — show me everything" is the one option with no archetype name.
+    obs.offeredTexts = texts.filter((_, i) => ids[i] !== null);
+    obs.offered = ids.filter((id) => id !== null);
+    const pick = ids.findIndex((id) => id !== null && id !== obs.leaf);
+    if (pick === -1) return;
+    obs.chosenText = texts[pick];
+    obs.chosen = ids[pick];
+    resolveClickMono = performance.now();
+    await options.nth(pick).click({ timeout: 3000 });
+    obs.resolveAction = 'correct';
+  }
+
+  // The fold, as the SDK persisted it: the first snapshot with `quiz_answered`.
+  const folded = await pollUntil(
+    async () => {
+      const st = await s.readState();
+      return st?.quiz_answered === true ? st : null;
+    },
+    AC10_FOLD_WAIT_MS,
+    50,
+  );
+  obs.stateAtFold = folded
+    ? {
+        archetype: folded.archetype ?? null,
+        confidence: folded.confidence ?? null,
+        quiz_confirmed: folded.quiz_confirmed ?? null,
+        quiz_traits: folded.quiz_traits ?? null,
+        signal_count: folded.signal_count ?? null,
+      }
+    : null;
+
+  // The first request after the fold, and its answer (the LLM branch gets the page budget twice).
+  const pickNow = () =>
+    pickFirstRequestAfterQuizFold({ calls: s.calls, resolveClickMono, foldSeen: folded !== null });
+  const found = await pollUntil(() => pickNow().next, folded ? AC10_FOLD_WAIT_MS : 0);
+  if (found) {
+    await pollUntil(
+      () => found.body !== null || found.failure !== null,
+      2 * CHAT_ARM_PAGE_BUDGET_MS,
+    );
+  }
+  await Promise.all(s.pending);
+  const picked = pickNow();
+  obs.followUp = {
+    reason: found ? null : picked.reason,
+    notGradedSeqs: picked.notGradedSeqs,
+    request: found
+      ? {
+          seq: found.seq,
+          archetypeHint: found.archetypeHint,
+          confidence: found.confidence,
+          similarity: found.similarity,
+          traitsSent: found.traitsSent,
+          status: found.status,
+          sentAfterClickMs: Math.round(found.requestedMono - resolveClickMono),
+        }
+      : null,
+    body: found?.body ?? null,
+  };
+
+  // (a) only: two contrary behaviour signals, the host page's own event, after the follow-up.
+  if (kind === 'confirm' && folded) {
+    const before = await s.readState();
+    const detail = contrarySignalFor(obs.leaf);
+    const sentMono = performance.now();
+    for (let i = 1; i <= 2; i++) {
+      await page.evaluate(
+        (d) => window.dispatchEvent(new CustomEvent('estalara:listing:favorited', { detail: d })),
+        { listingId: `ac10-contrary-${String(i)}`, ...detail },
+      );
+      await sleep(300);
+    }
+    const bookmarks = () =>
+      s.ingest
+        .filter((p) => p.requestedMono >= sentMono)
+        .reduce((n, p) => n + p.types.filter((t) => t === 'listing.bookmarked').length, 0);
+    await pollUntil(() => bookmarks() >= 2, AC10_CONTRARY_WAIT_MS);
+    const after = await s.readState();
+    obs.contrary = {
+      detail,
+      bookmarkEventsEmitted: bookmarks(),
+      signalCountBefore: before?.signal_count ?? null,
+      stateAfter: after
+        ? {
+            archetype: after.archetype ?? null,
+            confidence: after.confidence ?? null,
+            quiz_confirmed: after.quiz_confirmed ?? null,
+            signal_count: after.signal_count ?? null,
+          }
+        : null,
+    };
+  }
+
+  // The row, as `POST /api/quiz/run` wrote it; polled until its terminal status lands.
+  const want = { confirm: 'confirmed', correct: 'corrected', dismiss: 'unconfirmed' }[kind];
+  const runId = obs.pings.find((p) => p.quiz_run_id)?.quiz_run_id ?? null;
+  if (!DATABASE_URL_ADMIN || !obs.sessionId) {
+    obs.rowError = !DATABASE_URL_ADMIN ? 'DATABASE_URL_ADMIN not set' : 'no session id';
+    return;
+  }
+  const { readQuizRunsForSession } = await import('./bandit-probe.mjs');
+  const pick = (rows) => rows.find((r) => r.id === runId) ?? (rows.length === 1 ? rows[0] : null);
+  await pollUntil(
+    async () => {
+      try {
+        obs.rows = await readQuizRunsForSession(DATABASE_URL_ADMIN, obs.sessionId);
+        obs.rowError = null;
+      } catch (err) {
+        obs.rowError = String(err);
+        return false;
+      }
+      const r = pick(obs.rows);
+      return r !== null && r.status === want;
+    },
+    AC10_ROW_WAIT_MS,
+    500,
+  );
+  obs.row = obs.rows ? pick(obs.rows) : null;
+}
+
+/**
+ * Drive AC(10): the served definition first (the names the DOM is read against, and the hash the
+ * rows must carry), then (a), (b), (c), each in its own fresh context.
+ *
+ * @param {import('playwright').Browser} browser
+ * @returns {Promise<object>}
+ */
+async function driveAc10(browser) {
+  const fold = await readQuizFoldConstantsFromSdk();
+  const servedConfig = await fetchServedQuizConfig();
+  const served = evaluateServedQuizConfig(servedConfig);
+  const sessions = {};
+  for (const kind of ['confirm', 'correct', 'dismiss']) {
+    sessions[kind] = await driveAc10Session(browser, kind, served).catch((err) => ({
+      error: String(err && err.stack ? err.stack : err),
+    }));
+  }
+  return {
+    fold,
+    // The body is large; the artefact keeps what the grade reads.
+    servedConfig: {
+      status: servedConfig.status,
+      error: servedConfig.error,
+      ms: servedConfig.ms,
+      body: servedConfig.body
+        ? {
+            data_source: servedConfig.body.data_source ?? null,
+            definition_hash: servedConfig.body.definition_hash ?? null,
+            definition_version: servedConfig.body.definition_version ?? null,
+            quiz_definition: servedConfig.body.quiz_definition
+              ? { confirm: servedConfig.body.quiz_definition.confirm ?? null }
+              : null,
+          }
+        : null,
+    },
+    sessions,
+  };
 }
 
 // ─── Preflight: the substrate is real, or nothing below means anything ──────────────────
@@ -4720,7 +5741,9 @@ async function main() {
         // FOLLOW-1075 (RETRO-301 §4b BUG-1): an arm that never RAN (`quizWidgetFound: false`)
         // must not be reported as having cleared OR failed the gate — it is UNMEASURED, and
         // collapsing "unmeasured" into "failed" is a false red on the arm most likely to
-        // succeed (a quiz leaf resolves at min(0.85 × 1.2, 1.0) = 1.0).
+        // succeed (FOLLOW-1359: a quiz leaf folds at 0.72 when completed and 0.90 once the buyer
+        // confirms it, which this loop does; both clear the > 0.6 gate. The request carries
+        // similarity min(posterior, 0.85), ESC-087, so it stays on the LLM branch).
         verdict: armA.clearedGate
           ? 'behavior ALONE cleared the server gate'
           : armB.clearedGate
@@ -4815,6 +5838,10 @@ async function main() {
   const ctaButtonFound = (await ctaButton.count().catch(() => 0)) > 0;
   let adaptedCtaClicked = false;
   let adaptedCtaClickError = null;
+  // FOLLOW-1367: the quiz card (616 px on this 900 px viewport) can still be open over the CTA —
+  // the AC(1) loop's confirm click is best-effort, and a late-config card opens after its wait.
+  // It is closed deterministically first, never clicked through with `force: true`.
+  const quizOverlayBeforeCta = ctaButtonFound ? await closeQuizCardBeforeCta(page) : null;
   if (ctaButtonFound) {
     try {
       // Deliberately NOT force:true. FOUND BY EXECUTION (FOLLOW-1075): `force: true` skips
@@ -5311,6 +6338,9 @@ async function main() {
           ctaButtonFound,
           ctaClicked: adaptedCtaClicked,
           ctaClickError: adaptedCtaClickError,
+          // FOLLOW-1367: whether a quiz card was open over the page before the click, and how it
+          // was closed (`waited` for its own unmount, or `closed_with_x`).
+          quizOverlayBeforeCta,
           // FOLLOW-1098: null = not determinable. true = this run has NO adapted arm and every
           // adaptation-dependent AC is UNMEASURED rather than failed.
           drewHoldout: adaptedArmDrewHoldout,
@@ -5479,6 +6509,53 @@ async function main() {
     );
   }
 
+  // ── AC(10) — FOLLOW-1361, the quiz confirmation path (Faza Q, checkpoint KQ1) ─────────────
+  // Three fresh contexts after the chat arm, for the same reason the chat arm has its own: none of
+  // their `/api/adapt` responses may enter AC(1)'s population. A throw is AC(10) RED, not an abort.
+  console.log('\n[FOLLOW-1361] driving the quiz confirmation path (confirm, correct, ×)…');
+  let ac10Obs = null;
+  try {
+    ac10Obs = await driveAc10(browser);
+  } catch (err) {
+    ac10Obs = { error: String(err && err.stack ? err.stack : err) };
+  }
+  if (ac10Obs.error) {
+    record('AC(10)', 'quiz confirmation path (FOLLOW-1361)', false, {
+      error: ac10Obs.error,
+      unmetPreconditions: ['ac10Threw'],
+    });
+  } else {
+    const ac10 = evaluateAc10(ac10Obs, serverGate);
+    for (const [kind, sub] of Object.entries(ac10Obs.sessions)) {
+      console.log(
+        `[quiz-confirm] ${kind}: session ${String(sub.sessionId ?? null)} (draws ` +
+          `${JSON.stringify(sub.draws ?? null)}), leaf ${String(sub.leaf ?? null)}` +
+          (kind === 'correct'
+            ? ` → ${String(sub.chosen ?? null)} of ${JSON.stringify(sub.offered ?? null)}`
+            : '') +
+          `, row ${JSON.stringify(sub.row ? { status: sub.row.status, hash: sub.row.definition_hash } : null)}` +
+          `, state at fold ${JSON.stringify(sub.stateAtFold ?? null)}` +
+          `, follow-up ${JSON.stringify(sub.followUp?.request ?? sub.followUp?.reason ?? null)} → ` +
+          `${String(sub.followUp?.body?.source ?? null)} ${String(sub.followUp?.body?.archetype ?? null)}`,
+      );
+    }
+    record(
+      'AC(10)',
+      `${ac10.name} — ${ac10.summary}`,
+      ac10.ok,
+      ac10.evidence,
+      ac10.ok ? null : unmeasuredBecause({ ac: 'AC(10)', evidence: ac10.evidence }, {}),
+    );
+  }
+
+  // FOLLOW-1361: a graded AC this run never recorded is RED, never a smaller total.
+  for (const ac of missingGradedAcs(results)) {
+    record(ac, `${ac} was not evaluated by this run`, false, {
+      unmetPreconditions: ['notEvaluated'],
+      gradedAcs: GRADED_ACS,
+    });
+  }
+
   // ── Supporting evidence: did the ingest path actually persist anything? ────────────────
   // Not an AC of its own, but AC(5)'s precondition: the lift join reads `events` WHERE
   // type = 'cta.clicked'. If the ingest→ClickHouse write is rejected, AC(5) cannot be
@@ -5570,6 +6647,10 @@ async function main() {
     // FOLLOW-1299: everything the chat arm observed — its own session's `/api/adapt` calls
     // (`calls[]`, request hint next to response archetype), its ingest POSTs, both shadow records.
     chatArm,
+    // FOLLOW-1361: the served quiz config AC(10) read its names and hash from (its sub-sessions
+    // are in AC(10)'s evidence), and the list of ACs a full run grades (`TALLY total` = its length).
+    ac10ServedConfig: ac10Obs?.servedConfig ?? null,
+    gradedAcs: GRADED_ACS,
     // Every response the page saw. Consumed when triage needs to answer "did ingest ACK at
     // all, and with what status" — FOLLOW-876's finding was that the previous artifact
     // recorded requests only and so could not answer the question its verdict turned on.

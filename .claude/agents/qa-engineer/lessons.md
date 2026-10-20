@@ -432,3 +432,22 @@ page view, zero navigations. Red-first (message 1 repeated) RED at hop 11; ×3 G
 
 **A guardrail I'd add:** a hop that names a buyer-visible outcome must reuse the outcome predicate
 the other ACs already grade with (one definition), never a weaker per-arm restatement.
+
+## 2026-10-20 · FOLLOW-1361 + FOLLOW-1367 — AC(10) quiz confirmation path, TALLY 8, AC(5) overlay
+
+**What I tested:** `evaluateAc10()` over three fresh sessions (confirm / correct / ×) graded on the
+`quiz_runs` row, the SDK's persisted state, the first `/api/adapt` after the fold and its response
+(AC(1)'s predicate); 85 rows in `ac10-verdict.test.ts`, mutation-checked (3 conjuncts removed → 4
+rows red). Fold masses and the similarity cap read from SDK source, parity-checked against
+`applyQuizLeaf()` and the route's `HIGH_SIMILARITY_THRESHOLD`. Not run live (the PM's series).
+
+**Where a test could have passed over a dead wire:** (1) "the confirmed leaf held under contrary
+signals" is green when the signals never reached the SDK — so it needs two `listing.bookmarked`
+events at ingest AND `signal_count` +2, plus a parity row proving each signal really moves an
+UNCONFIRMED leaf. (2) Picking "the follow-up" by its hint would make "carries the pre-correction
+hint" unreachable — the pick uses a post-fold state stamp the request carries (`traits`), never the
+graded fields. (3) FOLLOW-1352's "sent after the fold was SEEN" floor would exclude a request the
+SDK sends in the same task as the fold.
+
+**A guardrail I'd add:** a selection helper must be tested with a fixture where the "right-looking"
+request is NOT the selected one — if selection and grading read the same field, the RED row is dead.

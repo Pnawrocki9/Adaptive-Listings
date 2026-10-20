@@ -24,8 +24,17 @@ import { test, expect } from '@playwright/test';
 
 test.describe('SDK Description-Axis Floor (FOLLOW-913 / ESC-054)', () => {
   test.beforeEach(async ({ page }) => {
+    // Pre-granted consent PLUS the quiz-dismissed cooldown — the FOLLOW-1015 convention of
+    // `inquiry-observer.spec.ts`. The quiz card auto-opens bottom-left (24/96) and grows upward;
+    // this fixture's CTA sits in that same left column, so whether the card covers it is fixture
+    // geometry, not a product property. With the v1 tree the 460 px card's top edge (y=164)
+    // already overlapped the CTA's bottom (y=169) and missed its centre by 6 px; the v2 tree's
+    // 616 px first screen (six answers) covers it [FOLLOW-1357]. This spec is about the
+    // description floor, so it suppresses the quiz the way a returning visitor who closed it
+    // would. An idle card adds no signal, so the signal_count arithmetic below is unchanged.
     await page.addInitScript(() => {
       localStorage.setItem('estalara_consent', 'granted');
+      localStorage.setItem('__estalara_quiz_dismissed__', String(Date.now()));
     });
   });
 

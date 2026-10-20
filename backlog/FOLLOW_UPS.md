@@ -56805,3 +56805,24 @@ AC:
 - [ ] Description parity unchanged or the corpus update is justified; FOLLOW-819 series GREEN.
 
 cross_ref: [ESC-088, FOLLOW-1360, ESCALATIONS 2026-05-14 ruling (FOLLOW-034 cancelled)]
+
+## FOLLOW-1367 — harness: AC(5) clicks the fixture CTA while the quiz card may still cover it; warm public-config at bring-up
+
+source_retro: — (Q5 series on 26b5fc32, 2026-10-20) source_ticket: FOLLOW-1365 recommended_agent:
+qa-engineer (Opus, with FOLLOW-1361) priority: P1 estimated_hours: 3 tag: measurement depends_on:
+[FOLLOW-1365] blocks: [FOLLOW-1361] promoted_to_queue: true
+
+**What.** Since FOLLOW-1365 the served v2 tree runs on localhost, with its trait screen and result
+screen. In one run of the Q5 series AC(5) failed with `cta_not_clicked`: Playwright resolved
+`[data-estalara-cta]` but it never became visible/clickable for 5 s — the same overlay class the SDK
+e2e spec hit in #1055 (the 616 px card on a 720 px viewport). AC(5)'s click must wait for the card
+to be closed (or dismiss it deterministically first) — not `force: true`. Second, `localhost-up.sh`
+step 10 warms `/api/adapt` and the rollup but not `/api/quiz/public-config`, whose cold compile
+(4–27 s) makes the first run fall back to the built-in tree; add it to the warm step.
+
+AC:
+
+- [ ] A series with the served tree has no `cta_not_clicked` across ≥ 6 runs.
+- [ ] The first run after a bring-up reports the served `definition_hash`.
+
+cross_ref: [FOLLOW-1361, FOLLOW-1365, FOLLOW-1233/1246, #1055 (description-floor spec precedent)]

@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 180 (2026-10-19) — **Checkpoint K3 GREEN at `main` `434b2513` (`docs/checkpoints/K3.md`, README §5.31, tag `k3-green` on this ledger's merge): Phase 3 M1 #1042, M2 #1044, M3 #1041, M5 #1043, N2 full #1045 DONE; N1 `--final` reads 0. A RED pair at `3952ac29` was bisected by a read-only forensic (not a Phase 3 regression) → FOLLOW-1352 #1046 (harness predicate) + FOLLOW-1351 #1047 (SDK single-flight chat refresh). **CEO ruling 2026-10-19: Faza Q — the quiz must identify one archetype with ≥ 90 % accuracy (buyer self-confirmation as ground truth, EN + PL mandatory, buyer-side language switcher, 12 results + neutral + traits) and the backoffice must manage the quiz end to end — is INSERTED between K3 and Phase 4.** Plan approved in plan mode (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, copied to `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` by the Q0 PR); packages Q0 docs → Q1 shared → Q2 SDK ∥ Q3 recording ∥ Q7 editor → Q4 fold → Q5 traits → Q6 harness (AC(10), TALLY 8) → Q8 report; checkpoints KQ1 (localhost 3× GREEN 8/8), KQ2 (CEO walkthrough — absorbs the K3 'moment CEO'), KQ3 (production, CTO: ≥ 400 decided runs, pre-registered Wilson bound). Phase 4 (P1–P7) follows KQ2. New stubs: FOLLOW-1353 (Sentry drizzle params, P2), FOLLOW-1354 (SDK adapt fetch timeout, P2); amendments 1307, 1233/1246, 1350. Retro batch owed (weekly): #1042, #1043, #1044, #1047. Next free: FOLLOW-1369, RETRO-368, ESC-089.**
+## ▶️ START HERE — session 180 (2026-10-19) — **Checkpoint K3 GREEN at `main` `434b2513` (`docs/checkpoints/K3.md`, README §5.31, tag `k3-green` on this ledger's merge): Phase 3 M1 #1042, M2 #1044, M3 #1041, M5 #1043, N2 full #1045 DONE; N1 `--final` reads 0. A RED pair at `3952ac29` was bisected by a read-only forensic (not a Phase 3 regression) → FOLLOW-1352 #1046 (harness predicate) + FOLLOW-1351 #1047 (SDK single-flight chat refresh). **CEO ruling 2026-10-19: Faza Q — the quiz must identify one archetype with ≥ 90 % accuracy (buyer self-confirmation as ground truth, EN + PL mandatory, buyer-side language switcher, 12 results + neutral + traits) and the backoffice must manage the quiz end to end — is INSERTED between K3 and Phase 4.** Plan approved in plan mode (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, copied to `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` by the Q0 PR); packages Q0 docs → Q1 shared → Q2 SDK ∥ Q3 recording ∥ Q7 editor → Q4 fold → Q5 traits → Q6 harness (AC(10), TALLY 8) → Q8 report; checkpoints KQ1 (localhost 3× GREEN 8/8), KQ2 (CEO walkthrough — absorbs the K3 'moment CEO'), KQ3 (production, CTO: ≥ 400 decided runs, pre-registered Wilson bound). Phase 4 (P1–P7) follows KQ2. New stubs: FOLLOW-1353 (Sentry drizzle params, P2), FOLLOW-1354 (SDK adapt fetch timeout, P2); amendments 1307, 1233/1246, 1350. Retro batch owed (weekly): #1042, #1043, #1044, #1047. Next free: FOLLOW-1370, RETRO-368, ESC-089.**
 
 ### Dispatch record (session 180)
 
@@ -25,25 +25,22 @@
   GREEN `[FRESH]` (README §5.32); bundle 42,904 B (headroom 232 B).
 - **FOLLOW-1358** — status: DONE # #1053 `80c6c868`, 2026-10-20. Faza Q Q3 `quiz_runs`; compliance
   C1–C5/C7/C8 closed, C6 = FOLLOW-1364.
-- **FOLLOW-1365** — status: DONE # #1057 `7a1bd1c3`, 2026-10-20. Late 8 s quiz-config fetch; warm
-  series runs walk the served v2 tree and reach `confirmed`. Residual: warm public-config in
-  localhost-up (cold first compile 4–27 s) → FOLLOW-1233/1246.
-- **FOLLOW-1366** — status: IN_PROGRESS # retire protected-class strings (ESC-088 resolved:
-  has_children stays).
+- **FOLLOW-1365** — status: DONE # #1057; superseded in mechanism by FOLLOW-1369 (#1072).
+- **FOLLOW-1366** — status: DONE # #1069 `0b221df3`, 2026-10-20. Protected-class strings retired;
+  compliance follow-ups listed in `docs/checkpoints/KQ1.md`.
+- **FOLLOW-1369** — status: DONE # #1072 `38d19cb6` + harness #1073, 2026-10-21. One quiz-config
+  request raced against 1 s, 15 s deadline; SDK 43,133 B.
 - **FOLLOW-1368** — status: BACKLOG # ESC-087 option 3: `/api/adapt` uses the playbook branch only
   when every slot is grounded, else the LLM — all sessions; own series; after KQ2.
-- **FOLLOW-1367** — status: READY # P1, fold into Q6 (FOLLOW-1361). Harness: since the served v2
-  tree runs (FOLLOW-1365) the quiz card can still cover the fixture CTA when AC(5) clicks it
-  (`cta_not_clicked`, Q5 series); AC(5) must click only after the card is closed. Also warm
-  `/api/quiz/public-config` in localhost-up (cold compile 4–27 s).
-- **FOLLOW-1364** — status: IN_PROGRESS # retention job, 13 months (CEO 2026-10-20).
-- **FOLLOW-1359** — status: IN_PROGRESS # PR #1060; ESC-087 resolved (option 1: SDK caps sent
-  similarity at 0.85, `c4e2c3ff`); series pending.
+- **FOLLOW-1367** — status: DONE # folded into #1071 (AC(5) after the quiz card, warm
+  public-config).
+- **FOLLOW-1364** — status: DONE # #1070 `c79d3547`, 2026-10-20. Retention 13 months.
+- **FOLLOW-1359** — status: DONE # #1060 `59fc9be0`, 2026-10-20. Q4 fold + ESC-087 cap.
 - **FOLLOW-1360** — status: DONE # #1064 `e3451647`, 2026-10-20. Faza Q Q5 traits → grounded copy;
   Opus review C1–C3 applied, PM fixed single-family false positives; series 3× GREEN. C4–C6 =
   ESC-088 / FOLLOW-1366. Description route does not pass traits yet (cache not trait-keyed).
-- **FOLLOW-1361** — status: BACKLOG # Faza Q Q6 harness AC(10), AC(1) re-pin, TALLY 8. Opus. After
-  Q2/Q3/Q4 → KQ1 (3× GREEN 8/8).
+- **FOLLOW-1361** — status: DONE # #1071 `1d578ba9` + #1073 `8c08deba`, 2026-10-21. Q6 AC(10); **KQ1
+  GREEN** (README §5.33, `docs/checkpoints/KQ1.md`).
 - **FOLLOW-1362** — status: DONE # Q7 editor: C1 #1058, C2 #1059, C3 #1061, C4 #1063 `3fee764d`,
   2026-10-20.
 - **FOLLOW-1363** — status: DONE # #1067 `fa23d8b2`, 2026-10-20. Faza Q Q8 accuracy report; Opus

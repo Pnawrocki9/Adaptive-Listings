@@ -34,8 +34,11 @@ apps/control-plane/src/app/api/admin/labels/route.ts
 apps/control-plane/src/app/api/admin/tenants/al-state/route.ts
 apps/control-plane/src/app/api/admin/tenants/optout-widget/route.ts
 apps/control-plane/src/app/api/admin/tenants/quiz-completions/route.ts
+apps/control-plane/src/app/api/admin/tenants/quiz-definition/activate/route.ts
+apps/control-plane/src/app/api/admin/tenants/quiz-definition/deactivate/route.ts
 apps/control-plane/src/app/api/admin/tenants/quiz-definition/route.ts
 apps/control-plane/src/app/api/admin/tenants/quiz-definition/suggest-weights/route.ts
+apps/control-plane/src/app/api/admin/tenants/quiz-definition/versions/route.ts
 apps/control-plane/src/app/api/admin/tenants/quiz-state/route.ts
 apps/control-plane/src/app/api/admin/tracer/export/decisions/route.ts
 apps/control-plane/src/app/api/admin/tracer/export/events/route.ts

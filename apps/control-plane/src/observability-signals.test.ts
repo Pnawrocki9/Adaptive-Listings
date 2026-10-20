@@ -206,6 +206,13 @@
  * ping that could not be recorded, either because `quiz_runs` is not created yet
  * (`quiz_runs_table_missing`, 503, the CTO handover step H002) or because the write or the api_keys
  * lookup failed (500); one shared `fail()` helper, so ONE site. It is now **105 in 65**.
+ *
+ * FOLLOW-1362 C1 (Faza Q package Q7) moved the quiz-definition PUT's separate pre-transaction
+ * version read INTO the write transaction (under the tenant advisory lock), so its own capture
+ * (`put_read`) is gone: `app/api/admin/tenants/quiz-definition/route.ts` 3 -> 2. It added three
+ * rows of one site each: `…/quiz-definition/versions/route.ts` (history read),
+ * `…/activate/route.ts` (restore transaction) and `…/deactivate/route.ts` (revert transaction).
+ * It is now **107 in 68**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -219,7 +226,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 105;
+const TOTAL_SITES = 107;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -343,9 +350,24 @@ const REGISTER: CaptureSiteGroup[] = [
     consumer: NO_CHANNEL,
   },
   {
+    file: 'app/api/admin/tenants/quiz-definition/activate/route.ts',
+    sites: 1,
+    meaning:
+      'A staff restore of an earlier quiz definition version failed inside its transaction (lock, read, copy-forward insert or the `quiz_definition.restore` audit row) and was rolled back — the active version is unchanged. (FOLLOW-1362)',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'app/api/admin/tenants/quiz-definition/deactivate/route.ts',
+    sites: 1,
+    meaning:
+      'A staff revert to the built-in default quiz failed inside its transaction (lock, read, deactivate or the `quiz_definition.revert_to_default` audit row) and was rolled back — the tenant still serves its active version. (FOLLOW-1362)',
+    consumer: NO_CHANNEL,
+  },
+  {
     file: 'app/api/admin/tenants/quiz-definition/route.ts',
-    sites: 3,
-    meaning: 'The quiz definition for a tenant could not be read or persisted.',
+    sites: 2,
+    meaning:
+      'The quiz definition for a tenant could not be read, or a save failed inside its transaction (lock, version read, insert or audit row) and was rolled back.',
     consumer: NO_CHANNEL,
   },
   {
@@ -353,6 +375,13 @@ const REGISTER: CaptureSiteGroup[] = [
     sites: 2,
     meaning:
       'The staff quiz weight-suggestion LLM call failed or returned an unparseable reply — the editor shows its fail-loud error instead of suggestions.',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'app/api/admin/tenants/quiz-definition/versions/route.ts',
+    sites: 1,
+    meaning:
+      'The quiz definition version history (list or one version) could not be read — the staff versions panel shows its K.2 error state instead of an empty history. (FOLLOW-1362)',
     consumer: NO_CHANNEL,
   },
   {

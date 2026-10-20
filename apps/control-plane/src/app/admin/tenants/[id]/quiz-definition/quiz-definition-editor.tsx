@@ -2,136 +2,82 @@
 
 /**
  * StaffQuizDefinitionEditor — Estalara-staff editor for a tenant's fully editable quiz tree
- * (FOLLOW-639 / ADR-0019 D3 + D7).
+ * (FOLLOW-639 / ADR-0019 D3 + D7; structured EN | PL editor FOLLOW-1362 C2).
  *
- * v1 was a JSON-only editor (per the ticket: a drag-drop tree UI is explicitly NOT required).
- * FOLLOW-1003 adds a structured QUESTION FORM above the JSON ({@link QuizQuestionForm}) — the
- * prompts and answer labels staff actually reword are plain inputs; the JSON stays the single
- * source of truth and the advanced surface for structure/branching/weights/locales. Both edit the
- * SAME `text` state, so form edits and JSON edits round-trip freely.
+ * The draft is one JSON `text` state: the structured form ({@link QuizQuestionForm}) and the
+ * Confirmation tab ({@link ConfirmationTab}) edit it through the pure ops in `definition-ops.ts`,
+ * and the "Advanced" JSON textarea edits the same string, so all three round-trip. On every
+ * change the draft is parsed with the SERVE schema (hard integrity errors: unknown archetype,
+ * dangling `next`, cycle, duplicate id) and then linted client-side with `lintQuizDefinition`
+ * (EN + PL on every text, limits, confirm completeness). Any hard error or lint ERROR disables
+ * Save; lint WARNINGS and the unreachable-archetype list never do. A rejected save renders the
+ * server's 400 `issues[]` in the same lint panel.
  *
- * The textarea holds the `QuizDefinition` JSON; on every change it
- * is parsed and validated CLIENT-SIDE with the SAME `QuizDefinitionSchema` the server enforces, so
- * the HARD integrity errors (unknown archetype id, dangling `next`, cycle, duplicate id) surface
- * immediately and Save is disabled until they clear. The NON-BLOCKING unreachable-archetype
- * warning (`computeUnreachableArchetypes`) is shown but never blocks the save (CEO ruling).
+ * Provenance (Rule K.2): the GET carries `can_write` (false → read-only: inputs disabled, Save
+ * hidden) and `invalid_active` + `raw` (the stored row no longer parses, buyers get the built-in
+ * default → a blocking banner with the raw JSON; no silent starter is loaded). "Load built-in
+ * default" loads `DEFAULT_QUIZ_DEFINITION_V2`. Save sends `base_version` (the loaded active
+ * version) and `source: 'editor'`; a 409 `version_conflict` shows "someone else published
+ * version N — reload".
  *
  * Every fetch carries `?tenant_id=<tenantId>` so the staff route fences its `createAdminClient()`
  * queries to that tenant (ADR-0018 §2 invariant 5). The write is PUT (create-a-new-active-version
  * semantics); the route performs the mutation + `staff_audit_log` insert in one transaction.
  *
- * FOLLOW-1002 — "Suggest weights (AI)": after editing questions, staff can ask the LLM
- * (via `POST …/quiz-definition/suggest-weights`) to derive answer→archetype weight vectors from
- * the CURRENT draft's wording, so a reworded question does not silently keep mappings authored
- * for its old meaning. The proposals render below with per-answer rationale; "Apply all to
- * draft" merges ONLY the weights into the JSON ({@link applySuggestions}) — nothing is persisted
- * until the staff reviews and hits the same audited Save as always. Runtime stays deterministic;
- * the LLM runs only on this explicit authoring click.
+ * FOLLOW-1002 — "Suggest weights (AI)": derives answer→archetype weights from the CURRENT draft
+ * via `POST …/quiz-definition/suggest-weights`; "Apply all to draft" merges ONLY weights
+ * ({@link applySuggestions}) — nothing persists until the audited Save.
  *
  * @module apps/control-plane/src/app/admin/tenants/[id]/quiz-definition/quiz-definition-editor
  */
 
 import { useEffect, useMemo, useState } from 'react';
 
-import type { QuizDefinition } from '@estalara/shared';
-import { QuizDefinitionSchema, computeUnreachableArchetypes } from '@estalara/shared';
+import type { QuizDefinition, QuizLintIssue } from '@estalara/shared';
+import { DEFAULT_QUIZ_DEFINITION_V2 } from '@estalara/shared';
+
+import type { QuizDefinitionState } from '@/app/api/admin/tenants/quiz-definition/route';
 
 import { applySuggestions } from './apply-suggestions';
+import { ConfirmationTab } from './confirmation-tab';
+import { LintPanel } from './lint-panel';
 import { QuizQuestionForm } from './question-form';
+import { validateDraft } from './validate-draft';
+import { WeightSuggestionsPanel, type SuggestResponse } from './weight-suggestions-panel';
 
-interface WeightSuggestion {
-  question_id: string;
-  answer_id: string;
-  weights: Record<string, number>;
-  rationale: string;
+/** The error envelope of a failed write (`409 version_conflict`, `400 validation_failed`, …). */
+interface WriteErrorBody {
+  error?:
+    | string
+    | { code?: string; message?: string; issues?: QuizLintIssue[]; active_version?: number | null };
 }
 
-interface SuggestResponse {
-  model: string;
-  suggestions: WeightSuggestion[];
-  rejected: { question_id: string; answer_id: string; reason: string }[];
+function errorOf(
+  body: WriteErrorBody,
+  fallback: string,
+): { code?: string | undefined; message: string } {
+  if (typeof body.error === 'string') return { message: body.error };
+  return { code: body.error?.code, message: body.error?.message ?? fallback };
 }
 
-/** A minimal starter tree offered when a tenant has no saved definition yet. */
-const STARTER_DEFINITION: QuizDefinition = {
-  schema_version: 1,
-  root: 'q_gate',
-  languages: ['en'],
-  questions: [
-    {
-      id: 'q_gate',
-      prompt_i18n: { en: 'What are you looking for?' },
-      answers: [
-        { id: 'a_invest', label_i18n: { en: 'Investment property' }, weights: {}, next: 'q_focus' },
-        { id: 'a_skip', label_i18n: { en: 'Just browsing' }, weights: {}, next: null },
-      ],
-    },
-    {
-      id: 'q_focus',
-      prompt_i18n: { en: 'What is your focus?' },
-      answers: [
-        {
-          id: 'a_yield',
-          label_i18n: { en: 'Rental income (yield)' },
-          weights: { yield_hunter: 1 },
-          next: null,
-        },
-        {
-          id: 'a_flip',
-          label_i18n: { en: 'Flip / renovation' },
-          weights: { flip_investor: 1 },
-          next: null,
-        },
-      ],
-    },
-  ],
-};
+const BUILT_IN_DEFAULT_JSON = JSON.stringify(DEFAULT_QUIZ_DEFINITION_V2, null, 2);
 
-interface ValidationResult {
-  /** Parsed + schema-valid definition, or null when the text is not a valid definition. */
-  definition: QuizDefinition | null;
-  /** Human-readable hard errors (JSON parse OR schema integrity). Empty when valid. */
-  errors: string[];
-  /** Non-blocking unreachable-archetype warning (only when the definition is valid). */
-  unreachable: string[];
-}
-
-/** Parse + validate the editor text with the SAME schema the server enforces. */
-function validate(text: string): ValidationResult {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch (err) {
-    return {
-      definition: null,
-      errors: [`JSON parse error: ${err instanceof Error ? err.message : 'invalid JSON'}`],
-      unreachable: [],
-    };
-  }
-  const result = QuizDefinitionSchema.safeParse(raw);
-  if (!result.success) {
-    return {
-      definition: null,
-      errors: result.error.issues.map(
-        (i) => `${i.path.length ? i.path.join('.') + ': ' : ''}${i.message}`,
-      ),
-      unreachable: [],
-    };
-  }
-  return {
-    definition: result.data,
-    errors: [],
-    unreachable: computeUnreachableArchetypes(result.data),
-  };
-}
+const BANNER = 'mb-4 rounded-lg px-4 py-3 text-sm';
 
 export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): React.JSX.Element {
   const [text, setText] = useState<string>('');
   const [version, setVersion] = useState<number | null>(null);
+  const [canWrite, setCanWrite] = useState(true);
+  // `raw` of an active row that no longer parses (Rule K.2) — blocks editing until acknowledged.
+  const [invalidActive, setInvalidActive] = useState<{ raw: unknown } | null>(null);
   const [loadStatus, setLoadStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
   const [loadErrorMsg, setLoadErrorMsg] = useState('');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveErrorMsg, setSaveErrorMsg] = useState('');
+  const [serverIssues, setServerIssues] = useState<QuizLintIssue[]>([]);
+  // Set by a 409: the version somebody else published (null = reverted to the built-in default).
+  const [conflict, setConflict] = useState<{ activeVersion: number | null } | null>(null);
+  const [tab, setTab] = useState<'questions' | 'confirmation'>('questions');
   const [retryNonce, setRetryNonce] = useState(0);
   // FOLLOW-1002 — suggest-weights state. `suggest` holds the LAST proposal set;
   // it is cleared on apply (the draft now embodies it) but deliberately kept
@@ -146,16 +92,26 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
   useEffect(() => {
     setLoadStatus('loading');
     setLoadErrorMsg('');
+    setConflict(null);
+    setServerIssues([]);
     void fetch(url)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${String(r.status)}`);
         return r.json();
       })
       .then((data: unknown) => {
-        const d = data as { version?: number | null; definition?: QuizDefinition | null };
-        const active = d.definition ?? STARTER_DEFINITION;
-        setText(JSON.stringify(active, null, 2));
+        const d = data as Partial<QuizDefinitionState>;
+        setCanWrite(d.can_write !== false);
         setVersion(d.version ?? null);
+        if (d.invalid_active === true) {
+          // The stored row fails the serve schema: show it, never swap in a starter silently.
+          setInvalidActive({ raw: d.raw ?? null });
+          setText('');
+        } else {
+          setInvalidActive(null);
+          // No saved row → buyers are served the built-in default, so that IS the baseline.
+          setText(d.definition ? JSON.stringify(d.definition, null, 2) : BUILT_IN_DEFAULT_JSON);
+        }
         setLoadStatus('loaded');
       })
       .catch((err: unknown) => {
@@ -166,26 +122,43 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
       });
   }, [url, retryNonce]);
 
-  const validation = useMemo(() => validate(text), [text]);
+  const validation = useMemo(() => validateDraft(text), [text]);
+  const readOnly = !canWrite || invalidActive !== null || loadStatus !== 'loaded';
   const canSave =
-    loadStatus === 'loaded' && validation.definition !== null && saveStatus !== 'saving';
+    loadStatus === 'loaded' &&
+    canWrite &&
+    invalidActive === null &&
+    validation.definition !== null &&
+    validation.lintErrors.length === 0 &&
+    saveStatus !== 'saving';
 
   async function handleSave(): Promise<void> {
-    if (validation.definition === null || loadStatus !== 'loaded') return;
+    if (!canSave || validation.definition === null) return;
     setSaveStatus('saving');
     setSaveErrorMsg('');
+    setServerIssues([]);
+    setConflict(null);
     try {
       const res = await fetch(url, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ definition: validation.definition }),
+        body: JSON.stringify({
+          definition: validation.definition,
+          base_version: version,
+          source: 'editor',
+        }),
       });
       if (!res.ok) {
-        const bodyUnknown: unknown = await res.json().catch(() => ({}));
-        const body = bodyUnknown as { error?: string | { message?: string } };
-        const msg =
-          typeof body.error === 'string' ? body.error : (body.error?.message ?? 'Failed to save.');
-        setSaveErrorMsg(msg);
+        const body = (await res.json().catch(() => ({}))) as WriteErrorBody;
+        const { code, message } = errorOf(body, 'Failed to save.');
+        const detail = typeof body.error === 'object' ? body.error : undefined;
+        if (res.status === 409 && code === 'version_conflict') {
+          setConflict({ activeVersion: detail?.active_version ?? null });
+        } else if (detail?.issues && detail.issues.length > 0) {
+          setServerIssues(detail.issues);
+        } else {
+          setSaveErrorMsg(message);
+        }
         setSaveStatus('error');
         return;
       }
@@ -213,13 +186,8 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
         body: JSON.stringify({ definition: validation.definition }),
       });
       if (!res.ok) {
-        const bodyUnknown: unknown = await res.json().catch(() => ({}));
-        const body = bodyUnknown as { error?: string | { message?: string } };
-        const msg =
-          typeof body.error === 'string'
-            ? body.error
-            : (body.error?.message ?? 'Failed to get suggestions.');
-        setSuggestErrorMsg(msg);
+        const body = (await res.json().catch(() => ({}))) as WriteErrorBody;
+        setSuggestErrorMsg(errorOf(body, 'Failed to get suggestions.').message);
         setSuggestStatus('error');
         return;
       }
@@ -238,6 +206,10 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
     const merged = applySuggestions(validation.definition, suggest.suggestions);
     setText(JSON.stringify(merged, null, 2));
     setSuggest(null);
+  }
+
+  function updateDraft(next: QuizDefinition): void {
+    setText(JSON.stringify(next, null, 2));
   }
 
   return (
@@ -261,36 +233,127 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
         </div>
       )}
 
-      <div className="mb-3 flex items-center justify-between">
+      {invalidActive !== null && (
+        <div
+          role="alert"
+          data-testid="invalid-active-banner"
+          className={`${BANNER} border border-red-300 bg-red-50 text-red-800`}
+        >
+          <p className="font-semibold">
+            The active quiz definition (version {String(version)}) is invalid.
+          </p>
+          <p className="mt-1">
+            Buyers are being served the built-in default instead. Editing is blocked until you
+            decide: reload, or load the built-in default as a new draft (saving then replaces
+            version {String(version)}). The stored JSON:
+          </p>
+          <pre
+            data-testid="invalid-active-raw"
+            className="mt-2 max-h-64 overflow-auto rounded bg-white p-2 font-mono text-xs"
+          >
+            {JSON.stringify(invalidActive.raw, null, 2)}
+          </pre>
+        </div>
+      )}
+
+      {conflict !== null && (
+        <div
+          role="alert"
+          data-testid="version-conflict"
+          className={`${BANNER} bg-amber-50 text-amber-900`}
+        >
+          {conflict.activeVersion === null
+            ? 'Someone else reverted this quiz to the built-in default — reload to continue.'
+            : `Someone else published version ${String(conflict.activeVersion)} — reload to continue.`}{' '}
+          Your draft was not saved.
+          <button
+            type="button"
+            data-testid="reload-definition"
+            onClick={() => {
+              setRetryNonce((n) => n + 1);
+            }}
+            className="ml-3 rounded-lg border border-amber-400 bg-white px-3 py-1 font-medium"
+          >
+            Reload
+          </button>
+        </div>
+      )}
+
+      {!canWrite && loadStatus === 'loaded' && (
+        <div
+          role="status"
+          data-testid="read-only-banner"
+          className={`${BANNER} bg-gray-100 text-gray-700`}
+        >
+          Read-only: saving quiz changes needs the ops staff rank.
+        </div>
+      )}
+
+      <div className="mb-3 flex items-center justify-between gap-4">
         <p className="text-sm text-gray-600">
           {version === null
-            ? 'No saved definition — the SDK uses its built-in default tree. Saving creates version 1.'
+            ? 'No saved definition — buyers see the built-in default shown here. Saving creates version 1.'
             : `Active version: ${String(version)}. Saving creates the next version.`}
         </p>
+        <button
+          type="button"
+          data-testid="load-default"
+          disabled={loadStatus !== 'loaded' || !canWrite}
+          onClick={() => {
+            setInvalidActive(null);
+            setText(BUILT_IN_DEFAULT_JSON);
+          }}
+          className="shrink-0 rounded-lg border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+        >
+          Load built-in default
+        </button>
       </div>
 
-      {/* FOLLOW-1003 — structured question editor. Renders only from a VALID draft
-          (the JSON below stays the single source of truth); on hard errors the form
-          hides rather than editing a definition that cannot round-trip. */}
-      <h2 className="mb-2 text-sm font-semibold text-gray-700">Questions</h2>
-      {validation.definition !== null ? (
+      <div className="mb-3 flex gap-2 border-b border-gray-200 text-sm">
+        {(['questions', 'confirmation'] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={tab === t}
+            data-testid={`tab-${t}`}
+            onClick={() => {
+              setTab(t);
+            }}
+            className={`px-3 py-1.5 ${tab === t ? 'border-b-2 border-blue-600 font-semibold text-blue-700' : 'text-gray-500'}`}
+          >
+            {t === 'questions' ? 'Questions' : 'Confirmation'}
+          </button>
+        ))}
+      </div>
+
+      {/* The form renders only from a VALID draft (the JSON below stays the single source of
+          truth); on hard errors it hides rather than editing a definition that cannot round-trip. */}
+      {validation.definition === null ? (
+        <p data-testid="question-form-unavailable" className="mb-6 text-sm text-gray-400">
+          {invalidActive !== null
+            ? 'Resolve the invalid active definition above to edit questions in form view.'
+            : 'Fix the JSON errors below to edit questions in form view.'}
+        </p>
+      ) : tab === 'questions' ? (
         <QuizQuestionForm
           definition={validation.definition}
-          onChange={(next) => {
-            setText(JSON.stringify(next, null, 2));
-          }}
+          onChange={updateDraft}
+          readOnly={readOnly}
         />
       ) : (
-        <p data-testid="question-form-unavailable" className="mb-6 text-sm text-gray-400">
-          Fix the JSON errors below to edit questions in form view.
-        </p>
+        <ConfirmationTab
+          definition={validation.definition}
+          readOnly={readOnly}
+          onChange={updateDraft}
+        />
       )}
 
       <label
         htmlFor="quiz-definition-json"
         className="mb-1 block text-sm font-medium text-gray-700"
       >
-        Advanced: full definition (JSON) — structure, branching, weights, extra languages
+        Advanced: full definition (JSON)
       </label>
       <textarea
         id="quiz-definition-json"
@@ -300,13 +363,13 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
         onChange={(e) => {
           setText(e.target.value);
         }}
-        disabled={loadStatus !== 'loaded'}
-        rows={22}
+        disabled={readOnly}
+        rows={14}
         className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-xs outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50"
       />
 
       {/* HARD errors — block saving. */}
-      {validation.errors.length > 0 && (
+      {validation.errors.length > 0 && invalidActive === null && (
         <div role="alert" className="mt-3 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
           <p className="font-medium">This definition cannot be saved:</p>
           <ul className="mt-1 list-disc pl-5">
@@ -316,6 +379,13 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
           </ul>
         </div>
       )}
+
+      <LintPanel
+        definition={validation.definition}
+        errors={validation.lintErrors}
+        warnings={validation.lintWarnings}
+        serverIssues={serverIssues}
+      />
 
       {/* NON-BLOCKING unreachable-archetype warning (ADR-0019 D3). */}
       {validation.errors.length === 0 && validation.unreachable.length > 0 && (
@@ -332,7 +402,7 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
         </div>
       )}
 
-      {saveStatus === 'error' && (
+      {saveStatus === 'error' && saveErrorMsg !== '' && (
         <div role="alert" className="mt-3 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
           {saveErrorMsg}
         </div>
@@ -345,66 +415,37 @@ export function StaffQuizDefinitionEditor({ tenantId }: { tenantId: string }): R
         </div>
       )}
       {suggest !== null && (
-        <div
-          data-testid="weight-suggestions"
-          className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm"
-        >
-          <p className="font-medium text-indigo-900">
-            Proposed archetype weights ({suggest.model}) — review, then Apply and Save:
-          </p>
-          <ul className="mt-2 space-y-2">
-            {suggest.suggestions.map((s) => (
-              <li key={`${s.question_id}/${s.answer_id}`} className="text-indigo-900">
-                <span className="font-mono text-xs">
-                  {s.question_id} / {s.answer_id}
-                </span>{' '}
-                → <span className="font-mono text-xs">{JSON.stringify(s.weights)}</span>
-                <p className="text-xs text-indigo-700">{s.rationale}</p>
-              </li>
-            ))}
-          </ul>
-          {suggest.rejected.length > 0 && (
-            <div className="mt-2 text-xs text-amber-800">
-              <p className="font-medium">Rejected by validation (not applied):</p>
-              <ul className="list-disc pl-5">
-                {suggest.rejected.map((r, i) => (
-                  <li key={i}>
-                    {r.question_id}/{r.answer_id}: {r.reason}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          <button
-            type="button"
-            data-testid="apply-suggestions"
-            onClick={handleApplySuggestions}
-            className="mt-3 rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700"
-          >
-            Apply all to draft
-          </button>
-        </div>
+        <WeightSuggestionsPanel suggest={suggest} onApply={handleApplySuggestions} />
       )}
 
       <div className="mt-4 flex items-center gap-4">
-        <button
-          type="button"
-          onClick={() => void handleSave()}
-          disabled={!canSave}
-          className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {saveStatus === 'saving' ? 'Saving…' : 'Save Definition'}
-        </button>
-        <button
-          type="button"
-          data-testid="suggest-weights"
-          onClick={() => void handleSuggest()}
-          disabled={!canSave || suggestStatus === 'loading'}
-          title="Ask the LLM to derive answer→archetype weights from the current question wording"
-          className="rounded-lg border border-indigo-300 bg-white px-5 py-2 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-50 disabled:opacity-50"
-        >
-          {suggestStatus === 'loading' ? 'Asking model…' : 'Suggest weights (AI)'}
-        </button>
+        {canWrite && (
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={!canSave}
+            className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {saveStatus === 'saving' ? 'Saving…' : 'Save Definition'}
+          </button>
+        )}
+        {canWrite && (
+          <button
+            type="button"
+            data-testid="suggest-weights"
+            onClick={() => void handleSuggest()}
+            disabled={
+              loadStatus !== 'loaded' ||
+              invalidActive !== null ||
+              validation.definition === null ||
+              suggestStatus === 'loading'
+            }
+            title="Ask the LLM to derive answer→archetype weights from the current question wording"
+            className="rounded-lg border border-indigo-300 bg-white px-5 py-2 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-50 disabled:opacity-50"
+          >
+            {suggestStatus === 'loading' ? 'Asking model…' : 'Suggest weights (AI)'}
+          </button>
+        )}
         {saveStatus === 'saved' && (
           <span className="text-sm font-medium text-green-600">Definition saved!</span>
         )}

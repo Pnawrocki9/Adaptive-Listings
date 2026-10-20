@@ -56782,3 +56782,26 @@ AC:
 - [ ] `build:check` ≤ 43,136 B.
 
 cross_ref: [README §5.32, FOLLOW-1357, FOLLOW-1361 (AC(10) needs it), KQ1]
+
+## FOLLOW-1366 — retire the playbook strings and boost that breach the 2026-05-14 fair-housing constraint
+
+source_retro: — (Opus review of PR #1064, condition C5, 2026-10-20) source_ticket: FOLLOW-1360
+recommended_agent: ml-engineer (Sonnet; compliance-engineer review) priority: P1 estimated_hours: 4
+tag: product depends_on: [FOLLOW-1360] blocks: [FOLLOW-1346] promoted_to_queue: true
+
+**What.** The CEO ruling of 2026-05-14 binds copy and variant strings never to reference protected
+characteristics (family status and national origin included). Still shipped, independent of the
+quiz: `family_buyer` CTA "Get Family Buyer Guide" (served on the playbook branches to every
+`family_buyer` session without a listing read), the "Family Essentials" feature label (exempt on the
+LLM branch via `isAuthoredSectionLabel`), `diaspora_buyer` CTA "Speak with a Diaspora Specialist",
+and `listing_rules.boost_if: 'good_school_district'` on `family_buyer` (a school proxy). Replace
+each with behavioural framing (space utility, "Moving up"), keep the bandit variant index valid (or
+reset the affected arms and say so), all locales.
+
+AC:
+
+- [ ] A test scans every playbook's served strings (all locales) for a protected-characteristic list
+      and fails on any hit; the four items above are gone or reworded.
+- [ ] Description parity unchanged or the corpus update is justified; FOLLOW-819 series GREEN.
+
+cross_ref: [ESC-088, FOLLOW-1360, ESCALATIONS 2026-05-14 ruling (FOLLOW-034 cancelled)]

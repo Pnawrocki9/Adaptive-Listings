@@ -21,6 +21,41 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-088: the quiz trait `has_children` puts self-declared familial status into the signal space — does the 2026-05-14 fair-housing ruling still hold, and may it shape copy? [FOLLOW-1360]
+
+**Filed by:** pm-orchestrator (from the Opus grounding/fair-housing review of PR #1064, 2026-10-20)
+**Date:** 2026-10-20 **Affects:** `packages/shared/src/quiz-default-v2.ts` (trait screens),
+FOLLOW-1360 trait add-ons (`packages/shared/src/playbooks/traits.ts`), the 2026-05-14 FHA ruling in
+this file (the FOLLOW-034 entry) **Type:** compliance / legal (needs counsel)
+
+**Description:** the CEO's 2026-05-14 ruling (FOLLOW-034 cancelled) rests on the premise that "the
+archetype system is purely behavioral … no protected-class identity enters the signal space", and
+binds copy never to reference protected characteristics, family status included. Faza Q's v2 quiz
+lets the buyer tick "Children will live with me" (`has_children`), and FOLLOW-1360 uses it to weight
+listing copy (bedroom count, garden, storage — physical facts only; schools removed; a familial-
+steering refusal now runs on every session in EN/PL/ES). Even fact-only emphasis keyed on a
+self-declared familial status may be "steering" under FHA/HUD advertising guidance; that is a legal
+question, not an engineering one. Related pre-existing strings already breach the binding constraint
+regardless of the quiz: `family_buyer` CTA "Get Family Buyer Guide", the "Family Essentials" label,
+`diaspora_buyer` CTA "Speak with a Diaspora Specialist", and the `good_school_district` listing
+boost (FOLLOW-1366).
+
+**Options:**
+
+1. **(Recommended for now)** keep `has_children` as a recorded trait (it informs the accuracy
+   measurement and the confirmation sentences) but NOT as a copy input until counsel rules: the
+   trait add-on stays localhost-only and is switched off before go-live (CTO handover row).
+2. Remove `has_children` from the quiz trait screens altogether (simplest legally; loses a fact the
+   buyer offers).
+3. Counsel confirms fact-only emphasis is lawful → keep as built.
+
+**Required action:** CEO decides 1/2/3 and sends the question to outside counsel; the ruling is
+recorded here before go-live (K7). FOLLOW-1360 may merge on localhost under option 1.
+
+**Resolution:** _(open)_
+
+---
+
 ## OPEN — ESC-087: a CONFIRMED quiz result (0.90) routes the buyer to the playbook branch without the LLM — confirmed buyers get less adaptation [FOLLOW-1359]
 
 **Filed by:** pm-orchestrator **Date:** 2026-10-20 **Affects:** FOLLOW-1359 (Faza Q Q4, PR #1060,
@@ -144,7 +179,11 @@ confirmation, the accuracy purpose and the retention; whether the consent BANNER
 `quiz_runs` stays on localhost. Informational (not blocking): the v2 default asks familial status
 (`has_children`) and offers retiree/student-parent answers — fair-housing exposure; package Q5 must
 pass the protected-class scan before any copy keyed on those traits ships, and the US pilot block
-(FOLLOW-034) holds.
+(FOLLOW-034) holds. **[Correction 2026-10-20, FOLLOW-1360 review: FOLLOW-034 was CANCELLED by the
+CEO on 2026-05-14; the operative rule is that ruling's binding constraint — copy and variant strings
+MUST NOT reference protected characteristics, family status and national origin included — and its
+premise that no protected-class identity enters the signal space, which the `has_children` trait now
+challenges (ESC-088).]**
 
 **OPEN for the CEO (2026-10-20):** (a) the retention period for `quiz_runs` and `quiz_completions`
 (proposal: 13 months, matching `events`); (b) whether the consent banner sentence is widened now

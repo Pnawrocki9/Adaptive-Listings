@@ -92,7 +92,7 @@ const NON_ASSERTIVE_SLOTS: ReadonlySet<string> = new Set(['cta', 'trait_note']);
  * (Rule BC).
  *
  * @param slot - A `TextDirective.slot` name.
- * @returns `true` when the slot makes no claim about the property (today: `cta` only).
+ * @returns `true` when the slot makes no claim about the property (today: `cta` and `trait_note`).
  */
 export function isNonAssertiveSlot(slot: string): boolean {
   return NON_ASSERTIVE_SLOTS.has(slot);

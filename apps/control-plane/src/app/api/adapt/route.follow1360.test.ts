@@ -98,7 +98,7 @@ describe('POST /api/adapt — traits', () => {
     const res = await adapt({ traits: ['premium'], locale: 'pl' });
     const body = (await res.json()) as AdaptBody;
     expect(body.directives.find((d) => d.slot === 'trait_note')?.value).toBe(
-      'Poproś o prywatny pokaz',
+      'Poproś o prywatną prezentację',
     );
   });
 

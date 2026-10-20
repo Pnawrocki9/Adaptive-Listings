@@ -67,7 +67,7 @@ const ADD_ONS: Readonly<Record<TraitId, TraitAddOn>> = {
     listing_rules: luxuryBuyerPlaybook.listing_rules,
     slot: invitation(
       'Request a Private Viewing',
-      'Poproś o prywatny pokaz',
+      'Poproś o prywatną prezentację',
       'Solicita una visita privada',
     ),
   },
@@ -82,7 +82,7 @@ const ADD_ONS: Readonly<Record<TraitId, TraitAddOn>> = {
     slot: invitation(
       'Ask About Home Office Space',
       'Zapytaj o miejsce na gabinet',
-      'Pregunta por el espacio de trabajo',
+      'Pregunta por espacio para teletrabajar',
     ),
   },
   residency_goal: {
@@ -137,15 +137,15 @@ const ADD_ONS: Readonly<Record<TraitId, TraitAddOn>> = {
     listing_rules: null,
     slot: invitation(
       'Ask About Letting This Home',
-      'Zapytaj o wynajem tego domu',
-      'Consulta sobre alquilar esta vivienda',
+      'Zapytaj o wynajem tej nieruchomości',
+      'Consulta sobre el alquiler de esta vivienda',
     ),
   },
   has_children: {
     trait: 'has_children',
     source: null,
     rules: [
-      'Mention only physical facts the listing states: the bedroom count, a garden or outdoor space, storage, the property type. Mention a school or a park only if the listing names it.',
+      'Mention only physical facts the listing states: the bedroom count, a garden or outdoor space, storage, the property type.',
       'Never describe an area or neighbourhood as family-friendly, safe or suited to families, never address the reader as a parent, and never refer to their children: familial status is a fair-housing protected class.',
     ],
     listing_rules: null,
@@ -196,11 +196,41 @@ export function traitSlots(addOns: readonly TraitAddOn[]): SlotDirective[] {
 
 /**
  * Familial-status steering: copy that tells a reader an area or home suits (or is unsuited to)
- * families or children. Fair-housing exposure [ESC-086]; the `has_children` rules forbid it and
- * the gateway refuses it when that trait is present.
+ * families or children. Fair-housing exposure [ESC-086]. A NARROW, documented backstop, not a
+ * linter: the gateway refuses a directive that matches, on every request and whoever wrote the
+ * words (the seller's own copy is no licence). Phrases only; a property TYPE ("single-family",
+ * "dom jednorodzinny", "vivienda unifamiliar") never matches. Boundaries are Unicode-aware because
+ * `\b` is ASCII-only and the Polish and Spanish stems carry accents.
  */
-const FAMILIAL_STEERING_RE =
-  /\b(?:family|child|kid)[- ]friendly\b|\b(?:ideal|perfect|great|best|suited|suitable|safe)\s+(?:for|to)\s+(?:young\s+)?(?:families|a family|children|kids)\b|\b(?:good|great|ideal|safe)\s+(?:area|neighbou?rhood|location|street)\s+for\s+(?:young\s+)?(?:families|children|kids)\b|\braising\s+(?:a family|children|kids)\b|\byour\s+(?:children|kids)\b/i;
+const B = String.raw`(?<![\p{L}\p{N}])`;
+const E = String.raw`(?![\p{L}\p{N}])`;
+const STEERING_PATTERNS: readonly string[] = [
+  // en
+  String.raw`(?:family|child|kid)[- ]friendly`,
+  String.raw`(?:ideal|perfect|great|best|suited|suitable|safe)\s+(?:for|to)\s+(?:young\s+)?(?:families|a family|children|kids)`,
+  String.raw`(?:good|great|ideal|safe)\s+(?:area|neighbou?rhood|location|street)\s+for\s+(?:young\s+)?(?:families|children|kids)`,
+  String.raw`raising\s+(?:a family|children|kids)`,
+  String.raw`your\s+(?:children|kids|family)`,
+  String.raw`family\s+(?:home|neighbou?rhood)`,
+  String.raw`growing\s+famil(?:y|ies)`,
+  String.raw`families\s+will\s+love`,
+  String.raw`for\s+the\s+kids`,
+  String.raw`little\s+ones`,
+  // pl
+  String.raw`przyjazn\p{L}*\s+rodzin\p{L}*`,
+  String.raw`dla\s+rodzin\p{L}*`,
+  String.raw`z\s+dzie[ćc]\p{L}*`,
+  String.raw`dla\s+dzieci`,
+  String.raw`tw(?:oja|oją|ojej|oje|ojego)\s+rodzin\p{L}*`,
+  String.raw`bezpieczn\p{L}*\s+dla\s+dzieci`,
+  // es
+  String.raw`para\s+(?:las\s+)?familias`,
+  String.raw`con\s+ni[ñn]os`,
+  String.raw`segur\p{L}*\s+para\s+(?:los\s+)?ni[ñn]os`,
+  String.raw`tu\s+familia`,
+  String.raw`(?:zona|barrio|entorno|ambiente|urbanizaci[oó]n)\s+familiar(?:es)?`,
+];
+const FAMILIAL_STEERING_RE = new RegExp(`${B}(?:${STEERING_PATTERNS.join('|')})${E}`, 'iu');
 
 /**
  * Does `value` steer by familial status?

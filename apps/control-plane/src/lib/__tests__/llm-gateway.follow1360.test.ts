@@ -211,9 +211,17 @@ describe('FOLLOW-1360 — traits in the gateway', () => {
       expect(result?.directives.map((d) => d.value)).toEqual(['two bedrooms and a garden']);
     });
 
-    it('the guard belongs to the trait: without has_children the same plain wording is not refused here', async () => {
-      const { result } = await run([['headline', 'family-friendly house in Lisbon']]);
-      expect(result?.directives).toHaveLength(1);
+    it('refuses steering on EVERY request, with or without the trait', async () => {
+      const { result, reasons } = await run([['headline', 'family-friendly house in Lisbon']]);
+      expect(result).toBeNull();
+      expect(reasons).toEqual(['fact_check_refused']);
+    });
+
+    it('refuses PL and ES steering without any trait', async () => {
+      for (const value of ['okolica przyjazna rodzinom', 'ideal para familias']) {
+        const { result } = await run([['headline', value]]);
+        expect(result).toBeNull();
+      }
     });
   });
 });

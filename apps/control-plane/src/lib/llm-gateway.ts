@@ -434,7 +434,7 @@ const FACT_CHECK_DIGIT_RE = /\d[\d.,/%m²sqft-]*/g;
 
 type DirectiveFactViolation = 'hallucinated_number' | 'hallucinated_proper_name';
 
-/** Refusal owned by a trait's rules: familial-status steering under `has_children` [FOLLOW-1360]. */
+/** Familial-status steering, refused on every request [FOLLOW-1360, ESC-086]. */
 type TraitViolation = 'familial_steering';
 
 function escapeRegExpToken(token: string): string {
@@ -809,9 +809,8 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     // Deterministic scan first; exemptions by PROVENANCE only; numbers/claims never exempt
     // [FOLLOW-1176, FOLLOW-1305].
     const claimGrounding = buildClaimGrounding(input.listingContext);
-    // `has_children` forbids familial-status steering outright; the seller's wording is no
-    // licence (fair-housing exposure, ESC-086) [FOLLOW-1360].
-    const forbidSteering = getTraitAddOns(input.traits).some((a) => a.trait === 'has_children');
+    // Familial-status steering is refused on EVERY request, trait or not; the seller's wording is
+    // no licence (fair-housing exposure, ESC-086) [FOLLOW-1360].
     const scanned = directives.map((directive) => {
       const factViolation = checkDirectiveFacts(directive.value, grounding);
       const claimViolation: ClaimViolation | null =
@@ -824,8 +823,9 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
         ((isNonAssertiveSlot(directive.slot) &&
           isTemplateAuthoredValue(input.basePlaybook, directive.slot, directive.value)) ||
           isAuthoredSectionLabel(input.basePlaybook, directive.slot, directive.value));
-      const steering: TraitViolation | null =
-        forbidSteering && steersByFamilialStatus(directive.value) ? 'familial_steering' : null;
+      const steering: TraitViolation | null = steersByFamilialStatus(directive.value)
+        ? 'familial_steering'
+        : null;
       const violation: DirectiveFactViolation | ClaimViolation | TraitViolation | null =
         steering ??
         (factViolation === 'hallucinated_number'

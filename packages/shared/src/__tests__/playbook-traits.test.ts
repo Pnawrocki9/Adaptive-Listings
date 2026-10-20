@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { getPlaybook } from '../playbooks/index.js';
+import { getAllPlaybooks, getPlaybook } from '../playbooks/index.js';
 import {
   TRAIT_NOTE_SLOT,
   getTraitAddOns,
@@ -16,7 +16,7 @@ import { CANONICAL_TRAIT_IDS } from '../traits.js';
 
 /** Words that would turn an invitation into a claim about the property. */
 const CLAIM_WORDS =
-  /\b(?:has|have|includes?|qualif\w+|eligible|guarantee\w*|yield\w*|licen[cs]\w*)\b|\d/i;
+  /(?<![\p{L}\p{N}])(?:has|have|includes?|qualif\w+|eligible|guarantee\w*|yield\w*|licen[cs]\w*|ma|mają|posiada\w*|spełnia\w*|kwalifik\w*|licencj\w*|gwarant\w*|rentown\w*|tiene|tienen|incluye\w*|cumple\w*|califica\w*|licencia|garant\w*|rentabilidad)(?![\p{L}\p{N}])|\d/iu;
 
 describe('getTraitAddOns', () => {
   it('returns nothing without a trait, and drops unknown ids', () => {
@@ -105,24 +105,83 @@ describe('has_children never steers by familial status', () => {
     expect(text).toMatch(/fair-housing/i);
   });
 
-  it.each([
-    'A family-friendly neighbourhood',
-    'Ideal for families',
-    'Perfect for young families',
-    'A safe neighbourhood for children',
-    'Great location for kids',
-    'Raising a family here',
-    'Your children will love the garden',
-  ])('steersByFamilialStatus flags %j', (value) => {
-    expect(steersByFamilialStatus(value)).toBe(true);
+  it('its rules mention no school or park (a steering proxy under a familial-status signal)', () => {
+    expect(addOn?.rules.join(' ')).not.toMatch(/school|park/i);
   });
+
+  const FLAGGED: Record<string, string[]> = {
+    en: [
+      'A family-friendly neighbourhood',
+      'Ideal for families',
+      'Perfect for young families',
+      'A safe neighbourhood for children',
+      'Great location for kids',
+      'Raising a family here',
+      'Your children will love the garden',
+      'A true family home',
+      'Made for your family',
+      'Room for a growing family',
+      'A quiet family neighbourhood',
+      'Fun for the kids',
+      'Space for the little ones',
+      'Families will love it',
+    ],
+    pl: [
+      'Okolica przyjazna rodzinom',
+      'Mieszkanie przyjazne rodzinie',
+      'Idealne dla rodzin',
+      'Dobre dla rodziny',
+      'Dom z dziećmi w sąsiedztwie',
+      'Plac zabaw dla dzieci',
+      'Twoja rodzina to pokocha',
+      'Bezpieczna okolica dla dzieci',
+    ],
+    es: [
+      'Ideal para familias',
+      'Una vivienda para las familias',
+      'Barrio con niños',
+      'Zona segura para niños',
+      'Tu familia lo disfrutará',
+      'Un ambiente familiar',
+      'Zona familiar tranquila',
+    ],
+  };
+  for (const [locale, values] of Object.entries(FLAGGED)) {
+    it.each(values)(`steersByFamilialStatus flags ${locale} %j`, (value) => {
+      expect(steersByFamilialStatus(value)).toBe(true);
+    });
+  }
 
   it.each([
     'Four bedrooms and a south-facing garden',
     'Storage room off the hall',
     'Detached house with a double garage',
-  ])('steersByFamilialStatus passes the physical fact %j', (value) => {
+    '3 bedrooms',
+    'Garden',
+    'A single-family house',
+    'Vivienda unifamiliar con jardín',
+    'Casa unifamiliar de tres dormitorios',
+    'Dom jednorodzinny z ogrodem',
+    'Dom z dziedzińcem',
+    'Mieszkanie z balkonem',
+  ])('steersByFamilialStatus passes ordinary copy %j', (value) => {
     expect(steersByFamilialStatus(value)).toBe(false);
+  });
+
+  it('no authored playbook string served on any branch trips the backstop', () => {
+    const served: string[] = [];
+    for (const p of getAllPlaybooks().values()) {
+      for (const slot of p.slots) {
+        served.push(slot.en, slot.pl ?? '', slot.es ?? '', ...(slot.variants?.en ?? []));
+      }
+    }
+    for (const id of CANONICAL_TRAIT_IDS) {
+      for (const slot of traitSlots(getTraitAddOns([id])))
+        served.push(slot.en, slot.pl ?? '', slot.es ?? '');
+    }
+    const strings = served.filter(Boolean);
+    expect(strings.length).toBeGreaterThan(100);
+    expect(strings.filter(steersByFamilialStatus)).toEqual([]);
   });
 });
 
@@ -137,6 +196,13 @@ describe('playbook merges (FOLLOW-1360)', () => {
     ] as const) {
       expect(getPlaybook(id).archetype).toBe(id);
     }
+  });
+
+  it('trait invitations use the reviewed PL/ES wording', () => {
+    const pl = (t: string) => traitSlots(getTraitAddOns([t]))[0];
+    expect(pl('will_let')?.pl).toBe('Zapytaj o wynajem tej nieruchomości');
+    expect(pl('works_from_home')?.es).toBe('Pregunta por espacio para teletrabajar');
+    expect(pl('premium')?.pl).toBe('Poproś o prywatną prezentację');
   });
 
   it('family_buyer is the Moving up framing and assumes no children', () => {

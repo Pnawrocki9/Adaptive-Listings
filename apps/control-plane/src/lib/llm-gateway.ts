@@ -7,6 +7,11 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import type { AdaptationDirectives, ArchetypeId, TextDirective } from '@estalara/shared';
 import type { PlaybookEntry } from '@estalara/shared/playbooks';
+import {
+  getTraitAddOns,
+  renderTraitRules,
+  steersByFamilialStatus,
+} from '@estalara/shared/playbook-traits';
 import { getGlobalGenerationModel } from '@/lib/global-config-store';
 import { DAILY_SPEND_CAP_USD, getDailySpend } from '@/lib/llm-spend-counter';
 // FOLLOW-1297: one price table for the adapt and description paths (ADR-0023 §3).
@@ -47,6 +52,11 @@ export interface LlmGatewayInput {
   onFallback?: (reason: NonNullable<AdaptationDirectives['fallback_reason']>) => void;
   /** Facts were requested but none arrived → `listing_context_unavailable` [FOLLOW-1120]. */
   groundingMissing?: boolean;
+  /**
+   * Buyer trait ids from the quiz [FOLLOW-1360]. Unknown ids are dropped; the present ones add
+   * grounded prompt rules and change nothing about the checks every directive passes.
+   */
+  traits?: readonly string[];
 }
 
 export interface LlmGatewayOutput {
@@ -122,7 +132,7 @@ const FACT_CHECK_UNJUDGED_SOURCE = {
 function factCheckSlotRefusedSource(
   playbook: PlaybookEntry,
   slot: string,
-  violation: DirectiveFactViolation | ClaimViolation,
+  violation: DirectiveFactViolation | ClaimViolation | TraitViolation,
 ): string {
   const knownSlot = playbook.slots.some((s) => s.slot === slot) ? slot : 'other';
   return `fact_check_slot_refused_${knownSlot}_${violation}`;
@@ -202,6 +212,12 @@ const GROUNDING_RULE =
   `  that is not written in the context above does not exist.\n` +
   `- Write headlines in sentence case; capitalise only proper names that the context contains.\n`;
 
+/** The trait rules as a prompt block, or `''` so a request without traits is unchanged [FOLLOW-1360]. */
+function traitRulesBlock(input: LlmGatewayInput): string {
+  const block = renderTraitRules(getTraitAddOns(input.traits));
+  return block === '' ? '' : `\n${block}\n`;
+}
+
 function buildHaikuPrompt(input: LlmGatewayInput): string {
   const { archetypeId, basePlaybook, sessionContext, listingContext } = input;
   const baseDirectivesJson = JSON.stringify(
@@ -230,6 +246,7 @@ function buildHaikuPrompt(input: LlmGatewayInput): string {
     `Buyer's recent actions: ${recentEvents}\n` +
     contextBlock +
     GROUNDING_RULE +
+    traitRulesBlock(input) +
     `\nReturn a JSON array of TextDirective objects that improve upon the current directives,\n` +
     `using the listing context above as the only source of facts.\n` +
     `Keep slot names unchanged. Output JSON only, no explanation.\n` +
@@ -259,6 +276,7 @@ function buildSonnetPrompt(input: LlmGatewayInput): string {
     `Quiz answers: ${quizAnswers}\n` +
     contextBlock +
     GROUNDING_RULE +
+    traitRulesBlock(input) +
     `\nGenerate 2-3 TextDirective objects that would resonate with this buyer.\n` +
     `Output JSON only.\n` +
     `Schema: [{"type":"text","slot":"<slot>","value":"<value>","archetype":"${archetypeId}","confidence":<float>}]`
@@ -415,6 +433,9 @@ const FACT_CHECK_STOP_CAPS: ReadonlySet<string> = new Set([
 const FACT_CHECK_DIGIT_RE = /\d[\d.,/%m²sqft-]*/g;
 
 type DirectiveFactViolation = 'hallucinated_number' | 'hallucinated_proper_name';
+
+/** Familial-status steering, refused on every request [FOLLOW-1360, ESC-086]. */
+type TraitViolation = 'familial_steering';
 
 function escapeRegExpToken(token: string): string {
   return token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -788,6 +809,8 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     // Deterministic scan first; exemptions by PROVENANCE only; numbers/claims never exempt
     // [FOLLOW-1176, FOLLOW-1305].
     const claimGrounding = buildClaimGrounding(input.listingContext);
+    // Familial-status steering is refused on EVERY request, trait or not; the seller's wording is
+    // no licence (fair-housing exposure, ESC-086) [FOLLOW-1360].
     const scanned = directives.map((directive) => {
       const factViolation = checkDirectiveFacts(directive.value, grounding);
       const claimViolation: ClaimViolation | null =
@@ -800,17 +823,21 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
         ((isNonAssertiveSlot(directive.slot) &&
           isTemplateAuthoredValue(input.basePlaybook, directive.slot, directive.value)) ||
           isAuthoredSectionLabel(input.basePlaybook, directive.slot, directive.value));
-      const violation: DirectiveFactViolation | ClaimViolation | null =
-        factViolation === 'hallucinated_number'
+      const steering: TraitViolation | null = steersByFamilialStatus(directive.value)
+        ? 'familial_steering'
+        : null;
+      const violation: DirectiveFactViolation | ClaimViolation | TraitViolation | null =
+        steering ??
+        (factViolation === 'hallucinated_number'
           ? factViolation
-          : (claimViolation ?? (exempt ? null : factViolation));
+          : (claimViolation ?? (exempt ? null : factViolation)));
       return { directive, violation, exempt };
     });
 
     // One refusal path per refused slot [FOLLOW-1312].
     const refuseSlot = (
       directive: TextDirective,
-      violation: DirectiveFactViolation | ClaimViolation,
+      violation: DirectiveFactViolation | ClaimViolation | TraitViolation,
     ): void => {
       const msg =
         `[llm-gateway] directive fact-check violation: ${violation} ` +
@@ -852,7 +879,7 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     const verdicts: {
       slot: string;
       value: string;
-      violation: DirectiveFactViolation | ClaimViolation | null;
+      violation: DirectiveFactViolation | ClaimViolation | TraitViolation | null;
       directive: TextDirective;
     }[] = [];
     for (const { directive, violation: scannedViolation } of scanned) {

@@ -43,6 +43,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import * as Sentry from '@sentry/nextjs';
 import { DescriptionRequestedEventSchema } from '@estalara/shared';
 import type { DescriptionCacheValue, DescriptionRequestedEvent } from '@estalara/shared';
+import { getTraitAddOns, renderTraitRules } from '@estalara/shared/playbook-traits';
 import {
   ALLOWED_GENERATION_MODELS,
   DEFAULT_GENERATION_MODEL,
@@ -517,6 +518,7 @@ function renderDescriptionPrompt(
     e.locale,
   );
   const ctxEmpty = Object.keys(e.listing_context).length === 0;
+  const traitBlock = renderTraitRules(getTraitAddOns(e.traits));
   const user = [
     `archetype: ${e.archetype}`,
     `locale: ${e.locale}`,
@@ -527,6 +529,8 @@ function renderDescriptionPrompt(
     'archetype_hard_rules:',
     hardRules ? hardRules : '(none provided)',
     '',
+    // Buyer traits [FOLLOW-1360]: nothing is added without one, so the corpus digests hold.
+    ...(traitBlock ? [traitBlock, ''] : []),
     'original_description:',
     e.original_description ? e.original_description : '(empty)',
     '',

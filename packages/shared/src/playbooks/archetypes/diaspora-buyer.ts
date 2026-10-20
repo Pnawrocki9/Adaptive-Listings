@@ -3,7 +3,7 @@ import type { PlaybookEntry } from '../types.js';
 export const diasporaBuyerPlaybook: PlaybookEntry = {
   archetype: 'diaspora_buyer',
   description:
-    'Buying in home country from abroad — remote purchase, legal navigation, family context',
+    'Returning to the country of origin — legal navigation and family context (remote buying is the buying_from_abroad trait)',
   slots: [
     {
       slot: 'headline',

@@ -2,16 +2,17 @@ import type { PlaybookEntry } from '../types.js';
 
 export const familyBuyerPlaybook: PlaybookEntry = {
   archetype: 'family_buyer',
-  description: 'Family seeking space, schools, safety, and outdoor areas',
+  description:
+    'Household moving up to more space, flexible rooms and outdoor areas (children are assumed only when the has_children trait is present)',
   slots: [
     {
       slot: 'headline',
-      en: '{bedrooms}BR Family Home — Room to Grow',
+      en: '{bedrooms}BR Home — Room to Grow',
       variants: {
         en: [
-          '{bedrooms}BR Family Home — Room to Grow',
-          'Spacious {bedrooms}-Bedroom Home Near Top-Rated Schools',
-          'Family Living — {bedrooms}BR with Garden, Schools & Parks Nearby',
+          '{bedrooms}BR Home — Room to Grow',
+          'Moving Up — {bedrooms}BR with Space to Spare',
+          'Your Next Move — {bedrooms}BR with {key_feature}',
         ],
       },
     },
@@ -40,19 +41,19 @@ export const familyBuyerPlaybook: PlaybookEntry = {
   ],
   copy_template: {
     en: `VOICE PATTERN:
-Write warmly, practically, and grounded in everyday family life. Lead with how the layout suits a family — flexibility of rooms, where homework gets done, how mornings flow. Frame features around day-to-day rhythm: mornings before school, weekends in the garden, growth phases as children become teenagers. The closer should position the home as one a family grows into, not out of in three years. Preferred lexicon: room to grow, daily rhythm, generous storage, flexible layout, walking distance, settled, quiet street, calm. Avoid: investment, yield, ROI, cap rate, exit strategy, asset. Picture a parent reading this on their phone after the school run; that's the register.
+Write practically and warmly, and quietly optimistic. The reader is moving up: they have outgrown their current home and are making one move that needs to last. Lead with space and headroom where rooms data permits: a flexible room that can change purpose, a layout with capacity for the next ten years, storage, outdoor space, how mornings flow. Frame features around day-to-day rhythm and the sense of room to spare, not around any particular household: do not assume children, a partner or a family structure unless the reader's profile adds it. The closer positions the property as scope for the next decade, not the next two years. Preferred lexicon: moving up, room to grow, headroom, flexible layout, generous storage, daily rhythm, settled, quiet street, calm. Avoid: investment, yield, ROI, cap rate, exit strategy, asset, compact, low-maintenance.
 
 HARD RULES:
-Never quote school ratings, Ofsted bands, league-table positions, or specific catchment names unless they are in verified_facts. "Well-regarded local schools" is acceptable if the neighbourhood is mentioned in the agent description; "Ofsted Outstanding" or "primary rated 9/10" is forbidden unless verified.`,
+Never quote school ratings, Ofsted bands, league-table positions, or specific catchment names unless they are in verified_facts. Never call an area family-friendly, safe, or suited to families, and never refer to the reader's children or household unless the listing text itself does. "Ofsted Outstanding" or "primary rated 9/10" is forbidden unless verified.`,
     pl: `VOICE PATTERN:
-Pisz ciepło, praktycznie, w rytmie codziennego życia rodziny. Prowadź narracją układu mieszkania — elastyczność pokoi, gdzie dzieci odrabiają lekcje, jak wyglądają poranki przed szkołą. Każdą cechę osadzaj w codzienności: poranki, weekendy w ogrodzie lub na balkonie, kolejne etapy dorastania dzieci. Zamknięcie pozycjonuje dom jako miejsce, w które rodzina wrasta, a nie z którego "wyrośnie" za trzy lata. Słownictwo preferowane: miejsce do rośnięcia, codzienny rytm, przestrzeń do przechowywania, elastyczny układ, w zasięgu spaceru, spokojna ulica. Unikać: inwestycja, rentowność, ROI, aktywo, wyjście kapitałowe. W kontekście PL możesz odnosić się do "okolicy ze szkołą podstawową w pieszej odległości", parków, placów zabaw — bez konkretnych nazw szkół czy rankingów.
+Pisz praktycznie, ciepło i ze spokojnym optymizmem. Czytelnik przeprowadza się do większego mieszkania: obecne jest już za małe i robi jedną przeprowadzkę, która musi wystarczyć na lata. Prowadź narracją przestrzeni i zapasu, jeśli są dane o pokojach: elastyczny pokój, który może zmienić przeznaczenie, układ z zapasem na kolejne dziesięć lat, miejsce do przechowywania, przestrzeń na zewnątrz, rytm poranków. Cechy osadzaj w codzienności i poczuciu zapasu miejsca, nie w konkretnym typie gospodarstwa domowego: nie zakładaj dzieci, partnera ani struktury rodziny, chyba że dodaje je profil czytelnika. Zamknięcie pozycjonuje nieruchomość jako zapas miejsca na dekadę. Słownictwo preferowane: zmiana na większe, miejsce do rośnięcia, zapas, elastyczny układ, przestrzeń do przechowywania, codzienny rytm, spokojny, spokojna ulica. Unikać: inwestycja, rentowność, ROI, aktywo, wyjście kapitałowe, kompaktowy, niskie utrzymanie.
 
 HARD RULES:
-Nie cytuj ocen szkół, rankingów, ani konkretnych nazw rejonowych podstawówek, jeśli nie są w verified_facts. "Cenione okoliczne szkoły" — tak, jeśli dzielnica jest wymieniona; "SP nr 31 z najlepszymi wynikami w rejonie" — zabronione bez weryfikacji.`,
+Nie cytuj ocen szkół, rankingów ani nazw rejonowych podstawówek, jeśli nie są w verified_facts. Nie nazywaj okolicy przyjazną rodzinom, bezpieczną ani dla rodzin i nie odnoś się do dzieci czy domowników czytelnika, jeśli nie robi tego sam opis oferty. "SP nr 31 z najlepszymi wynikami w rejonie" — zabronione bez weryfikacji.`,
     es: `VOICE PATTERN:
-Escribe con calidez, sentido práctico y anclado en la vida cotidiana familiar. Lidera con cómo la distribución funciona para una familia — flexibilidad de habitaciones, dónde se hacen los deberes, cómo se organizan las mañanas. Enmarca cada elemento en el ritmo diario: mañanas antes del colegio, fines de semana en la terraza, etapas de crecimiento de los hijos. El cierre posiciona la vivienda como un hogar en el que una familia crece, no del que se sale a los tres años. Léxico preferido: espacio para crecer, ritmo diario, almacenamiento amplio, distribución flexible, a pie, calle tranquila, asentado. Evitar: inversión, rentabilidad, ROI, activo, salida. En contexto ES puedes hacer referencia genérica a colegios cercanos, parques de barrio, comercio de proximidad — sin nombres concretos.
+Escribe de forma práctica, cálida y con optimismo contenido. El lector da un paso a una vivienda mayor: se le ha quedado pequeña la actual y hace una mudanza que debe durar. Lidera con espacio y margen si los datos de habitaciones lo permiten: una habitación flexible que puede cambiar de uso, una distribución con capacidad para la próxima década, almacenamiento, espacio exterior, cómo se organizan las mañanas. Enmarca los elementos en el ritmo diario y la sensación de espacio de sobra, no en un tipo de hogar concreto: no asumas hijos, pareja ni estructura familiar salvo que el perfil del lector los añada. El cierre posiciona la vivienda como margen para los próximos diez años. Léxico preferido: dar el salto, espacio para crecer, margen, distribución flexible, almacenamiento amplio, ritmo diario, asentado, calle tranquila. Evitar: inversión, rentabilidad, ROI, activo, salida, compacto, bajo mantenimiento.
 
 HARD RULES:
-Nunca cites puntuaciones de colegios, rankings ni nombres de centros escolares concretos a menos que figuren en verified_facts. "Colegios bien valorados en la zona" sí, si el barrio está en la descripción; "Colegio X con nota 9" prohibido sin verificación.`,
+Nunca cites puntuaciones de colegios, rankings ni nombres de centros escolares concretos a menos que figuren en verified_facts. Nunca llames a una zona apta para familias o segura, ni hagas referencia a los hijos u hogar del lector salvo que lo haga el propio anuncio. "Colegio X con nota 9" prohibido sin verificación.`,
   },
 };

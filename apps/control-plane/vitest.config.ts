@@ -12,6 +12,10 @@ export default defineConfig({
       '@estalara/db': path.resolve(__dirname, '../../packages/db/src/index.ts'),
       // More-specific first (Vite alias is first-match): the bare '@estalara/shared' key would
       // otherwise prefix-rewrite the sub-path into 'index.ts/playbooks'.
+      '@estalara/shared/playbook-traits': path.resolve(
+        __dirname,
+        '../../packages/shared/src/playbooks/traits.ts',
+      ),
       '@estalara/shared/playbooks': path.resolve(
         __dirname,
         '../../packages/shared/src/playbooks/index.ts',

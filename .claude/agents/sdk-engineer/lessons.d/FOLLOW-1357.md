@@ -25,3 +25,12 @@ have 400'd.
 minified and comment-free (a string's comments are bytes). And before changing the type of a field
 that an existing ping sends, read the receiving route's Zod schema — a widened client type is a
 silent 400 on a fire-and-forget path.
+
+**CI follow-up (2026-10-20):** two reds. (1) `privacy-notice-keys-sync`: the new
+`QUIZ_LANGUAGE_STORAGE_KEY` was not in the privacy notice §4 table. (2) `description-floor.spec.ts`
+CTA clicks timed out: the v2 first screen makes the bottom-left quiz card 616 px tall (v1: 460 px),
+so it covers the fixture's CTA. On main the CTA centre was clear by only 6 px. Fixed the way
+FOLLOW-1015 fixed `inquiry-observer.spec.ts`: seed `__estalara_quiz_dismissed__`. **Guardrail:** a
+new SDK storage key goes into the notice table in the same commit as the code. Any change to the
+quiz card's height means running the whole e2e suite: specs that are not about the quiz still depend
+on where the card sits.

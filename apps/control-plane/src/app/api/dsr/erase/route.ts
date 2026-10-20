@@ -316,6 +316,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const record = verification.record;
   const now = new Date();
 
+  // FOLLOW-1358: the quiz_runs leg's outcome (rows deleted, or H002 not applied) is reported on
+  // the wire so the erase record states it rather than implying it.
+  let quizRunsErasure: number | 'table_missing' = 0;
+
   // ── Delete session data in a transaction ──────────────────────────────────
   await db.transaction(async (tx) => {
     await tx
@@ -424,7 +428,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // SAVEPOINT inside this transaction: if H002 is not applied yet (SQLSTATE 42P01) only the
     // savepoint rolls back and the cascade continues — a table that does not exist holds no data.
     // Any other error aborts the whole erase, as every other DELETE here does.
-    await eraseQuizRunsForSession(tx, record.tenantId, record.sessionId);
+    quizRunsErasure = await eraseQuizRunsForSession(tx, record.tenantId, record.sessionId);
 
     // ── FOLLOW-455 / audit F-20: intent_sessions erasure cascade ─────────────
     // K.3.6 archetype tracer aggregate state (archetype weights, confidence,
@@ -643,6 +647,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       // 'unverified'               — Count-query failed; CRM state unknown (Rule K.2 — never
       //                              claim 'complete' when DB threw).
       crm_erasure_status: crmErasureStatus,
+      // FOLLOW-1358: rows deleted from quiz_runs, or 'table_missing' (H002 not applied — no data).
+      quiz_runs_erasure: quizRunsErasure,
       clickhouse_deletion: clickhouseDeletion,
     },
     { status: 200 },

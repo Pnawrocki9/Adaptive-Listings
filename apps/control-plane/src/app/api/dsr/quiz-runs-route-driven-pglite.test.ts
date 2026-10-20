@@ -8,7 +8,7 @@
  *
  * Pinned:
  *   - erase deletes the subject's runs on (tenant_id, session_id) and leaves another session's and
- *     another tenant's runs alone (same fingerprint under another tenant);
+ *     another tenant's runs alone (same session id under another tenant);
  *   - access and portability disclose the subject's runs (and only theirs);
  *   - with H002 NOT applied, erase still answers 200 and the rest of the cascade still commits (the
  *     42P01 is caught inside a SAVEPOINT, for this table only), and access answers 200 with
@@ -211,9 +211,10 @@ describe('quiz_runs present (H002 applied)', () => {
     await seedRun(TENANT, SUBJECT, 'confirmed');
     await seedRun(TENANT, SUBJECT, 'dismissed');
     await seedRun(TENANT, OTHER_SESSION);
-    await seedRun(OTHER_TENANT, SUBJECT); // same fingerprint, another controller
+    await seedRun(OTHER_TENANT, SUBJECT); // same session id, another tenant
     const res = await postErase(eraseRequest(await seedVerification('erase')));
     expect(res.status).toBe(200);
+    expect(((await res.json()) as { quiz_runs_erasure: unknown }).quiz_runs_erasure).toBe(2);
     expect(await runsOf(TENANT, SUBJECT)).toBe(0);
     expect(await runsOf(TENANT, OTHER_SESSION)).toBe(1);
     expect(await runsOf(OTHER_TENANT, SUBJECT)).toBe(1);
@@ -253,6 +254,9 @@ describe('quiz_runs absent (H002 not applied) — tolerated for this table only'
     );
     const res = await postErase(eraseRequest(await seedVerification('erase')));
     expect(res.status).toBe(200);
+    expect(((await res.json()) as { quiz_runs_erasure: unknown }).quiz_runs_erasure).toBe(
+      'table_missing',
+    );
     const left = await pg!.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM quiz_completions WHERE session_id = $1`,
       [SUBJECT],

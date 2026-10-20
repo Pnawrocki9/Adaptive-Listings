@@ -72,6 +72,7 @@ apps/control-plane/src/app/api/quiz/analytics/route.ts
 apps/control-plane/src/app/api/quiz/completion/route.ts
 apps/control-plane/src/app/api/quiz/config/route.ts
 apps/control-plane/src/app/api/quiz/public-config/route.ts
+apps/control-plane/src/app/api/quiz/run/route.ts
 apps/control-plane/src/app/api/sdk/route.ts
 apps/control-plane/src/app/api/tenants/[id]/answers/[answerId]/route.ts
 apps/control-plane/src/app/api/tenants/[id]/answers/route.ts

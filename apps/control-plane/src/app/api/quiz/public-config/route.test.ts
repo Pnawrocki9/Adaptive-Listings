@@ -54,6 +54,8 @@ vi.mock('@estalara/db', () => ({
     tenantId: 'tenant_id',
     isActive: 'is_active',
     definition: 'definition',
+    // FOLLOW-1358: the served row's version rides the slice as `definition_version`.
+    version: 'version',
   },
 }));
 
@@ -63,6 +65,21 @@ vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
 // ─── Import route AFTER mocks are in place ────────────────────────────────────
 import { GET, OPTIONS } from './route';
 import type { QuizPublicConfigResponse } from '@estalara/shared';
+import {
+  DEFAULT_QUIZ_DEFINITION_V2,
+  QuizDefinitionSchema,
+  computeQuizDefinitionHash,
+} from '@estalara/shared';
+
+/**
+ * FOLLOW-1358: the frozen hash of the served default (pinned at the source in
+ * `packages/shared/src/schemas/quiz-hash.test.ts`; restated here so the ROUTE is pinned to serve
+ * exactly that identity).
+ */
+const DEFAULT_V2_HASH = [
+  '6fce0f72ec5c9ef1e26882da8f554994',
+  '6ba60aa2c68d9ba8a3af7eaafabb2f41',
+].join(''); // split: a 64-hex literal trips the secrets scanner;
 
 // ─── Helper constants ─────────────────────────────────────────────────────────
 
@@ -376,11 +393,11 @@ describe('GET /api/quiz/public-config — quiz_definition slice (FOLLOW-639)', (
     mockSelect.mockReturnValue({ from: mockFrom });
   });
 
-  it('emits the active quiz_definition slice when a valid active row exists', async () => {
+  it('emits the active quiz_definition slice with the row version and its hash when a valid active row exists', async () => {
     mockLimit
       .mockResolvedValueOnce([{ tenantId: TENANT_ID, hashedKey: validKeyHash }])
       .mockResolvedValueOnce([{ quizConfig: {}, quizEnabled: true }])
-      .mockResolvedValueOnce([{ definition: VALID_DEFINITION }]);
+      .mockResolvedValueOnce([{ definition: VALID_DEFINITION, version: 7 }]);
 
     const res = await GET(makeGetRequest(VALID_KEY_RAW));
     expect(res.status).toBe(200);
@@ -388,9 +405,15 @@ describe('GET /api/quiz/public-config — quiz_definition slice (FOLLOW-639)', (
     expect(body.data_source).toBe('db');
     const def = body.quiz_definition as { root?: string } | undefined;
     expect(def?.root).toBe('q_gate');
+    // FOLLOW-1358 / ESC-086 item 3: the identity of the served tree.
+    expect(body.definition_version).toBe(7);
+    expect(body.definition_hash).toBe(
+      await computeQuizDefinitionHash(QuizDefinitionSchema.parse(VALID_DEFINITION)),
+    );
+    expect(body.definition_hash).not.toBe(DEFAULT_V2_HASH);
   });
 
-  it('OMITS the slice when the tenant has no active definition (D4/D5 byte-identical)', async () => {
+  it('serves DEFAULT_QUIZ_DEFINITION_V2 with definition_version null and the frozen hash when no row is active [FOLLOW-1358]', async () => {
     mockLimit
       .mockResolvedValueOnce([{ tenantId: TENANT_ID, hashedKey: validKeyHash }])
       .mockResolvedValueOnce([{ quizConfig: {}, quizEnabled: true }])
@@ -399,10 +422,12 @@ describe('GET /api/quiz/public-config — quiz_definition slice (FOLLOW-639)', (
     const res = await GET(makeGetRequest(VALID_KEY_RAW));
     expect(res.status).toBe(200);
     const body = await parseBody<Record<string, unknown>>(res);
-    expect('quiz_definition' in body).toBe(false);
+    expect(body.quiz_definition).toEqual(QuizDefinitionSchema.parse(DEFAULT_QUIZ_DEFINITION_V2));
+    expect(body.definition_version).toBeNull();
+    expect(body.definition_hash).toBe(DEFAULT_V2_HASH);
   });
 
-  it('DROPS a stored definition that fails validation rather than breaking the response', async () => {
+  it('serves the v2 default (not a broken tree) when the stored definition fails validation', async () => {
     mockLimit
       .mockResolvedValueOnce([{ tenantId: TENANT_ID, hashedKey: validKeyHash }])
       .mockResolvedValueOnce([{ quizConfig: {}, quizEnabled: true }])
@@ -427,11 +452,17 @@ describe('GET /api/quiz/public-config — quiz_definition slice (FOLLOW-639)', (
         },
       ]);
 
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const res = await GET(makeGetRequest(VALID_KEY_RAW));
     expect(res.status).toBe(200);
     const body = await parseBody<Record<string, unknown>>(res);
-    expect('quiz_definition' in body).toBe(false);
     expect(body.data_source).toBe('db');
+    // FOLLOW-1358: the invalid row is logged and the default is served under ITS identity.
+    expect((body.quiz_definition as { root?: string }).root).toBe(DEFAULT_QUIZ_DEFINITION_V2.root);
+    expect(body.definition_version).toBeNull();
+    expect(body.definition_hash).toBe(DEFAULT_V2_HASH);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
 

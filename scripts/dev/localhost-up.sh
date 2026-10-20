@@ -221,6 +221,8 @@ log "Postgres bootstrapped, migrated, local-e2e tenant seeded (idempotent)"
 # FOLLOW-1338: tables that exist ONLY on localhost until the CTO applies them in production (CEO
 # ruling 2026-10-19: `.github/workflows/db-migrate.yml` runs every packages/db/migrations/** file
 # against the LIVE database on a push to main, so these live in docs/handover/migrations/ instead).
+# Today: H001_lift_daily_snapshots.sql (FOLLOW-1338) and H002_quiz_runs.sql (FOLLOW-1358, the
+# `POST /api/quiz/run` store). The glob applies them in file-name order.
 # Each file is idempotent (CREATE ... IF NOT EXISTS, DROP POLICY IF EXISTS), so this re-runs freely.
 # It must come after the seed above: the tables reference tenants(id).
 for handover_sql in docs/handover/migrations/*.sql; do

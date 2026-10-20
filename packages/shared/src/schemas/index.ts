@@ -18,6 +18,8 @@ export * from './presentation-config.js';
 export * from './quiz-walk.js';
 export * from './quiz-lint.js';
 export * from './quiz-diff.js';
+export * from './quiz-hash.js';
+export * from './quiz-run.js';
 export * from './tracer.js';
 export * from './intent-weights.js';
 export * from './listing-embed-seed.js';

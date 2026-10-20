@@ -1,5 +1,6 @@
 /**
- * FOLLOW-819 AC(4) — direct reader for `ab_bandit_weights`.
+ * FOLLOW-819 AC(4) — direct reader for `ab_bandit_weights` (and, since FOLLOW-1361, AC(10)'s
+ * `quiz_runs` reader at the foot of this file).
  *
  * Reads the Beta parameters of ONE `(tenant_id, archetype, variant)` arm straight out of
  * Postgres, so AC(4) can assert a real state delta rather than trusting the feedback
@@ -53,6 +54,45 @@ export async function readBanditArm(databaseUrl, tenantId, archetype, variant) {
     return { alpha: Number(rows[0].alpha), beta: Number(rows[0].beta) };
   } finally {
     // Always, on every path — see the pool-discipline note above.
+    await sql.end({ timeout: 5 });
+  }
+}
+
+/**
+ * FOLLOW-1361 AC(10) — every `quiz_runs` row (H002) of ONE session, newest first.
+ *
+ * Same raw-SQL, close-on-every-path discipline as `readBanditArm()`. The row is what
+ * `POST /api/quiz/run` wrote from the SDK's own pings (`recordQuizRunEvent`), so AC(10) grades the
+ * table the accuracy report counts, never the ping body the SDK claims it sent.
+ *
+ * @param {string} databaseUrl - `DATABASE_URL_ADMIN` for the LOCAL Postgres (:5433).
+ * @param {string} sessionId   - The SDK session id the browser context sent on `/api/adapt`.
+ * @returns {Promise<Array<{id: string, status: string, definition_hash: string|null,
+ *   resolved_archetype: string|null, confirmed_archetype: string|null, offered: unknown,
+ *   answer_path: unknown, step_ms: number[]|null, result_ms: number|null}>>}
+ */
+export async function readQuizRunsForSession(databaseUrl, sessionId) {
+  const sql = postgres(databaseUrl, { max: 1, idle_timeout: 5, connect_timeout: 10 });
+  try {
+    const rows = await sql`
+      SELECT id, status, definition_hash, resolved_archetype, confirmed_archetype, offered,
+             answer_path, step_ms, result_ms
+      FROM quiz_runs
+      WHERE session_id = ${sessionId}
+      ORDER BY shown_at DESC
+    `;
+    return rows.map((r) => ({
+      id: String(r.id),
+      status: String(r.status),
+      definition_hash: r.definition_hash ?? null,
+      resolved_archetype: r.resolved_archetype ?? null,
+      confirmed_archetype: r.confirmed_archetype ?? null,
+      offered: r.offered ?? null,
+      answer_path: r.answer_path ?? null,
+      step_ms: Array.isArray(r.step_ms) ? r.step_ms.map(Number) : null,
+      result_ms: r.result_ms === null || r.result_ms === undefined ? null : Number(r.result_ms),
+    }));
+  } finally {
     await sql.end({ timeout: 5 });
   }
 }

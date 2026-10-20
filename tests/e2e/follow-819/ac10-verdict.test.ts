@@ -166,6 +166,7 @@ let evaluateAc1: (responses: unknown[], gate: Gate) => { ok: boolean };
 let missingGradedAcs: (results: readonly { ac: string }[]) => string[];
 let GRADED_ACS: readonly string[];
 let AC10_MAX_DRAWS: number;
+let servedConfigNeverReachedBrowser: (s: Record<string, unknown>) => string | null;
 let GATE: Gate;
 let FOLD: Fold;
 let harnessSrc: string;
@@ -195,6 +196,7 @@ beforeAll(async () => {
     missingGradedAcs: typeof missingGradedAcs;
     GRADED_ACS: readonly string[];
     AC10_MAX_DRAWS: number;
+    servedConfigNeverReachedBrowser: typeof servedConfigNeverReachedBrowser;
   };
   evaluateAc10Raw = mod.evaluateAc10;
   gradeRun = mod.gradeRun;
@@ -207,6 +209,7 @@ beforeAll(async () => {
   missingGradedAcs = mod.missingGradedAcs;
   GRADED_ACS = mod.GRADED_ACS;
   AC10_MAX_DRAWS = mod.AC10_MAX_DRAWS;
+  servedConfigNeverReachedBrowser = mod.servedConfigNeverReachedBrowser;
   GATE = await mod.readServerConfidenceGate();
   FOLD = await mod.readQuizFoldConstantsFromSdk();
   harnessSrc = await read('./differentiator-e2e.mjs');
@@ -629,6 +632,103 @@ describe('FOLLOW-1361 — UNMEASURED only on a holdout draw of (a) or (b)', () =
   it('redraws are bounded and small', () => {
     expect(AC10_MAX_DRAWS).toBeGreaterThanOrEqual(1);
     expect(AC10_MAX_DRAWS).toBeLessThanOrEqual(3);
+  });
+});
+
+describe('FOLLOW-1369 — an unserved quiz config is a precondition, not an SDK verdict', () => {
+  const T0 = 1000;
+  const builtinPing = [{ event: 'shown', definition_hash: 'builtin-en-v2' }];
+  /** A sub-session whose card walked the built-in tree. */
+  const unserved = (x: Obs, kind: 'confirm' | 'correct' | 'dismiss', configNet: object): void => {
+    x.sessions[kind] = {
+      ...x.sessions[kind],
+      resultShown: false,
+      leaf: null,
+      row: row({ definition_hash: 'builtin-en-v2' }),
+      pings: builtinPing,
+      configNet,
+    } as never;
+  };
+  const neverCompleted = {
+    options: [
+      { method: 'OPTIONS', startedMono: T0, finishedMono: T0 + 6600, status: 204, failure: null },
+    ],
+    get: [
+      {
+        method: 'GET',
+        startedMono: T0 + 6600,
+        finishedMono: T0 + 15000,
+        status: null,
+        failure: 'net::ERR_ABORTED',
+      },
+    ],
+  };
+  const completed = {
+    options: [
+      { method: 'OPTIONS', startedMono: T0, finishedMono: T0 + 50, status: 204, failure: null },
+    ],
+    get: [
+      { method: 'GET', startedMono: T0 + 50, finishedMono: T0 + 400, status: 200, failure: null },
+    ],
+  };
+
+  it('shown ping builtin-en-v2 and the GET never completed → the ONLY unmet entry, UNMEASURED:config', () => {
+    const o = broken((x) => {
+      unserved(x, 'confirm', neverCompleted);
+    });
+    const u = unmet(o);
+    expect(u).toHaveLength(1);
+    expect(u[0]).toMatch(
+      /^a:servedConfigNeverReachedBrowser\(OPTIONS 204 6600ms; GET no-response 8400ms net::ERR_ABORTED\)$/,
+    );
+    const g = gradeRun([asResult(evaluateAc10(o))], facts);
+    expect(g.results[0]?.verdict).toBe('UNMEASURED');
+    expect(g.results[0]?.unmeasuredBecause).toBe('config');
+    expect(g.tallyLine).toBe('TALLY green=0 red=0 unmeasured=1 total=1 run=UNMEASURED');
+  });
+
+  it('applies to (c) too, and a pending GET (no finish) counts as never completed', () => {
+    const o = broken((x) => {
+      unserved(x, 'dismiss', {
+        options: [],
+        get: [{ method: 'GET', startedMono: T0, finishedMono: null, status: null, failure: null }],
+      });
+    });
+    expect(unmet(o)).toEqual(['c:servedConfigNeverReachedBrowser(GET no-response pending)']);
+    expect(gradeRun([asResult(evaluateAc10(o))], facts).results[0]?.verdict).toBe('UNMEASURED');
+  });
+
+  it('the GET DID complete (200) yet the card used the built-in tree → RED, an SDK defect', () => {
+    const o = broken((x) => {
+      unserved(x, 'confirm', completed);
+    });
+    expect(unmet(o)).toContain('a:builtinTreeWalked');
+    expect(unmet(o).some((u) => u.includes('servedConfigNeverReachedBrowser'))).toBe(false);
+    expect(gradeRun([asResult(evaluateAc10(o))], facts).results[0]?.verdict).toBe('FAIL');
+  });
+
+  it('a shown ping on the SERVED hash is never an unserved config, whatever the GET did', () => {
+    expect(
+      servedConfigNeverReachedBrowser({
+        pings: [{ event: 'shown', definition_hash: HASH }],
+        configNet: neverCompleted,
+      }),
+    ).toBeNull();
+  });
+
+  it('an unserved sub-session next to any other failure stays RED', () => {
+    const o = broken((x) => {
+      unserved(x, 'confirm', neverCompleted);
+      x.sessions.dismiss.row = null;
+    });
+    expect(gradeRun([asResult(evaluateAc10(o))], facts).results[0]?.verdict).toBe('FAIL');
+  });
+
+  it('the driver redraws an unserved sub-session within AC10_MAX_DRAWS and records the draw', () => {
+    const drive = harnessSrc.slice(harnessSrc.indexOf('async function driveAc10Session'));
+    const body = drive.slice(0, drive.indexOf('async function openAc10Session'));
+    expect(body).toContain('servedConfigNeverReachedBrowser(s.obs)');
+    expect(body).toContain('attempt < AC10_MAX_DRAWS');
   });
 });
 

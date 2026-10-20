@@ -186,7 +186,7 @@ let groundingSource = null;
  * @param {string} name - What was asserted, in one line.
  * @param {boolean} ok  - Whether it held.
  * @param {unknown} evidence - The observation the verdict rests on.
- * @param {'holdout'|'window'|null} [unmeasured] - FOLLOW-1240: when the predicate failed for a reason
+ * @param {'holdout'|'window'|'config'|null} [unmeasured] - FOLLOW-1240: when the predicate failed for a reason
  *        already known at record time, the line prints `[UNMEASURED]` instead of `[FAIL]`. `ok` is
  *        stored unchanged; the final grade is `gradeRun()`'s, over the same facts.
  */
@@ -1011,7 +1011,7 @@ export function evaluateAc4Frozen({
  * @param {{ac: string, evidence?: any}} result
  * @param {{adaptedArmDrewHoldout: boolean|null, adaptedResponsesArrivedAfterVerdict: number,
  *   chatArmDrewHoldout?: boolean|null}} facts
- * @returns {'holdout'|'window'|null}
+ * @returns {'holdout'|'window'|'config'|null}
  */
 function unmeasuredBecause(result, facts) {
   const holdout = facts.adaptedArmDrewHoldout === true;
@@ -1056,10 +1056,12 @@ function unmeasuredBecause(result, facts) {
     case 'AC(10)': {
       // FOLLOW-1361: (a) and (b) each redraw up to AC10_MAX_DRAWS sessions; a sub-session whose last
       // draw was still holdout is the only excusable entry. Anything else unmet stays RED.
+      // FOLLOW-1369: a sub-session whose served config never reached the browser (builtin tree,
+      // no completed public-config GET) is an UNMET PRECONDITION too, not an SDK verdict.
       const unmet = Array.isArray(ev.unmetPreconditions) ? ev.unmetPreconditions : [];
-      return unmet.length > 0 && unmet.every((u) => AC10_HOLDOUT_UNMET.includes(u))
-        ? 'holdout'
-        : null;
+      const excusable = (u) => AC10_HOLDOUT_UNMET.includes(u) || AC10_CONFIG_UNMET_RE.test(u);
+      if (unmet.length === 0 || !unmet.every(excusable)) return null;
+      return unmet.some((u) => AC10_HOLDOUT_UNMET.includes(u)) ? 'holdout' : 'config';
     }
     default:
       return null;
@@ -1829,8 +1831,24 @@ async function driveChatArm(browser) {
   const postOf = new WeakMap();
   const pending = [];
 
+  // FOLLOW-1369: the page's /api/quiz/public-config OPTIONS + GET with timings, from network events.
+  const configNet = { options: [], get: [] };
+  const configOf = new WeakMap();
   context.on('request', (req) => {
-    if (req.method() !== 'POST') return;
+    const m = req.method();
+    if ((m === 'GET' || m === 'OPTIONS') && req.url().includes('/api/quiz/public-config')) {
+      const e = {
+        method: m,
+        startedMono: performance.now(),
+        finishedMono: null,
+        status: null,
+        failure: null,
+      };
+      configOf.set(req, e);
+      (m === 'GET' ? configNet.get : configNet.options).push(e);
+      return;
+    }
+    if (m !== 'POST') return;
     let sent = null;
     try {
       sent = JSON.parse(req.postData() ?? 'null');
@@ -2569,6 +2587,41 @@ const near = (x, y) =>
 /** Unmet entries that are the holdout draw itself — the only ones `gradeRun()` may excuse. */
 export const AC10_HOLDOUT_UNMET = Object.freeze(['a:drewHoldout', 'b:drewHoldout']);
 
+/** FOLLOW-1369: an unmet entry saying the served config never reached the browser (`a:`..`c:`). */
+export const AC10_CONFIG_UNMET_RE = /^[abc]:servedConfigNeverReachedBrowser\(/;
+
+/**
+ * FOLLOW-1369: did the served quiz config fail to reach the browser? True (as the timings string)
+ * only when the SHOWN ping reported the built-in tree (`builtin-en-v2`, falling back to the run
+ * row's hash when no ping was captured) AND the page's `/api/quiz/public-config` GET never
+ * completed with a 200. A GET that DID complete while the card still used the built-in tree is an
+ * SDK defect and stays RED (returns null). No network record (`configNet` absent) is not classified.
+ *
+ * @param {object} s - one sub-session's observations
+ * @returns {string|null} the OPTIONS/GET timings when unserved, else null
+ */
+export function servedConfigNeverReachedBrowser(s) {
+  const net = s?.configNet ?? null;
+  if (net === null || typeof net !== 'object') return null;
+  const pings = Array.isArray(s.pings) ? s.pings : [];
+  const shown = pings.find((x) => x.event === 'shown');
+  const hash = shown ? shown.definition_hash : (s.row?.definition_hash ?? null);
+  if (hash !== BUILTIN_QUIZ_HASH) return null;
+  const gets = Array.isArray(net.get) ? net.get : [];
+  if (gets.some((g) => g.finishedMono !== null && g.failure === null && g.status === 200)) {
+    return null;
+  }
+  const fmt = (e) =>
+    `${e.method} ${e.status === null ? 'no-response' : String(e.status)} ` +
+    (e.finishedMono === null
+      ? 'pending'
+      : `${String(Math.round(e.finishedMono - e.startedMono))}ms`) +
+    (e.failure ? ` ${e.failure}` : '');
+  const opts = Array.isArray(net.options) ? net.options : [];
+  const all = [...opts, ...gets].map(fmt);
+  return all.length > 0 ? all.join('; ') : 'no public-config request seen';
+}
+
 /**
  * The conjuncts every sub-session shares: the widget ran on the served tree and a row exists.
  *
@@ -2576,6 +2629,10 @@ export const AC10_HOLDOUT_UNMET = Object.freeze(['a:drewHoldout', 'b:drewHoldout
  */
 function ac10CommonUnmet(p, s, served) {
   const unmet = [];
+  // FOLLOW-1369: the served config never reached the page — every other conjunct (and a throw
+  // while walking the built-in tree) is then meaningless, so it is the ONLY entry.
+  const unreached = servedConfigNeverReachedBrowser(s);
+  if (unreached !== null) return [`${p}:servedConfigNeverReachedBrowser(${unreached})`];
   if (s.error) return [`${p}:threw`];
   if (s.quizShown !== true) unmet.push(`${p}:quizNotShown`);
   if (s.resultShown !== true) unmet.push(`${p}:resultScreenNotShown`);
@@ -2658,7 +2715,7 @@ export function evaluateAc10(obs, serverGate) {
 
   // (a) confirm
   const ua = ac10CommonUnmet('a', a, served);
-  if (!a.error) {
+  if (!a.error && servedConfigNeverReachedBrowser(a) === null) {
     if (a.row) {
       if (a.row.status !== 'confirmed') ua.push(`a:rowStatus=${String(a.row.status)}`);
       if (a.row.confirmed_archetype !== a.leaf) {
@@ -2701,7 +2758,7 @@ export function evaluateAc10(obs, serverGate) {
 
   // (b) correct
   const ub = ac10CommonUnmet('b', b, served);
-  if (!b.error) {
+  if (!b.error && servedConfigNeverReachedBrowser(b) === null) {
     const chosen = b.chosen ?? null;
     if (!chosen || chosen === b.leaf || chosen === 'neutral') {
       ub.push(`b:noAlternativeChosen=${String(chosen)}`);
@@ -2735,7 +2792,7 @@ export function evaluateAc10(obs, serverGate) {
 
   // (c) × on the result screen — the negative control
   const uc = ac10CommonUnmet('c', c, served);
-  if (!c.error) {
+  if (!c.error && servedConfigNeverReachedBrowser(c) === null) {
     if (c.row) {
       if (c.row.status !== 'unconfirmed') uc.push(`c:rowStatus=${String(c.row.status)}`);
       if (c.row.confirmed_archetype !== null) {
@@ -2809,6 +2866,10 @@ async function driveAc10Session(browser, kind, served) {
     } finally {
       await s.close();
     }
+    // FOLLOW-1369: the served config never reached this page → UNMEASURED for this draw; redraw.
+    const unreached = servedConfigNeverReachedBrowser(s.obs);
+    draws[draws.length - 1].servedConfigNeverReachedBrowser = unreached;
+    if (unreached !== null && attempt < AC10_MAX_DRAWS) continue;
     return { ...s.obs, draws };
   }
 }
@@ -2862,6 +2923,8 @@ async function openAc10Session(browser) {
     }
   });
   context.on('response', (res) => {
+    const net = configOf.get(res.request());
+    if (net) net.status = res.status();
     const call = callOf.get(res.request());
     if (!call) return;
     call.status = res.status();
@@ -2882,7 +2945,16 @@ async function openAc10Session(browser) {
       ),
     );
   });
+  context.on('requestfinished', (req) => {
+    const net = configOf.get(req);
+    if (net) net.finishedMono = performance.now();
+  });
   context.on('requestfailed', (req) => {
+    const net = configOf.get(req);
+    if (net) {
+      net.finishedMono = performance.now();
+      net.failure = req.failure()?.errorText ?? 'request failed';
+    }
     const entry = callOf.get(req);
     if (entry) entry.failure = req.failure()?.errorText ?? 'request failed';
   });
@@ -2927,6 +2999,7 @@ async function openAc10Session(browser) {
     rows: null,
     rowError: null,
     pings,
+    configNet,
     calls: [],
   };
   const readState = async () =>

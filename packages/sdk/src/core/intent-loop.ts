@@ -15,7 +15,7 @@ import {
   markQuizDismissed,
 } from '../ui/quiz-session-state.js';
 import { DEFAULT_QUIZ_DEFINITION, renderQuizWidget } from '../ui/quiz-widget.js';
-import type { QuizWidgetConfig } from '../ui/quiz-widget.js';
+import type { QuizRunOutcome, QuizWidgetConfig } from '../ui/quiz-widget.js';
 import { postQuizCompletionPing, postQuizRunPing } from './adapt.js';
 import {
   applyBehavioralSignal,
@@ -234,7 +234,7 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
       renderQuizWidget(
         shadowHost.root,
         quizConfig,
-        (resolvedArchetype, answerPath, outcome) => {
+        (resolvedArchetype, answerPath, outcome: QuizRunOutcome) => {
           // FOLLOW-1357: called once, after the confirmation step; the FINAL archetype is
           // applied — the leaf, the buyer's correction, or `neutral` for "None of these".
           const final = outcome.final_archetype;

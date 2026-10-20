@@ -69,7 +69,7 @@ export interface QuizAnswerPath {
 }
 
 /** One walk step on the wire: `answer_index` (single) or `answer_indexes` (trait screen). */
-export type QuizAnswerStep =
+type QuizAnswerStep =
   | { question_id: string; answer_index: number }
   | { question_id: string; answer_indexes: number[] };
 

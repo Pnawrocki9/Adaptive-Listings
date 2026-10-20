@@ -29,12 +29,7 @@ import { applyQuizLeaf, initIntentState } from '../core/intent.js';
 import type { CollectedEvent } from '../core/events.js';
 import { eraseCachedQuizConfig } from '../core/quiz-config.js';
 import { QUIZ_LANGUAGE_STORAGE_KEY } from '../ui/quiz-session-state.js';
-import {
-  BUILTIN_QUIZ_DEFINITION_HASH,
-  DEFAULT_QUIZ_DEFINITION,
-  newQuizRunId,
-  renderQuizWidget,
-} from '../ui/quiz-widget.js';
+import { DEFAULT_QUIZ_DEFINITION, renderQuizWidget } from '../ui/quiz-widget.js';
 import type { QuizResolvedArchetype, QuizRunOutcome, QuizWidgetConfig } from '../ui/quiz-widget.js';
 
 const SESSION_ID = 'a'.repeat(64);
@@ -439,10 +434,9 @@ describe('run identity, timings and ping shapes', () => {
       definitionVersion: undefined,
     });
     expect(h.pings[0]).toMatchObject({
-      definition_hash: BUILTIN_QUIZ_DEFINITION_HASH,
+      definition_hash: 'builtin-en-v2',
       definition_version: null,
     });
-    expect(BUILTIN_QUIZ_DEFINITION_HASH).toBe('builtin-en-v2');
   });
 
   it('a served definition without a forwarded hash reports `unhashed`', () => {
@@ -486,12 +480,13 @@ describe('run identity, timings and ping shapes', () => {
     });
   });
 
-  it('newQuizRunId falls back to a valid v4 uuid without crypto.randomUUID', () => {
+  it('the run id falls back to a valid v4 uuid without crypto.randomUUID', () => {
     vi.spyOn(crypto, 'randomUUID').mockImplementation(() => {
       throw new Error('unavailable');
     });
     for (let i = 0; i < 50; i++) {
-      expect(newQuizRunId()).toMatch(
+      document.body.innerHTML = '';
+      expect(mount().pings[0]?.quiz_run_id).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
       );
     }
@@ -513,7 +508,7 @@ describe('postQuizRunPing — consent, opt-out, tenant, transport', () => {
     vi.stubGlobal('fetch', fetchMock);
   });
 
-  it('sends nothing without profiling consent', async () => {
+  it('C5: absent (pending) or denied consent fires no fetch at all', async () => {
     await postQuizRunPing(SDK_CONFIG, SESSION_ID, fields, false);
     localStorage.setItem('estalara_consent', 'denied');
     await postQuizRunPing(SDK_CONFIG, SESSION_ID, fields, false);
@@ -610,7 +605,7 @@ describe('downstream shapes', () => {
       confidence: 0.5,
       quiz_run_id: '3f1e2d4c-5b6a-4789-8abc-def012345678',
       resolved_archetype: 'yield_hunter',
-      definition_hash: BUILTIN_QUIZ_DEFINITION_HASH,
+      definition_hash: 'builtin-en-v2',
     };
     // kept, not stripped, by the schema the ingest Worker validates with (EventSchema)
     expect(QuizEventPayloadSchema.parse(payload)).toEqual(payload);

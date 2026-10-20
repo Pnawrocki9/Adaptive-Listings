@@ -59,7 +59,7 @@ export type QuizResolvedArchetype = Archetype;
  * How the buyer answered the result screen (ESC-086 item 4); `null` = no confirmation step was
  * offered (a `neutral` leaf, or a definition without `confirm` texts for the leaf).
  */
-export type QuizConfirmation = 'confirmed' | 'corrected' | 'unconfirmed' | 'none_of_these';
+type QuizConfirmation = 'confirmed' | 'corrected' | 'unconfirmed' | 'none_of_these';
 
 /** The third `onComplete` argument (ESC-086 item 4) [FOLLOW-1357]. */
 export interface QuizRunOutcome {
@@ -75,7 +75,7 @@ export interface QuizRunOutcome {
 }
 
 /** `definition_hash` the built-in fallback reports (the SDK never hashes, ESC-086 item 3). */
-export const BUILTIN_QUIZ_DEFINITION_HASH = 'builtin-en-v2';
+const BUILTIN_QUIZ_DEFINITION_HASH = 'builtin-en-v2';
 
 export interface QuizWidgetConfig {
   accentColor: string;
@@ -366,7 +366,7 @@ export const DEFAULT_QUIZ_DEFINITION: QuizDefinition = buildDefaultQuizDefinitio
 export { resolveArchetypeFromPath, resolveLabel };
 
 /** A random v4 uuid: `crypto.randomUUID`, else a `Math.random` fallback in the same format. */
-export function newQuizRunId(): string {
+function newQuizRunId(): string {
   try {
     return crypto.randomUUID();
   } catch {

@@ -10,7 +10,7 @@ export const studentParentPlaybook: PlaybookEntry = {
       variants: {
         en: [
           'Student Investment — Near Campus | Let While Studying',
-          'University Property — Rental Income While Your Child Studies',
+          'University Property — Rental Income Throughout the Study Years',
           'Smart Student Buy — Rental Income Toward Study Costs',
         ],
       },

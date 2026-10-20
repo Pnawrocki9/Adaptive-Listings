@@ -16,11 +16,16 @@ export const diasporaBuyerPlaybook: PlaybookEntry = {
         ],
       },
     },
-    { slot: 'cta', en: 'Speak with a Diaspora Specialist' },
+    {
+      slot: 'cta',
+      en: 'Speak with a Relocation Specialist',
+      pl: 'Porozmawiaj ze specjalistą od przeprowadzek',
+      es: 'Habla con un especialista en traslados',
+    },
     { slot: 'feature', en: 'Remote Purchase Guide' },
   ],
   listing_rules: {
-    boost_if: ['remote_purchase_supported', 'legal_support_available', 'family_area'],
+    boost_if: ['remote_purchase_supported', 'legal_support_available'],
     suppress_if: [],
     boost_class: 'estalara-boost',
     suppress_class: 'estalara-suppress',

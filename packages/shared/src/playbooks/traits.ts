@@ -211,7 +211,9 @@ const STEERING_PATTERNS: readonly string[] = [
   String.raw`(?:good|great|ideal|safe)\s+(?:area|neighbou?rhood|location|street)\s+for\s+(?:young\s+)?(?:families|children|kids)`,
   String.raw`raising\s+(?:a family|children|kids)`,
   String.raw`your\s+(?:children|kids|family)`,
-  String.raw`family\s+(?:home|neighbou?rhood)`,
+  // Not a property type: "single-family home", "multi-family home", "two family home" are
+  // US building types, not steering (false positives seen in the FOLLOW-1360 series).
+  String.raw`(?<!(?:single|multi|two|one)[-\s])family\s+(?:home|neighbou?rhood)`,
   String.raw`growing\s+famil(?:y|ies)`,
   String.raw`families\s+will\s+love`,
   String.raw`for\s+the\s+kids`,

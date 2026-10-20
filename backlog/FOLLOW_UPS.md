@@ -56733,6 +56733,7 @@ cross_ref: [plan Faza Q §B/KQ2/KQ3, PREREG, FOLLOW-1358]
 `/admin/tenants/[id]/quiz-accuracy`; the verdict (PASS/FAIL) goes to MASTER_DESIGN §Snapshot.0 —
 this is checkpoint **KQ3**, owned by the CTO, not the PM. Source:
 `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md`.
+
 ## FOLLOW-1364 — retention job for `quiz_runs` and `quiz_completions` (ESC-086 condition C6)
 
 source_retro: — (compliance review of FOLLOW-1358, 2026-10-20) source_ticket: FOLLOW-1358

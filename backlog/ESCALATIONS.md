@@ -21,6 +21,41 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-087: a CONFIRMED quiz result (0.90) routes the buyer to the playbook branch without the LLM — confirmed buyers get less adaptation [FOLLOW-1359]
+
+**Filed by:** pm-orchestrator **Date:** 2026-10-20 **Affects:** FOLLOW-1359 (Faza Q Q4, PR #1060,
+not merged), `packages/sdk/src/core/adapt.ts:766`, `apps/control-plane/src/app/api/adapt/route.ts`
+(`HIGH_SIMILARITY_THRESHOLD` 0.85, branch 2), §E.4.4 v3 **Type:** product / architectural (decision
+API semantics)
+
+**Description:** the SDK sends `similarity = probabilities[archetype]`; `/api/adapt` sends every
+request with `similarity > 0.85` to branch 2 — the archetype playbook WITHOUT the LLM — where
+template copy that the listing cannot ground is withheld (§E.7.0, ESC-076). Before Q4 a quiz leaf
+was pinned at exactly 0.85, so quiz sessions always took the LLM branch. Q4 (as ruled in §E.4.4)
+gives a CONFIRMED leaf 0.90 (cap 0.915), so every confirming buyer lands in branch 2. Measured on
+localhost (FOLLOW-819 series at `3716d223`, run 5): confirmed first_time_buyer at 0.90 →
+`playbook / ungrounded_directives_withheld`, zero directives; the 0.72 (unconfirmed) sessions get
+`llm_tweaked`. So the buyers who told us the result is right would get the least adaptation — the
+opposite of the plan. The fold itself works (served v2 tree, `confirmed` rows, AC(8) unchanged).
+
+**Options:**
+
+1. **(Recommended) SDK caps the `similarity` it SENDS at 0.85** (one `Math.min`, ~10 B). The
+   posterior stays calibrated inside the SDK and in `quiz_runs`; the route sees quiz sessions in the
+   LLM band exactly as before Q4. Branch 2 stays reachable only for behaviour-driven similarity
+   above 0.85 (status quo). No API contract change.
+2. Lower the confirmed mass to 0.85 — breaks the calibrated design (§E.4.4, plan §B) and the 0.915
+   cap would still cross 0.85 after a concordant chat message.
+3. Change the route: branch 2 only when every playbook slot is grounded, otherwise fall through to
+   the LLM — a better long-term rule, but it changes the decision path for all sessions and the
+   judge cost; a separate ticket with its own series.
+
+**Required action:** CEO picks an option. Until then FOLLOW-1359 stays open and Q6 (AC(10)) waits.
+
+**Resolution:** _(open)_
+
+---
+
 ## RESOLVED — ESC-086: quiz v2 public surface — `quiz.event` steps, `POST /api/quiz/run`, public-config `confirm`/`kind`/`traits`, SDK `onComplete` outcome, admin quiz routes [FOLLOW-1355]
 
 **Filed by:** pm-orchestrator (transcribing the CEO's plan approval of 2026-10-19) **Date:**

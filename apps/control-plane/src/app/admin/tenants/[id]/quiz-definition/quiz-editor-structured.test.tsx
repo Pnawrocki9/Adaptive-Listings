@@ -116,7 +116,13 @@ function change(testId: string, value: string): void {
   fireEvent.change(screen.getByTestId(testId), { target: { value } });
 }
 
-const saveButton = () => screen.getByRole('button', { name: /save definition/i });
+const saveButton = () => screen.getByRole('button', { name: /publish/i });
+
+/** Publish… then confirm in the dialog (the former one-click Save). */
+function publish(): void {
+  fireEvent.click(saveButton());
+  fireEvent.click(screen.getByTestId('publish-dialog-confirm'));
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -340,7 +346,7 @@ describe('lint panel', () => {
         },
       },
     });
-    fireEvent.click(saveButton());
+    publish();
     const panel = await screen.findByTestId('server-issues');
     expect(within(panel).getByText('confirm_missing_name')).toBeDefined();
     expect(within(panel).getByText(/server says the name is missing/)).toBeDefined();
@@ -351,7 +357,7 @@ describe('lint panel', () => {
 describe('save contract', () => {
   it('sends the loaded active version as base_version and source "editor"', async () => {
     const fetchMock = await renderEditor({ get: { definition: DEFAULT_QUIZ_DEFINITION_V2 } });
-    fireEvent.click(saveButton());
+    publish();
     await screen.findByText('Definition saved!');
     const put = fetchMock.mock.calls.find((c) => c[1]?.method === 'PUT')!;
     const body = JSON.parse((put[1] as unknown as { body: string }).body) as {
@@ -367,7 +373,7 @@ describe('save contract', () => {
   it('a tenant with no saved definition starts from the built-in default and sends base_version null', async () => {
     const fetchMock = await renderEditor({ get: { version: null, definition: null } });
     expect(draft().root).toBe(DEFAULT_QUIZ_DEFINITION_V2.root);
-    fireEvent.click(saveButton());
+    publish();
     await screen.findByText('Definition saved!');
     const put = fetchMock.mock.calls.find((c) => c[1]?.method === 'PUT')!;
     expect(JSON.parse((put[1] as unknown as { body: string }).body)).toMatchObject({
@@ -385,7 +391,7 @@ describe('save contract', () => {
         },
       },
     });
-    fireEvent.click(saveButton());
+    publish();
     const banner = await screen.findByTestId('version-conflict');
     expect(banner.textContent).toContain('Someone else published version 9');
     expect(banner.textContent).toContain('not saved');
@@ -407,7 +413,7 @@ describe('read-only mode (can_write: false)', () => {
   it('disables every input and hides Save and Suggest', async () => {
     await renderEditor({ get: { definition: TREE, can_write: false } });
     expect(screen.getByTestId('read-only-banner')).toBeDefined();
-    expect(screen.queryByRole('button', { name: /save definition/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /publish/i })).toBeNull();
     expect(screen.queryByTestId('suggest-weights')).toBeNull();
     for (const id of [
       'qf-prompt-q_a',

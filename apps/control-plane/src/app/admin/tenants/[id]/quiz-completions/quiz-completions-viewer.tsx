@@ -19,6 +19,18 @@
 
 import { useEffect, useState } from 'react';
 
+/** EN text plus the PL text when the definition carries one (FOLLOW-1362 C4). */
+interface TextBag {
+  en: string;
+  pl: string | null;
+}
+
+interface PathStepText {
+  question_id: string;
+  prompt: TextBag | null;
+  answers: { index: number; label: TextBag | null }[];
+}
+
 interface CompletionRow {
   id: string;
   session_id: string;
@@ -29,6 +41,12 @@ interface CompletionRow {
   q3_answer: number | null;
   /** FOLLOW-1020 — false for rows written before the SDK reported the walk. */
   path_reported: boolean;
+  /** FOLLOW-1362 C4 — the walk as text; absent/null for rows without a reported path. */
+  path_text?: PathStepText[] | null;
+  archetype_label?: TextBag | null;
+  /** `pinned` = resolved against the served version; `approximate` = the current definition. */
+  definition_source?: 'pinned' | 'approximate';
+  definition_version?: number | null;
   language: string;
   created_at: string;
 }
@@ -58,6 +76,65 @@ const PAGE_SIZE = 50;
 function formatAnswer(v: number | null, pathReported: boolean): string {
   if (!pathReported) return 'n/r';
   return v === null ? '—' : String(v);
+}
+
+/** EN text with the PL text as a tooltip and a second line (when the definition has one). */
+function Bilingual({ text, fallback }: { text: TextBag | null; fallback: string }) {
+  if (text === null) {
+    return <span className="italic text-gray-400">{fallback}</span>;
+  }
+  return (
+    <span title={text.pl ?? undefined}>
+      {text.en}
+      {text.pl !== null && <span className="block text-xs text-gray-400">{text.pl}</span>}
+    </span>
+  );
+}
+
+/** One row's walk: question prompt + the chosen answer label(s), as text. */
+function WalkCell({ row }: { row: CompletionRow }) {
+  if (!row.path_text || row.path_text.length === 0) {
+    return <span className="text-gray-400">—</span>;
+  }
+  return (
+    <div data-testid="walk-text">
+      <ol className="space-y-1">
+        {row.path_text.map((step, i) => (
+          <li key={`${step.question_id}-${String(i)}`}>
+            <span className="text-xs text-gray-500">
+              <Bilingual text={step.prompt} fallback={step.question_id} />
+            </span>
+            <span className="block font-medium text-gray-900">
+              {step.answers.length === 0 ? (
+                <span className="italic text-gray-400">none selected</span>
+              ) : (
+                step.answers.map((a, j) => (
+                  <span key={a.index} className="block">
+                    {j > 0 && '+ '}
+                    <Bilingual text={a.label} fallback={`answer #${String(a.index)}`} />
+                  </span>
+                ))
+              )}
+            </span>
+          </li>
+        ))}
+      </ol>
+      {row.definition_source === 'approximate' && (
+        <span
+          data-testid="approximate-badge"
+          className="mt-1 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+          title="No quiz_runs row pins the version this buyer was served; text is resolved against the current definition and may differ from what they saw."
+        >
+          approximate
+        </span>
+      )}
+      {row.definition_source === 'pinned' && row.definition_version != null && (
+        <span className="mt-1 block text-[10px] text-gray-400">
+          definition v{row.definition_version}
+        </span>
+      )}
+    </div>
+  );
 }
 
 export function QuizCompletionsViewer({ tenantId }: { tenantId: string }): React.JSX.Element {
@@ -184,6 +261,7 @@ export function QuizCompletionsViewer({ tenantId }: { tenantId: string }): React
               <th className="px-4 py-3">Session</th>
               <th className="px-4 py-3">Archetype</th>
               <th className="px-4 py-3">Branch</th>
+              <th className="px-4 py-3">Answers</th>
               <th className="px-4 py-3 text-center">Q1</th>
               <th className="px-4 py-3 text-center">Q2</th>
               <th className="px-4 py-3 text-center">Q3</th>
@@ -193,7 +271,7 @@ export function QuizCompletionsViewer({ tenantId }: { tenantId: string }): React
           <tbody className="divide-y divide-gray-100">
             {data.completions.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={9} className="px-4 py-8 text-center text-gray-400">
                   No quiz completions recorded for this tenant.
                 </td>
               </tr>
@@ -211,6 +289,11 @@ export function QuizCompletionsViewer({ tenantId }: { tenantId: string }): React
                   </td>
                   <td className="px-4 py-2 font-mono text-xs text-gray-900">
                     {row.resolved_archetype}
+                    {row.archetype_label && (
+                      <span className="block font-sans text-xs text-gray-500">
+                        <Bilingual text={row.archetype_label} fallback="" />
+                      </span>
+                    )}
                   </td>
                   <td
                     className={`px-4 py-2 font-mono text-xs ${
@@ -223,6 +306,9 @@ export function QuizCompletionsViewer({ tenantId }: { tenantId: string }): React
                     }
                   >
                     {row.path_reported ? (row.branch ?? 'skip (no branch)') : 'not reported'}
+                  </td>
+                  <td className="min-w-[14rem] px-4 py-2 text-sm text-gray-700">
+                    <WalkCell row={row} />
                   </td>
                   <td className="px-4 py-2 text-center tabular-nums text-gray-700">
                     {formatAnswer(row.q1_answer, row.path_reported)}

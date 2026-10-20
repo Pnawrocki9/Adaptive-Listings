@@ -39,6 +39,9 @@ const SAMPLE: unknown = {
     { branch: 'INWESTOR', count: 80 },
     { branch: null, count: 9 },
   ],
+  // FOLLOW-1362 C4: the label now comes from the API (derived from the definition), no longer
+  // from a hard-coded INWESTOR/OWN_USE/CROSS_BORDER map.
+  branch_labels: { INWESTOR: { en: 'Investor', pl: null } },
 };
 
 beforeEach(() => {
@@ -125,6 +128,74 @@ describe('QuizAnalyticsView (real data, FOLLOW-1000)', () => {
     // each column carries its day as a title attribute.
     const columns = document.querySelectorAll('[title]');
     expect(columns.length).toBe(14);
+  });
+});
+
+describe('QuizAnalyticsView - labels and run funnel (FOLLOW-1362 C4)', () => {
+  function stub(body: unknown): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(body) }),
+    );
+  }
+
+  it('branch labels come from the definition; an unlabelled branch falls back to its raw id', async () => {
+    stub({
+      ...(SAMPLE as Record<string, unknown>),
+      by_branch: [
+        { branch: 'q_home', count: 8 },
+        { branch: 'LEGACY_BRANCH', count: 2 },
+      ],
+      branch_labels: { q_home: { en: 'Main home', pl: 'Główny dom' } },
+    });
+    render(<QuizAnalyticsView />);
+    await waitFor(() => {
+      expect(screen.getByText('Main home')).toBeDefined();
+    });
+    expect(screen.getByTitle('Główny dom')).toBeDefined();
+    expect(screen.getByText('LEGACY_BRANCH')).toBeDefined();
+  });
+
+  it('renders the funnel and the drop-off table with question prompts and shares', async () => {
+    stub({
+      ...(SAMPLE as Record<string, unknown>),
+      runs: {
+        available: true,
+        funnel: {
+          shown: 20,
+          completed: 12,
+          confirmed: 8,
+          corrected: 3,
+          unconfirmed: 1,
+          dismissed: 8,
+        },
+        drop_off: [
+          {
+            question_id: 'q_purpose',
+            step: null,
+            prompt: { en: 'What will this property be for?', pl: 'Do czego?' },
+            count: 6,
+            share: 0.75,
+          },
+          { question_id: null, step: 1, prompt: null, count: 2, share: 0.25 },
+        ],
+      },
+    });
+    render(<QuizAnalyticsView />);
+    const table = await screen.findByTestId('drop-off-table');
+    expect(table.textContent).toContain('What will this property be for?');
+    expect(table.textContent).toContain('75%');
+    expect(table.textContent).toContain('Step 2');
+    expect(screen.getByTestId('quiz-runs').textContent).toContain('Shown');
+    expect(screen.getByTestId('quiz-runs').textContent).toContain('20');
+  });
+
+  it('quiz_runs missing → the H002 message, not zeroes', async () => {
+    stub({ ...(SAMPLE as Record<string, unknown>), runs: { available: false } });
+    render(<QuizAnalyticsView />);
+    const msg = await screen.findByTestId('quiz-runs-unavailable');
+    expect(msg.textContent).toBe('quiz_runs not available (handover H002)');
+    expect(screen.queryByTestId('drop-off-table')).toBeNull();
   });
 });
 

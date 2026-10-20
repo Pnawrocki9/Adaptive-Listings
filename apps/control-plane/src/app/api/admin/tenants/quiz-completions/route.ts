@@ -21,8 +21,9 @@
  *   `eq(quizCompletions.tenantId, …)` fence is the ONLY tenant boundary).
  *
  * Privacy note: `session_id` is the SDK's anonymous SHA-256 fingerprint — no PII;
- *   answers are 0-based option indexes, not free text. Nothing in this response
- *   carries buyer-authored content.
+ *   answers are 0-based option indexes, not free text; `path_text` adds the TENANT's own
+ *   question and answer labels (FOLLOW-1362 C4). Nothing in this response carries
+ *   buyer-authored content.
  *
  * Rule K.2 — fail loud: a configured-but-failed DB query returns 500, never an
  *   empty list fabricated as "no completions".
@@ -36,6 +37,15 @@ import * as Sentry from '@sentry/nextjs';
 import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
 
 import { createAdminClient, quizCompletions } from '@estalara/db';
+import { readQuizRunVersionsForSessions } from '@/lib/quiz-runs';
+import {
+  archetypeLabel,
+  describePath,
+  loadActiveDefinition,
+  loadDefinitionVersions,
+  type PathStepText,
+  type TextBag,
+} from '@/lib/quiz-text';
 import { resolveTenantAccess, type TenantAccess } from '@/lib/session-auth';
 import { accessErrorToResponse } from '@/lib/access-error-response';
 
@@ -63,6 +73,23 @@ export interface QuizCompletionRow {
    * the same `null` the skip case uses is the defect this flag closes.
    */
   path_reported: boolean;
+  /** The stored walk (`{question_id, answer_index|answer_indexes}[]`), `null` when not reported. */
+  answer_path: unknown;
+  /**
+   * The walk as text (question prompt + chosen answer label, EN and PL), resolved against the
+   * definition named by `definition_source`. `null` when the row has no reported path.
+   */
+  path_text: PathStepText[] | null;
+  /** Display name of `resolved_archetype` in the resolving definition's confirmation block. */
+  archetype_label: TextBag | null;
+  /** Version the text was resolved against; `null` for the built-in default. */
+  definition_version: number | null;
+  /**
+   * `pinned` = a `quiz_runs` row of the session recorded the served version and that version
+   * still exists; `approximate` = resolved against the CURRENT active definition (legacy rows,
+   * or H002 not applied), so the text may differ from what the buyer saw.
+   */
+  definition_source: 'pinned' | 'approximate';
   language: string;
   created_at: string;
 }
@@ -192,6 +219,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         and(eq(quizCompletions.tenantId, tenantId), sql`${quizCompletions.answerPath} IS NULL`),
       );
 
+    // FOLLOW-1362 C4: text for the visible page. A missing `quiz_runs` table (H002) only means
+    // nothing is pinned - every row is then resolved against the active definition.
+    const runVersions = await readQuizRunVersionsForSessions(
+      db,
+      tenantId,
+      pageRows.map((r) => r.sessionId),
+    );
+    const active = await loadActiveDefinition(db, tenantId);
+    const pinnedDefs = await loadDefinitionVersions(db, tenantId, [
+      ...new Set(runVersions.versions.values()),
+    ]);
+
     const body: QuizCompletionsResponse = {
       tenant_id: tenantId,
       total: totalRows[0]?.cnt ?? 0,
@@ -206,18 +245,28 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           .sort((a, b) => b.count - a.count),
         branch_not_reported: notReportedRows[0]?.cnt ?? 0,
       },
-      completions: pageRows.map((r) => ({
-        id: r.id,
-        session_id: r.sessionId,
-        resolved_archetype: r.resolvedArchetype,
-        branch: r.branch,
-        q1_answer: r.q1Answer,
-        q2_answer: r.q2Answer,
-        q3_answer: r.q3Answer,
-        path_reported: r.answerPath !== null,
-        language: r.language,
-        created_at: r.createdAt.toISOString(),
-      })),
+      completions: pageRows.map((r) => {
+        const pinnedVersion = runVersions.versions.get(r.sessionId);
+        const pinned = pinnedVersion === undefined ? undefined : pinnedDefs.get(pinnedVersion);
+        const def = pinned ?? active.definition;
+        return {
+          id: r.id,
+          session_id: r.sessionId,
+          resolved_archetype: r.resolvedArchetype,
+          branch: r.branch,
+          q1_answer: r.q1Answer,
+          q2_answer: r.q2Answer,
+          q3_answer: r.q3Answer,
+          path_reported: r.answerPath !== null,
+          answer_path: r.answerPath,
+          path_text: describePath(def, r.answerPath),
+          archetype_label: archetypeLabel(def, r.resolvedArchetype),
+          definition_version: pinned ? (pinnedVersion ?? null) : active.version,
+          definition_source: pinned ? 'pinned' : 'approximate',
+          language: r.language,
+          created_at: r.createdAt.toISOString(),
+        };
+      }),
     };
     return NextResponse.json(body, { status: 200 });
   } catch (err: unknown) {

@@ -34,6 +34,29 @@ interface QuizAnalytics {
   daily: { day: string; count: number }[];
   by_archetype: { archetype: string; count: number }[];
   by_branch: { branch: string | null; count: number }[];
+  /** FOLLOW-1362 C4 — branch id → label, derived from the active definition. */
+  branch_labels?: Record<string, { en: string; pl: string | null }>;
+  /** FOLLOW-1362 C4 — `quiz_runs` funnel and per-question drop-off. */
+  runs?:
+    | { available: false }
+    | {
+        available: true;
+        funnel: {
+          shown: number;
+          completed: number;
+          confirmed: number;
+          corrected: number;
+          unconfirmed: number;
+          dismissed: number;
+        };
+        drop_off: {
+          question_id: string | null;
+          step: number | null;
+          prompt: { en: string; pl: string | null } | null;
+          count: number;
+          share: number;
+        }[];
+      };
 }
 
 const DAILY_WINDOW_DAYS = 14;
@@ -53,12 +76,6 @@ function fillDaily(daily: { day: string; count: number }[]): { day: string; coun
   }
   return out;
 }
-
-const BRANCH_LABELS: Record<string, string> = {
-  INWESTOR: 'Investor',
-  OWN_USE: 'Own use',
-  CROSS_BORDER: 'Cross-border',
-};
 
 interface QuizAnalyticsViewProps {
   /** The tenant to read (sent as `?tenant_id=`). Absent → no `tenant_id` is sent, which the staff-only route answers 400 since FOLLOW-1335. */
@@ -197,9 +214,13 @@ export function QuizAnalyticsView({ tenantId }: QuizAnalyticsViewProps = {}) {
               {data.by_branch.map((b) => (
                 <li key={b.branch ?? 'null'} className="flex items-center justify-between text-sm">
                   <span className="text-gray-700">
-                    {b.branch === null
-                      ? 'Neutral (Q1 skip)'
-                      : (BRANCH_LABELS[b.branch] ?? b.branch)}
+                    {b.branch === null ? (
+                      'Neutral (Q1 skip)'
+                    ) : (
+                      <span title={data.branch_labels?.[b.branch]?.pl ?? undefined}>
+                        {data.branch_labels?.[b.branch]?.en ?? b.branch}
+                      </span>
+                    )}
                   </span>
                   <span className="tabular-nums font-medium text-gray-900">
                     {b.count}{' '}
@@ -213,6 +234,76 @@ export function QuizAnalyticsView({ tenantId }: QuizAnalyticsViewProps = {}) {
           )}
         </div>
       </div>
+
+      <QuizRunsPanel runs={data.runs} />
+    </div>
+  );
+}
+
+/** The run funnel and per-question drop-off table (FOLLOW-1362 C4), read-only. */
+function QuizRunsPanel({ runs }: { runs: QuizAnalytics['runs'] }) {
+  if (runs === undefined) return null;
+  if (!runs.available) {
+    return (
+      <p
+        data-testid="quiz-runs-unavailable"
+        className="mt-6 rounded-lg bg-gray-50 px-4 py-3 text-sm text-gray-500"
+      >
+        quiz_runs not available (handover H002)
+      </p>
+    );
+  }
+  const f = runs.funnel;
+  const steps: [string, number][] = [
+    ['Shown', f.shown],
+    ['Completed', f.completed],
+    ['Confirmed', f.confirmed],
+    ['Corrected', f.corrected],
+    ['Unconfirmed', f.unconfirmed],
+    ['Dismissed', f.dismissed],
+  ];
+  return (
+    <div className="mt-6 rounded-xl border border-gray-200 bg-white p-5" data-testid="quiz-runs">
+      <h2 className="mb-3 text-sm font-semibold text-gray-700">Quiz runs funnel</h2>
+      <ul className="mb-5 grid grid-cols-3 gap-3 text-center sm:grid-cols-6">
+        {steps.map(([label, n]) => (
+          <li key={label} className="rounded-lg bg-gray-50 p-2">
+            <div className="text-lg font-bold text-gray-900">{n}</div>
+            <div className="text-[11px] text-gray-500">{label}</div>
+          </li>
+        ))}
+      </ul>
+      <h3 className="mb-2 text-sm font-semibold text-gray-700">Where buyers dismissed the quiz</h3>
+      {runs.drop_off.length === 0 ? (
+        <p className="text-sm text-gray-400">No dismissed runs.</p>
+      ) : (
+        <table className="min-w-full text-sm" data-testid="drop-off-table">
+          <thead className="text-left text-xs uppercase text-gray-500">
+            <tr>
+              <th className="py-1 pr-4">Question</th>
+              <th className="py-1 pr-4 text-right">Dismissed</th>
+              <th className="py-1 text-right">Share</th>
+            </tr>
+          </thead>
+          <tbody>
+            {runs.drop_off.map((d) => (
+              <tr key={d.question_id ?? `step-${String(d.step)}`} className="border-t">
+                <td className="py-1 pr-4 text-gray-700">
+                  {d.prompt ? (
+                    <span title={d.prompt.pl ?? undefined}>{d.prompt.en}</span>
+                  ) : (
+                    <span className="text-gray-500">
+                      {d.step === null ? 'Unknown step' : `Step ${String(d.step + 1)}`}
+                    </span>
+                  )}
+                </td>
+                <td className="py-1 pr-4 text-right tabular-nums">{d.count}</td>
+                <td className="py-1 text-right tabular-nums">{Math.round(d.share * 100)}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

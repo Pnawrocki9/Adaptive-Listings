@@ -23,7 +23,7 @@
  * - **`cta` — non-assertive, SERVED.** All seventeen shipped strings were read. Every one is an
  *   offer or an invitation: `Request Investment Pack`, `Get Renovation Report`, `Download Golden
  *   Visa Guide`, `Book a Viewing`, `Compare Properties`, `Check Connectivity`, `Request Private
- *   Viewing`, `Request Bulk Enquiry`, `Speak with a Diaspora Specialist`, `Get Family Buyer
+ *   Viewing`, `Request Bulk Enquiry`, `Speak with a Relocation Specialist`, `Get the Moving-Up
  *   Guide`, `Get First-Time Buyer Guide`, `Download Expat Relocation Guide`, `Download
  *   Retirement Living Guide`, `Enquire About Holiday Use`, `Calculate Student Rental Return`,
  *   `See Short-Term Rental Projections`, `Request Commercial Pack`. The last two were the ones
@@ -39,7 +39,7 @@
  *   test pins every string against a claim-word list, so a re-authored string is a red test.
  * - **`headline` — assertive, WITHHELD.** Every property claim in the playbook lives here.
  * - **`feature` — MIXED, and therefore withheld whole.** Most are section labels that assert
- *   nothing (`Family Essentials`, `Portfolio Metrics`, `Renovation Scope`, `Why Upgrade?`), but
+ *   nothing (`Space & Layout`, `Portfolio Metrics`, `Renovation Scope`, `Why Upgrade?`), but
  *   four are claims about the property: `remote_worker`'s `Remote Work Ready`, `downsizer`'s
  *   `Downsizer Friendly`, `vacation_rental_investor`'s `Short-Term Rental Projections` and
  *   `golden_visa_buyer`'s `Residency Requirements`. A mechanical slot rule cannot separate the
@@ -126,7 +126,7 @@ const AUTHORED_SECTION_LABELS: ReadonlyMap<string, string> = new Map([
   ['first_time_buyer', 'Your First Step'],
   ['diaspora_buyer', 'Remote Purchase Guide'],
   ['lifestyle_expat', 'Expat Essentials'],
-  ['family_buyer', 'Family Essentials'],
+  ['family_buyer', 'Space & Layout'],
   ['commercial_investor', 'Commercial Due Diligence Pack'],
   ['flip_investor', 'Renovation Scope'],
   ['upsizer', 'Why Upgrade?'],

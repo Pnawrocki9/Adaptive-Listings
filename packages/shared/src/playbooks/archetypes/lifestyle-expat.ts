@@ -7,12 +7,12 @@ export const lifestyleExpatPlaybook: PlaybookEntry = {
   slots: [
     {
       slot: 'headline',
-      en: 'Expat Community — {neighborhood} | International Schools Nearby',
+      en: 'Relocation Ready — {neighborhood}',
       variants: {
         en: [
-          'Expat Community — {neighborhood} | International Schools Nearby',
+          'Relocation Ready — {neighborhood}',
           'International Living — English Services, Expat Network Active',
-          'Relocation Ready — {neighborhood} | Schools, Healthcare & Expat Community',
+          'Settling In — {neighborhood}',
         ],
       },
     },
@@ -20,7 +20,7 @@ export const lifestyleExpatPlaybook: PlaybookEntry = {
     { slot: 'feature', en: 'Expat Essentials' },
   ],
   listing_rules: {
-    boost_if: ['expat_community_area', 'international_schools', 'english_speaking_area'],
+    boost_if: ['expat_community_area', 'english_speaking_area'],
     suppress_if: [],
     boost_class: 'estalara-boost',
     suppress_class: 'estalara-suppress',

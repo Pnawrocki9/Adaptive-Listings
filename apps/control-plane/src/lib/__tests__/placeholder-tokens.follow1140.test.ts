@@ -127,7 +127,7 @@ describe('resolvePlaceholderDirectives — FOLLOW-1140 (b) / ESC-074', () => {
 
   it('{neighborhood} is filled from the listing district (lifestyle_expat)', async () => {
     const { directives } = await resolve('lifestyle_expat');
-    expect(headlineOf(directives)).toBe('Expat Community — Alfama | International Schools Nearby');
+    expect(headlineOf(directives)).toBe('Relocation Ready — Alfama');
   });
 
   it('no listing_id → nothing to resolve FROM, so the token directive is discarded', async () => {

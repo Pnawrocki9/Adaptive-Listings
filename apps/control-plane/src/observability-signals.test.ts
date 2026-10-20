@@ -218,6 +218,10 @@
  * (1 site - the staff accuracy report's `quiz_runs` read failing) and
  * `app/api/cron/quiz-accuracy-watch/route.ts` (2 - the monthly read failing, and the PREREG §7
  * warning itself, a named signal). No existing row moved. It is now **110 in 70**.
+ *
+ * FOLLOW-1364 (quiz data retention, ESC-086 C6) added one row: `app/api/cron/quiz-retention/route.ts`
+ * (1 site - the daily purge of `quiz_runs` / `quiz_completions` failing; a missing `quiz_runs` is
+ * tolerated and not captured). No existing row moved. It is now **111 in 71**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -231,7 +235,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 110;
+const TOTAL_SITES = 111;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -470,6 +474,13 @@ const REGISTER: CaptureSiteGroup[] = [
     sites: 2,
     meaning:
       'The monthly quiz-accuracy watch either could not read `quiz_runs` (`quiz_accuracy_read_failed`, exception) or raised its PREREG §7 warning (named signal `quiz accuracy monthly warning`): the previous UTC month had >= 100 decided runs and a Wilson upper bound < 0.90 or a response rate < 60 %. (FOLLOW-1363)',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'app/api/cron/quiz-retention/route.ts',
+    sites: 1,
+    meaning:
+      'The daily quiz retention purge failed (`quiz_retention_failed`, tags.sqlstate): `quiz_runs` / `quiz_completions` rows older than 13 months were not deleted this run - the ROPA retention promise is unenforced until it succeeds (FOLLOW-1364).',
     consumer: NO_CHANNEL,
   },
   {

@@ -28,6 +28,10 @@
     {
       "path": "/api/cron/quiz-accuracy-watch",
       "schedule": "30 3 1 * *"
+    },
+    {
+      "path": "/api/cron/quiz-retention",
+      "schedule": "15 4 * * *"
     }
   ]
 }

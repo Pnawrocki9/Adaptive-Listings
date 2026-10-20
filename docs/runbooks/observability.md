@@ -287,6 +287,12 @@ runs). The watch follows the most recently shown hash. Level `warning`, at most 
 the staff tab `/admin/tenants/[id]/quiz-accuracy` to see which condition fired; a definition change
 restarts the series | **none** |
 
+| `quiz_retention_failed` (exception, `tags.cron: quiz-retention`, `tags.sqlstate`) | the daily quiz
+retention purge (`/api/cron/quiz-retention`, FOLLOW-1364) threw something other than a missing
+`quiz_runs`; rows older than 13 months were not all deleted this run, so the ROPA retention promise
+is unenforced until a later run succeeds. The message carries code + SQLSTATE only. Re-run by hand
+with the cron secret | **none** |
+
 A `/api/adapt` pre-LLM stall has no named event any more (FOLLOW-1290 removed the segment timer):
 read it from p95 of the `POST /api/adapt` transaction in Sentry performance.
 

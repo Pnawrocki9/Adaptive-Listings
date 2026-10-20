@@ -71,7 +71,7 @@ export class QuizRunsTableMissingError extends Error {
  * table name must also appear in the chain's messages, so a missing `tenants` table (the FK target)
  * is not mistaken for a missing `quiz_runs`.
  */
-function isQuizRunsTableMissing(err: unknown): boolean {
+export function isQuizRunsTableMissing(err: unknown): boolean {
   let code = false;
   let named = false;
   let cursor: unknown = err;

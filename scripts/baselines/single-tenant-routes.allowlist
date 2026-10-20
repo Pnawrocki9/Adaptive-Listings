@@ -55,6 +55,7 @@ apps/control-plane/src/app/api/config/route.ts
 apps/control-plane/src/app/api/crm/outcome/route.ts
 apps/control-plane/src/app/api/cron/lift-snapshot/route.ts
 apps/control-plane/src/app/api/cron/quiz-accuracy-watch/route.ts
+apps/control-plane/src/app/api/cron/quiz-retention/route.ts
 apps/control-plane/src/app/api/dashboard/analytics/lift/export/route.ts
 apps/control-plane/src/app/api/dashboard/analytics/lift/history/route.ts
 apps/control-plane/src/app/api/dashboard/analytics/lift/route.ts

@@ -1831,24 +1831,8 @@ async function driveChatArm(browser) {
   const postOf = new WeakMap();
   const pending = [];
 
-  // FOLLOW-1369: the page's /api/quiz/public-config OPTIONS + GET with timings, from network events.
-  const configNet = { options: [], get: [] };
-  const configOf = new WeakMap();
   context.on('request', (req) => {
-    const m = req.method();
-    if ((m === 'GET' || m === 'OPTIONS') && req.url().includes('/api/quiz/public-config')) {
-      const e = {
-        method: m,
-        startedMono: performance.now(),
-        finishedMono: null,
-        status: null,
-        failure: null,
-      };
-      configOf.set(req, e);
-      (m === 'GET' ? configNet.get : configNet.options).push(e);
-      return;
-    }
-    if (m !== 'POST') return;
+    if (req.method() !== 'POST') return;
     let sent = null;
     try {
       sent = JSON.parse(req.postData() ?? 'null');
@@ -2882,8 +2866,24 @@ async function openAc10Session(browser) {
   const ingest = [];
   const pings = [];
   const pending = [];
+  // FOLLOW-1369: the page's /api/quiz/public-config OPTIONS + GET with timings, from network events.
+  const configNet = { options: [], get: [] };
+  const configOf = new WeakMap();
   context.on('request', (req) => {
-    if (req.method() !== 'POST') return;
+    const m = req.method();
+    if ((m === 'GET' || m === 'OPTIONS') && req.url().includes('/api/quiz/public-config')) {
+      const e = {
+        method: m,
+        startedMono: performance.now(),
+        finishedMono: null,
+        status: null,
+        failure: null,
+      };
+      configOf.set(req, e);
+      (m === 'GET' ? configNet.get : configNet.options).push(e);
+      return;
+    }
+    if (m !== 'POST') return;
     let sent = null;
     try {
       sent = JSON.parse(req.postData() ?? 'null');

@@ -154,7 +154,7 @@ const ERROR_CASES: Record<QuizLintErrorCode, () => QuizDefinition> = {
   },
   confirm_alternative_unnamed: () => {
     const def = v2();
-    delete def.confirm?.names_i18n.student_parent?.pl; // alternative of yield_hunter
+    delete def.confirm?.names_i18n.commercial_investor?.pl; // alternative of yield_hunter
     return def;
   },
   confirm_alternative_duplicate: () => {
@@ -320,14 +320,14 @@ describe('lintQuizDefinition — errors, one case per code', () => {
   it('flags an unnamed or blank-named alternative and a repeated one, by index', () => {
     const def = v2();
     if (!def.confirm) throw new Error('fixture');
-    delete def.confirm.names_i18n.student_parent; // an alternative of yield_hunter
+    delete def.confirm.names_i18n.commercial_investor; // an alternative of yield_hunter
     def.confirm.alternatives.downsizer = ['family_buyer', 'family_buyer', 'second_home_buyer'];
     const { errors } = lintQuizDefinition(def);
     const at = (code: string) => errors.filter((e) => e.code === code).map((e) => e.path.join('.'));
     expect(at('confirm_alternative_unnamed')).toEqual(
       expect.arrayContaining([
         'confirm.alternatives.yield_hunter.2',
-        'confirm.alternatives.first_time_buyer.2',
+        'confirm.alternatives.flip_investor.2',
       ]),
     );
     expect(at('confirm_alternative_duplicate')).toEqual(['confirm.alternatives.downsizer.1']);

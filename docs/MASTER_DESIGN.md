@@ -3347,7 +3347,7 @@ akceptuje CEO w symulatorze przy KQ2; polskie warianty są neutralne płciowo ta
 | `short` | Holiday / short-term rental (e.g. Airbnb) | Najem krótkoterminowy / wakacyjny (np. Airbnb) | `vacation_rental_investor` |
 | `flip` | Renovate and resell | Remont i sprzedaż z zyskiem | `flip_investor` |
 | `commercial` | Commercial premises (shop, office, warehouse) | Lokal komercyjny (sklep, biuro, magazyn) | `commercial_investor` |
-| `inv_undecided` | Not decided yet | Jeszcze nie wiem | `yield_hunter` (default, raportowany osobno) |
+| `inv_undecided` | Not decided yet | Nie mam jeszcze planu | `yield_hunter` (default, raportowany osobno) |
 | `t_*` (pytanie) | Anything else that applies? (optional — tick all that fit) | Coś jeszcze się zgadza? (opcjonalnie — zaznacz wszystko, co pasuje) | — |
 | `t_*` (wyjście) | None of these | Żadne z powyższych | czyści pozostałe |
 | `has_children` | Children will live with me | Będą ze mną mieszkać dzieci | cecha |
@@ -3366,8 +3366,8 @@ akceptuje CEO w symulatorze przy KQ2; polskie warianty są neutralne płciowo ta
 Zdania potwierdzenia powtarzają w drugiej osobie fakty, które przypięły wynik (reguła etykietowania
 z §E.4.3). Raport A podaje dwa wzory: `first_time_buyer` — „First-time buyer — you're buying your
 first own home where you live now.” / „Pierwszy własny dom — kupujesz swoje pierwsze mieszkanie lub
-dom tam, gdzie mieszkasz.”; `family_buyer` (dla kupującego „Moving up” / „Przeprowadzka na
-lepsze”) — „Moving up — you've owned before and want more space or a better home.” (PL wymaga
+dom tam, gdzie mieszkasz.”; `family_buyer` (dla kupującego „Moving up” / „Większe lub
+lepsze mieszkanie”) — „Moving up — you've owned before and want more space or a better home.” (PL wymaga
 wersji neutralnej płciowo). Pozostałe 10 par pisze pakiet Q1 z reguł etykietowania.
 
 **Właściciel (Rule H):** Q1 (schemat, `traits.ts`, `DEFAULT_QUIZ_DEFINITION_V2` EN+PL, redakcja
@@ -3380,18 +3380,18 @@ przypisać ten sam archetyp:
 
 | Wynik | Reguła etykietowania | Przypięty przez | 3 najbliższe alternatywy (ekran korekty) |
 |---|---|---|---|
-| `yield_hunter` (wchłania `portfolio_builder`) | Dochód z najmu długoterminowego; nikt z domowników tam nie mieszka | `invest` → `long` (lub `inv_undecided`) | vacation_rental_investor, flip_investor, student_parent |
+| `yield_hunter` (wchłania `portfolio_builder`) | Dochód z najmu długoterminowego; nikt z domowników tam nie mieszka | `invest` → `long` (lub `inv_undecided`) | vacation_rental_investor, flip_investor, commercial_investor |
 | `vacation_rental_investor` | Dochód z najmu krótkoterminowego / wakacyjnego; własne pobyty najwyżej okazjonalne | `invest` → `short` | second_home_buyer, yield_hunter, flip_investor |
 | `flip_investor` | Kupuje, by wyremontować i sprzedać, nie by trzymać | `invest` → `flip` | yield_hunter, vacation_rental_investor, commercial_investor |
 | `commercial_investor` | Lokal niemieszkalny (sklep, biuro, magazyn) jako inwestycja (app ma typy OFFICE/RETAIL/WAREHOUSE/COMMERCIAL) | `invest` → `commercial` | yield_hunter, flip_investor, vacation_rental_investor |
-| `first_time_buyer` | Główny dom w kraju zamieszkania; nigdy nie miał własnego | `main_here` → `first` | family_buyer, lifestyle_expat, student_parent |
+| `first_time_buyer` | Główny dom w kraju zamieszkania; nigdy nie miał własnego | `main_here` → `first` | family_buyer, second_home_buyer, yield_hunter |
 | `family_buyer` (wchłania `upsizer`; dla kupującego „przeprowadzka na lepsze”) | Główny dom w kraju zamieszkania; miał własne, chce więcej lub lepiej | `main_here` → `up` | first_time_buyer, downsizer, lifestyle_expat |
 | `downsizer` | Główny dom w kraju zamieszkania; miał własne, chce mniej lub łatwiej w utrzymaniu | `main_here` → `down` | retiree_relocator, family_buyer, second_home_buyer |
 | `retiree_relocator` | Główny dom w nowym kraju; emerytura | `main_move` → `retire` | second_home_buyer, downsizer, diaspora_buyer |
-| `lifestyle_expat` | Główny dom w nowym kraju; pracuje dalej (etat, firma, zdalnie) | `main_move` → `work` | retiree_relocator, diaspora_buyer, first_time_buyer |
+| `lifestyle_expat` | Główny dom w nowym kraju; pracuje dalej (etat, firma, zdalnie) | `main_move` → `work` | retiree_relocator, diaspora_buyer, second_home_buyer |
 | `diaspora_buyer` (zawężony) | Wraca do kraju pochodzenia; „wracam” wygrywa z „emerytura” | `main_move` → `return` | lifestyle_expat, retiree_relocator, second_home_buyer |
 | `second_home_buyer` | Sam korzysta część roku; główny dom gdzie indziej; wynajem w czasie nieobecności drugorzędny | `second` | vacation_rental_investor, retiree_relocator, lifestyle_expat |
-| `student_parent` | Dla własnego dziecka na czas studiów | `student` | yield_hunter, first_time_buyer, family_buyer |
+| `student_parent` | Dla własnego dziecka na czas studiów | `student` | second_home_buyer, yield_hunter, first_time_buyer |
 | `neutral` | Cel nie podany | `unsure` | — (bez potwierdzenia) |
 
 **Reguły pierwszeństwa (stała kolejność):** (1) o wyniku decyduje, kto mieszka tam przez większość

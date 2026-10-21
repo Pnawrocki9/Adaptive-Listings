@@ -246,7 +246,7 @@ function buildDefaultQuizDefinitionV2(): QuizDefinition {
           answer(
             'inv_undecided',
             'Not decided yet',
-            'Jeszcze nie wiem',
+            'Nie mam jeszcze planu',
             { yield_hunter: 1 },
             't_invest',
           ),
@@ -316,7 +316,7 @@ function buildDefaultQuizDefinitionV2(): QuizDefinition {
           pl: 'Inwestycja w lokal komercyjny',
         },
         first_time_buyer: { en: 'First-time buyer', pl: 'Pierwszy własny dom' },
-        family_buyer: { en: 'Moving up', pl: 'Przeprowadzka na lepsze' },
+        family_buyer: { en: 'Moving up', pl: 'Większe lub lepsze mieszkanie' },
         downsizer: { en: 'Downsizing', pl: 'Przeprowadzka na mniejsze' },
         retiree_relocator: { en: 'Retirement move', pl: 'Przeprowadzka na emeryturę' },
         lifestyle_expat: {
@@ -341,8 +341,8 @@ function buildDefaultQuizDefinitionV2(): QuizDefinition {
           pl: 'kupujesz, żeby wyremontować nieruchomość i sprzedać ją z zyskiem, a nie żeby ją zatrzymać',
         },
         commercial_investor: {
-          en: "you're buying commercial premises — a shop, office or warehouse — as an investment",
-          pl: 'kupujesz lokal komercyjny — sklep, biuro lub magazyn — jako inwestycję',
+          en: "you're buying a shop, office or warehouse as an investment",
+          pl: 'kupujesz sklep, biuro lub magazyn jako inwestycję',
         },
         first_time_buyer: {
           en: "you're buying your first own home where you live now",
@@ -378,18 +378,18 @@ function buildDefaultQuizDefinitionV2(): QuizDefinition {
         },
       },
       alternatives: {
-        yield_hunter: ['vacation_rental_investor', 'flip_investor', 'student_parent'],
+        yield_hunter: ['vacation_rental_investor', 'flip_investor', 'commercial_investor'],
         vacation_rental_investor: ['second_home_buyer', 'yield_hunter', 'flip_investor'],
         flip_investor: ['yield_hunter', 'vacation_rental_investor', 'commercial_investor'],
         commercial_investor: ['yield_hunter', 'flip_investor', 'vacation_rental_investor'],
-        first_time_buyer: ['family_buyer', 'lifestyle_expat', 'student_parent'],
+        first_time_buyer: ['family_buyer', 'second_home_buyer', 'yield_hunter'],
         family_buyer: ['first_time_buyer', 'downsizer', 'lifestyle_expat'],
         downsizer: ['retiree_relocator', 'family_buyer', 'second_home_buyer'],
         retiree_relocator: ['second_home_buyer', 'downsizer', 'diaspora_buyer'],
-        lifestyle_expat: ['retiree_relocator', 'diaspora_buyer', 'first_time_buyer'],
+        lifestyle_expat: ['retiree_relocator', 'diaspora_buyer', 'second_home_buyer'],
         diaspora_buyer: ['lifestyle_expat', 'retiree_relocator', 'second_home_buyer'],
         second_home_buyer: ['vacation_rental_investor', 'retiree_relocator', 'lifestyle_expat'],
-        student_parent: ['yield_hunter', 'first_time_buyer', 'family_buyer'],
+        student_parent: ['second_home_buyer', 'yield_hunter', 'first_time_buyer'],
       },
     },
   };

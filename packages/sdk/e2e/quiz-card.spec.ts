@@ -150,3 +150,140 @@ test.describe('quiz card — fits short viewports (FOLLOW-1371)', () => {
     });
   }
 });
+
+/** Text of the focused card button ('' when focus is elsewhere; Playwright pierces the root). */
+async function focused(page: Page): Promise<string> {
+  const f = page.locator('.estalara-quiz-card button:focus');
+  return (await f.count()) > 0 ? ((await f.first().textContent()) ?? '') : '';
+}
+
+/** WCAG contrast of an `rgb(r, g, b)` colour on white. */
+function onWhite(rgb: string): number {
+  const [r, g, b] = (rgb.match(/\d+/g) ?? []).slice(0, 3).map((v) => {
+    const c = Number(v) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 1.05 / (0.2126 * (r ?? 1) + 0.7152 * (g ?? 1) + 0.0722 * (b ?? 1) + 0.05);
+}
+
+/** The grey the card's secondary text renders in (#6b7280). */
+const SECONDARY_TEXT = 'rgb(107, 114, 128)';
+
+/** Answer the served tree to its result screen: main_here → first → no traits. */
+async function toResult(page: Page): Promise<void> {
+  await page.locator('.estalara-quiz-answer').first().click();
+  await page.locator('.estalara-quiz-answer').first().click();
+  await page.locator('.estalara-quiz-cta').click();
+  await page.locator('.estalara-quiz-cta').click();
+  await expect(page.locator('.estalara-quiz-result')).toBeVisible();
+}
+
+test.describe('quiz card — accessibility (FOLLOW-1372)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 });
+    await page.route(CONFIG_GLOB, (route) =>
+      fulfillJson(
+        route,
+        served({ brand: { primary_color: '#1a73e8', logo_url: null, white_label: false } }),
+      ),
+    );
+    await open(page);
+    await expect(card(page)).toBeVisible({ timeout: 8_000 });
+  });
+
+  test('a non-modal dialog named by the question', async ({ page }) => {
+    await expect(card(page)).toHaveAttribute('role', 'dialog');
+    await expect(card(page)).not.toHaveAttribute('aria-modal', /.*/);
+    await expect(card(page)).toHaveAccessibleName('What will this property be for?');
+  });
+
+  test('Tab reaches EN | PL; Enter and Space switch it and focus stays on the switch', async ({
+    page,
+  }) => {
+    let reached = false;
+    for (let i = 0; i < 12 && !reached; i++) {
+      await page.keyboard.press('Tab');
+      reached = (await focused(page)) === 'EN';
+    }
+    expect(reached).toBe(true);
+    await page.keyboard.press('Tab');
+    expect(await focused(page)).toBe('PL');
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.estalara-quiz-lang button').nth(1)).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(page.locator('.estalara-quiz-question')).toHaveText(
+      'Do czego ma służyć ta nieruchomość?',
+    );
+    expect(await focused(page)).toBe('PL');
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Space');
+    await expect(page.locator('.estalara-quiz-lang button').first()).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(await focused(page)).toBe('EN');
+  });
+
+  test('Escape on a question = ×: the card closes and the run is `dismissed`', async ({ page }) => {
+    const runs: string[] = [];
+    page.on('request', (r) => {
+      if (r.url().endsWith('/quiz/run')) {
+        runs.push((JSON.parse(r.postData() ?? '{}') as { event?: string }).event ?? '');
+      }
+    });
+    await page.locator('.estalara-quiz-answer').first().focus();
+    await page.keyboard.press('Escape');
+    await expect(card(page)).toHaveCount(0);
+    // (`shown` went out before this listener, at open.)
+    await expect.poll(() => runs).toEqual(['dismissed']);
+  });
+
+  test('Escape on the result screen = ×: the run is `unconfirmed`', async ({ page }) => {
+    const runs: string[] = [];
+    page.on('request', (r) => {
+      if (r.url().endsWith('/quiz/run')) {
+        runs.push((JSON.parse(r.postData() ?? '{}') as { event?: string }).event ?? '');
+      }
+    });
+    await toResult(page);
+    await page.locator('.estalara-quiz-confirm').focus();
+    await page.keyboard.press('Escape');
+    await expect(card(page)).toHaveCount(0);
+    await expect.poll(() => runs).toEqual(['completed', 'unconfirmed']);
+  });
+
+  test('touch targets are at least 44 px', async ({ page }) => {
+    for (const sel of ['.estalara-quiz-answer', '.estalara-quiz-close']) {
+      const b = await page.locator(sel).first().boundingBox();
+      expect(b?.height, sel).toBeGreaterThanOrEqual(44);
+    }
+    for (const b of await page.locator('.estalara-quiz-lang button').all()) {
+      const bb = await b.boundingBox();
+      expect(bb?.height).toBeGreaterThanOrEqual(44);
+      expect(bb?.width).toBeGreaterThanOrEqual(44);
+    }
+    const close = await page.locator('.estalara-quiz-close').boundingBox();
+    expect(close?.width).toBeGreaterThanOrEqual(44);
+    await toResult(page);
+    for (const sel of ['.estalara-quiz-confirm', '.estalara-quiz-reject']) {
+      const b = await page.locator(sel).boundingBox();
+      expect(b?.height, sel).toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  test('Skip, progress, "Powered by" and the unpressed language are at least 4.5:1', async ({
+    page,
+  }) => {
+    for (const sel of [
+      '.estalara-quiz-skip',
+      '.estalara-quiz-progress',
+      '.estalara-quiz-attribution',
+      '.estalara-quiz-lang [aria-pressed=false]',
+    ]) {
+      await expect(page.locator(sel).first(), sel).toHaveCSS('color', SECONDARY_TEXT);
+    }
+    expect(onWhite(SECONDARY_TEXT)).toBeGreaterThanOrEqual(4.5);
+  });
+});

@@ -74,6 +74,9 @@ export interface QuizRunOutcome {
   language: QuizLanguage;
 }
 
+/** Id of the line that names the dialog (scoped to our shadow root) [FOLLOW-1372]. */
+const QUESTION_ID = 'estalara-quiz-q';
+
 export interface QuizWidgetConfig {
   accentColor: string;
   /** `quiz_config.language`; a buyer's EN | PL switcher choice (sessionStorage) overrides it. */
@@ -253,25 +256,27 @@ export function renderQuizWidget(
     style.textContent =
       `.estalara-quiz-overlay{position:fixed;${placementToCss(place)};width:min(400px,calc(100vw - 32px));z-index:2147483647;pointer-events:auto}` +
       `.estalara-quiz-card{background:#fff;border-radius:16px;padding:8px 24px 24px;width:100%;${fit('vh')}${fit('dvh')}overflow-y:auto;overscroll-behavior:contain;box-shadow:0 8px 32px rgba(0,0,0,.22)}` +
-      '.estalara-quiz-head{position:sticky;top:-8px;display:flex;align-items:center;margin:-8px -8px 4px;padding:4px 0;background:#fff}' +
-      '.estalara-quiz-close{margin-left:auto;background:0 0;border:none;font-size:20px;cursor:pointer;color:#6b7280;line-height:1}' +
+      '.estalara-quiz-head{position:sticky;top:-8px;display:flex;align-items:center;margin:-8px -16px 4px;background:#fff}' +
+      '.estalara-quiz-close{margin-left:auto;font-size:20px;color:#6b7280;line-height:1}' +
       '.estalara-quiz-lang{display:flex}' +
-      '.estalara-quiz-lang button{background:0 0;border:none;padding:2px 4px;font-size:12px;cursor:pointer;color:#9ca3af}' +
+      '.estalara-quiz-lang button{padding:2px 4px;font-size:12px;color:#6b7280}' +
+      // FOLLOW-1372: 44 px touch targets; × and EN | PL share the chrome-less button look.
+      '.estalara-quiz-close,.estalara-quiz-lang button{min-width:44px;min-height:44px;background:0 0;border:none;cursor:pointer}' +
       '.estalara-quiz-lang [aria-pressed=true]{color:#111827;font-weight:600}' +
       '.estalara-quiz-logo{display:block;max-height:32px;max-width:160px;margin:0 auto 16px;object-fit:contain}' +
       '.estalara-quiz-intro{font-size:14px;line-height:1.5;color:#4b5563;margin:0 0 14px}' +
       '.estalara-quiz-question{font-size:16px;font-weight:600;color:#111827;margin:0 0 16px}' +
       '.estalara-quiz-result{font-weight:400;line-height:1.5}' +
       '.estalara-quiz-answers{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}' +
-      `${choice}{padding:12px 16px;border:2px solid #e5e7eb;border-radius:10px;background:#fff;font-size:14px;text-align:left;cursor:pointer;transition:border-color .15s,background .15s;color:#374151}` +
+      `${choice}{min-height:44px;padding:12px 16px;border:2px solid #e5e7eb;border-radius:10px;background:#fff;font-size:14px;text-align:left;cursor:pointer;transition:border-color .15s,background .15s;color:#374151}` +
       `${choice.replace(/,|$/g, ':hover,')}.estalara-quiz-answer.selected{border-color:${accent};background:#f0f4ff}` +
       ".estalara-quiz-answer[role=checkbox]::before{content:'\\2610  '}" +
       ".estalara-quiz-answer[aria-checked=true]::before{content:'\\2611  '}" +
-      `.estalara-quiz-cta{width:100%;padding:12px;background:${accent};color:#fff;border:none;border-radius:9999px;font-size:15px;font-weight:600;cursor:pointer;opacity:.5;transition:opacity .15s}` +
+      `.estalara-quiz-cta{width:100%;min-height:44px;padding:12px;background:${accent};color:#fff;border:none;border-radius:9999px;font-size:15px;font-weight:600;cursor:pointer;opacity:.5;transition:opacity .15s}` +
       '.estalara-quiz-cta:enabled{opacity:1}' +
-      '.estalara-quiz-skip{display:block;margin:12px auto 0;background:0 0;border:none;color:#9ca3af;font-size:13px;cursor:pointer;text-decoration:underline}' +
-      '.estalara-quiz-progress{font-size:12px;color:#9ca3af;margin-bottom:12px}' +
-      '.estalara-quiz-attribution{display:block;margin:14px auto 0;text-align:center;font-size:10px;color:#b0b4bd;letter-spacing:.02em}';
+      '.estalara-quiz-skip{display:block;min-height:44px;margin:4px auto 0;background:0 0;border:none;color:#6b7280;font-size:13px;cursor:pointer;text-decoration:underline}' +
+      '.estalara-quiz-progress{font-size:12px;color:#6b7280;margin-bottom:12px}' +
+      '.estalara-quiz-attribution{display:block;margin:6px auto 0;text-align:center;font-size:10px;color:#6b7280;letter-spacing:.02em}';
     shadowRoot.appendChild(style);
 
     // ── State ──────────────────────────────────────────────────────────────────
@@ -302,6 +307,13 @@ export function renderQuizWidget(
     overlay.className = 'estalara-quiz-overlay';
     const card = document.createElement('div');
     card.className = 'estalara-quiz-card';
+    // FOLLOW-1372: a NON-modal dialog (no focus trap, no focus moved on open — the card opens
+    // on its own), named by the current question / result text; Escape = × on every step.
+    card.setAttribute('role', 'dialog');
+    card.setAttribute('aria-labelledby', QUESTION_ID);
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeBtn.click();
+    });
 
     function el<K extends keyof HTMLElementTagNameMap>(
       tag: K,
@@ -317,6 +329,24 @@ export function renderQuizWidget(
       const btn = el('button', cls, content);
       btn.addEventListener('click', onClick);
       return btn;
+    }
+    /** The step's question / result line — it names the dialog (FOLLOW-1372). */
+    function title(cls: string, content?: string): HTMLParagraphElement {
+      const p = el('p', `estalara-quiz-question${cls}`, content);
+      p.id = QUESTION_ID;
+      return p;
+    }
+    /**
+     * Paint `next` as the current screen. A keyboard user whose focus was in the card keeps it on
+     * the button at the same position (the EN | PL switch, a selected answer); focus outside the
+     * card is never taken (FOLLOW-1372).
+     */
+    function show(next: () => void): void {
+      const buttons = (): NodeListOf<HTMLButtonElement> => card.querySelectorAll('button');
+      const at = [...buttons()].findIndex((b) => b === shadowRoot.activeElement);
+      screen = next;
+      next();
+      if (at >= 0) (buttons()[at] ?? closeBtn).focus();
     }
     const ms = (since: number): number =>
       Math.min(QUIZ_RUN_MAX_MS, Math.round((Date.now() - since) / 100) * 100);
@@ -404,8 +434,7 @@ export function renderQuizWidget(
       const ns = nextStep(def, { path });
       if (ns.kind === 'question') {
         currentId = ns.questionId;
-        screen = renderQuestion;
-        screen();
+        show(renderQuestion);
         return;
       }
       leaf = ns.leaf;
@@ -418,8 +447,7 @@ export function renderQuizWidget(
       });
       if (ns.kind === 'confirm') {
         resultAt = Date.now();
-        screen = renderResult;
-        screen();
+        show(renderResult);
       } else {
         finish(null, leaf);
       }
@@ -432,11 +460,13 @@ export function renderQuizWidget(
       const header = el('div', 'estalara-quiz-head');
       if (langs.length > 1) {
         const switcher = el('div', 'estalara-quiz-lang');
+        switcher.setAttribute('role', 'group');
+        switcher.setAttribute('aria-label', 'Language');
         for (const l of langs) {
           const b = button('', l.toUpperCase(), () => {
             lang = l;
             writeQuizLanguage(l);
-            screen();
+            show(screen);
           });
           b.setAttribute('aria-pressed', String(l === lang));
           switcher.appendChild(b);
@@ -480,7 +510,7 @@ export function renderQuizWidget(
       );
       // FOLLOW-1015: intro line on the first step only (the card opened on its own).
       if (isRoot) card.appendChild(el('p', 'estalara-quiz-intro', chrome.intro));
-      card.appendChild(el('p', 'estalara-quiz-question', text(q.prompt_i18n)));
+      card.appendChild(title('', text(q.prompt_i18n)));
 
       const answers = el('div', 'estalara-quiz-answers');
       const option = (label: string, on: boolean, onClick: () => void): void => {
@@ -509,7 +539,7 @@ export function renderQuizWidget(
           } else {
             selected = idx;
           }
-          renderQuestion();
+          show(renderQuestion);
         });
       });
       // The trait screen's exclusive "None of these" is chrome, not part of the definition.
@@ -517,7 +547,7 @@ export function renderQuizWidget(
         option(chrome.none, none, () => {
           none = !none;
           ticks = [];
-          renderQuestion();
+          show(renderQuestion);
         });
       }
       card.appendChild(answers);
@@ -545,7 +575,7 @@ export function renderQuizWidget(
     function renderResult(): void {
       const chrome = CHROME_LABELS[lang];
       head();
-      const p = el('p', 'estalara-quiz-question estalara-quiz-result');
+      const p = title(' estalara-quiz-result');
       p.append(
         `${chrome.basedOn} `,
         el('strong', '', text(confirm?.names_i18n[leaf])),
@@ -558,8 +588,7 @@ export function renderQuizWidget(
           resolve('confirmed', leaf, leaf);
         }),
         button('estalara-quiz-reject', chrome.no, () => {
-          screen = renderCorrection;
-          screen();
+          show(renderCorrection);
           card.scrollTop = 0;
         }),
       );
@@ -570,7 +599,7 @@ export function renderQuizWidget(
     function renderCorrection(): void {
       const chrome = CHROME_LABELS[lang];
       head();
-      card.appendChild(el('p', 'estalara-quiz-question estalara-quiz-result', chrome.which));
+      card.appendChild(title(' estalara-quiz-result', chrome.which));
       // The alternatives are canonical ids (serve-schema guardrail 5).
       offered = (confirm?.alternatives[leaf] ?? []).filter(
         (a) => confirm?.names_i18n[a],

@@ -620,11 +620,10 @@ export const PresentationConfigResponseSchema = QuizPublicConfigResponseSchema.e
    */
   opt_out_widget: OptOutWidgetConfigSchema.optional(),
   /**
-   * Quiz-definition slice (FOLLOW-639). The tenant's ACTIVE editable quiz tree. Absent →
-   * SDK uses its built-in default tree (`DEFAULT_QUIZ_DEFINITION`), byte-identical to
-   * pre-ADR-0019 (ADR-0019 D4/D5). The producer
-   * (`apps/control-plane/src/app/api/quiz/public-config/route.ts`) emits this only when a
-   * validated active `quiz_definitions` row exists; the consumer
+   * Quiz-definition slice (FOLLOW-639). The tenant's ACTIVE editable quiz tree. Absent → the
+   * SDK shows no quiz on that pageview (FOLLOW-1370: it has no built-in tree). The producer
+   * (`apps/control-plane/src/app/api/quiz/public-config/route.ts`) emits it on every `db` answer
+   * (the active row, else `DEFAULT_QUIZ_DEFINITION_V2`, FOLLOW-1358); the consumer
    * (`packages/sdk/src/ui/quiz-widget.ts` walker via `index.ts` `mergeQuizConfig`) walks it.
    */
   quiz_definition: QuizDefinitionSchema.optional(),

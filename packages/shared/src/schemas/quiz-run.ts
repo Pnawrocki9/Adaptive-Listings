@@ -84,7 +84,7 @@ function buildQuizRunPingSchema() {
        */
       consent_state: ConsentStateSchema.optional(),
       language: QuizLanguageSchema.optional(),
-      /** `sha-256` hex of the served definition, or a fallback label such as `builtin-en-v2`. */
+      /** `sha-256` hex of the served definition, or a label (`unhashed`, older `builtin-en-v2`). */
       definition_hash: z
         .string()
         .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/)

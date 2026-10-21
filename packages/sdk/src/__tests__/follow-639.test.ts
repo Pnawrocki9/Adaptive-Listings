@@ -13,7 +13,7 @@ import type { PresentationConfigResponse, QuizDefinition } from '@estalara/share
 
 import { mergeQuizConfig } from '../index.js';
 import type { SdkConfig } from '../core/config.js';
-import { DEFAULT_QUIZ_DEFINITION, resolveArchetypeFromPath } from '../ui/quiz-widget.js';
+import { resolveArchetypeFromPath } from '../ui/quiz-widget.js';
 
 const baseConfig: SdkConfig = {
   apiKey: 'k',
@@ -60,19 +60,16 @@ describe('FOLLOW-639 — quiz_definition overlay + walk', () => {
 
   it('walking the served definition resolves the custom leaf archetype', () => {
     const merged = mergeQuizConfig(baseConfig, response({ quiz_definition: CUSTOM_DEFINITION }));
-    const def = merged.quizDefinition ?? DEFAULT_QUIZ_DEFINITION;
+    const def = merged.quizDefinition;
+    if (!def) throw new Error('no served definition');
     // Choosing answer index 0 (the luxury answer) resolves to luxury_buyer.
     expect(resolveArchetypeFromPath(def, [0])).toBe('luxury_buyer');
     // The neutral skip (index 1, all-zero) resolves to neutral (FOLLOW-554 guard downstream).
     expect(resolveArchetypeFromPath(def, [1])).toBe('neutral');
   });
 
-  it('absent slice → SdkConfig has no quizDefinition → SDK uses the built-in default', () => {
+  it('absent slice → SdkConfig has no quizDefinition (FOLLOW-1370: no card, no built-in)', () => {
     const merged = mergeQuizConfig(baseConfig, response());
     expect(merged.quizDefinition).toBeUndefined();
-    const def = merged.quizDefinition ?? DEFAULT_QUIZ_DEFINITION;
-    // FOLLOW-1357: the built-in is the v3.0 tree (EN) — Investment → long-term rental → no trait.
-    expect(def).toBe(DEFAULT_QUIZ_DEFINITION);
-    expect(resolveArchetypeFromPath(def, [3, 0, []])).toBe('yield_hunter');
   });
 });

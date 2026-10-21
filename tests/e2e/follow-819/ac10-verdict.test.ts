@@ -399,12 +399,12 @@ describe('FOLLOW-1361 — RED: the quiz_runs row', () => {
   });
 });
 
-describe('FOLLOW-1361 — RED: the built-in tree, or no served tree at all', () => {
-  it('a row on builtin-en-v2 is RED (the SDK walked its fallback, not the served tree)', () => {
+describe('FOLLOW-1361 — RED: a tree other than the served one, or no served tree at all', () => {
+  it('a row on a label hash (an older SDK built-in, builtin-en-v2) is RED: not the served tree', () => {
     const o = broken((x) => {
       x.sessions.confirm.row = row({ definition_hash: 'builtin-en-v2' });
     });
-    expect(unmet(o)).toContain('a:builtinTreeWalked');
+    expect(unmet(o)).toContain('a:definitionHashNotServed=builtin-en-v2');
   });
 
   it('a row on another sha-256 than the served one is RED', () => {
@@ -637,15 +637,15 @@ describe('FOLLOW-1361 — UNMEASURED only on a holdout draw of (a) or (b)', () =
 
 describe('FOLLOW-1369 — an unserved quiz config is a precondition, not an SDK verdict', () => {
   const T0 = 1000;
-  const builtinPing = [{ event: 'shown', definition_hash: 'builtin-en-v2' }];
-  /** A sub-session whose card walked the built-in tree. */
+  /** A sub-session whose card never mounted (FOLLOW-1370: no served definition, no card). */
   const unserved = (x: Obs, kind: 'confirm' | 'correct' | 'dismiss', configNet: object): void => {
     x.sessions[kind] = {
       ...x.sessions[kind],
+      quizShown: false,
       resultShown: false,
       leaf: null,
-      row: row({ definition_hash: 'builtin-en-v2' }),
-      pings: builtinPing,
+      row: null,
+      pings: [],
       configNet,
     } as never;
   };
@@ -672,7 +672,7 @@ describe('FOLLOW-1369 — an unserved quiz config is a precondition, not an SDK 
     ],
   };
 
-  it('shown ping builtin-en-v2 and the GET never completed → the ONLY unmet entry, UNMEASURED:config', () => {
+  it('no card and the GET never completed → the ONLY unmet entry, UNMEASURED:config', () => {
     const o = broken((x) => {
       unserved(x, 'confirm', neverCompleted);
     });
@@ -698,18 +698,19 @@ describe('FOLLOW-1369 — an unserved quiz config is a precondition, not an SDK 
     expect(gradeRun([asResult(evaluateAc10(o))], facts).results[0]?.verdict).toBe('UNMEASURED');
   });
 
-  it('the GET DID complete (200) yet the card used the built-in tree → RED, an SDK defect', () => {
+  it('the GET DID complete (200) yet no card mounted → RED, an SDK defect', () => {
     const o = broken((x) => {
       unserved(x, 'confirm', completed);
     });
-    expect(unmet(o)).toContain('a:builtinTreeWalked');
+    expect(unmet(o)).toContain('a:quizNotShown');
     expect(unmet(o).some((u) => u.includes('servedConfigNeverReachedBrowser'))).toBe(false);
     expect(gradeRun([asResult(evaluateAc10(o))], facts).results[0]?.verdict).toBe('FAIL');
   });
 
-  it('a shown ping on the SERVED hash is never an unserved config, whatever the GET did', () => {
+  it('a card that mounted is never an unserved config, whatever the GET did', () => {
     expect(
       servedConfigNeverReachedBrowser({
+        quizShown: true,
         pings: [{ event: 'shown', definition_hash: HASH }],
         configNet: neverCompleted,
       }),
@@ -926,7 +927,10 @@ describe('FOLLOW-1367 — evaluateServedQuizConfig(): the tree AC(10) walks is s
     ['a cold compile timeout', { status: null, body: null }],
     ['a 401', { status: 401, body: { error: 'Invalid API key' } }],
     ['a fallback answer', { status: 200, body: { ...ok, data_source: 'fallback' } }],
-    ['the built-in label', { status: 200, body: { ...ok, definition_hash: 'builtin-en-v2' } }],
+    [
+      'a label hash (older SDK built-in)',
+      { status: 200, body: { ...ok, definition_hash: 'builtin-en-v2' } },
+    ],
     ['no confirm block', { status: 200, body: { ...ok, quiz_definition: {} } }],
   ])('refuses %s', (_n, probe) => {
     expect(evaluateServedQuizConfig(probe).ok).toBe(false);

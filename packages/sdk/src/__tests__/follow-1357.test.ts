@@ -3,8 +3,9 @@
  * run identity, timings and the `POST /api/quiz/run` pings.
  *
  * Drives the REAL `renderQuizWidget` in a real (jsdom) shadow root with the served EN + PL
- * default (`DEFAULT_QUIZ_DEFINITION_V2`, which carries `confirm`) and the SDK built-in (which
- * does not), and the REAL `postQuizRunPing`. Every ping the widget reports is validated with the
+ * default (`DEFAULT_QUIZ_DEFINITION_V2`, which carries `confirm`) and an EN-only served row
+ * without `confirm` (fixture; the SDK has no built-in since FOLLOW-1370), and the REAL
+ * `postQuizRunPing`. Every ping the widget reports is validated with the
  * shared `QuizRunPingSchema` that package Q3 (FOLLOW-1358) parses.
  *
  * @module packages/sdk/src/__tests__/follow-1357.test
@@ -29,7 +30,8 @@ import { applyQuizLeaf, initIntentState } from '../core/intent.js';
 import type { CollectedEvent } from '../core/events.js';
 import { eraseCachedQuizConfig } from '../core/quiz-config.js';
 import { QUIZ_LANGUAGE_STORAGE_KEY } from '../ui/quiz-session-state.js';
-import { DEFAULT_QUIZ_DEFINITION, renderQuizWidget } from '../ui/quiz-widget.js';
+import { renderQuizWidget } from '../ui/quiz-widget.js';
+import { EN_ONLY_QUIZ_DEFINITION } from './fixtures/en-only-quiz-definition.js';
 import type { QuizResolvedArchetype, QuizRunOutcome, QuizWidgetConfig } from '../ui/quiz-widget.js';
 
 const SESSION_ID = 'a'.repeat(64);
@@ -170,7 +172,7 @@ describe('trait (multi) step', () => {
   });
 
   it('records number[] for the trait step and ends the walk (no confirm → done at once)', () => {
-    const h = mount(DEFAULT_QUIZ_DEFINITION);
+    const h = mount(EN_ONLY_QUIZ_DEFINITION);
     walk(h, 0, 1, [2, 0]); // main_here → up → premium + children
     expect(h.completed).toHaveLength(1);
     const [leaf, path, outcome] = h.completed[0] ?? [];
@@ -185,7 +187,7 @@ describe('trait (multi) step', () => {
   });
 
   it('"None of these" records an empty selection', () => {
-    const h = mount(DEFAULT_QUIZ_DEFINITION);
+    const h = mount(EN_ONLY_QUIZ_DEFINITION);
     walk(h, 2, null, [5]); // second → t_second → None (index 5 = chrome option)
     const [leaf, path, outcome] = h.completed[0] ?? [];
     expect(leaf).toBe('second_home_buyer');
@@ -390,7 +392,7 @@ describe('EN | PL language switcher', () => {
 
   it('a stored language the definition lacks is ignored', () => {
     sessionStorage.setItem(QUIZ_LANGUAGE_STORAGE_KEY, 'pl');
-    const h = mount(DEFAULT_QUIZ_DEFINITION, { language: 'en' });
+    const h = mount(EN_ONLY_QUIZ_DEFINITION, { language: 'en' });
     expect(question(h)).toBe('What will this property be for?');
     expect(q(h, '.estalara-quiz-lang')).toHaveLength(0);
   });
@@ -428,13 +430,13 @@ describe('run identity, timings and ping shapes', () => {
     expect(completed.step_ms).toHaveLength(3);
   });
 
-  it('the built-in reports builtin-en-v2 and a null version', () => {
-    const h = mount(DEFAULT_QUIZ_DEFINITION, {
+  it('no forwarded hash or version → `unhashed` and a null version (no built-in label)', () => {
+    const h = mount(EN_ONLY_QUIZ_DEFINITION, {
       definitionHash: undefined,
       definitionVersion: undefined,
     });
     expect(h.pings[0]).toMatchObject({
-      definition_hash: 'builtin-en-v2',
+      definition_hash: 'unhashed',
       definition_version: null,
     });
   });
@@ -597,7 +599,7 @@ describe('downstream shapes', () => {
     expect(payload.traits).toEqual(['has_children']);
   });
 
-  it('quiz.event accepts the new steps and fields, including the built-in hash', () => {
+  it("quiz.event accepts the new steps and fields, including an older SDK's built-in label", () => {
     const payload = {
       step: 'corrected',
       trigger: 'auto_open',

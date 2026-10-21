@@ -55,7 +55,7 @@ export interface BootContext {
   state: IntentState;
   /** Server-supplied intent-engine overrides, or SDK defaults (ADR-0012). */
   overrides: IntentEngineOverrides;
-  /** Set when the 1 s init config fetch failed: one 8 s retry, merged; null on failure [FOLLOW-1365]. */
+  /** The config request outliving the 1 s budget, merged; null on failure [FOLLOW-1369]. */
   lateConfig?: Promise<SdkConfig | null> | null;
   /** This instance's lifetime (FOLLOW-1306 F-24); aborted on teardown. */
   lifetime: AbortController;
@@ -283,7 +283,7 @@ export async function boot(queue: CollectedEvent[]): Promise<BootContext | null>
     }
 
     if (config.debug && (raced === 'slow' || raced === null)) {
-      console.warn('[Estalara] fetchQuizConfig returned null — using snippet/default fallback');
+      console.warn('[Estalara] quiz config not in within 1 s — snippet defaults for now');
     }
   }
 

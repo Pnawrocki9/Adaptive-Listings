@@ -3,9 +3,10 @@
  * self-confirmation + one correction, EN | PL switcher, run pings (MASTER_DESIGN §E.4 v3.0,
  * FOLLOW-1357; walker history: FOLLOW-639 / ADR-0019 D5).
  *
- * The answer→archetype mapping lives in DATA — a `QuizDefinition` (the tenant's served tree, or
- * the built-in `DEFAULT_QUIZ_DEFINITION`). The widget asks `nextStep` (`@estalara/shared`
- * `quiz-walk.ts`, the ONE walker shared with the admin simulator) what to show:
+ * The answer→archetype mapping lives in DATA — the tenant's served `QuizDefinition` (the SDK
+ * ships no built-in tree since FOLLOW-1370: no served definition, no card). The widget asks
+ * `nextStep` (`@estalara/shared` `quiz-walk.ts`, the ONE walker shared with the admin simulator)
+ * what to show:
  *   - `question` — a `single` question (root: a click commits; otherwise select then CTA) or a
  *     `multi` trait screen (checkboxes, chrome "None of these" exclusive, CTA always enabled;
  *     always the last question, recorded as `number[]`);
@@ -30,7 +31,6 @@
 
 import type {
   CanonicalArchetypeId,
-  QuizAnswer,
   QuizDefinition,
   QuizLanguage,
   QuizPathStep,
@@ -74,21 +74,18 @@ export interface QuizRunOutcome {
   language: QuizLanguage;
 }
 
-/** `definition_hash` the built-in fallback reports (the SDK never hashes, ESC-086 item 3). */
-const BUILTIN_QUIZ_DEFINITION_HASH = 'builtin-en-v2';
-
 export interface QuizWidgetConfig {
   accentColor: string;
   /** `quiz_config.language`; a buyer's EN | PL switcher choice (sessionStorage) overrides it. */
   language: QuizLanguage;
   /**
-   * The quiz tree to walk — the tenant's served `quiz_definition` slice, or
-   * `DEFAULT_QUIZ_DEFINITION` when the tenant configured none (ADR-0019 D4/D5).
+   * The quiz tree to walk — the tenant's served `quiz_definition` slice (ADR-0019 D5). The SDK
+   * has no built-in tree: no served definition → no card (FOLLOW-1370).
    */
   definition: QuizDefinition;
   /**
-   * Forwarded public-config `definition_hash` of the served definition. Absent →
-   * `'builtin-en-v2'` for the built-in default, `'unhashed'` for a served one [FOLLOW-1357].
+   * Forwarded public-config `definition_hash` of the served definition; absent → `'unhashed'`
+   * (the SDK never hashes, ESC-086 item 3) [FOLLOW-1357].
    */
   definitionHash?: string | undefined;
   /** Forwarded public-config `definition_version`; absent → `null` [FOLLOW-1357]. */
@@ -185,178 +182,6 @@ const CHROME_LABELS: Record<
   },
 };
 
-// ─── Built-in default definition — the v3.0 tree, EN only ─────────────────────
-
-/** A single-choice answer with EN text (the `answer()` shape of `quiz-default-v2.ts`). */
-function answer(
-  id: string,
-  en: string,
-  weights: Record<string, number>,
-  next: string | null,
-  traits?: TraitId[],
-): QuizAnswer {
-  return { id, label_i18n: { en }, weights, next, ...(traits ? { traits } : {}) };
-}
-
-/** A trait-screen answer: no weights, ends the walk, records `trait`. */
-function traitAnswer(trait: TraitId, en: string): QuizAnswer {
-  return answer(trait, en, {}, null, [trait]);
-}
-
-function buildDefaultQuizDefinition(): QuizDefinition {
-  const traitPrompt = { en: 'Anything else that applies? (optional — tick all that fit)' };
-  const children = traitAnswer('has_children', 'Children will live with me');
-  const wfh = traitAnswer('works_from_home', "I'll work from home 2+ days a week");
-  const premium = traitAnswer('premium', "I'm looking at the top end of the market");
-  const residency = traitAnswer(
-    'residency_goal',
-    'I want residency through this purchase (e.g. golden visa)',
-  );
-  const abroad = traitAnswer(
-    'buying_from_abroad',
-    'I live in a different country than the property',
-  );
-  return {
-    schema_version: 1,
-    root: 'q_purpose',
-    languages: ['en'],
-    questions: [
-      {
-        id: 'q_purpose',
-        prompt_i18n: { en: 'What will this property be for?' },
-        answers: [
-          answer('main_here', 'My main home, in the country where I live now', {}, 'q_home'),
-          answer(
-            'main_move',
-            "My main home, in a country I'm moving to (or back to)",
-            {},
-            'q_move',
-            ['buying_from_abroad'],
-          ),
-          answer(
-            'second',
-            "A holiday or second home — I'll mainly live elsewhere",
-            { second_home_buyer: 1 },
-            't_second',
-          ),
-          answer('invest', 'An investment — to rent out or resell', {}, 'q_invest'),
-          answer(
-            'student',
-            'A home for my child who is studying',
-            { student_parent: 1 },
-            't_student',
-          ),
-          answer('unsure', 'Not sure yet — just looking', {}, null),
-        ],
-      },
-      {
-        id: 'q_home',
-        prompt_i18n: { en: 'Which fits you best?' },
-        answers: [
-          answer('first', 'This will be my first own home', { first_time_buyer: 1 }, 't_home'),
-          answer(
-            'up',
-            "I've owned before — now I need more space or a better home",
-            { family_buyer: 1 },
-            't_home',
-          ),
-          answer(
-            'down',
-            "I've owned before — now I want something smaller and easier to look after",
-            { downsizer: 1 },
-            't_home',
-          ),
-        ],
-      },
-      {
-        id: 'q_move',
-        prompt_i18n: { en: 'Which describes you?' },
-        answers: [
-          answer('return', "I'm moving back to my home country", { diaspora_buyer: 1 }, 't_move'),
-          answer('retire', "I'm retired or about to retire", { retiree_relocator: 1 }, 't_move'),
-          answer(
-            'work',
-            "I'll keep working there — a job, my own business or remotely",
-            { lifestyle_expat: 1 },
-            't_move',
-          ),
-        ],
-      },
-      {
-        id: 'q_invest',
-        prompt_i18n: { en: 'How should it earn money?' },
-        answers: [
-          answer('long', 'Long-term rental to tenants', { yield_hunter: 1 }, 't_invest'),
-          answer(
-            'short',
-            'Holiday / short-term rental (e.g. Airbnb)',
-            { vacation_rental_investor: 1 },
-            't_invest',
-          ),
-          answer('flip', 'Renovate and resell', { flip_investor: 1 }, 't_invest'),
-          answer(
-            'commercial',
-            'Commercial premises (shop, office, warehouse)',
-            { commercial_investor: 1 },
-            't_invest',
-          ),
-          answer('inv_undecided', 'Not decided yet', { yield_hunter: 1 }, 't_invest'),
-        ],
-      },
-      {
-        id: 't_home',
-        kind: 'multi',
-        prompt_i18n: traitPrompt,
-        answers: [children, wfh, premium],
-      },
-      {
-        id: 't_move',
-        kind: 'multi',
-        prompt_i18n: traitPrompt,
-        answers: [children, wfh, premium, residency],
-      },
-      {
-        id: 't_second',
-        kind: 'multi',
-        prompt_i18n: traitPrompt,
-        answers: [
-          traitAnswer('will_let', "I'll rent it out when I'm not using it"),
-          abroad,
-          wfh,
-          residency,
-          premium,
-        ],
-      },
-      {
-        id: 't_invest',
-        kind: 'multi',
-        prompt_i18n: traitPrompt,
-        answers: [
-          traitAnswer('seasoned_investor', 'I already own other investment property'),
-          abroad,
-          residency,
-          premium,
-        ],
-      },
-      {
-        id: 't_student',
-        kind: 'multi',
-        prompt_i18n: traitPrompt,
-        answers: [abroad, traitAnswer('will_let', 'Other students will rent rooms there too')],
-      },
-    ],
-  };
-}
-
-/**
- * The built-in default quiz tree: the v3.0 tree of `DEFAULT_QUIZ_DEFINITION_V2` (same ids,
- * structure, weights and traits) with its EN texts only and no `confirm` block — the served
- * EN + PL definition carries the confirmation texts; the built-in is the offline fallback and
- * its gzip budget (ESC-080) does not fit them [FOLLOW-1357]. Pinned against the shared default
- * by `quiz-widget.test.ts`.
- */
-export const DEFAULT_QUIZ_DEFINITION: QuizDefinition = buildDefaultQuizDefinition();
-
 // ─── Pure walk helpers (moved to @estalara/shared — FOLLOW-1356) ────────────────
 
 /**
@@ -400,9 +225,7 @@ export function renderQuizWidget(
     const def = config.definition;
     const confirm = def.confirm;
     const byId = new Map(def.questions.map((q) => [q.id, q]));
-    const hash =
-      config.definitionHash ??
-      (def === DEFAULT_QUIZ_DEFINITION ? BUILTIN_QUIZ_DEFINITION_HASH : 'unhashed');
+    const hash = config.definitionHash ?? 'unhashed';
     const runId = newQuizRunId();
     // The switcher lists the definition's languages that carry texts (CEO ruling Q-D).
     const langs = def.languages.filter((l) => byId.get(def.root)?.prompt_i18n[l]);

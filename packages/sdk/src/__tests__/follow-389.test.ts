@@ -31,6 +31,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { DEFAULT_QUIZ_DEFINITION_V2 } from '@estalara/shared';
+
 import { postQuizCompletionPing } from '../core/adapt.js';
 import { PROFILING_OPT_OUT_KEY } from '../core/profiling-opt-out.js';
 import { _initForTest } from '../index.js';
@@ -132,6 +134,11 @@ function buildMockFetch(): ReturnType<typeof vi.fn> {
             quiz_enabled: true,
             language: 'en',
             accent_color: '#6c5ce7',
+            // FOLLOW-1370: the card opens only on a served definition.
+            data_source: 'db',
+            quiz_definition: DEFAULT_QUIZ_DEFINITION_V2,
+            definition_hash: 'a'.repeat(64),
+            definition_version: null,
           }),
       });
     }

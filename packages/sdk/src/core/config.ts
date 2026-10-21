@@ -118,8 +118,9 @@ export interface SdkConfig {
    * response (`mergeQuizConfig()`), keyed by tenant identity via the API key
    * (DOMAIN-INDEPENDENT — never from the serving host). Never read from a snippet attribute.
    *
-   * ABSENT when the tenant configured no quiz tree — the SDK then walks its built-in
-   * `DEFAULT_QUIZ_DEFINITION` (byte-identical to pre-ADR-0019, ADR-0019 D4/D5).
+   * A `db` response always carries one (FOLLOW-1358). ABSENT when the config failed, timed out
+   * or came back `fallback` — the SDK then shows no quiz on this pageview; it has no built-in
+   * tree (FOLLOW-1370).
    */
   quizDefinition?: QuizDefinition;
 

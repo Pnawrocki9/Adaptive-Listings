@@ -77,8 +77,8 @@ import {
  * exactly that identity).
  */
 const DEFAULT_V2_HASH = [
-  '6fce0f72ec5c9ef1e26882da8f554994',
-  '6ba60aa2c68d9ba8a3af7eaafabb2f41',
+  '2e95f96e4d863836518a31c1d5399e9b',
+  '8e671689aa35d35ea173a7c7d84612f4',
 ].join(''); // split: a 64-hex literal trips the secrets scanner;
 
 // ─── Helper constants ─────────────────────────────────────────────────────────

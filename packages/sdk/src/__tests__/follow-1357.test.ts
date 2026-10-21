@@ -250,7 +250,7 @@ describe('confirmation + correction', () => {
     expect(options.map((o) => o.textContent)).toEqual([
       'Holiday-let investment',
       'Renovate and resell',
-      'Home for a student',
+      'Commercial property investment',
       'None of these — show me everything',
     ]);
     expect(h.root.querySelector('.estalara-quiz-result')?.textContent).toBe(
@@ -267,7 +267,7 @@ describe('confirmation + correction', () => {
       event: 'corrected',
       confirmed_archetype: 'flip_investor',
       resolved_archetype: 'yield_hunter',
-      offered: ['vacation_rental_investor', 'flip_investor', 'student_parent'],
+      offered: ['vacation_rental_investor', 'flip_investor', 'commercial_investor'],
     });
   });
 

@@ -35,6 +35,21 @@ import { isAllowedBrowserOrigin } from '@estalara/shared/browser-origins';
 type OriginDecision = { verdict: 'allow' } | { verdict: 'deny'; reason: 'forbidden_origin' };
 
 /**
+ * Whether this process applies the production origin list.
+ *
+ * `next start` always runs with `NODE_ENV=production`, so a LOCAL production-mode stack
+ * (`CP_MODE=prod scripts/dev/localhost-up.sh`, FOLLOW-1376) would refuse its own localhost pages.
+ * `ESTALARA_LOCAL_ORIGINS=1` keeps the non-production list for that case only. It is ignored
+ * whenever `VERCEL` is set (Vercel sets it on every build and function), so it cannot widen a
+ * deployed gate, and any value other than the exact string `1` is ignored.
+ */
+function usesProductionOriginList(): boolean {
+  if (process.env.NODE_ENV !== 'production') return false;
+  const localOverride = process.env.ESTALARA_LOCAL_ORIGINS === '1' && !process.env.VERCEL;
+  return !localOverride;
+}
+
+/**
  * Resolve one request's origin verdict.
  *
  * A request with **no `Origin` header** is a server-side caller (curl, an HMAC-signed adapter,
@@ -48,7 +63,7 @@ type OriginDecision = { verdict: 'allow' } | { verdict: 'deny'; reason: 'forbidd
  */
 export function resolveOriginDecision(requestOrigin: string | null): OriginDecision {
   if (!requestOrigin) return { verdict: 'allow' };
-  return isAllowedBrowserOrigin(requestOrigin, process.env.NODE_ENV === 'production')
+  return isAllowedBrowserOrigin(requestOrigin, usesProductionOriginList())
     ? { verdict: 'allow' }
     : { verdict: 'deny', reason: 'forbidden_origin' };
 }

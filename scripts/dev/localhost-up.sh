@@ -374,7 +374,9 @@ case "$CP_MODE" in
 dev) CP_CMD=(pnpm dev) CP_WAIT=240 ;;
 # One shell under the same doppler env, so NEXT_PUBLIC_* values are inlined at build time and the
 # server env is identical to the dev mode at run time.
-prod) CP_CMD=(bash -c 'pnpm build && exec pnpm start') CP_WAIT=1500 ;;
+# `next start` forces NODE_ENV=production, whose origin list refuses the localhost pages;
+# ESTALARA_LOCAL_ORIGINS=1 keeps the local list (ignored on Vercel, origin-policy.ts).
+prod) CP_CMD=(env ESTALARA_LOCAL_ORIGINS=1 bash -c 'pnpm build && exec pnpm start') CP_WAIT=1500 ;;
 *) die "CP_MODE must be dev or prod, got '$CP_MODE'" ;;
 esac
 step "9/11 control plane :3000 - apps/control-plane 'next $CP_MODE' under doppler, NOT root 'pnpm dev' (README 6.5)"

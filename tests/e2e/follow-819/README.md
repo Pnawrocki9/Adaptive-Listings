@@ -3313,6 +3313,23 @@ on `e88d6747` = #1076); one control plane, never restarted; `--check-staleness` 
 on the new served hash `2e95f96e…` (FOLLOW-1373); no row carries a non-served hash — the SDK no
 longer bundles a tree (FOLLOW-1370). SDK bundle 42,249 B gzip. The caveats of §5.23 (a)–(d) apply.
 
+### 5.35 — 2026-10-21 (FOLLOW-1376 series at branch HEAD `2b7e5317`, control plane under `next start`, EXECUTED ×4) — **three `run=GREEN` with `total=8` (runs 1, 2, 4), each `[FRESH]`; run 3 `run=UNMEASURED` (the adapted session drew holdout, neutral per §P.0) — the first series on a production-mode control plane (`CP_MODE=prod`)**
+
+**MANUAL, run by the PM.** `CP_MODE=prod scripts/dev/localhost-up.sh` at `2b7e5317`: the control
+plane ran as `next build && next start` with `ESTALARA_LOCAL_ORIGINS=1`. The build took 6–10 min.
+The first bring-up failed step 11 once: the ingest Worker answered `/health` in ~5 s while the build
+swapped (`bound_but_silent`). A re-run with the processes left running passed all 11 steps. Admin
+pages then answered in 5–120 ms with no first-visit compile.
+
+| Run | Started (UTC)            | `TALLY`                                                   | `--check-staleness`                       |
+| --- | ------------------------ | --------------------------------------------------------- | ----------------------------------------- |
+| 1   | 2026-10-21T21:52:03.336Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `2b7e5317…`          |
+| 2   | 2026-10-21T21:54:36.819Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` same                            |
+| 3   | 2026-10-21T21:56:35.224Z | `TALLY green=3 red=0 unmeasured=5 total=8 run=UNMEASURED` | `[FRESH]` same (adapted arm drew holdout) |
+| 4   | 2026-10-21T21:58:48.388Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` same                            |
+
+The caveats of §5.23 (a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

@@ -62,3 +62,39 @@ describe('resolveOriginDecision — refusals and the server-side caller', () => 
     expect(resolveOriginDecision('')).toEqual({ verdict: 'allow' });
   });
 });
+
+describe('resolveOriginDecision — ESTALARA_LOCAL_ORIGINS (FOLLOW-1376, local `next start`)', () => {
+  it.each(LOCAL)('a local production build with the flag allows %s', (origin) => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('VERCEL', '');
+    vi.stubEnv('ESTALARA_LOCAL_ORIGINS', '1');
+    expect(resolveOriginDecision(origin)).toEqual({ verdict: 'allow' });
+  });
+
+  it.each(LOCAL)('the flag is ignored on Vercel: %s stays refused', (origin) => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('VERCEL', '1');
+    vi.stubEnv('ESTALARA_LOCAL_ORIGINS', '1');
+    expect(resolveOriginDecision(origin)).toEqual({ verdict: 'deny', reason: 'forbidden_origin' });
+  });
+
+  it.each(['true', 'yes', '0', ''])('only the exact value "1" counts (%j stays refused)', (v) => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('VERCEL', '');
+    vi.stubEnv('ESTALARA_LOCAL_ORIGINS', v);
+    expect(resolveOriginDecision('http://localhost:5173')).toEqual({
+      verdict: 'deny',
+      reason: 'forbidden_origin',
+    });
+  });
+
+  it('the flag never admits an unlisted origin', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('VERCEL', '');
+    vi.stubEnv('ESTALARA_LOCAL_ORIGINS', '1');
+    expect(resolveOriginDecision('http://localhost:9200')).toEqual({
+      verdict: 'deny',
+      reason: 'forbidden_origin',
+    });
+  });
+});

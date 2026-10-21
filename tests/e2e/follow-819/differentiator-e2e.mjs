@@ -1056,8 +1056,8 @@ function unmeasuredBecause(result, facts) {
     case 'AC(10)': {
       // FOLLOW-1361: (a) and (b) each redraw up to AC10_MAX_DRAWS sessions; a sub-session whose last
       // draw was still holdout is the only excusable entry. Anything else unmet stays RED.
-      // FOLLOW-1369: a sub-session whose served config never reached the browser (builtin tree,
-      // no completed public-config GET) is an UNMET PRECONDITION too, not an SDK verdict.
+      // FOLLOW-1369: a sub-session whose served config never reached the browser (no card since
+      // FOLLOW-1370, no completed public-config GET) is an UNMET PRECONDITION, not an SDK verdict.
       const unmet = Array.isArray(ev.unmetPreconditions) ? ev.unmetPreconditions : [];
       const excusable = (u) => AC10_HOLDOUT_UNMET.includes(u) || AC10_CONFIG_UNMET_RE.test(u);
       if (unmet.length === 0 || !unmet.every(excusable)) return null;
@@ -2368,7 +2368,7 @@ async function closeQuizCardBeforeCta(page) {
 
 /** How many fresh sessions (a) and (b) may draw before a holdout draw is graded UNMEASURED. */
 export const AC10_MAX_DRAWS = 3;
-/** How long the auto-opening quiz card may take to mount (the late-config retry is 8 s). */
+/** How long the auto-opening quiz card may take to mount (the config request has 15 s). */
 const AC10_QUIZ_MOUNT_MS = 30000;
 /** How long the decisive click may take to show up as the fold in the persisted state. */
 const AC10_FOLD_WAIT_MS = 10000;
@@ -2378,9 +2378,6 @@ const AC10_ROW_WAIT_MS = 15000;
 const AC10_CONTRARY_WAIT_MS = 8000;
 /** Equality for the fold masses: they are assigned as literals, never computed. */
 const MASS_EPSILON = 1e-9;
-
-/** The SDK's built-in fallback tree reports this hash (quiz-widget.ts); it has no result screen. */
-const BUILTIN_QUIZ_HASH = 'builtin-en-v2';
 
 const SDK_INTENT_PATH = new URL('../../../packages/sdk/src/core/intent.ts', import.meta.url);
 const SDK_ADAPT_PATH = new URL('../../../packages/sdk/src/core/adapt.ts', import.meta.url);
@@ -2512,9 +2509,8 @@ export async function fetchServedQuizConfig({ timeoutMs = 30000 } = {}) {
 
 /**
  * Whether a public-config answer serves the tree AC(10) walks: 200, `data_source: 'db'` (a
- * `fallback` answer carries no definition and the SDK walks its built-in tree), a sha-256
- * `definition_hash` that is not the built-in label, and a `confirm` block (no block = no result
- * screen). Pure.
+ * `fallback` answer carries no definition and the SDK then shows no card, FOLLOW-1370), a sha-256
+ * `definition_hash` (not a label), and a `confirm` block (no block = no result screen). Pure.
  *
  * @param {{status: number|null, body: any, error?: string|null}} probe
  * @returns {{ok: boolean, reason: string, definitionHash: string|null,
@@ -2555,7 +2551,7 @@ export async function assertServedQuizConfig(options) {
   if (!v.ok) {
     throw new Error(
       `GET ${DECISION_ORIGIN}/api/quiz/public-config does not serve the quiz tree: ${v.reason}. ` +
-        'The SDK would walk its built-in tree (builtin-en-v2, no result screen) and AC(10) is RED.',
+        'The SDK would show no quiz card (it has no built-in tree, FOLLOW-1370) and AC(10) is RED.',
     );
   }
   return { definitionHash: v.definitionHash, ms: probe.ms, reason: v.reason };
@@ -2575,11 +2571,12 @@ export const AC10_HOLDOUT_UNMET = Object.freeze(['a:drewHoldout', 'b:drewHoldout
 export const AC10_CONFIG_UNMET_RE = /^[abc]:servedConfigNeverReachedBrowser\(/;
 
 /**
- * FOLLOW-1369: did the served quiz config fail to reach the browser? True (as the timings string)
- * only when the SHOWN ping reported the built-in tree (`builtin-en-v2`, falling back to the run
- * row's hash when no ping was captured) AND the page's `/api/quiz/public-config` GET never
- * completed with a 200. A GET that DID complete while the card still used the built-in tree is an
- * SDK defect and stays RED (returns null). No network record (`configNet` absent) is not classified.
+ * FOLLOW-1369: did the served quiz config fail to reach the browser? Since FOLLOW-1370 the SDK has
+ * no built-in tree: without the served definition it shows NO card. True (as the timings string)
+ * only when the card never mounted (`quizShown !== true`) AND the page's `/api/quiz/public-config`
+ * GET never completed with a 200. A GET that DID complete while no card mounted is an SDK defect
+ * and stays RED (`quizNotShown`, returns null). No network record (`configNet` absent) is not
+ * classified.
  *
  * @param {object} s - one sub-session's observations
  * @returns {string|null} the OPTIONS/GET timings when unserved, else null
@@ -2587,10 +2584,7 @@ export const AC10_CONFIG_UNMET_RE = /^[abc]:servedConfigNeverReachedBrowser\(/;
 export function servedConfigNeverReachedBrowser(s) {
   const net = s?.configNet ?? null;
   if (net === null || typeof net !== 'object') return null;
-  const pings = Array.isArray(s.pings) ? s.pings : [];
-  const shown = pings.find((x) => x.event === 'shown');
-  const hash = shown ? shown.definition_hash : (s.row?.definition_hash ?? null);
-  if (hash !== BUILTIN_QUIZ_HASH) return null;
+  if (s.quizShown === true) return null;
   const gets = Array.isArray(net.get) ? net.get : [];
   if (gets.some((g) => g.finishedMono !== null && g.failure === null && g.status === 200)) {
     return null;
@@ -2613,8 +2607,8 @@ export function servedConfigNeverReachedBrowser(s) {
  */
 function ac10CommonUnmet(p, s, served) {
   const unmet = [];
-  // FOLLOW-1369: the served config never reached the page — every other conjunct (and a throw
-  // while walking the built-in tree) is then meaningless, so it is the ONLY entry.
+  // FOLLOW-1369: the served config never reached the page — no card (FOLLOW-1370), so every other
+  // conjunct (and a throw waiting for it) is meaningless; it is the ONLY entry.
   const unreached = servedConfigNeverReachedBrowser(s);
   if (unreached !== null) return [`${p}:servedConfigNeverReachedBrowser(${unreached})`];
   if (s.error) return [`${p}:threw`];
@@ -2626,8 +2620,7 @@ function ac10CommonUnmet(p, s, served) {
     unmet.push(s.rowError ? `${p}:quizRunRowUnreadable` : `${p}:quizRunRowMissing`);
     return unmet;
   }
-  if (row.definition_hash === BUILTIN_QUIZ_HASH) unmet.push(`${p}:builtinTreeWalked`);
-  else if (served.ok && row.definition_hash !== served.definitionHash) {
+  if (served.ok && row.definition_hash !== served.definitionHash) {
     unmet.push(`${p}:definitionHashNotServed=${String(row.definition_hash)}`);
   }
   if (row.resolved_archetype !== s.leaf) {

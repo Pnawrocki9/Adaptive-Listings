@@ -14,8 +14,9 @@ import {
   markQuizCompleted,
   markQuizDismissed,
 } from '../ui/quiz-session-state.js';
-import { DEFAULT_QUIZ_DEFINITION, renderQuizWidget } from '../ui/quiz-widget.js';
+import { renderQuizWidget } from '../ui/quiz-widget.js';
 import type { QuizRunOutcome, QuizWidgetConfig } from '../ui/quiz-widget.js';
+import type { QuizDefinition } from '@estalara/shared';
 import { postQuizCompletionPing, postQuizRunPing } from './adapt.js';
 import {
   applyBehavioralSignal,
@@ -52,7 +53,12 @@ export interface IntentLoop {
   /** intent.snapshot emission context (K.3.6 FOLLOW-266). */
   snapshot: IntentSnapshotContext;
   /**
-   * Set up the behavioral observers, open the quiz and register the favorites bridge.
+   * Open the quiz card once the SERVED quiz config is in — never waits for `/api/adapt`
+   * [FOLLOW-1370]. No served definition → no card on this pageview.
+   */
+  quiz: (adapt: AdaptLoop) => void;
+  /**
+   * Set up the behavioral observers and register the favorites bridge.
    * @returns The observers' cleanup.
    */
   wire: (adapt: AdaptLoop) => () => void;
@@ -130,41 +136,168 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
     }, DWELL_TICK_MS);
   }
 
-  function wire(adapt: AdaptLoop): () => void {
-    const buildQuizConfig = (): QuizWidgetConfig => ({
-      accentColor: config.accentColor,
-      language: config.language,
-      // FOLLOW-639 / ADR-0019 D5: walk the tenant's served editable tree, or the built-in
-      // default when none is configured.
-      definition: config.quizDefinition ?? DEFAULT_QUIZ_DEFINITION,
-      // FOLLOW-1357: the served definition's identity, forwarded (the built-in reports its own).
-      ...(config.quizDefinition
-        ? {
-            definitionHash: config.quizDefinitionHash,
-            definitionVersion: config.quizDefinitionVersion ?? null,
-          }
-        : {}),
-      // FOLLOW-1357: every run transition → POST /api/quiz/run, chained per instance so the
-      // server sees them in order (its state machine is forward-only); consent / opt-out
-      // gating and the identity fields (tenant, session, SDK version, consent) live in
-      // postQuizRunPing.
-      onRunEvent: (ping) => {
-        runPings = runPings.then(() =>
-          postQuizRunPing(config, currentSession.sessionId, ping, ctx.optedOut),
+  const buildQuizConfig = (definition: QuizDefinition): QuizWidgetConfig => ({
+    accentColor: config.accentColor,
+    language: config.language,
+    // FOLLOW-639 / ADR-0019 D5: walk the tenant's served editable tree (the only tree since
+    // FOLLOW-1370) and forward its identity (FOLLOW-1357).
+    definition,
+    definitionHash: config.quizDefinitionHash,
+    definitionVersion: config.quizDefinitionVersion ?? null,
+    // FOLLOW-1357: every run transition → POST /api/quiz/run, chained per instance so the
+    // server sees them in order (its state machine is forward-only); consent / opt-out
+    // gating and the identity fields (tenant, session, SDK version, consent) live in
+    // postQuizRunPing.
+    onRunEvent: (ping) => {
+      runPings = runPings.then(() =>
+        postQuizRunPing(config, currentSession.sessionId, ping, ctx.optedOut),
+      );
+    },
+    // Brand logo; null renders none (ADR-0019) [FOLLOW-623].
+    logoUrl: config.brand?.logoUrl ?? null,
+    // FOLLOW-651: render the "Powered by Estalara" attribution unless white-label. First
+    // real consumer of brand.whiteLabel (RETRO-214 HALF_WIRE_P).
+    showAttribution: config.brand?.whiteLabel !== true,
+    // Per-brand card placement (ADR-0019 D2) [FOLLOW-640].
+    ...(config.quizPlacement ? { placement: config.quizPlacement } : {}),
+  });
+
+  let quizTriggered = false;
+  let runPings: Promise<void> = Promise.resolve();
+
+  // Quiz auto-opens; `quiz.enabled === false` disables it [FOLLOW-1015, FOLLOW-102]. Called
+  // before the first `/api/adapt` cycle: the card waits for the served config only [FOLLOW-1370].
+  function openQuiz(adapt: AdaptLoop): void {
+    // FOLLOW-1369: the config request outlived the 1 s init budget — wait (once) for that same
+    // request; null (failed or timed out at 15 s) leaves the config without a definition.
+    const late = ctx.lateConfig;
+    if (late) {
+      ctx.lateConfig = null;
+      void late.then((merged) => {
+        if (ctx.lifetime.signal.aborted) return;
+        if (merged) config = merged;
+        openQuiz(adapt);
+      });
+      return;
+    }
+    // §H.9: suppresses the completion event too [FOLLOW-409].
+    if (ctx.optedOut) return;
+    if (config.quiz?.enabled === false) return;
+    // FOLLOW-1370: no served definition (config failed, timed out or came back `fallback`) → no
+    // quiz on this pageview. The SDK ships no built-in tree: an EN-only tree without the
+    // confirmation step would break the EN + PL and accuracy rulings (MASTER_DESIGN §E.4.7–8).
+    const definition = config.quizDefinition;
+    if (!definition) {
+      if (config.debug) console.log('[Estalara] no served quiz definition — no quiz shown');
+      return;
+    }
+    const shadowHost = ctx.host;
+    if (!shadowHost || quizTriggered) return;
+    // Previously enforced inside scheduleQuizTrigger(); with auto-open these two guards are
+    // the only thing standing between a returning visitor and the card on every page view.
+    if (isQuizCompleted() || isQuizDismissed()) return;
+    quizTriggered = true;
+    renderQuizWidget(
+      shadowHost.root,
+      buildQuizConfig(definition),
+      (resolvedArchetype, answerPath, outcome: QuizRunOutcome) => {
+        // FOLLOW-1357: called once, after the confirmation step; the FINAL archetype is
+        // applied — the leaf, the buyer's correction, or `neutral` for "None of these".
+        const final = outcome.final_archetype;
+        // Apply the quiz result; never show the quiz again [FOLLOW-199].
+        markQuizCompleted();
+        // K.3.6 FOLLOW-266: update snapshot context so intent.snapshot payloads
+        // reflect quiz completion state on the next 5-signal boundary or beforeunload.
+        snapshotCtx.quizCompleted = true;
+        snapshotCtx.quizLeaf = final;
+        // §E.4.4 fold [FOLLOW-1359]: "None of these" keeps the pre-quiz state; × / no step =
+        // `completed` (0.72). Traits ride the state: persisted, sent on /api/adapt and
+        // intent.snapshot (ESC-086 item 4).
+        const confirmation = outcome.confirmation;
+        const evidence: QuizEvidence =
+          confirmation === 'confirmed' || confirmation === 'corrected' ? confirmation : 'completed';
+        ctx.state = {
+          ...(confirmation === 'none_of_these'
+            ? { ...ctx.state, quiz_rejected: true as const }
+            : applyQuizLeaf(ctx.state, final, evidence)),
+          quiz_traits: outcome.traits,
+        };
+        // Seed the SoT from a NON-neutral result only — "None of these" pins nothing
+        // (ADR-0014) [FOLLOW-554].
+        if (final !== 'neutral') {
+          persistResolvedArchetype(currentSession.sessionId, final, ctx.state.confidence);
+        }
+        onIntentUpdate();
+        if (config.debug) {
+          console.log(
+            `[Estalara] Quiz → archetype=${ctx.state.archetype} confidence=${String(ctx.state.confidence)}`,
+          );
+        }
+
+        // Persist completion with opt-out flag and path [FOLLOW-200, FOLLOW-1020].
+        postQuizCompletionPing(
+          config,
+          currentSession.sessionId,
+          ctx.state.archetype,
+          outcome.language,
+          ctx.optedOut,
+          answerPath,
         );
+
+        // ESC-086 item 1: one quiz.event per run — `completed` without a confirmation step,
+        // else how the result screen closed; `archetype` is the final one [FOLLOW-1357].
+        queue.push({
+          type: 'quiz.event',
+          payload: {
+            step:
+              confirmation === null
+                ? 'completed'
+                : confirmation === 'none_of_these'
+                  ? 'corrected'
+                  : confirmation,
+            // The quiz opens itself [FOLLOW-1015].
+            trigger: 'auto_open',
+            archetype: ctx.state.archetype,
+            confidence: ctx.state.confidence,
+            quiz_run_id: outcome.quiz_run_id,
+            resolved_archetype: resolvedArchetype,
+            definition_hash: outcome.definition_hash,
+          },
+          ts: Date.now(),
+        });
+
+        // Mismatch detection — compare quiz archetype against behavioral-only evidence
+        const behavioralOnlyState = calculateBehavioralOnlyState(signalHistory);
+        const mismatch = detectMismatch(
+          ctx.state.archetype,
+          behavioralOnlyState,
+          currentSession.sessionId,
+        );
+        if (mismatch) {
+          queue.push({
+            type: 'quiz.mismatch',
+            payload: {
+              quiz_archetype: mismatch.quiz_archetype,
+              behavioral_archetype: mismatch.behavioral_archetype,
+              confidence_gap: mismatch.confidence_gap,
+              signal_count: mismatch.signal_count,
+            },
+            ts: Date.now(),
+          });
+        }
+
+        // Re-fetch directives with quiz-updated archetype confidence
+        void adapt.refresh();
       },
-      // Brand logo; null renders none (ADR-0019) [FOLLOW-623].
-      logoUrl: config.brand?.logoUrl ?? null,
-      // FOLLOW-651: render the "Powered by Estalara" attribution unless white-label. First
-      // real consumer of brand.whiteLabel (RETRO-214 HALF_WIRE_P).
-      showAttribution: config.brand?.whiteLabel !== true,
-      // Per-brand card placement (ADR-0019 D2) [FOLLOW-640].
-      ...(config.quizPlacement ? { placement: config.quizPlacement } : {}),
-    });
+      () => {
+        // 24h cooldown after closing [FOLLOW-1015].
+        markQuizDismissed();
+        quizTriggered = false;
+      },
+    );
+  }
 
-    let quizTriggered = false;
-    let runPings: Promise<void> = Promise.resolve();
-
+  function wire(adapt: AdaptLoop): () => void {
     // 6. Observers; pass the inquiry selector or inquiry.started never fires [FOLLOW-097].
 
     const cleanupObservers = setupObservers(
@@ -221,133 +354,6 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
         ? { inquirySubmitSelector: config.inquirySubmitSelector }
         : {},
     );
-
-    // Quiz auto-opens; `quiz.enabled === false` disables it [FOLLOW-1015, FOLLOW-102].
-    function openQuiz(): void {
-      // FOLLOW-1365: the init fetch failed — wait (once) for the 8 s retry, then open with
-      // whatever it served; null / still failing keeps the snippet + built-in config.
-      const late = ctx.lateConfig;
-      if (late) {
-        ctx.lateConfig = null;
-        void late.then((merged) => {
-          if (ctx.lifetime.signal.aborted) return;
-          if (merged) config = merged;
-          openQuiz();
-        });
-        return;
-      }
-      // §H.9: suppresses the completion event too [FOLLOW-409].
-      if (ctx.optedOut) return;
-      if (config.quiz?.enabled === false) return;
-      const shadowHost = ctx.host;
-      if (!shadowHost || quizTriggered) return;
-      // Previously enforced inside scheduleQuizTrigger(); with auto-open these two guards are
-      // the only thing standing between a returning visitor and the card on every page view.
-      if (isQuizCompleted() || isQuizDismissed()) return;
-      quizTriggered = true;
-      renderQuizWidget(
-        shadowHost.root,
-        buildQuizConfig(),
-        (resolvedArchetype, answerPath, outcome: QuizRunOutcome) => {
-          // FOLLOW-1357: called once, after the confirmation step; the FINAL archetype is
-          // applied — the leaf, the buyer's correction, or `neutral` for "None of these".
-          const final = outcome.final_archetype;
-          // Apply the quiz result; never show the quiz again [FOLLOW-199].
-          markQuizCompleted();
-          // K.3.6 FOLLOW-266: update snapshot context so intent.snapshot payloads
-          // reflect quiz completion state on the next 5-signal boundary or beforeunload.
-          snapshotCtx.quizCompleted = true;
-          snapshotCtx.quizLeaf = final;
-          // §E.4.4 fold [FOLLOW-1359]: "None of these" keeps the pre-quiz state; × / no step =
-          // `completed` (0.72). Traits ride the state: persisted, sent on /api/adapt and
-          // intent.snapshot (ESC-086 item 4).
-          const confirmation = outcome.confirmation;
-          const evidence: QuizEvidence =
-            confirmation === 'confirmed' || confirmation === 'corrected'
-              ? confirmation
-              : 'completed';
-          ctx.state = {
-            ...(confirmation === 'none_of_these'
-              ? { ...ctx.state, quiz_rejected: true as const }
-              : applyQuizLeaf(ctx.state, final, evidence)),
-            quiz_traits: outcome.traits,
-          };
-          // Seed the SoT from a NON-neutral result only — "None of these" pins nothing
-          // (ADR-0014) [FOLLOW-554].
-          if (final !== 'neutral') {
-            persistResolvedArchetype(currentSession.sessionId, final, ctx.state.confidence);
-          }
-          onIntentUpdate();
-          if (config.debug) {
-            console.log(
-              `[Estalara] Quiz → archetype=${ctx.state.archetype} confidence=${String(ctx.state.confidence)}`,
-            );
-          }
-
-          // Persist completion with opt-out flag and path [FOLLOW-200, FOLLOW-1020].
-          postQuizCompletionPing(
-            config,
-            currentSession.sessionId,
-            ctx.state.archetype,
-            outcome.language,
-            ctx.optedOut,
-            answerPath,
-          );
-
-          // ESC-086 item 1: one quiz.event per run — `completed` without a confirmation step,
-          // else how the result screen closed; `archetype` is the final one [FOLLOW-1357].
-          queue.push({
-            type: 'quiz.event',
-            payload: {
-              step:
-                confirmation === null
-                  ? 'completed'
-                  : confirmation === 'none_of_these'
-                    ? 'corrected'
-                    : confirmation,
-              // The quiz opens itself [FOLLOW-1015].
-              trigger: 'auto_open',
-              archetype: ctx.state.archetype,
-              confidence: ctx.state.confidence,
-              quiz_run_id: outcome.quiz_run_id,
-              resolved_archetype: resolvedArchetype,
-              definition_hash: outcome.definition_hash,
-            },
-            ts: Date.now(),
-          });
-
-          // Mismatch detection — compare quiz archetype against behavioral-only evidence
-          const behavioralOnlyState = calculateBehavioralOnlyState(signalHistory);
-          const mismatch = detectMismatch(
-            ctx.state.archetype,
-            behavioralOnlyState,
-            currentSession.sessionId,
-          );
-          if (mismatch) {
-            queue.push({
-              type: 'quiz.mismatch',
-              payload: {
-                quiz_archetype: mismatch.quiz_archetype,
-                behavioral_archetype: mismatch.behavioral_archetype,
-                confidence_gap: mismatch.confidence_gap,
-                signal_count: mismatch.signal_count,
-              },
-              ts: Date.now(),
-            });
-          }
-
-          // Re-fetch directives with quiz-updated archetype confidence
-          void adapt.refresh();
-        },
-        () => {
-          // 24h cooldown after closing [FOLLOW-1015].
-          markQuizDismissed();
-          quizTriggered = false;
-        },
-      );
-    }
-
-    openQuiz();
 
     // Favorites bridge: favorited → signal; unfavorited logged only [FOLLOW-210].
 
@@ -424,6 +430,7 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
     stopDwell: stopDwellTimer,
     signals: signalHistory,
     snapshot: snapshotCtx,
+    quiz: openQuiz,
     wire,
   };
 }

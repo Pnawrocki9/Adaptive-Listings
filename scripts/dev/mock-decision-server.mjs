@@ -46,7 +46,7 @@ const LISTING_BASE_URL = process.env.LISTING_BASE_URL ?? 'http://localhost:5173'
 const DEMO_SLUG = process.env.DEMO_SLUG ?? '9-blackberry-pl-palm-coast-fl-32137';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 // Quiz public-config proxy target (the REAL control plane) + the pilot tenant's SDK key.
-// 'off' disables the proxy (SDK falls back to its built-in default tree).
+// 'off' disables the proxy (the SDK then shows no quiz: no built-in tree since FOLLOW-1370).
 const PUBLIC_CONFIG_UPSTREAM =
   process.env.PUBLIC_CONFIG_UPSTREAM ?? 'https://admin.estalara.com/api';
 const PUBLIC_CONFIG_API_KEY = process.env.PUBLIC_CONFIG_API_KEY ?? '000-app-estalara';
@@ -625,12 +625,11 @@ const server = http.createServer(async (req, res) => {
 
   // Quiz public-config PROXY — GET /quiz/public-config → the real control plane.
   // Locally the SDK's decisionApiUrl is this server, so without this route the SDK 404s and
-  // falls back to its BUILT-IN default quiz tree — meaning quiz edits made on
+  // shows NO quiz (it has no built-in tree since FOLLOW-1370) — and quiz edits made on
   // admin.estalara.com never reach the local demo. Proxying the live endpoint (public route,
   // keyed by the pilot tenant's SDK key) closes the admin-edit → local-SDK loop.
   // Cached for 60s because the SDK's init fetch has a 1s timeout (quiz-config.ts) that a cold
-  // upstream roundtrip can miss. Disable with PUBLIC_CONFIG_UPSTREAM=off (SDK then uses its
-  // built-in tree, the pre-FOLLOW-1015 behaviour).
+  // upstream roundtrip can miss. Disable with PUBLIC_CONFIG_UPSTREAM=off (no quiz card then).
   if (req.method === 'GET' && path === '/quiz/public-config') {
     if (PUBLIC_CONFIG_UPSTREAM === 'off')
       return json(res, 404, { error: 'proxy disabled' }, origin);

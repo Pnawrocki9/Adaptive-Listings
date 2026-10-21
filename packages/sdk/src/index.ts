@@ -60,13 +60,16 @@ async function init(): Promise<IntentState | null> {
     // `estalara:adapt:settled` signal.
     const intent = createIntentLoop(ctx);
     const adapt = createAdaptLoop(ctx, intent, flush);
+    // The quiz card opens on the served config alone, never after a slow first decision; a quiz
+    // refresh supersedes the cold-start one (latest wins, FOLLOW-380) [FOLLOW-1370].
+    intent.quiz(adapt);
     await adapt.start();
 
     // 5. Reuse the Shadow DOM host created by boot's consent gate. 5b. Opt-out toggle.
     const shadowHost = ctx.host;
     const profilingToggle = mountOptOutToggle(ctx, adapt);
 
-    // 6. Behavioral observers, the quiz and the favorites bridge; then the chat bridge and the
+    // 6. Behavioral observers and the favorites bridge; then the chat bridge and the
     // live.signup / inquiry.completed listeners.
     const cleanupObservers = intent.wire(adapt);
     adapt.listen();

@@ -21,7 +21,8 @@ import { DEFAULT_OPTOUT_PLACEMENT, DEFAULT_QUIZ_PLACEMENT } from '@estalara/shar
 
 import { placementToCss } from '../ui/placement.js';
 import { renderProfilingToggle } from '../ui/profiling-toggle.js';
-import { DEFAULT_QUIZ_DEFINITION, renderQuizWidget } from '../ui/quiz-widget.js';
+import { renderQuizWidget } from '../ui/quiz-widget.js';
+import { EN_ONLY_QUIZ_DEFINITION } from './fixtures/en-only-quiz-definition.js';
 
 /** A detached shadow root — the mount target every SDK widget renders into. */
 function makeShadowRoot(): ShadowRoot {
@@ -73,7 +74,7 @@ describe('quiz card placement + non-blocking overlay (FOLLOW-640 / FOLLOW-1015)'
       {
         accentColor: '#6c5ce7',
         language: 'en',
-        definition: DEFAULT_QUIZ_DEFINITION,
+        definition: EN_ONLY_QUIZ_DEFINITION,
         ...(placement ? { placement: placement as never } : {}),
       },
       () => undefined,
@@ -202,7 +203,7 @@ describe('white_label attribution (FOLLOW-651)', () => {
       {
         accentColor: '#2563EB',
         language: 'en',
-        definition: DEFAULT_QUIZ_DEFINITION,
+        definition: EN_ONLY_QUIZ_DEFINITION,
         ...(showAttribution === undefined ? {} : { showAttribution }),
       },
       () => undefined,

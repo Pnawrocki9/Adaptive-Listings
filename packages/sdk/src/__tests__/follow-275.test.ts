@@ -38,6 +38,7 @@ import {
   QUIZ_CONFIG_CACHE_KEY,
   eraseCachedQuizConfig,
 } from '../core/quiz-config.js';
+import { DEFAULT_QUIZ_DEFINITION_V2 } from '@estalara/shared';
 import type { QuizPublicConfigResponse } from '@estalara/shared';
 
 // ---------------------------------------------------------------------------
@@ -113,10 +114,12 @@ function clearAll(): void {
 function buildMockFetch(quizConfig: QuizPublicConfigResponse): ReturnType<typeof vi.fn> {
   return vi.fn().mockImplementation((url: string) => {
     if (url.includes('/quiz/public-config')) {
+      // FOLLOW-1370: a `db` body always carries the served tree (FOLLOW-1358); the card opens
+      // only on it.
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: () => Promise.resolve(quizConfig),
+        json: () => Promise.resolve({ ...quizConfig, quiz_definition: DEFAULT_QUIZ_DEFINITION_V2 }),
       });
     }
     // Neutral adapt response for all other requests
@@ -530,9 +533,9 @@ describe('Rule L — init() calls fetchQuizConfig and uses server values (NOT sn
     });
   });
 
-  it('Rule L: fallback to snippet defaults when fetch returns null (no decisionUrl)', async () => {
-    // When there is no decisionUrl, fetchQuizConfig is not called.
-    // config.quiz.enabled should remain the snippet/default value (true).
+  it('no decisionUrl → no served definition → no quiz card (FOLLOW-1370, no built-in tree)', async () => {
+    // When there is no decisionUrl, fetchQuizConfig is not called: quiz.enabled stays the
+    // snippet/default value (true), but there is no served definition to walk.
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }));
     // No decisionUrl → no fetch
     insertScriptTag();
@@ -540,7 +543,6 @@ describe('Rule L — init() calls fetchQuizConfig and uses server values (NOT sn
     const state = await _initForTest();
     expect(state).not.toBeNull();
 
-    // Default quiz.enabled=true, quiz trigger should render after 30s
     await vi.advanceTimersByTimeAsync(100);
 
     const shadowHosts = document.querySelectorAll('[data-estalara-host]');
@@ -552,7 +554,7 @@ describe('Rule L — init() calls fetchQuizConfig and uses server values (NOT sn
         if (card) quizTriggerFound = true;
       }
     });
-    expect(quizTriggerFound).toBe(true);
+    expect(quizTriggerFound).toBe(false);
   });
 });
 

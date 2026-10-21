@@ -2,7 +2,8 @@
  * FOLLOW-1365 / FOLLOW-1369 — ONE quiz-config request (15 s from boot) is raced against the 1 s
  * init budget. Answered in time → merged at init; slower → the same promise is awaited by the quiz
  * card, which renders the SERVED definition (switcher, confirm step, its hash on the run pings),
- * through the real `init()`. Never answered → the built-in; always exactly one request.
+ * through the real `init()`. Always exactly one request. Never answered → no card at all
+ * (FOLLOW-1370, `follow-1370.test.ts`; the built-in tree is gone).
  *
  * @module packages/sdk/src/__tests__/follow-1365.test
  */
@@ -134,29 +135,6 @@ describe('FOLLOW-1365 late quiz config', () => {
       expect(runHashes(f)).toEqual([HASH]);
     });
     expect(configCalls(f)).toBe(1);
-  });
-
-  it('no response within 15 s → built-in definition, no switcher, exactly one attempt', async () => {
-    const f = mockSlowFetch(20_000);
-    const root = await boot(f, 16_000);
-    expect(configCalls(f)).toBe(1);
-    expect(root.querySelector('.estalara-quiz-lang')).toBeNull();
-    await vi.waitFor(() => {
-      expect(runHashes(f)).toHaveLength(1);
-    });
-    expect(runHashes(f)).not.toContain(HASH);
-    expect(configCalls(f)).toBe(1);
-  });
-
-  it('request fails fast → built-in definition, exactly one attempt', async () => {
-    const f = mockFetch([null]);
-    const root = await boot(f);
-    expect(configCalls(f)).toBe(1);
-    expect(root.querySelector('.estalara-quiz-lang')).toBeNull();
-    await vi.waitFor(() => {
-      expect(runHashes(f)).toHaveLength(1);
-    });
-    expect(runHashes(f)).not.toContain(HASH);
   });
 
   it('response within 1 s → one call, merged at init (no late wait)', async () => {

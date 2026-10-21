@@ -468,10 +468,12 @@ Set language/accent color here per brand.
 **Status: SHIPPED — FOLLOW-639 merged (PR #620, `7f4aa1e`).** The quiz tree is now fully editable
 per brand (questions, answers, branching, answer→archetype weights, i18n).
 
-**Optional per brand.** A brand with **no** `quiz_definitions` row renders the SDK's built-in
-`DEFAULT_QUIZ_DEFINITION` (EN), which reproduces the 17 legacy leaves byte-equivalently — so **doing
-nothing here is a valid, supported outcome**. Only author a definition when the brand needs
-different questions, different wording, or a different answer→archetype mapping.
+**Optional per brand.** A brand with **no** `quiz_definitions` row is served
+`DEFAULT_QUIZ_DEFINITION_V2` (EN + PL, with the confirmation step) by `GET /api/quiz/public-config`
+— so **doing nothing here is a valid, supported outcome**. (The SDK has no built-in tree since
+FOLLOW-1370: when public-config does not answer, no quiz is shown on that pageview.) Only author a
+definition when the brand needs different questions, different wording, or a different
+answer→archetype mapping.
 
 **UI:** `/admin/tenants/[id]/quiz-definition`. **Route:**
 `GET`/`PUT /api/admin/tenants/quiz-definition?tenant_id=<uuid>`

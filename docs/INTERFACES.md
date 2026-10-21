@@ -191,11 +191,13 @@ brand-without-logo variant:
 
 **`quiz_definition` slice (FOLLOW-639):** the tenant's ACTIVE editable quiz tree, read from the
 dedicated `quiz_definitions` table (ADR-0019 D2) and re-validated with `QuizDefinitionSchema` on
-read. Omitted when the tenant has no active/valid definition — the SDK then walks its built-in
-`DEFAULT_QUIZ_DEFINITION` (byte-identical to pre-ADR-0019 for every path). The SDK reduces the
-walked answer `weights` vectors to a single archetype by argmax (`reduceWeightsToArchetype`),
-preserving the ADR-0014 SoT + FOLLOW-101/554 + completion-ping persistence path unchanged. Hard
-integrity (unknown archetype id, dangling `next`, cycle, duplicate id) is rejected on write; the
+read. A `db` answer always carries one since FOLLOW-1358 (the active row, else the served
+`DEFAULT_QUIZ_DEFINITION_V2`); it is absent only from a `fallback` answer. The SDK has no built-in
+tree since FOLLOW-1370: no served definition (config failed, timed out after 15 s, or `fallback`) →
+no quiz card on that pageview, and the card never waits for `/api/adapt`. The SDK reduces the walked
+answer `weights` vectors to a single archetype by argmax (`reduceWeightsToArchetype`), preserving
+the ADR-0014 SoT + FOLLOW-101/554 + completion-ping persistence path unchanged. Hard integrity
+(unknown archetype id, dangling `next`, cycle, duplicate id) is rejected on write; the
 unreachable-archetype list is a NON-BLOCKING editor warning.
 
 Example 3 — tenant with an active quiz definition (200):

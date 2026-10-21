@@ -26,6 +26,8 @@
 
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
+import { DEFAULT_QUIZ_DEFINITION_V2 } from '@estalara/shared';
+
 import { readConfig, DEFAULT_CONFIG } from '../core/config.js';
 import { _initForTest } from '../index.js';
 
@@ -50,8 +52,13 @@ function insertScriptTag(overrides: Record<string, string> = {}): void {
   if (overrides.quizEnabled !== undefined) {
     script.dataset.quizEnabled = overrides.quizEnabled;
   }
+  // FOLLOW-1370: the card opens only on a served definition, so the gate seams fetch one.
+  if (overrides.decisionUrl !== undefined) script.dataset.decisionUrl = overrides.decisionUrl;
   document.head.appendChild(script);
 }
+
+/** `quiz_enabled` the mocked `GET /api/quiz/public-config` serves (with the served tree). */
+let serverQuizEnabled = true;
 
 /** Remove all Estalara script tags. */
 function removeScriptTags(): void {
@@ -144,29 +151,42 @@ describe('FOLLOW-257 AC1 — trigger_after_n_listings removed from SdkConfig', (
 describe('FOLLOW-257 AC2 (FOLLOW-264 / Rule Q) — real init() gate: quiz.enabled=false suppresses the quiz', () => {
   beforeEach(() => {
     clearAll();
-    // Stub fetch so refreshDirectives() resolves without a live Decision API.
-    // No data-decision-url is set on the script tag, so fetchDirectives returns
-    // early — fetch is never called. Stub it defensively for completeness.
+    // Stub fetch: public-config serves the tree (FOLLOW-1370: no served definition, no card)
+    // with `serverQuizEnabled`; every other request gets a neutral adapt response.
+    serverQuizEnabled = true;
+    const served = (): unknown => ({
+      quiz_enabled: serverQuizEnabled,
+      language: 'en',
+      accent_color: '#6c5ce7',
+      data_source: 'db',
+      quiz_definition: DEFAULT_QUIZ_DEFINITION_V2,
+      definition_hash: 'a'.repeat(64),
+      definition_version: null,
+    });
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: () =>
-          Promise.resolve({
-            adapt_decision_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-            session_id: SESSION_ID,
-            archetype: 'neutral',
-            confidence: 0.5,
-            similarity: 0.5,
-            tier: 1,
-            source: 'playbook',
-            generated_at: '2026-06-11T00:00:00.000Z',
-            directives: [],
-            ttl_seconds: 300,
-            variant: 'control',
-          }),
-      }),
+      vi.fn().mockImplementation((url: string) =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            url.includes('/quiz/public-config')
+              ? Promise.resolve(served())
+              : Promise.resolve({
+                  adapt_decision_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                  session_id: SESSION_ID,
+                  archetype: 'neutral',
+                  confidence: 0.5,
+                  similarity: 0.5,
+                  tier: 1,
+                  source: 'playbook',
+                  generated_at: '2026-06-11T00:00:00.000Z',
+                  directives: [],
+                  ttl_seconds: 300,
+                  variant: 'control',
+                }),
+        }),
+      ),
     );
     // Grant consent so init() does not halt at the consent gate.
     localStorage.setItem('estalara_consent', 'granted');
@@ -175,11 +195,12 @@ describe('FOLLOW-257 AC2 (FOLLOW-264 / Rule Q) — real init() gate: quiz.enable
     vi.useFakeTimers();
   });
 
-  it('AC2a (Rule Q seam): with data-quiz-enabled=false, no quiz card renders and no quiz event emits', async () => {
+  it('AC2a (Rule Q seam): with quiz_enabled=false (served and snippet), no quiz card renders and no quiz event emits', async () => {
     // Rule Q (FOLLOW-264 AC3): drives the REAL gate at index.ts:791 via _initForTest.
     // If that gate is deleted or inverted, a `.estalara-quiz-card` element will appear
     // inside the shadow root and this test will fail.
-    insertScriptTag({ quizEnabled: 'false' });
+    serverQuizEnabled = false;
+    insertScriptTag({ quizEnabled: 'false', decisionUrl: 'https://api.example.com/api' });
 
     // Run the real init() body. FOLLOW-1015: the quiz opens during init(), not on a timer.
     const state = await _initForTest();
@@ -210,7 +231,7 @@ describe('FOLLOW-257 AC2 (FOLLOW-264 / Rule Q) — real init() gate: quiz.enable
     // This ensures the gate path that *does* render is also exercised, confirming
     // the test would catch a gate that wrongly suppresses when enabled=true.
     // Note: no data-quiz-enabled → defaults to enabled=true (from DEFAULT_CONFIG).
-    insertScriptTag();
+    insertScriptTag({ decisionUrl: 'https://api.example.com/api' });
 
     const state = await _initForTest();
     expect(state).not.toBeNull();

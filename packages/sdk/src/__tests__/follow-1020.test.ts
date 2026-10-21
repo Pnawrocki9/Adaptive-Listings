@@ -18,7 +18,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { postQuizCompletionPing } from '../core/adapt.js';
 import type { QuizAnswerPath } from '../core/adapt.js';
-import { DEFAULT_QUIZ_DEFINITION, renderQuizWidget } from '../ui/quiz-widget.js';
+import { renderQuizWidget } from '../ui/quiz-widget.js';
+import { EN_ONLY_QUIZ_DEFINITION } from './fixtures/en-only-quiz-definition.js';
 import type { QuizResolvedArchetype } from '../ui/quiz-widget.js';
 import type { SdkConfig } from '../core/config.js';
 
@@ -135,7 +136,7 @@ describe('renderQuizWidget — reports the walk it took (FOLLOW-1020)', () => {
       {
         accentColor: '#6c5ce7',
         language: 'en',
-        definition: DEFAULT_QUIZ_DEFINITION,
+        definition: EN_ONLY_QUIZ_DEFINITION,
       },
       (r, p) => {
         resolved = r;
@@ -146,8 +147,8 @@ describe('renderQuizWidget — reports the walk it took (FOLLOW-1020)', () => {
       },
     );
 
-    // FOLLOW-1357 (v3.0 built-in): Investment → long-term rental → the trait screen, where the
-    // second option is ticked. A trait step is recorded as the list of ticked indexes.
+    // FOLLOW-1357 (v3.0 tree, EN-only fixture): Investment → long-term rental → the trait screen,
+    // where the second option is ticked. A trait step is recorded as the list of ticked indexes.
     answer(root, 3);
     answer(root, 0);
     answer(root, 1);

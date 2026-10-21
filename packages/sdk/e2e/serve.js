@@ -7,6 +7,7 @@ import { createServer } from 'http';
 import { readFileSync, existsSync } from 'fs';
 import { join, extname, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { DEFAULT_QUIZ_DEFINITION_V2 } from '@estalara/shared';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -42,6 +43,11 @@ createServer((req, res) => {
         language: 'en',
         accent_color: '#2563EB',
         data_source: 'db',
+        // FOLLOW-1370: a `db` answer always carries the served tree (FOLLOW-1358); the SDK has
+        // no built-in tree and opens no card without it.
+        quiz_definition: DEFAULT_QUIZ_DEFINITION_V2,
+        definition_hash: 'e'.repeat(64),
+        definition_version: null,
         brand: {
           primary_color: '#1a73e8',
           logo_url: 'http://localhost:4444/e2e/fixtures/brand-logo.svg',

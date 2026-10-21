@@ -3,9 +3,10 @@
  * self-confirmation + one correction, EN | PL switcher, run pings (MASTER_DESIGN §E.4 v3.0,
  * FOLLOW-1357; walker history: FOLLOW-639 / ADR-0019 D5).
  *
- * The answer→archetype mapping lives in DATA — a `QuizDefinition` (the tenant's served tree, or
- * the built-in `DEFAULT_QUIZ_DEFINITION`). The widget asks `nextStep` (`@estalara/shared`
- * `quiz-walk.ts`, the ONE walker shared with the admin simulator) what to show:
+ * The answer→archetype mapping lives in DATA — the tenant's served `QuizDefinition` (the SDK
+ * ships no built-in tree since FOLLOW-1370: no served definition, no card). The widget asks
+ * `nextStep` (`@estalara/shared` `quiz-walk.ts`, the ONE walker shared with the admin simulator)
+ * what to show:
  *   - `question` — a `single` question (root: a click commits; otherwise select then CTA) or a
  *     `multi` trait screen (checkboxes, chrome "None of these" exclusive, CTA always enabled;
  *     always the last question, recorded as `number[]`);
@@ -30,7 +31,6 @@
 
 import type {
   CanonicalArchetypeId,
-  QuizAnswer,
   QuizDefinition,
   QuizLanguage,
   QuizPathStep,
@@ -74,21 +74,21 @@ export interface QuizRunOutcome {
   language: QuizLanguage;
 }
 
-/** `definition_hash` the built-in fallback reports (the SDK never hashes, ESC-086 item 3). */
-const BUILTIN_QUIZ_DEFINITION_HASH = 'builtin-en-v2';
+/** Id of the line that names the dialog (scoped to our shadow root) [FOLLOW-1372]. */
+const QUESTION_ID = 'estalara-quiz-q';
 
 export interface QuizWidgetConfig {
   accentColor: string;
   /** `quiz_config.language`; a buyer's EN | PL switcher choice (sessionStorage) overrides it. */
   language: QuizLanguage;
   /**
-   * The quiz tree to walk — the tenant's served `quiz_definition` slice, or
-   * `DEFAULT_QUIZ_DEFINITION` when the tenant configured none (ADR-0019 D4/D5).
+   * The quiz tree to walk — the tenant's served `quiz_definition` slice (ADR-0019 D5). The SDK
+   * has no built-in tree: no served definition → no card (FOLLOW-1370).
    */
   definition: QuizDefinition;
   /**
-   * Forwarded public-config `definition_hash` of the served definition. Absent →
-   * `'builtin-en-v2'` for the built-in default, `'unhashed'` for a served one [FOLLOW-1357].
+   * Forwarded public-config `definition_hash` of the served definition; absent → `'unhashed'`
+   * (the SDK never hashes, ESC-086 item 3) [FOLLOW-1357].
    */
   definitionHash?: string | undefined;
   /** Forwarded public-config `definition_version`; absent → `null` [FOLLOW-1357]. */
@@ -185,178 +185,6 @@ const CHROME_LABELS: Record<
   },
 };
 
-// ─── Built-in default definition — the v3.0 tree, EN only ─────────────────────
-
-/** A single-choice answer with EN text (the `answer()` shape of `quiz-default-v2.ts`). */
-function answer(
-  id: string,
-  en: string,
-  weights: Record<string, number>,
-  next: string | null,
-  traits?: TraitId[],
-): QuizAnswer {
-  return { id, label_i18n: { en }, weights, next, ...(traits ? { traits } : {}) };
-}
-
-/** A trait-screen answer: no weights, ends the walk, records `trait`. */
-function traitAnswer(trait: TraitId, en: string): QuizAnswer {
-  return answer(trait, en, {}, null, [trait]);
-}
-
-function buildDefaultQuizDefinition(): QuizDefinition {
-  const traitPrompt = { en: 'Anything else that applies? (optional — tick all that fit)' };
-  const children = traitAnswer('has_children', 'Children will live with me');
-  const wfh = traitAnswer('works_from_home', "I'll work from home 2+ days a week");
-  const premium = traitAnswer('premium', "I'm looking at the top end of the market");
-  const residency = traitAnswer(
-    'residency_goal',
-    'I want residency through this purchase (e.g. golden visa)',
-  );
-  const abroad = traitAnswer(
-    'buying_from_abroad',
-    'I live in a different country than the property',
-  );
-  return {
-    schema_version: 1,
-    root: 'q_purpose',
-    languages: ['en'],
-    questions: [
-      {
-        id: 'q_purpose',
-        prompt_i18n: { en: 'What will this property be for?' },
-        answers: [
-          answer('main_here', 'My main home, in the country where I live now', {}, 'q_home'),
-          answer(
-            'main_move',
-            "My main home, in a country I'm moving to (or back to)",
-            {},
-            'q_move',
-            ['buying_from_abroad'],
-          ),
-          answer(
-            'second',
-            "A holiday or second home — I'll mainly live elsewhere",
-            { second_home_buyer: 1 },
-            't_second',
-          ),
-          answer('invest', 'An investment — to rent out or resell', {}, 'q_invest'),
-          answer(
-            'student',
-            'A home for my child who is studying',
-            { student_parent: 1 },
-            't_student',
-          ),
-          answer('unsure', 'Not sure yet — just looking', {}, null),
-        ],
-      },
-      {
-        id: 'q_home',
-        prompt_i18n: { en: 'Which fits you best?' },
-        answers: [
-          answer('first', 'This will be my first own home', { first_time_buyer: 1 }, 't_home'),
-          answer(
-            'up',
-            "I've owned before — now I need more space or a better home",
-            { family_buyer: 1 },
-            't_home',
-          ),
-          answer(
-            'down',
-            "I've owned before — now I want something smaller and easier to look after",
-            { downsizer: 1 },
-            't_home',
-          ),
-        ],
-      },
-      {
-        id: 'q_move',
-        prompt_i18n: { en: 'Which describes you?' },
-        answers: [
-          answer('return', "I'm moving back to my home country", { diaspora_buyer: 1 }, 't_move'),
-          answer('retire', "I'm retired or about to retire", { retiree_relocator: 1 }, 't_move'),
-          answer(
-            'work',
-            "I'll keep working there — a job, my own business or remotely",
-            { lifestyle_expat: 1 },
-            't_move',
-          ),
-        ],
-      },
-      {
-        id: 'q_invest',
-        prompt_i18n: { en: 'How should it earn money?' },
-        answers: [
-          answer('long', 'Long-term rental to tenants', { yield_hunter: 1 }, 't_invest'),
-          answer(
-            'short',
-            'Holiday / short-term rental (e.g. Airbnb)',
-            { vacation_rental_investor: 1 },
-            't_invest',
-          ),
-          answer('flip', 'Renovate and resell', { flip_investor: 1 }, 't_invest'),
-          answer(
-            'commercial',
-            'Commercial premises (shop, office, warehouse)',
-            { commercial_investor: 1 },
-            't_invest',
-          ),
-          answer('inv_undecided', 'Not decided yet', { yield_hunter: 1 }, 't_invest'),
-        ],
-      },
-      {
-        id: 't_home',
-        kind: 'multi',
-        prompt_i18n: traitPrompt,
-        answers: [children, wfh, premium],
-      },
-      {
-        id: 't_move',
-        kind: 'multi',
-        prompt_i18n: traitPrompt,
-        answers: [children, wfh, premium, residency],
-      },
-      {
-        id: 't_second',
-        kind: 'multi',
-        prompt_i18n: traitPrompt,
-        answers: [
-          traitAnswer('will_let', "I'll rent it out when I'm not using it"),
-          abroad,
-          wfh,
-          residency,
-          premium,
-        ],
-      },
-      {
-        id: 't_invest',
-        kind: 'multi',
-        prompt_i18n: traitPrompt,
-        answers: [
-          traitAnswer('seasoned_investor', 'I already own other investment property'),
-          abroad,
-          residency,
-          premium,
-        ],
-      },
-      {
-        id: 't_student',
-        kind: 'multi',
-        prompt_i18n: traitPrompt,
-        answers: [abroad, traitAnswer('will_let', 'Other students will rent rooms there too')],
-      },
-    ],
-  };
-}
-
-/**
- * The built-in default quiz tree: the v3.0 tree of `DEFAULT_QUIZ_DEFINITION_V2` (same ids,
- * structure, weights and traits) with its EN texts only and no `confirm` block — the served
- * EN + PL definition carries the confirmation texts; the built-in is the offline fallback and
- * its gzip budget (ESC-080) does not fit them [FOLLOW-1357]. Pinned against the shared default
- * by `quiz-widget.test.ts`.
- */
-export const DEFAULT_QUIZ_DEFINITION: QuizDefinition = buildDefaultQuizDefinition();
-
 // ─── Pure walk helpers (moved to @estalara/shared — FOLLOW-1356) ────────────────
 
 /**
@@ -400,9 +228,7 @@ export function renderQuizWidget(
     const def = config.definition;
     const confirm = def.confirm;
     const byId = new Map(def.questions.map((q) => [q.id, q]));
-    const hash =
-      config.definitionHash ??
-      (def === DEFAULT_QUIZ_DEFINITION ? BUILTIN_QUIZ_DEFINITION_HASH : 'unhashed');
+    const hash = config.definitionHash ?? 'unhashed';
     const runId = newQuizRunId();
     // The switcher lists the definition's languages that carry texts (CEO ruling Q-D).
     const langs = def.languages.filter((l) => byId.get(def.root)?.prompt_i18n[l]);
@@ -419,29 +245,38 @@ export function renderQuizWidget(
     // line explains the auto-opened card. The confirm / reject / option buttons share the answer
     // look, so the two result buttons carry equal visual weight (MASTER_DESIGN §E.4.2).
     const accent = config.accentColor;
+    const place = config.placement ?? DEFAULT_QUIZ_PLACEMENT;
+    // FOLLOW-1371: the card never outgrows the viewport (its anchor offset + 16 px stays free,
+    // and at most 80 % of the height so the page shows around it); the body scrolls under a
+    // sticky header (× and EN | PL). `vh` first: a browser without `dvh` keeps that line.
+    const fit = (u: string): string =>
+      `max-height:min(calc(100${u} - ${String(place.offset_y + 16)}px),80${u});`;
     const choice =
       '.estalara-quiz-answer,.estalara-quiz-confirm,.estalara-quiz-reject,.estalara-quiz-option';
     style.textContent =
-      `.estalara-quiz-overlay{position:fixed;${placementToCss(config.placement ?? DEFAULT_QUIZ_PLACEMENT)};width:min(400px,calc(100vw - 32px));z-index:2147483647;pointer-events:auto}` +
-      '.estalara-quiz-card{background:#fff;border-radius:16px;padding:28px 24px 24px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.22);position:relative}' +
-      '.estalara-quiz-close{position:absolute;top:12px;right:16px;background:0 0;border:none;font-size:20px;cursor:pointer;color:#6b7280;line-height:1}' +
-      '.estalara-quiz-lang{position:absolute;top:10px;left:16px}' +
-      '.estalara-quiz-lang button{background:0 0;border:none;padding:2px 4px;font-size:12px;cursor:pointer;color:#9ca3af}' +
+      `.estalara-quiz-overlay{position:fixed;${placementToCss(place)};width:min(400px,calc(100vw - 32px));z-index:2147483647;pointer-events:auto}` +
+      `.estalara-quiz-card{background:#fff;border-radius:16px;padding:8px 24px 24px;width:100%;${fit('vh')}${fit('dvh')}overflow-y:auto;overscroll-behavior:contain;box-shadow:0 8px 32px rgba(0,0,0,.22)}` +
+      '.estalara-quiz-head{position:sticky;top:-8px;display:flex;align-items:center;margin:-8px -16px 4px;background:#fff}' +
+      '.estalara-quiz-close{margin-left:auto;font-size:20px;color:#6b7280;line-height:1}' +
+      '.estalara-quiz-lang{display:flex}' +
+      '.estalara-quiz-lang button{padding:2px 4px;font-size:12px;color:#6b7280}' +
+      // FOLLOW-1372: 44 px touch targets; × and EN | PL share the chrome-less button look.
+      '.estalara-quiz-close,.estalara-quiz-lang button{min-width:44px;min-height:44px;background:0 0;border:none;cursor:pointer}' +
       '.estalara-quiz-lang [aria-pressed=true]{color:#111827;font-weight:600}' +
       '.estalara-quiz-logo{display:block;max-height:32px;max-width:160px;margin:0 auto 16px;object-fit:contain}' +
       '.estalara-quiz-intro{font-size:14px;line-height:1.5;color:#4b5563;margin:0 0 14px}' +
       '.estalara-quiz-question{font-size:16px;font-weight:600;color:#111827;margin:0 0 16px}' +
       '.estalara-quiz-result{font-weight:400;line-height:1.5}' +
       '.estalara-quiz-answers{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}' +
-      `${choice}{padding:12px 16px;border:2px solid #e5e7eb;border-radius:10px;background:#fff;font-size:14px;text-align:left;cursor:pointer;transition:border-color .15s,background .15s;color:#374151}` +
+      `${choice}{min-height:44px;padding:12px 16px;border:2px solid #e5e7eb;border-radius:10px;background:#fff;font-size:14px;text-align:left;cursor:pointer;transition:border-color .15s,background .15s;color:#374151}` +
       `${choice.replace(/,|$/g, ':hover,')}.estalara-quiz-answer.selected{border-color:${accent};background:#f0f4ff}` +
       ".estalara-quiz-answer[role=checkbox]::before{content:'\\2610  '}" +
       ".estalara-quiz-answer[aria-checked=true]::before{content:'\\2611  '}" +
-      `.estalara-quiz-cta{width:100%;padding:12px;background:${accent};color:#fff;border:none;border-radius:9999px;font-size:15px;font-weight:600;cursor:pointer;opacity:.5;transition:opacity .15s}` +
+      `.estalara-quiz-cta{width:100%;min-height:44px;padding:12px;background:${accent};color:#fff;border:none;border-radius:9999px;font-size:15px;font-weight:600;cursor:pointer;opacity:.5;transition:opacity .15s}` +
       '.estalara-quiz-cta:enabled{opacity:1}' +
-      '.estalara-quiz-skip{display:block;margin:12px auto 0;background:0 0;border:none;color:#9ca3af;font-size:13px;cursor:pointer;text-decoration:underline}' +
-      '.estalara-quiz-progress{font-size:12px;color:#9ca3af;margin-bottom:12px}' +
-      '.estalara-quiz-attribution{display:block;margin:14px auto 0;text-align:center;font-size:10px;color:#b0b4bd;letter-spacing:.02em}';
+      '.estalara-quiz-skip{display:block;min-height:44px;margin:4px auto 0;background:0 0;border:none;color:#6b7280;font-size:13px;cursor:pointer;text-decoration:underline}' +
+      '.estalara-quiz-progress{font-size:12px;color:#6b7280;margin-bottom:12px}' +
+      '.estalara-quiz-attribution{display:block;margin:6px auto 0;text-align:center;font-size:10px;color:#6b7280;letter-spacing:.02em}';
     shadowRoot.appendChild(style);
 
     // ── State ──────────────────────────────────────────────────────────────────
@@ -472,6 +307,13 @@ export function renderQuizWidget(
     overlay.className = 'estalara-quiz-overlay';
     const card = document.createElement('div');
     card.className = 'estalara-quiz-card';
+    // FOLLOW-1372: a NON-modal dialog (no focus trap, no focus moved on open — the card opens
+    // on its own), named by the current question / result text; Escape = × on every step.
+    card.setAttribute('role', 'dialog');
+    card.setAttribute('aria-labelledby', QUESTION_ID);
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeBtn.click();
+    });
 
     function el<K extends keyof HTMLElementTagNameMap>(
       tag: K,
@@ -487,6 +329,24 @@ export function renderQuizWidget(
       const btn = el('button', cls, content);
       btn.addEventListener('click', onClick);
       return btn;
+    }
+    /** The step's question / result line — it names the dialog (FOLLOW-1372). */
+    function title(cls: string, content?: string): HTMLParagraphElement {
+      const p = el('p', `estalara-quiz-question${cls}`, content);
+      p.id = QUESTION_ID;
+      return p;
+    }
+    /**
+     * Paint `next` as the current screen. A keyboard user whose focus was in the card keeps it on
+     * the button at the same position (the EN | PL switch, a selected answer); focus outside the
+     * card is never taken (FOLLOW-1372).
+     */
+    function show(next: () => void): void {
+      const buttons = (): NodeListOf<HTMLButtonElement> => card.querySelectorAll('button');
+      const at = [...buttons()].findIndex((b) => b === shadowRoot.activeElement);
+      screen = next;
+      next();
+      if (at >= 0) (buttons()[at] ?? closeBtn).focus();
     }
     const ms = (since: number): number =>
       Math.min(QUIZ_RUN_MAX_MS, Math.round((Date.now() - since) / 100) * 100);
@@ -566,14 +426,15 @@ export function renderQuizWidget(
       ticks = [];
       none = false;
       advance();
+      // A new screen starts at its top (FOLLOW-1371: the card body scrolls).
+      card.scrollTop = 0;
     }
 
     function advance(): void {
       const ns = nextStep(def, { path });
       if (ns.kind === 'question') {
         currentId = ns.questionId;
-        screen = renderQuestion;
-        screen();
+        show(renderQuestion);
         return;
       }
       leaf = ns.leaf;
@@ -586,8 +447,7 @@ export function renderQuizWidget(
       });
       if (ns.kind === 'confirm') {
         resultAt = Date.now();
-        screen = renderResult;
-        screen();
+        show(renderResult);
       } else {
         finish(null, leaf);
       }
@@ -596,20 +456,25 @@ export function renderQuizWidget(
     /** Close button, EN | PL switcher and logo — the top of every screen. */
     function head(): void {
       card.innerHTML = '';
-      card.appendChild(closeBtn);
+      // FOLLOW-1371: one sticky row, so × and EN | PL stay reachable while the body scrolls.
+      const header = el('div', 'estalara-quiz-head');
       if (langs.length > 1) {
         const switcher = el('div', 'estalara-quiz-lang');
+        switcher.setAttribute('role', 'group');
+        switcher.setAttribute('aria-label', 'Language');
         for (const l of langs) {
           const b = button('', l.toUpperCase(), () => {
             lang = l;
             writeQuizLanguage(l);
-            screen();
+            show(screen);
           });
           b.setAttribute('aria-pressed', String(l === lang));
           switcher.appendChild(b);
         }
-        card.appendChild(switcher);
+        header.appendChild(switcher);
       }
+      header.appendChild(closeBtn);
+      card.appendChild(header);
       // FOLLOW-623 / ADR-0019: brand logo atop the card when configured.
       if (config.logoUrl) {
         const logo = el('img', 'estalara-quiz-logo');
@@ -645,7 +510,7 @@ export function renderQuizWidget(
       );
       // FOLLOW-1015: intro line on the first step only (the card opened on its own).
       if (isRoot) card.appendChild(el('p', 'estalara-quiz-intro', chrome.intro));
-      card.appendChild(el('p', 'estalara-quiz-question', text(q.prompt_i18n)));
+      card.appendChild(title('', text(q.prompt_i18n)));
 
       const answers = el('div', 'estalara-quiz-answers');
       const option = (label: string, on: boolean, onClick: () => void): void => {
@@ -674,7 +539,7 @@ export function renderQuizWidget(
           } else {
             selected = idx;
           }
-          renderQuestion();
+          show(renderQuestion);
         });
       });
       // The trait screen's exclusive "None of these" is chrome, not part of the definition.
@@ -682,7 +547,7 @@ export function renderQuizWidget(
         option(chrome.none, none, () => {
           none = !none;
           ticks = [];
-          renderQuestion();
+          show(renderQuestion);
         });
       }
       card.appendChild(answers);
@@ -710,7 +575,7 @@ export function renderQuizWidget(
     function renderResult(): void {
       const chrome = CHROME_LABELS[lang];
       head();
-      const p = el('p', 'estalara-quiz-question estalara-quiz-result');
+      const p = title(' estalara-quiz-result');
       p.append(
         `${chrome.basedOn} `,
         el('strong', '', text(confirm?.names_i18n[leaf])),
@@ -723,8 +588,8 @@ export function renderQuizWidget(
           resolve('confirmed', leaf, leaf);
         }),
         button('estalara-quiz-reject', chrome.no, () => {
-          screen = renderCorrection;
-          screen();
+          show(renderCorrection);
+          card.scrollTop = 0;
         }),
       );
       card.appendChild(choices);
@@ -734,7 +599,7 @@ export function renderQuizWidget(
     function renderCorrection(): void {
       const chrome = CHROME_LABELS[lang];
       head();
-      card.appendChild(el('p', 'estalara-quiz-question estalara-quiz-result', chrome.which));
+      card.appendChild(title(' estalara-quiz-result', chrome.which));
       // The alternatives are canonical ids (serve-schema guardrail 5).
       offered = (confirm?.alternatives[leaf] ?? []).filter(
         (a) => confirm?.names_i18n[a],

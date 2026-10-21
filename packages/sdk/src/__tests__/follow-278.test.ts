@@ -31,7 +31,8 @@
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
 import { _initForTest } from '../index.js';
-import { DEFAULT_QUIZ_DEFINITION, renderQuizWidget } from '../ui/quiz-widget.js';
+import { renderQuizWidget } from '../ui/quiz-widget.js';
+import { EN_ONLY_QUIZ_DEFINITION } from './fixtures/en-only-quiz-definition.js';
 import type { QuizPublicConfigResponse } from '@estalara/shared';
 
 // ---------------------------------------------------------------------------
@@ -104,10 +105,12 @@ function clearAll(): void {
 function buildMockFetch(quizConfig: QuizPublicConfigResponse): ReturnType<typeof vi.fn> {
   return vi.fn().mockImplementation((url: string) => {
     if (url.includes('/quiz/public-config')) {
+      // FOLLOW-1370: the card opens only on a served definition. EN-only (no switcher), so the
+      // chrome follows the server `language` exactly as these tests pin.
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: () => Promise.resolve(quizConfig),
+        json: () => Promise.resolve({ ...quizConfig, quiz_definition: EN_ONLY_QUIZ_DEFINITION }),
       });
     }
     // Neutral adapt response for all other requests (e.g. /api/adapt)
@@ -261,8 +264,8 @@ describe('AC2 — locale render-hop: server language reaches rendered quiz trigg
     expect(chrome.intro).toContain(EXPECTED_INTRO_WORD.en);
   });
 
-  it('no fetch (no decisionUrl) defaults to "en" trigger text', async () => {
-    // No decisionUrl → fetchQuizConfig is not called → snippet/default language='en' used.
+  it('no fetch (no decisionUrl) → no served definition → no card (FOLLOW-1370)', async () => {
+    // No decisionUrl → fetchQuizConfig is not called → nothing served, and no built-in tree.
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }));
     // No decisionUrl in script tag
     insertScriptTag();
@@ -272,9 +275,7 @@ describe('AC2 — locale render-hop: server language reaches rendered quiz trigg
 
     await vi.advanceTimersByTimeAsync(100);
 
-    const chrome = findQuizChrome();
-    // Without a server fetch, language stays at the snippet/default ('en').
-    expect(chrome.skip).toBe(EXPECTED_SKIP.en);
+    expect(findQuizChrome()).toEqual({ skip: null, intro: null });
   });
 });
 
@@ -308,7 +309,7 @@ describe('AC1 — consent-banner locale: accepted constraint documented (structu
       const root = host.attachShadow({ mode: 'open' });
       renderQuizWidget(
         root,
-        { accentColor: '#2563EB', language: lang, definition: DEFAULT_QUIZ_DEFINITION },
+        { accentColor: '#2563EB', language: lang, definition: EN_ONLY_QUIZ_DEFINITION },
         () => undefined,
         () => undefined,
       );
@@ -327,7 +328,7 @@ describe('AC1 — consent-banner locale: accepted constraint documented (structu
     const root = host.attachShadow({ mode: 'open' });
     renderQuizWidget(
       root,
-      { accentColor: '#2563EB', language: 'en', definition: DEFAULT_QUIZ_DEFINITION },
+      { accentColor: '#2563EB', language: 'en', definition: EN_ONLY_QUIZ_DEFINITION },
       () => undefined,
       () => undefined,
     );

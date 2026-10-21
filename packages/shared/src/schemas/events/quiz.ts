@@ -51,13 +51,13 @@ export const QuizEventPayloadSchema = z.object({
   // `corrected` (an alternative or "None of these") or `unconfirmed` (× / `pagehide` on the
   // result screen) and `archetype` is the FINAL archetype (`neutral` after "None of these");
   // without one it stays `completed`. These three fields name the run they close. All optional
-  // and lenient so an older SDK still parses and a newer one is never rejected: the built-in
-  // fallback's `definition_hash` is `'builtin-en-v2'`, not a hex digest.
+  // and lenient so an older SDK still parses and a newer one is never rejected: a pre-FOLLOW-1370
+  // SDK's built-in fallback sends `definition_hash` `'builtin-en-v2'`, not a hex digest.
   /** The `quiz_runs` id (`POST /api/quiz/run`) of this run. */
   quiz_run_id: z.string().uuid().optional(),
   /** The walk's leaf before any correction (canonical archetype id). */
   resolved_archetype: z.string().min(1).max(64).optional(),
-  /** sha-256 hex of the served definition, or `'builtin-en-v2'` / `'unhashed'`. */
+  /** sha-256 hex of the served definition, `'unhashed'`, or an older SDK's `'builtin-en-v2'`. */
   definition_hash: z.string().min(1).max(128).optional(),
   // micro_poll_question / micro_poll_answer removed with the micro-poll feature
   // (FOLLOW-1294). A stale sender's extra keys are stripped by Zod's default object parsing,

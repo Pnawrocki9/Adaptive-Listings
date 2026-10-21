@@ -3278,6 +3278,26 @@ local `next dev` control plane (~1 s plus a ~0.5 s CORS preflight); the served v
 `confirm` block was never exercised. AC(10) and checkpoint KQ1 need it fixed first. The caveats of
 §5.23 (a)–(d) apply.
 
+### 5.33 — 2026-10-21 (checkpoint KQ1 series at `main` HEAD `8c08deba`, EXECUTED ×3) — **three consecutive `run=GREEN` with `total=8` (runs 1, 2, 3), each `[FRESH]` — checkpoint KQ1 of Faza Q (AC(10) quiz confirmation path GREEN live)**
+
+**MANUAL, run by the PM.** Full `scripts/dev/localhost-up.sh` from a clean `main` checkout at
+`8c08deba` (step 10 warmed `/api/quiz/public-config`: 200, served hash `6fce0f72…`, 699 ms); one
+control plane, never restarted; `last-run.json` deleted before each run and `--check-staleness` on
+each copy; nothing else running on the machine.
+
+| Run | Started (UTC)            | `TALLY`                                              | `--check-staleness`                                                       |
+| --- | ------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------- |
+| 1   | 2026-10-20T22:21:26.628Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `8c08deba…`, commitsBehind=0, measuredPathsChanged=0 |
+| 2   | 2026-10-20T22:26:08.391Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` same                                                            |
+| 3   | 2026-10-20T22:29:15.114Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` same                                                            |
+
+`quiz_runs` written during the series: 6 `confirmed`, 3 `corrected`, 3 `unconfirmed`, 3 `shown`, all
+on the served hash; AC(10)(b) corrected `first_time_buyer → family_buyer` and the first request
+after the correction folded was `llm_tweaked`. A first series on the same SHA was not counted: its
+run 3 was a harness preflight timeout (a RED substrate that resets the streak). An earlier attempt
+on `1d578ba9` crashed in every run (`configOf is not defined`, fixed by #1073). Ledger:
+`docs/checkpoints/KQ1.md`. The caveats of §5.23 (a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

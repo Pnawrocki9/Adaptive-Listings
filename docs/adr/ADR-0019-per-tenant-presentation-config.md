@@ -27,6 +27,12 @@ real-table wiring), FOLLOW-627 / PR #616 (`data_source` provenance + 404-on-0-ro
 > not answer (D4 as applied to the quiz slice); (4) **D6's ≤ 42 KB budget was superseded on
 > 2026-09-21 by ESC-080 (43,136 B)** and is the budget every Faza Q package is measured against.
 > D1–D3 and the rest of D4 are unaffected.
+>
+> **Amended in part — 2026-10-21 (FOLLOW-1370, localhost QA sweep of 2026-10-21).** Item (3) of the
+> note above is superseded on one point: the SDK **no longer bundles any quiz tree**. When
+> public-config does not deliver a definition (error, timeout, `fallback`, no decision URL) the
+> buyer sees no quiz on that pageview instead of an EN-only tree without the confirmation step. D4
+> as applied to the quiz slice therefore fails closed (no quiz), not open (bundled tree).
 
 ---
 

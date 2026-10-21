@@ -74,7 +74,8 @@
  * analysis counts runs on, echoed by the SDK in its `POST /api/quiz/run` pings). The serve-time
  * parse stays the LENIENT `QuizDefinitionSchema`; an active row that still fails it is logged and
  * the default is served (buyers keep a quiz, the run carries the default's hash, not a wrong one).
- * A `fallback` response still carries no definition (the SDK walks its bundled tree).
+ * A `fallback` response still carries no definition; since FOLLOW-1370 the SDK has no bundled
+ * tree and shows no quiz on that pageview.
  *
  * @module apps/control-plane/src/app/api/quiz/public-config/route
  */
@@ -159,8 +160,9 @@ function parsePublicBrandConfig(raw: unknown): BrandConfig | undefined {
  * The definition is re-validated with `QuizDefinitionSchema` on read (belt-and-suspenders —
  * it was already validated on write). A stored blob that fails validation (e.g. an archetype
  * later renamed out of `CANONICAL_ARCHETYPE_IDS`) is DROPPED rather than allowed to break the
- * whole quiz-config response: the SDK then falls back to its built-in default tree (D4/D5),
- * which is the correct fail-safe for a read-only buyer-facing endpoint. Returns `undefined`
+ * whole quiz-config response: the caller then serves `DEFAULT_QUIZ_DEFINITION_V2` (FOLLOW-1358;
+ * the SDK has had no bundled tree since FOLLOW-1370), which is the correct fail-safe for a
+ * read-only buyer-facing endpoint. Returns `undefined`
  * when there is no active definition or it fails validation, so the slice is omitted and an
  * unconfigured tenant is byte-identical to pre-ADR-0019.
  */

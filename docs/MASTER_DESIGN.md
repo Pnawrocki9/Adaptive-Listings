@@ -3549,6 +3549,11 @@ użytkownik powinien móc zmienić sobie język quizu.”_
   aktywnego wiersza w `quiz_definitions`.
 - **Wbudowany fallback w SDK zostaje EN-only** (budżet bundla 43 136 B gzip, ESC-080; plan podaje
   dziś 40 405 B). Służy tylko wtedy, gdy public-config nie odpowiada.
+- **Nota 2026-10-21 (FOLLOW-1370, QA sweep 2026-10-21):** wbudowany fallback EN-only został
+  **usunięty z SDK**. Wolny public-config pokazywał kupującym drzewo bez PL, bez przełącznika i bez
+  potwierdzenia (2 z 17 sesji). Teraz karta otwiera się wyłącznie z serwowaną definicją; gdy ta nie
+  dotrze w 15 s (błąd, `fallback`, brak decisionUrl), na tej odsłonie nie ma quizu. Karta nie czeka
+  już na pierwszą odpowiedź `/api/adapt`. Bundle 42 249 B gzip.
 
 **Właściciel (Rule H):** Q1 (`DEFAULT_QUIZ_DEFINITION_V2`, reguła EN+PL), Q2 (przełącznik, fallback
 EN, `build:check`), Q3 (public-config serwuje default v2 + wersję/hash). Tekst v2.0: §E.4.H.7.

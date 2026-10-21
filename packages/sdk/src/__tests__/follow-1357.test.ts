@@ -250,7 +250,7 @@ describe('confirmation + correction', () => {
     expect(options.map((o) => o.textContent)).toEqual([
       'Holiday-let investment',
       'Renovate and resell',
-      'Home for a student',
+      'Commercial property investment',
       'None of these — show me everything',
     ]);
     expect(h.root.querySelector('.estalara-quiz-result')?.textContent).toBe(

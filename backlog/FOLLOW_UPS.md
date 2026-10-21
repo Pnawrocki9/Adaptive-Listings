@@ -56848,3 +56848,110 @@ AC:
 - [ ] FOLLOW-819 series 3× GREEN `[FRESH]`; cost/latency delta recorded in the PR.
 
 cross_ref: [ESC-087, FOLLOW-1359, ESC-076 / §E.7.0]
+
+## FOLLOW-1370 — quiz card never falls back to the built-in EN-only tree when the served config is slow
+
+source_retro: — (3-agent localhost QA sweep, 2026-10-21) source_ticket: FOLLOW-1369
+recommended_agent: sdk-engineer (Opus) priority: P1 estimated_hours: 4 tag: product depends_on:
+[FOLLOW-1369] blocks: [KQ2] promoted_to_queue: true
+
+**What.** In 2 of 17 buyer sessions (card at 15.6 s and 18.5 s) and under 2000 ms network latency
+the card opened with the built-in tree: English only, no language switch, no confirmation step,
+`quiz_runs` rows with the built-in hash and status `completed`. That breaks the CEO's EN + PL ruling
+and the accuracy measurement. The card also opened only ~80 ms after the first `/api/adapt` reply.
+
+AC:
+
+- [ ] A slow served config never shows the built-in tree; the card opens only with the served
+      definition (or not at all on that pageview).
+- [ ] The card is not gated on `/api/adapt` unless that is required; consent and opt-out gating
+      unchanged.
+- [ ] SDK bundle ≤ 43,136 B gzip.
+
+cross_ref: [FOLLOW-1369, FOLLOW-1367, FOLLOW-1365]
+
+## FOLLOW-1371 — quiz card fits short viewports (close and EN/PL always visible)
+
+source_retro: — (QA sweep 2026-10-21) source_ticket: FOLLOW-1356 recommended_agent: sdk-engineer
+(Opus, with FOLLOW-1370) priority: P2 estimated_hours: 2 tag: product depends_on: [] blocks: [KQ2]
+promoted_to_queue: true
+
+**What.** At 375×667 the card is 630 px tall with its top at −59 px; at 1280×720 in PL its top is at
+−6 px. The close button and the language switch are cut off, and on a phone the card covers the
+whole page.
+
+AC:
+
+- [ ] The card never exceeds the viewport; the body scrolls; close and EN/PL stay visible.
+
+cross_ref: [FOLLOW-1367 (616 px card), #1055]
+
+## FOLLOW-1372 — quiz card accessibility (dialog role, keyboard, Escape, touch targets, contrast)
+
+source_retro: — (QA sweep 2026-10-21) source_ticket: FOLLOW-1356 recommended_agent: sdk-engineer
+(Opus, with FOLLOW-1370) priority: P2 estimated_hours: 3 tag: product depends_on: [] blocks: []
+promoted_to_queue: true
+
+**What.** The card has no `role="dialog"` or label; EN/PL is not reachable with Tab; Escape does not
+close it; touch targets are under 44 px; contrast is 2.54 for Skip and progress and 2.08 for
+"Powered by".
+
+AC:
+
+- [ ] Dialog role and label; EN/PL operable by keyboard; Escape = the × of that step.
+- [ ] Touch targets ≥ 44 px; text contrast ≥ 4.5:1.
+
+cross_ref: [FOLLOW-1356]
+
+## FOLLOW-1373 — quiz PL copy and "Not quite" alternatives
+
+source_retro: — (QA sweep 2026-10-21) source_ticket: FOLLOW-1355 recommended_agent: sdk-engineer
+(Sonnet) priority: P2 estimated_hours: 2 tag: product depends_on: [] blocks: [KQ2]
+promoted_to_queue: true
+
+**What.** Odd alternatives after "Not quite": a student parent is offered long-term rental, a
+first-time buyer is offered "student child", a lifestyle expat is offered "first own home". PL:
+"Przeprowadzka na lepsze" reads awkwardly; the commercial sentence repeats its name with two dashes;
+"Jeszcze nie wiem" labels two different answers.
+
+AC:
+
+- [ ] Every result offers its three closest confusable outcomes; quiz lint green.
+- [ ] PL strings fixed; final wording accepted by the CEO at KQ2.
+
+cross_ref: [FOLLOW-1355, KQ2]
+
+## FOLLOW-1374 — chat: the first buyer message does not adapt the listing
+
+source_retro: — (QA sweep 2026-10-21) source_ticket: FOLLOW-1299 recommended_agent: ml-engineer
+(Opus) priority: P2 estimated_hours: 4 tag: product depends_on: [] blocks: [] promoted_to_queue:
+false
+
+**What.** After a first message ("I want to rent it out long-term for steady income") four
+`/api/adapt` calls stayed `neutral` / 0.3655 with no `chat_intent_dimensions`. Only a second, longer
+message produced dimensions (~4.6 s), a `yield_hunter` hint at 0.599 and a headline change ~12 s
+after the send — and that headline was generic, not income-focused. Phase 4.
+
+AC:
+
+- [ ] One clear intent message produces chat dimensions and an adapted, archetype-relevant slot.
+
+cross_ref: [FOLLOW-1299, condition 1b]
+
+## FOLLOW-1375 — confirmed quiz results that change only the CTA
+
+source_retro: — (QA sweep 2026-10-21) source_ticket: FOLLOW-1359 recommended_agent: ml-engineer
+(Sonnet; Opus grounding review) priority: P2 estimated_hours: 3 tag: product depends_on:
+[FOLLOW-1368] blocks: [] promoted_to_queue: false
+
+**What.** After "Yes, that's me", first_time_buyer, second_home_buyer and commercial_investor
+changed only the CTA text; headline and feature stayed generic. Seven other confirmed results also
+changed the headline. Find whether grounding withholds the slots (§E.7.0) or the prompt omits them;
+likely overlaps FOLLOW-1368. Phase 4.
+
+AC:
+
+- [ ] Each confirmed result adapts at least one content slot beyond the CTA, or the PR documents why
+      grounding forbids it for the fixture listing.
+
+cross_ref: [FOLLOW-1368, ESC-076 / §E.7.0]

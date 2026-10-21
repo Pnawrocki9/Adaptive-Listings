@@ -26,6 +26,9 @@
 #   DEMO_MODE       defaults to 1 for the control plane (FOLLOW-1288: the harness's control arm uses
 #                   the ADAPT_API_KEY ops caller, which exists only under DEMO_MODE=1). `DEMO_MODE=`
 #                   (empty) starts it without demo tooling; step 11's preflight then fails loudly.
+#   CP_MODE=prod    run the control plane as `next build && next start` instead of `next dev` (FOLLOW-1376).
+#                   The build takes several minutes once; afterwards no page compiles on first visit,
+#                   which a slow machine needs for the backoffice walkthrough and for steadier series.
 #
 # FOLLOW-1313: the control plane also gets DATABASE_URL (the local al_pg_local, step 9). Without it
 # /api/adapt/description skips its persistent Postgres cache layer (getDb() returns null, a fail-open
@@ -366,7 +369,15 @@ $(grep 'Could not resolve' "$LOG_DIR/ingest-8787.log" | head -n 5)"
 fi
 
 # ---- 9. control plane :3000 (README 3.4, 6.5) --------------------------------------------------
-step "9/11 control plane :3000 - apps/control-plane 'next dev' under doppler, NOT root 'pnpm dev' (README 6.5)"
+CP_MODE="${CP_MODE:-dev}"
+case "$CP_MODE" in
+dev) CP_CMD=(pnpm dev) CP_WAIT=240 ;;
+# One shell under the same doppler env, so NEXT_PUBLIC_* values are inlined at build time and the
+# server env is identical to the dev mode at run time.
+prod) CP_CMD=(bash -c 'pnpm build && exec pnpm start') CP_WAIT=1500 ;;
+*) die "CP_MODE must be dev or prod, got '$CP_MODE'" ;;
+esac
+step "9/11 control plane :3000 - apps/control-plane 'next $CP_MODE' under doppler, NOT root 'pnpm dev' (README 6.5)"
 # The `env` form so the local overrides win over Doppler's hosted DATABASE_URL_ADMIN / ADAPT_API_KEY
 # (README 6.1). DATABASE_URL (FOLLOW-1313) is set to the SAME local URL: Doppler dev defines none, and
 # the description route reads it for the persistent cache (description_cache_persistent). The local
@@ -409,9 +420,9 @@ start_bg control-plane-3000 3000 "$REPO_ROOT/apps/control-plane" \
   CLICKHOUSE_URL=http://localhost:8123 \
   CLICKHOUSE_USER="$CH_LOCAL_USER" CLICKHOUSE_PASSWORD="$CH_LOCAL_PASSWORD" \
   "NODE_OPTIONS=$NODE_OPTIONS" \
-  pnpm dev
+  "${CP_CMD[@]}"
 # curl exits 0 on ANY HTTP answer (even a 404/500) and non-zero only when nothing answers.
-wait_for "control plane :3000" 240 curl -s -o /dev/null -m 60 http://localhost:3000/
+wait_for "control plane :3000" "$CP_WAIT" curl -s -o /dev/null -m 60 http://localhost:3000/
 
 # ---- 10. warm the routes (README 6.6: cold compile > the preflight's 8 s timeout) --------------
 step "10/11 warm /api/adapt, the admin rollup route and the quiz public config (README 6.6, FOLLOW-1367)"

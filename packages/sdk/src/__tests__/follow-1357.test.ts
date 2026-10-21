@@ -267,7 +267,7 @@ describe('confirmation + correction', () => {
       event: 'corrected',
       confirmed_archetype: 'flip_investor',
       resolved_archetype: 'yield_hunter',
-      offered: ['vacation_rental_investor', 'flip_investor', 'student_parent'],
+      offered: ['vacation_rental_investor', 'flip_investor', 'commercial_investor'],
     });
   });
 

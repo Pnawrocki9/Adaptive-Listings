@@ -90,3 +90,63 @@ test.describe('quiz card — served definition only (FOLLOW-1370)', () => {
     await expect(card(page)).toHaveCount(0);
   });
 });
+
+/** Box of the first element matching `sel` (Playwright pierces the open shadow root). */
+async function box(page: Page, sel: string): Promise<{ top: number; bottom: number } | null> {
+  const b = await page.locator(sel).first().boundingBox();
+  return b ? { top: b.y, bottom: b.y + b.height } : null;
+}
+
+/**
+ * Whether `sel` sits inside the card's visible box and on screen, and receives a pointer event
+ * there (Playwright's actionability "receives events" check; the box test comes first so the
+ * trial click's scroll-into-view cannot hide a header that scrolled away).
+ */
+async function hittable(page: Page, sel: string): Promise<boolean> {
+  const c = await box(page, '.estalara-quiz-card');
+  const b = await box(page, sel);
+  const vh = page.viewportSize()?.height ?? 0;
+  if (!c || !b || b.top < Math.max(0, c.top) - 1 || b.bottom > Math.min(vh, c.bottom) + 1) {
+    return false;
+  }
+  return page
+    .locator(sel)
+    .first()
+    .click({ trial: true, timeout: 2_000 })
+    .then(
+      () => true,
+      () => false,
+    );
+}
+
+test.describe('quiz card — fits short viewports (FOLLOW-1371)', () => {
+  for (const [w, h, language] of [
+    [375, 667, 'en'],
+    [375, 667, 'pl'],
+    [1280, 720, 'pl'],
+    [667, 375, 'pl'],
+  ] as const) {
+    test(`${String(w)}x${String(h)} ${language}: the card, × and EN | PL stay on screen`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: w, height: h });
+      await page.route(CONFIG_GLOB, (route) => fulfillJson(route, served({ language })));
+      await open(page);
+      await expect(card(page)).toBeVisible({ timeout: 8_000 });
+      const c = await box(page, '.estalara-quiz-card');
+      expect(c?.top).toBeGreaterThanOrEqual(0);
+      expect(c?.bottom).toBeLessThanOrEqual(h);
+      expect(await hittable(page, '.estalara-quiz-close')).toBe(true);
+      expect(await hittable(page, '.estalara-quiz-lang button')).toBe(true);
+      // Scrolled to its end, the header (× and EN | PL) is still there to press.
+      await page.evaluate(() => {
+        const el = document
+          .querySelector('[data-estalara-host]')
+          ?.shadowRoot?.querySelector('.estalara-quiz-card');
+        el?.scrollTo(0, el.scrollHeight);
+      });
+      expect(await hittable(page, '.estalara-quiz-close')).toBe(true);
+      expect(await hittable(page, '.estalara-quiz-lang button')).toBe(true);
+    });
+  }
+});

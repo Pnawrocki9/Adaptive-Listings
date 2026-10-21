@@ -242,13 +242,20 @@ export function renderQuizWidget(
     // line explains the auto-opened card. The confirm / reject / option buttons share the answer
     // look, so the two result buttons carry equal visual weight (MASTER_DESIGN §E.4.2).
     const accent = config.accentColor;
+    const place = config.placement ?? DEFAULT_QUIZ_PLACEMENT;
+    // FOLLOW-1371: the card never outgrows the viewport (its anchor offset + 16 px stays free,
+    // and at most 80 % of the height so the page shows around it); the body scrolls under a
+    // sticky header (× and EN | PL). `vh` first: a browser without `dvh` keeps that line.
+    const fit = (u: string): string =>
+      `max-height:min(calc(100${u} - ${String(place.offset_y + 16)}px),80${u});`;
     const choice =
       '.estalara-quiz-answer,.estalara-quiz-confirm,.estalara-quiz-reject,.estalara-quiz-option';
     style.textContent =
-      `.estalara-quiz-overlay{position:fixed;${placementToCss(config.placement ?? DEFAULT_QUIZ_PLACEMENT)};width:min(400px,calc(100vw - 32px));z-index:2147483647;pointer-events:auto}` +
-      '.estalara-quiz-card{background:#fff;border-radius:16px;padding:28px 24px 24px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.22);position:relative}' +
-      '.estalara-quiz-close{position:absolute;top:12px;right:16px;background:0 0;border:none;font-size:20px;cursor:pointer;color:#6b7280;line-height:1}' +
-      '.estalara-quiz-lang{position:absolute;top:10px;left:16px}' +
+      `.estalara-quiz-overlay{position:fixed;${placementToCss(place)};width:min(400px,calc(100vw - 32px));z-index:2147483647;pointer-events:auto}` +
+      `.estalara-quiz-card{background:#fff;border-radius:16px;padding:8px 24px 24px;width:100%;${fit('vh')}${fit('dvh')}overflow-y:auto;overscroll-behavior:contain;box-shadow:0 8px 32px rgba(0,0,0,.22)}` +
+      '.estalara-quiz-head{position:sticky;top:-8px;display:flex;align-items:center;margin:-8px -8px 4px;padding:4px 0;background:#fff}' +
+      '.estalara-quiz-close{margin-left:auto;background:0 0;border:none;font-size:20px;cursor:pointer;color:#6b7280;line-height:1}' +
+      '.estalara-quiz-lang{display:flex}' +
       '.estalara-quiz-lang button{background:0 0;border:none;padding:2px 4px;font-size:12px;cursor:pointer;color:#9ca3af}' +
       '.estalara-quiz-lang [aria-pressed=true]{color:#111827;font-weight:600}' +
       '.estalara-quiz-logo{display:block;max-height:32px;max-width:160px;margin:0 auto 16px;object-fit:contain}' +
@@ -389,6 +396,8 @@ export function renderQuizWidget(
       ticks = [];
       none = false;
       advance();
+      // A new screen starts at its top (FOLLOW-1371: the card body scrolls).
+      card.scrollTop = 0;
     }
 
     function advance(): void {
@@ -419,7 +428,8 @@ export function renderQuizWidget(
     /** Close button, EN | PL switcher and logo — the top of every screen. */
     function head(): void {
       card.innerHTML = '';
-      card.appendChild(closeBtn);
+      // FOLLOW-1371: one sticky row, so × and EN | PL stay reachable while the body scrolls.
+      const header = el('div', 'estalara-quiz-head');
       if (langs.length > 1) {
         const switcher = el('div', 'estalara-quiz-lang');
         for (const l of langs) {
@@ -431,8 +441,10 @@ export function renderQuizWidget(
           b.setAttribute('aria-pressed', String(l === lang));
           switcher.appendChild(b);
         }
-        card.appendChild(switcher);
+        header.appendChild(switcher);
       }
+      header.appendChild(closeBtn);
+      card.appendChild(header);
       // FOLLOW-623 / ADR-0019: brand logo atop the card when configured.
       if (config.logoUrl) {
         const logo = el('img', 'estalara-quiz-logo');
@@ -548,6 +560,7 @@ export function renderQuizWidget(
         button('estalara-quiz-reject', chrome.no, () => {
           screen = renderCorrection;
           screen();
+          card.scrollTop = 0;
         }),
       );
       card.appendChild(choices);

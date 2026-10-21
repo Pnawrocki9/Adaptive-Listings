@@ -3298,6 +3298,21 @@ run 3 was a harness preflight timeout (a RED substrate that resets the streak). 
 on `1d578ba9` crashed in every run (`configOf is not defined`, fixed by #1073). Ledger:
 `docs/checkpoints/KQ1.md`. The caveats of §5.23 (a)–(d) apply.
 
+### 5.34 — 2026-10-21 (QA-sweep fixes FOLLOW-1370/1371/1372 + FOLLOW-1373 series at branch HEAD `b2c3dce9`, EXECUTED ×3) — **three consecutive `run=GREEN` with `total=8` (runs 1, 2, 3), each `[FRESH]` — the per-PR series of #1077 (served-only quiz card, no bundled tree; merged as `d7ac20cf`), on top of #1076 (PL copy, new served hash)**
+
+**MANUAL, run by the PM.** Full `scripts/dev/localhost-up.sh` at `b2c3dce9` (#1077's head, rebased
+on `e88d6747` = #1076); one control plane, never restarted; `--check-staleness` on each copy.
+
+| Run | Started (UTC)            | `TALLY`                                              | `--check-staleness`                                                       |
+| --- | ------------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------- |
+| 1   | 2026-10-21T20:37:58.961Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `b2c3dce9…`, commitsBehind=0, measuredPathsChanged=0 |
+| 2   | 2026-10-21T20:43:14.936Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` same                                                            |
+| 3   | 2026-10-21T20:46:07.004Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` same                                                            |
+
+`quiz_runs` written during the series: 6 `confirmed`, 3 `corrected`, 3 `unconfirmed`, 3 `shown`, all
+on the new served hash `2e95f96e…` (FOLLOW-1373); no row carries a non-served hash — the SDK no
+longer bundles a tree (FOLLOW-1370). SDK bundle 42,249 B gzip. The caveats of §5.23 (a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

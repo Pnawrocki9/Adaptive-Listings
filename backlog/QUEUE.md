@@ -30,12 +30,13 @@
   compliance follow-ups listed in `docs/checkpoints/KQ1.md`.
 - **FOLLOW-1369** — status: DONE # #1072 `38d19cb6` + harness #1073, 2026-10-21. One quiz-config
   request raced against 1 s, 15 s deadline; SDK 43,133 B.
-- **FOLLOW-1370** — status: IN_PROGRESS # P1, sdk-engineer Opus, 2026-10-21. QA sweep: slow served
-  config showed the built-in EN-only tree (no switch, no confirmation).
-- **FOLLOW-1371** — status: IN_PROGRESS # P2, with 1370. Card fits short viewports.
-- **FOLLOW-1372** — status: IN_PROGRESS # P2, with 1370. Card accessibility.
-- **FOLLOW-1373** — status: IN_PROGRESS # P2, sdk-engineer Sonnet. PL copy + "Not quite"
-  alternatives; wording to the CEO at KQ2.
+- **FOLLOW-1370** — status: DONE # #1077 `d7ac20cf`, 2026-10-21. Card opens only with the served
+  definition; bundled EN-only tree removed (no served definition → no quiz); not gated on
+  `/api/adapt`. Series 3× GREEN 8/8 (README §5.34). SDK 42,249 B.
+- **FOLLOW-1371** — status: DONE # #1077. Card fits the viewport; sticky × and EN | PL.
+- **FOLLOW-1372** — status: DONE # #1077. Non-modal dialog, keyboard EN | PL, Escape, 44 px, 4.83:1.
+- **FOLLOW-1373** — status: DONE # #1076 `e88d6747`, 2026-10-21. PL copy + alternatives; served hash
+  `2e95f96e…`; open wording questions for the CEO at KQ2.
 - **FOLLOW-1374** — status: BACKLOG # P2, Phase 4. First chat message does not adapt.
 - **FOLLOW-1375** — status: BACKLOG # P2, Phase 4. Confirmed results that change only the CTA.
 - **FOLLOW-1368** — status: BACKLOG # ESC-087 option 3: `/api/adapt` uses the playbook branch only

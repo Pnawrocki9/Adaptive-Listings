@@ -37,6 +37,8 @@
 - **FOLLOW-1372** — status: DONE # #1077. Non-modal dialog, keyboard EN | PL, Escape, 44 px, 4.83:1.
 - **FOLLOW-1373** — status: DONE # #1076 `e88d6747`, 2026-10-21. PL copy + alternatives; served hash
   `2e95f96e…`; open wording questions for the CEO at KQ2.
+- **KQ2** — PASSED # CEO ruling 2026-10-22 at `616b2a65` (`docs/checkpoints/KQ2.md`, tag
+  `kq2-passed`). Next: Phase 4; open wording item carried.
 - **FOLLOW-1376** — status: DONE # #1079, 2026-10-21. `CP_MODE=prod` local control plane
   (`next build && next start`) + `ESTALARA_LOCAL_ORIGINS=1` (ignored on Vercel). Series README
   §5.35. For the CEO's KQ2 walkthrough on a slow machine.

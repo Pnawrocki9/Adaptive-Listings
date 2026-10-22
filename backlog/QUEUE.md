@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 180 (2026-10-19) — **Checkpoint K3 GREEN at `main` `434b2513` (`docs/checkpoints/K3.md`, README §5.31, tag `k3-green` on this ledger's merge): Phase 3 M1 #1042, M2 #1044, M3 #1041, M5 #1043, N2 full #1045 DONE; N1 `--final` reads 0. A RED pair at `3952ac29` was bisected by a read-only forensic (not a Phase 3 regression) → FOLLOW-1352 #1046 (harness predicate) + FOLLOW-1351 #1047 (SDK single-flight chat refresh). **CEO ruling 2026-10-19: Faza Q — the quiz must identify one archetype with ≥ 90 % accuracy (buyer self-confirmation as ground truth, EN + PL mandatory, buyer-side language switcher, 12 results + neutral + traits) and the backoffice must manage the quiz end to end — is INSERTED between K3 and Phase 4.** Plan approved in plan mode (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, copied to `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` by the Q0 PR); packages Q0 docs → Q1 shared → Q2 SDK ∥ Q3 recording ∥ Q7 editor → Q4 fold → Q5 traits → Q6 harness (AC(10), TALLY 8) → Q8 report; checkpoints KQ1 (localhost 3× GREEN 8/8), KQ2 (CEO walkthrough — absorbs the K3 'moment CEO'), KQ3 (production, CTO: ≥ 400 decided runs, pre-registered Wilson bound). Phase 4 (P1–P7) follows KQ2. New stubs: FOLLOW-1353 (Sentry drizzle params, P2), FOLLOW-1354 (SDK adapt fetch timeout, P2); amendments 1307, 1233/1246, 1350. Retro batch owed (weekly): #1042, #1043, #1044, #1047. Next free: FOLLOW-1380, RETRO-368, ESC-089.**
+## ▶️ START HERE — session 180 (2026-10-19) — **Checkpoint K3 GREEN at `main` `434b2513` (`docs/checkpoints/K3.md`, README §5.31, tag `k3-green` on this ledger's merge): Phase 3 M1 #1042, M2 #1044, M3 #1041, M5 #1043, N2 full #1045 DONE; N1 `--final` reads 0. A RED pair at `3952ac29` was bisected by a read-only forensic (not a Phase 3 regression) → FOLLOW-1352 #1046 (harness predicate) + FOLLOW-1351 #1047 (SDK single-flight chat refresh). **CEO ruling 2026-10-19: Faza Q — the quiz must identify one archetype with ≥ 90 % accuracy (buyer self-confirmation as ground truth, EN + PL mandatory, buyer-side language switcher, 12 results + neutral + traits) and the backoffice must manage the quiz end to end — is INSERTED between K3 and Phase 4.** Plan approved in plan mode (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, copied to `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` by the Q0 PR); packages Q0 docs → Q1 shared → Q2 SDK ∥ Q3 recording ∥ Q7 editor → Q4 fold → Q5 traits → Q6 harness (AC(10), TALLY 8) → Q8 report; checkpoints KQ1 (localhost 3× GREEN 8/8), KQ2 (CEO walkthrough — absorbs the K3 'moment CEO'), KQ3 (production, CTO: ≥ 400 decided runs, pre-registered Wilson bound). Phase 4 (P1–P7) follows KQ2. New stubs: FOLLOW-1353 (Sentry drizzle params, P2), FOLLOW-1354 (SDK adapt fetch timeout, P2); amendments 1307, 1233/1246, 1350. Retro batch owed (weekly): #1042, #1043, #1044, #1047. Next free: FOLLOW-1387, RETRO-368, ESC-089.**
 
 ### Dispatch record (session 180)
 
@@ -48,9 +48,23 @@
   on 3/4 fixture descriptions (FOLLOW-1377 measurement); raise or rebalance the 4.x floor.
 - **FOLLOW-1379** — status: BACKLOG # P3. `GET /api/admin/analytics/rollup` answered 500 twice under
   load during README §5.36 (AC(5) RED); capture the ClickHouse error and harden the query.
-- **FOLLOW-1377** — status: IN_REVIEW # P2 control-plane, CEO 2026-10-22. Platform Settings: Haiku
-  5.5, Sonnet 5.5, Opus 5.5, Fable 5.1 + measured cost/time per model; 5.x thinking profile; list
-  prices fixed (Haiku 4.5 4x under, Opus 4.8 3x over — spend-cap accounting changes).
+- **FOLLOW-1377** — status: DONE # #1081 `ffb5ad12`, 2026-10-22. Platform Settings: Claude 5.x
+  generation models with measured cost/time; pricing fixed (Haiku 4.5, Opus 4.8). Series §5.36.
+- **FOLLOW-1380** — status: DONE # 2026-10-23. Blind compare Haiku 5.5 vs Sonnet 5.5 (24 cases,
+  `docs/research/MODEL-COMPARE-HAIKU55-SONNET55-2026-10-22.md`): verdict Sonnet 5.5 (Haiku fails the
+  faithfulness/refusal condition; quality not significantly different). Re-run after 1381–1384.
+- **FOLLOW-1381** — status: BACKLOG # P1. Claim check's digit rule refuses correctly formatted
+  numbers with thousands separators ("949 000 PLN" vs "949000"): 13 of 48 outputs, 9 on PL pages.
+- **FOLLOW-1382** — status: BACKLOG # P1. Headline prompt has no locale: 12 of 31 headlines in the
+  wrong language.
+- **FOLLOW-1383** — status: BACKLOG # P2. Amenity claim check is English-only: Polish originals
+  cannot ground amenities ("kominek" ≠ "fireplace").
+- **FOLLOW-1384** — status: BACKLOG # P2. Generator has no output-language check (an EN page was
+  served a Polish description).
+- **FOLLOW-1385** — status: BACKLOG # P3. Vacation-rental `copy_template` recommends "turnkey",
+  which the claim check refuses.
+- **FOLLOW-1386** — status: BACKLOG # P3. Polish room-count convention ("dwupokojowe" = 1 bedroom +
+  living room) mistranslated by both models; add guidance.
 - **FOLLOW-1368** — status: BACKLOG # ESC-087 option 3: `/api/adapt` uses the playbook branch only
   when every slot is grounded, else the LLM — all sessions; own series; after KQ2.
 - **FOLLOW-1367** — status: DONE # folded into #1071 (AC(5) after the quiz card, warm

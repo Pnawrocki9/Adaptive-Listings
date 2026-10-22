@@ -560,3 +560,13 @@ the invoking command.
   add:** every number a design doc states as a consequence ("~0.55", "3 do not flip") gets a pin
   computed by the code before the doc is ruled; and a brief's expected behaviour ("correcting draws
   a follow-up") is probed against the math before it is pinned.
+
+- **2026-10-22 / FOLLOW-1380** · **Built:** blind Haiku 5.5 vs Sonnet 5.5 comparison through the
+  real `generateDescription()` (24 cases, Opus 5.5 pairwise judge with swapped orders, blind
+  single-text error audit, CEO blind sample). · **Real vs placeholder judgment call:** 16 of 17
+  claim-check refusals were checker false positives (thousands separators, English-only amenity
+  regex on a Polish original), so "refusals" measured the checker more than the model. I reported
+  them as the stated rule required and diagnosed each one; I did not quietly reclassify. ·
+  **Guardrail I'd add:** a model comparison must diagnose every refusal (generator token vs
+  normalised cross-check) before a refusal count enters a decision rule. Every generator output also
+  needs a language check: the generator served a Polish body on an EN page and no check caught it.

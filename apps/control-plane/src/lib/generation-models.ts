@@ -35,7 +35,7 @@ export interface GenerationRequestExtras {
 }
 
 /** Measured on the real generator path; the method and date are in the table's comment. */
-export interface MeasuredGeneration {
+interface MeasuredGeneration {
   /** Mean `usage.input_tokens` of the description call (system + user prompt). */
   descriptionTokensIn: number;
   /** Mean `usage.output_tokens` of the description call, thinking included (it is billed). */
@@ -47,7 +47,7 @@ export interface MeasuredGeneration {
   p50Ms: number;
 }
 
-export interface GenerationModelEntry {
+interface GenerationModelEntry {
   label: string;
   /** One short line for staff: what the model is for. */
   note: string;

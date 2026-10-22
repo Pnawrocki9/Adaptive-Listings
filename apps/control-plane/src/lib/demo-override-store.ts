@@ -66,13 +66,19 @@ export const REACHABLE_ARCHETYPES = [
 export type ReachableArchetype = (typeof REACHABLE_ARCHETYPES)[number];
 
 /**
- * Curated LLM model allow-list (DEMO-001).
- * Mirrors scripts/dev/mock-decision-server.mjs MODELS.
+ * Curated LLM model allow-list (DEMO-001). Same ids as `ALLOWED_GENERATION_MODELS`
+ * (`global-config-store.ts`); each one has a request profile in `generation-models.ts`.
+ * `scripts/dev/mock-decision-server.mjs` MODELS keeps only the three 4.x ids: the `:9100` mock
+ * has no 5.x request profile (FOLLOW-1377).
  */
 export const DEMO_ALLOWED_MODELS = [
   'claude-haiku-4-5-20251001',
+  'claude-haiku-5-5',
   'claude-sonnet-4-6',
+  'claude-sonnet-5-5',
   'claude-opus-4-8',
+  'claude-opus-5-5',
+  'claude-fable-5-1',
 ] as const;
 
 export type DemoAllowedModel = (typeof DEMO_ALLOWED_MODELS)[number];

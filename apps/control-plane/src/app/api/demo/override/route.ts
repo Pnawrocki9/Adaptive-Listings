@@ -49,7 +49,7 @@
  *
  * Inputs validated with Zod:
  *   - override_archetype ∈ REACHABLE_ARCHETYPES (13 values)
- *   - override_model ∈ DEMO_ALLOWED_MODELS (3 values)
+ *   - override_model ∈ DEMO_ALLOWED_MODELS (7 values since FOLLOW-1377)
  *   - enabled is required boolean
  *
  * When enabled=true and archetype is null/omitted, the PUT returns 400 — you must

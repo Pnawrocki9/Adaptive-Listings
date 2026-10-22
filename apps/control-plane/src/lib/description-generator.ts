@@ -52,6 +52,7 @@ import {
 import { DAILY_SPEND_CAP_USD, getDailySpend } from '@/lib/llm-spend-counter';
 import { logLlmCallAsync } from '@/lib/llm-calls-register';
 import { computeCost } from '@/lib/llm-pricing';
+import { generationRequestFor, type GenerationRequestExtras } from '@/lib/generation-models';
 import { publishPgCachedDescription } from '@/lib/description-pg-cache';
 import { setCachedDescription } from '@/lib/description-cache';
 import { writeDescriptionGenerationAudit } from '@/lib/description-generation-audit';
@@ -506,11 +507,14 @@ function parseCopyTemplateSections(copyTemplate: string): [string, string] {
   return [pyStrip(copyTemplate), ''];
 }
 
-/** `_generate_with_sonnet`'s prompt assembly. */
+/**
+ * `_generate_with_sonnet`'s prompt assembly. The budget is `_max_tokens_for` for a 4.x model and the
+ * model's catalog profile on top of it for a 5.x one (FOLLOW-1377, `generation-models.ts`).
+ */
 function renderDescriptionPrompt(
   e: DescriptionRequestedEvent,
-  _model: AllowedGenerationModel,
-): { system: string; user: string; maxTokens: number } {
+  model: AllowedGenerationModel,
+): { system: string; user: string; maxTokens: number; extras: GenerationRequestExtras } {
   const [parsedVoice, hardRules] = parseCopyTemplateSections(e.copy_template);
   const voicePattern = parsedVoice || (ARCHETYPE_GUIDANCE[e.archetype] ?? GUIDANCE_DEFAULT);
   const system = SONNET_SYSTEM_PROMPT_TEMPLATE.replaceAll('{archetype}', e.archetype).replaceAll(
@@ -542,14 +546,22 @@ function renderDescriptionPrompt(
       'dates, or proper names that are not in original_description or ' +
       'listing_context. Finish with the <verified_facts_used> JSON block.',
   ].join('\n');
-  return { system, user, maxTokens: maxTokensFor(e.original_description) };
+  const { maxTokens, extras } = generationRequestFor(model, maxTokensFor(e.original_description));
+  return { system, user, maxTokens, extras };
 }
 
-/** `_generate_headline`'s prompt assembly (FOLLOW-1305: the whitelist is the listing's fields). */
-function renderHeadlinePrompt(e: DescriptionRequestedEvent): {
+/**
+ * `_generate_headline`'s prompt assembly (FOLLOW-1305: the whitelist is the listing's fields). The
+ * budget is `_HEADLINE_MAX_TOKENS` for a 4.x model, profiled for a 5.x one (FOLLOW-1377).
+ */
+function renderHeadlinePrompt(
+  e: DescriptionRequestedEvent,
+  model: AllowedGenerationModel,
+): {
   system: string;
   user: string;
-  maxTokens: 60;
+  maxTokens: number;
+  extras: GenerationRequestExtras;
 } {
   const persona = ARCHETYPE_GUIDANCE[e.archetype] ?? GUIDANCE_DEFAULT;
   const originalSnippet = pySliceCodePoints(e.original_description || '(empty)', 2000);
@@ -569,7 +581,8 @@ function renderHeadlinePrompt(e: DescriptionRequestedEvent): {
     `superlatives) the sources do not state. Sentence case: capitalise only the first word and ` +
     `true proper names. Return ONLY the headline text.\n\n` +
     factsBlock;
-  return { system: HEADLINE_SYSTEM_PROMPT, user, maxTokens: HEADLINE_MAX_TOKENS };
+  const { maxTokens, extras } = generationRequestFor(model, HEADLINE_MAX_TOKENS);
+  return { system: HEADLINE_SYSTEM_PROMPT, user, maxTokens, extras };
 }
 
 const VERDICT_SRC = `<adaptation_verdict>${PY_WS}*(FIT|NEUTRAL)${PY_WS}*</adaptation_verdict>`;
@@ -689,7 +702,13 @@ class DeadlineExceeded extends Error {}
 /** One Anthropic call under a deadline on the TOTAL (G-03, the FOLLOW-1040 pattern). */
 async function callModel(
   client: Anthropic,
-  params: { model: string; max_tokens: number; system: string; user: string },
+  params: {
+    model: string;
+    max_tokens: number;
+    system: string;
+    user: string;
+    extras: GenerationRequestExtras;
+  },
   deadlineMs: number,
 ): Promise<{
   text: string;
@@ -714,19 +733,26 @@ async function callModel(
   try {
     const response = await Promise.race([
       client.messages.create(
+        // The 5.x fields (`between_tools`, `output_config`) post-date this SDK's types; the SDK
+        // sends the body as given. `extras` is `{}` for a 4.x model: the body is unchanged.
         {
           model: params.model,
           max_tokens: params.max_tokens,
           system: params.system,
           messages: [{ role: 'user', content: params.user }],
-        },
+          ...params.extras,
+        } as Anthropic.MessageCreateParamsNonStreaming,
         { signal: controller.signal, maxRetries: ANTHROPIC_MAX_RETRIES },
       ),
       deadline,
     ]);
-    const block = response.content[0];
+    // The text blocks only: a 5.x reply opens with a `thinking` block (FOLLOW-1377). A 4.x reply
+    // without thinking is one text block, read exactly as before.
+    const text = response.content
+      .map((block) => (block.type === 'text' ? block.text : ''))
+      .join('');
     return {
-      text: block?.type === 'text' ? block.text : '',
+      text,
       stopReason: response.stop_reason,
       tokensIn: response.usage.input_tokens,
       tokensOut: response.usage.output_tokens,
@@ -919,7 +945,13 @@ async function generateValidated(e: DescriptionRequestedEvent): Promise<Generati
   try {
     raw = await callModel(
       client,
-      { model, max_tokens: prompt.maxTokens, system: prompt.system, user: prompt.user },
+      {
+        model,
+        max_tokens: prompt.maxTokens,
+        system: prompt.system,
+        user: prompt.user,
+        extras: prompt.extras,
+      },
       DESCRIPTION_DEADLINE_MS,
     );
   } catch (err: unknown) {
@@ -978,10 +1010,10 @@ async function generateValidated(e: DescriptionRequestedEvent): Promise<Generati
   let headline: string | null = null;
   let headlineViolation: GenerationReport['headlineViolation'] = null;
   try {
-    const hp = renderHeadlinePrompt(e);
+    const hp = renderHeadlinePrompt(e, model);
     const hRaw = await callModel(
       client,
-      { model, max_tokens: hp.maxTokens, system: hp.system, user: hp.user },
+      { model, max_tokens: hp.maxTokens, system: hp.system, user: hp.user, extras: hp.extras },
       HEADLINE_DEADLINE_MS,
     );
     await logCall(e, model, 'headline', hRaw);

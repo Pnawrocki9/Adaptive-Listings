@@ -237,8 +237,8 @@ export const DescriptionRequestedEventSchema = z.object({
   /**
    * Optional LLM model override for DEMO MODE (DEMO-001).
    * When present, the Modal job must use this model instead of its default.
-   * Must be one of the curated allow-list: claude-haiku-4-5-20251001,
-   * claude-sonnet-4-6, claude-opus-4-8.
+   * Must be one of the curated allow-list (`DEMO_ALLOWED_MODELS`, control plane): the three 4.x
+   * ids plus claude-haiku-5-5, claude-sonnet-5-5, claude-opus-5-5, claude-fable-5-1 (FOLLOW-1377).
    * Consumed by ml-engineer in FOLLOW-166.
    * Takes precedence over generation_model (FOLLOW-161).
    */
@@ -247,8 +247,9 @@ export const DescriptionRequestedEventSchema = z.object({
   /**
    * Global admin-configured generation model (FOLLOW-161).
    * Threaded by the control-plane route on cache miss for standard (non-DEMO) requests.
-   * Must be one of the curated allow-list: claude-haiku-4-5-20251001,
-   * claude-sonnet-4-6, claude-opus-4-8.
+   * Must be one of the curated allow-list (`ALLOWED_GENERATION_MODELS`, control plane): the three
+   * 4.x ids plus claude-haiku-5-5, claude-sonnet-5-5, claude-opus-5-5, claude-fable-5-1
+   * (FOLLOW-1377).
    * Precedence in the Modal job: override_model > generation_model > _DEFAULT_GENERATION_MODEL.
    * Not present when override_model is set (DEMO MODE path uses override_model instead).
    */

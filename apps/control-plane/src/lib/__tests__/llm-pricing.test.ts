@@ -1,43 +1,48 @@
 /**
- * FOLLOW-1297 (ADR-0023 §3): every id in `ALLOWED_GENERATION_MODELS` carries an explicit price no
- * lower than the rate the Python job billed it at (Haiku 0.00025/0.00125, Sonnet 0.003/0.015,
- * unknown ids at the Sonnet rate), so `claude-opus-4-8` is no longer under-billed against the cap.
+ * FOLLOW-1297 (ADR-0023 §3): every id in `ALLOWED_GENERATION_MODELS` carries an explicit price.
+ * FOLLOW-1377: the prices are Anthropic's base list prices (read 2026-10-22). Two ids were billed
+ * off-list before: Haiku 4.5 at 0.00025 / 0.00125 (4x under) and Opus 4.8 at 0.015 / 0.075 (3x
+ * over). These rows feed the daily spend cap, so each one is pinned.
  */
 import { describe, expect, it } from 'vitest';
 import { computeCost } from '@/lib/llm-pricing';
 import { ALLOWED_GENERATION_MODELS } from '@/lib/global-config-store';
 
-/** Per-1k USD the Python job billed each id at (`_llm_cost_usd`: substring match, else Sonnet). */
-const PYTHON_RATE: Record<string, readonly [number, number]> = {
-  'claude-haiku-4-5-20251001': [0.00025, 0.00125],
-  'claude-sonnet-4-6': [0.003, 0.015],
-  'claude-opus-4-8': [0.003, 0.015], // the Python's "unknown ⇒ Sonnet" fallback
+/** USD per MILLION tokens `[input, output]`, as the pricing page states them. */
+const LIST_PRICE_PER_MTOK: Record<string, readonly [number, number]> = {
+  'claude-haiku-4-5': [1, 5],
+  'claude-haiku-4-5-20251001': [1, 5],
+  'claude-haiku-5-5': [0.1, 0.5],
+  'claude-sonnet-4-6': [3, 15],
+  'claude-sonnet-5-5': [2, 10],
+  'claude-opus-4-8': [5, 25],
+  'claude-opus-5-5': [4, 20],
+  'claude-fable-5-1': [10, 50],
 };
-/** The gateway's historical default for an id with no explicit price. */
-const DEFAULT_RATE: readonly [number, number] = [0.001, 0.005];
 
 describe('llm-pricing', () => {
-  it('prices every allow-listed generation model explicitly, at or above the Python rate', () => {
-    for (const id of ALLOWED_GENERATION_MODELS) {
-      const [pyIn, pyOut] = PYTHON_RATE[id]!;
-      const inputOnly = computeCost(id, 1000, 0);
-      const outputOnly = computeCost(id, 0, 1000);
-      // Explicit: not the default rate for either direction.
-      expect([inputOnly, outputOnly], id).not.toEqual(DEFAULT_RATE);
-      expect(inputOnly, id).toBeGreaterThanOrEqual(pyIn);
-      expect(outputOnly, id).toBeGreaterThanOrEqual(pyOut);
+  it('bills every priced id at its list price, input and output separately', () => {
+    for (const [id, [inPerM, outPerM]] of Object.entries(LIST_PRICE_PER_MTOK)) {
+      expect(computeCost(id, 1_000_000, 0), id).toBe(inPerM);
+      expect(computeCost(id, 0, 1_000_000), id).toBe(outPerM);
     }
   });
 
-  it('keeps the adapt path prices for Haiku and Sonnet unchanged', () => {
-    expect(computeCost('claude-haiku-4-5', 1000, 1000)).toBe(0.0015);
+  it('prices every allow-listed generation model explicitly', () => {
+    for (const id of ALLOWED_GENERATION_MODELS) {
+      expect(LIST_PRICE_PER_MTOK[id], id).toBeDefined();
+    }
+  });
+
+  it('corrects the two off-list rates (FOLLOW-1377)', () => {
+    // Haiku 4.5 was 0.0015 per 1k in + 1k out (4x under); Opus 4.8 was 0.09 (3x over).
+    expect(computeCost('claude-haiku-4-5-20251001', 1000, 1000)).toBe(0.006);
+    expect(computeCost('claude-haiku-4-5', 1000, 1000)).toBe(0.006);
+    expect(computeCost('claude-opus-4-8', 1000, 1000)).toBe(0.03);
     expect(computeCost('claude-sonnet-4-6', 1000, 1000)).toBe(0.018);
   });
 
-  it('bills Opus above the Sonnet rate, and an unknown id at the historical default', () => {
-    expect(computeCost('claude-opus-4-8', 1000, 1000)).toBeGreaterThan(
-      computeCost('claude-sonnet-4-6', 1000, 1000),
-    );
+  it('bills an unknown id at the historical default', () => {
     expect(computeCost('some-other-model', 1000, 1000)).toBe(0.006);
   });
 

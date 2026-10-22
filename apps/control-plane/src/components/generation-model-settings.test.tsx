@@ -109,3 +109,57 @@ describe('GenerationModelSettings — FOLLOW-630 load-failure guard', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 });
+
+describe('GenerationModelSettings — cost and time per model (FOLLOW-1377)', () => {
+  const ALL_MODELS = [
+    'claude-haiku-4-5-20251001',
+    'claude-haiku-5-5',
+    'claude-sonnet-4-6',
+    'claude-sonnet-5-5',
+    'claude-opus-4-8',
+    'claude-opus-5-5',
+    'claude-fable-5-1',
+  ];
+
+  it('renders one comparison row per allowed model with its note, cost and time', async () => {
+    mockFetchOnce({ ...SAMPLE_STATE, allowed_models: ALL_MODELS });
+    render(<GenerationModelSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('model-hint-claude-fable-5-1')).toBeDefined();
+    });
+    for (const m of ALL_MODELS) {
+      expect(screen.getByTestId(`model-hint-${m}`)).toBeDefined();
+    }
+    // Measured tokens × llm-pricing list prices; median measured seconds (generation-models.ts).
+    const sonnet = screen.getByTestId('model-hint-claude-sonnet-4-6').textContent;
+    expect(sonnet).toBe('Sonnet 4.6Default; balanced≈ $0.03≈ 13 s');
+    const haiku55 = screen.getByTestId('model-hint-claude-haiku-5-5').textContent;
+    expect(haiku55).toContain('≈ $0.001'); // three decimals below a cent, never "$0.00"
+    expect(haiku55).toContain('≈ 4 s');
+    expect(screen.getByTestId('model-hint-claude-fable-5-1').textContent).toContain('≈ $0.16');
+  });
+
+  it('labels each dropdown option with its cost and time', async () => {
+    mockFetchOnce({ ...SAMPLE_STATE, allowed_models: ALL_MODELS });
+    render(<GenerationModelSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /^Opus 5\.5 — / })).toBeDefined();
+    });
+    expect(screen.getByRole('option', { name: /^Opus 5\.5 — / }).textContent).toBe(
+      'Opus 5.5 — ≈ $0.06 / description · ≈ 14 s',
+    );
+  });
+
+  it('shows an id the catalog does not know as the bare id, with no invented numbers', async () => {
+    mockFetchOnce({ ...SAMPLE_STATE, allowed_models: ['claude-unknown-9'] });
+    render(<GenerationModelSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('model-hint-claude-unknown-9').textContent).toBe(
+        'claude-unknown-9———',
+      );
+    });
+  });
+});

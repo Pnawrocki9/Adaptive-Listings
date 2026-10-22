@@ -31,11 +31,20 @@ import { eq } from 'drizzle-orm';
  * Curated LLM model allow-list for content generation.
  * Keep in sync with:
  *   - apps/control-plane/src/lib/demo-override-store.ts DEMO_ALLOWED_MODELS
+ *   - apps/control-plane/src/lib/generation-models.ts GENERATION_MODELS (typed on this list: a new
+ *     id without a request profile and measured cost does not compile)
+ *   - apps/control-plane/src/lib/llm-pricing.ts COST_PER_1K_USD (pinned by its test)
+ * The 5.x ids were added by FOLLOW-1377; the default stays Sonnet 4.6 (a default change is a CEO
+ * decision).
  */
 export const ALLOWED_GENERATION_MODELS = [
   'claude-haiku-4-5-20251001',
+  'claude-haiku-5-5',
   'claude-sonnet-4-6',
+  'claude-sonnet-5-5',
   'claude-opus-4-8',
+  'claude-opus-5-5',
+  'claude-fable-5-1',
 ] as const;
 
 export type AllowedGenerationModel = (typeof ALLOWED_GENERATION_MODELS)[number];

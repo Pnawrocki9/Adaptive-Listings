@@ -19,6 +19,8 @@
 
 import { useEffect, useState } from 'react';
 
+import { generationModelHint } from '@/lib/generation-models';
+
 /** The override fields this staff surface can edit. */
 interface StaffDemoOverride {
   enabled: boolean;
@@ -44,11 +46,11 @@ const ARCHETYPE_LABELS: Record<string, string> = {
   neutral: 'Neutral (no adaptation)',
 };
 
-const MODEL_LABELS: Record<string, string> = {
-  'claude-haiku-4-5-20251001': 'Haiku 4.5 — fast / low cost',
-  'claude-sonnet-4-6': 'Sonnet 4.6 — balanced (default)',
-  'claude-opus-4-8': 'Opus 4.8 — max quality',
-};
+/** `Sonnet 4.6 — Default; balanced`, from the one model catalog (FOLLOW-1377); the id otherwise. */
+function modelLabel(model: string): string {
+  const hint = generationModelHint(model);
+  return hint ? `${hint.label} — ${hint.note}` : model;
+}
 
 const DEFAULTS: StaffDemoOverride = {
   enabled: false,
@@ -169,10 +171,9 @@ export function StaffDemoOverrideEditor({ tenantId }: { tenantId: string }): Rea
           <strong>
             {ARCHETYPE_LABELS[state.override_archetype ?? 'neutral'] ?? state.override_archetype}
           </strong>{' '}
-          persona, generated with{' '}
-          <strong>{MODEL_LABELS[state.override_model] ?? state.override_model}</strong>. Decisions
-          are tagged <code className="rounded bg-amber-100 px-1 py-0.5 text-xs">demo_override</code>{' '}
-          and excluded from pilot analytics.
+          persona, generated with <strong>{modelLabel(state.override_model)}</strong>. Decisions are
+          tagged <code className="rounded bg-amber-100 px-1 py-0.5 text-xs">demo_override</code> and
+          excluded from pilot analytics.
         </div>
       )}
 
@@ -246,7 +247,7 @@ export function StaffDemoOverrideEditor({ tenantId }: { tenantId: string }): Rea
           >
             {modelList.map((m) => (
               <option key={m} value={m}>
-                {MODEL_LABELS[m] ?? m}
+                {modelLabel(m)}
               </option>
             ))}
           </select>

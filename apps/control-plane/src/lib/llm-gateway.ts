@@ -16,6 +16,7 @@ import { getGlobalGenerationModel } from '@/lib/global-config-store';
 import { DAILY_SPEND_CAP_USD, getDailySpend } from '@/lib/llm-spend-counter';
 // FOLLOW-1297: one price table for the adapt and description paths (ADR-0023 §3).
 import { computeCost } from '@/lib/llm-pricing';
+import { generationRequestFor } from '@/lib/generation-models';
 // FOLLOW-1061: the `llm_calls` INSERT moved to its own module so the `/api/adapt` route can book
 // its pre-LLM segment on the SAME register instead of standing up a competing one.
 import { logLlmCallAsync } from '@/lib/llm-calls-register';
@@ -729,6 +730,9 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
   // Build prompt — use haiku-style for haiku, sonnet-style for all others.
   const prompt = model === HAIKU_MODEL ? buildHaikuPrompt(input) : buildSonnetPrompt(input);
 
+  // 512 for a 4.x model; a 5.x model's thinking and tokenizer profile on top [FOLLOW-1377].
+  const request = generationRequestFor(model, 512);
+
   const startMs = Date.now();
 
   try {
@@ -736,9 +740,11 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
       // Pass model string directly. For DEMO MODE forceModel this is e.g.
       // 'claude-opus-4-8' or 'claude-haiku-4-5-20251001'.
       model,
-      max_tokens: 512,
+      max_tokens: request.maxTokens,
       messages: [{ role: 'user', content: prompt }],
-    });
+      // 5.x-only fields this SDK's types predate; `{}` for a 4.x model.
+      ...request.extras,
+    } as Anthropic.MessageCreateParamsNonStreaming);
 
     const latencyMs = Date.now() - startMs;
     const tokensIn = message.usage.input_tokens;

@@ -58,8 +58,12 @@ vi.mock('@/lib/global-config-store', () => ({
   setGlobalGenerationModel: mockSetGlobalGenerationModel,
   ALLOWED_GENERATION_MODELS: [
     'claude-haiku-4-5-20251001',
+    'claude-haiku-5-5',
     'claude-sonnet-4-6',
+    'claude-sonnet-5-5',
     'claude-opus-4-8',
+    'claude-opus-5-5',
+    'claude-fable-5-1',
   ] as const,
   DEFAULT_GENERATION_MODEL: 'claude-sonnet-4-6',
   GENERATION_MODEL_KEY: 'generation_model',
@@ -215,7 +219,7 @@ describe('GET /api/admin/generation-model', () => {
     const body = await parseBody<Record<string, unknown>>(res);
     expect(body.generation_model).toBe('claude-sonnet-4-6');
     expect(Array.isArray(body.allowed_models)).toBe(true);
-    expect((body.allowed_models as string[]).length).toBe(3);
+    expect((body.allowed_models as string[]).length).toBe(7);
     expect(typeof body.is_default).toBe('boolean');
   });
 
@@ -440,6 +444,19 @@ describe('PUT /api/admin/generation-model', () => {
     expect(body.generation_model).toBe('claude-haiku-4-5-20251001');
   });
 
+  it.each(['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-fable-5-1'])(
+    'succeeds with the 5.x id %s (FOLLOW-1377)',
+    async (model) => {
+      mockSetGlobalGenerationModel.mockResolvedValue(undefined);
+
+      const res = await PUT(makePutRequest({ generation_model: model }));
+      expect(res.status).toBe(200);
+      const body = await parseBody<Record<string, unknown>>(res);
+      expect(body.generation_model).toBe(model);
+      expect(body.is_default).toBe(false);
+    },
+  );
+
   it('is_default=true when setting the default model', async () => {
     mockSetGlobalGenerationModel.mockResolvedValue(undefined);
 
@@ -462,7 +479,7 @@ describe('PUT /api/admin/generation-model', () => {
 // ─── getGlobalGenerationModel default fallback ────────────────────────────────
 
 describe('getGlobalGenerationModel default fallback (AC1)', () => {
-  it('returns allowed_models list containing all 3 curated models on GET', async () => {
+  it('returns allowed_models list containing all 7 curated models on GET', async () => {
     mockGetAuthClaims.mockResolvedValue(STAFF_CLAIMS);
     mockIsStaffClaims.mockReturnValue(true);
     mockGetGlobalGenerationModel.mockResolvedValue('claude-sonnet-4-6');
@@ -473,5 +490,7 @@ describe('getGlobalGenerationModel default fallback (AC1)', () => {
     expect(body.allowed_models).toContain('claude-haiku-4-5-20251001');
     expect(body.allowed_models).toContain('claude-sonnet-4-6');
     expect(body.allowed_models).toContain('claude-opus-4-8');
+    expect(body.allowed_models).toContain('claude-fable-5-1');
+    expect(body.allowed_models).toHaveLength(7);
   });
 });

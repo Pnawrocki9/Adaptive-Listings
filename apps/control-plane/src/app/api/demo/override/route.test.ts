@@ -436,6 +436,20 @@ describe('PUT /api/demo/override', () => {
     expect(db._auditRows).toHaveLength(1);
   });
 
+  it('accepts a 5.x override_model (FOLLOW-1377)', async () => {
+    useDb(makeDb({}));
+    const res = await PUT(
+      makePut({
+        enabled: true,
+        override_archetype: 'yield_hunter',
+        override_model: 'claude-opus-5-5',
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await parseBody<Record<string, unknown>>(res);
+    expect(body.override_model).toBe('claude-opus-5-5');
+  });
+
   it('returns 500 when the DB throws on write (fail-loud Rule K.2)', async () => {
     const db = makeDb({});
     db._control.failUpsert = true;

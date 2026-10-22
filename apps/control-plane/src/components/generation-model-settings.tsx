@@ -23,6 +23,8 @@
 
 import { useEffect, useState } from 'react';
 
+import { GENERATION_MODELS, generationModelHint } from '@/lib/generation-models';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface GenerationModelState {
@@ -32,24 +34,23 @@ interface GenerationModelState {
   updated_at: string | null;
 }
 
-// ─── Cost/latency hints per model (FOLLOW-161 AC2) ───────────────────────────
+// ─── Cost/latency hints per model (FOLLOW-161 AC2, FOLLOW-1377) ─────────────
+// Read from the one catalog (`lib/generation-models.ts`): measured tokens × the billing prices in
+// `lib/llm-pricing.ts`, and the measured median time. No number is written here.
 
-const MODEL_HINTS: Record<string, { label: string; hint: string }> = {
-  'claude-haiku-4-5-20251001': {
-    label: 'Haiku 4.5',
-    hint: 'Fast · Low cost (~$0.01–0.02/description)',
-  },
-  'claude-sonnet-4-6': {
-    label: 'Sonnet 4.6',
-    hint: 'Balanced · Default (~$0.01–0.03/description)',
-  },
-  'claude-opus-4-8': {
-    label: 'Opus 4.8',
-    hint: 'Max quality · Slower (~$0.05–0.15/description)',
-  },
-};
+const DEFAULT_MODELS = Object.keys(GENERATION_MODELS);
 
-const DEFAULT_MODELS = ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6', 'claude-opus-4-8'];
+/** `≈ $0.02`; three decimals below a cent so the cheapest model does not read as `$0.00`. */
+function formatUsd(usd: number): string {
+  return `≈ $${usd < 0.01 ? usd.toFixed(3) : usd.toFixed(2)}`;
+}
+
+/** `≈ $0.02 / description · ≈ 9 s`, or `null` for an id the catalog does not know. */
+function costAndTime(model: string): string | null {
+  const hint = generationModelHint(model);
+  if (!hint) return null;
+  return `${formatUsd(hint.costPerDescriptionUsd)} / description · ≈ ${String(hint.seconds)} s`;
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -207,10 +208,10 @@ export default function GenerationModelSettings() {
             className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
             {modelList.map((m) => {
-              const info = MODEL_HINTS[m];
+              const hint = generationModelHint(m);
               return (
                 <option key={m} value={m}>
-                  {info ? `${info.label} — ${info.hint}` : m}
+                  {hint ? `${hint.label} — ${costAndTime(m) ?? ''}` : m}
                 </option>
               );
             })}
@@ -224,32 +225,25 @@ export default function GenerationModelSettings() {
             <thead>
               <tr className="text-left text-gray-500">
                 <th className="pb-1 font-medium">Model</th>
-                <th className="pb-1 font-medium">Speed</th>
+                <th className="pb-1 font-medium">Positioning</th>
                 <th className="pb-1 font-medium">Cost / description</th>
-                <th className="pb-1 font-medium">Quality</th>
+                <th className="pb-1 font-medium">Time to generate</th>
               </tr>
             </thead>
-            <tbody className="space-y-1">
-              <tr>
-                <td className="py-0.5 pr-4 font-medium">Haiku 4.5</td>
-                <td className="py-0.5 pr-4">Fast (~3–5s)</td>
-                <td className="py-0.5 pr-4">~$0.01–0.02</td>
-                <td className="py-0.5">Good</td>
-              </tr>
-              <tr>
-                <td className="py-0.5 pr-4 font-medium">Sonnet 4.6</td>
-                <td className="py-0.5 pr-4">Balanced (~8–12s)</td>
-                <td className="py-0.5 pr-4">~$0.01–0.03</td>
-                <td className="py-0.5">
-                  <span className="font-medium text-blue-700">Default — best value</span>
-                </td>
-              </tr>
-              <tr>
-                <td className="py-0.5 pr-4 font-medium">Opus 4.8</td>
-                <td className="py-0.5 pr-4">Slower (~20–40s)</td>
-                <td className="py-0.5 pr-4">~$0.05–0.15</td>
-                <td className="py-0.5">Highest quality</td>
-              </tr>
+            <tbody>
+              {modelList.map((m) => {
+                const hint = generationModelHint(m);
+                return (
+                  <tr key={m} data-testid={`model-hint-${m}`}>
+                    <td className="py-0.5 pr-4 font-medium">{hint?.label ?? m}</td>
+                    <td className="py-0.5 pr-4">{hint?.note ?? '—'}</td>
+                    <td className="py-0.5 pr-4">
+                      {hint ? formatUsd(hint.costPerDescriptionUsd) : '—'}
+                    </td>
+                    <td className="py-0.5">{hint ? `≈ ${String(hint.seconds)} s` : '—'}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

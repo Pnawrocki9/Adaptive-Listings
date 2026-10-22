@@ -59,14 +59,21 @@ import {
 // ─── Allow-list constants ─────────────────────────────────────────────────────
 
 describe('ALLOWED_GENERATION_MODELS', () => {
-  it('contains exactly 3 curated models', () => {
-    expect(ALLOWED_GENERATION_MODELS).toHaveLength(3);
+  it('contains exactly 7 curated models (FOLLOW-1377 added the four 5.x ids)', () => {
+    expect(ALLOWED_GENERATION_MODELS).toHaveLength(7);
   });
 
-  it('includes haiku, sonnet, and opus', () => {
+  it('includes the 4.x haiku, sonnet, and opus', () => {
     expect(ALLOWED_GENERATION_MODELS).toContain('claude-haiku-4-5-20251001');
     expect(ALLOWED_GENERATION_MODELS).toContain('claude-sonnet-4-6');
     expect(ALLOWED_GENERATION_MODELS).toContain('claude-opus-4-8');
+  });
+
+  it('includes the 5.x haiku, sonnet, opus, and fable (FOLLOW-1377)', () => {
+    expect(ALLOWED_GENERATION_MODELS).toContain('claude-haiku-5-5');
+    expect(ALLOWED_GENERATION_MODELS).toContain('claude-sonnet-5-5');
+    expect(ALLOWED_GENERATION_MODELS).toContain('claude-opus-5-5');
+    expect(ALLOWED_GENERATION_MODELS).toContain('claude-fable-5-1');
   });
 
   it('default is claude-sonnet-4-6', () => {
@@ -168,6 +175,14 @@ describe('setGlobalGenerationModel', () => {
     await expect(setGlobalGenerationModel('', null)).rejects.toThrow(
       'not in ALLOWED_GENERATION_MODELS',
     );
+  });
+
+  it('succeeds with claude-fable-5-1 (FOLLOW-1377)', async () => {
+    vi.stubEnv('DATABASE_URL', 'postgresql://test');
+    await expect(
+      setGlobalGenerationModel('claude-fable-5-1', 'user-uuid'),
+    ).resolves.toBeUndefined();
+    expect(mockDbQuery.insert).toHaveBeenCalled();
   });
 
   it('succeeds with claude-opus-4-8', async () => {

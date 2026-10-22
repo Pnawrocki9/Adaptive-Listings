@@ -3330,6 +3330,27 @@ pages then answered in 5–120 ms with no first-visit compile.
 
 The caveats of §5.23 (a)–(d) apply.
 
+### 5.36 — 2026-10-22 (FOLLOW-1377 series at branch HEAD `c3948431`, control plane under `next start`, EXECUTED ×7) — **three consecutive `run=GREEN` with `total=8` (runs 5, 6, 7), each `[FRESH]`; runs 1 and 3 `run=RED` on AC(5) only (the analytics rollup answered HTTP 500), run 4 `run=UNMEASURED` (holdout) — the per-PR series of #1081 (Claude 5.x generation models)**
+
+**MANUAL, run by the PM.** `CP_MODE=prod scripts/dev/localhost-up.sh` at `c3948431`; one control
+plane, never restarted.
+
+| Run | Started (UTC)            | `TALLY`                                                   | Note                                         |
+| --- | ------------------------ | --------------------------------------------------------- | -------------------------------------------- |
+| 1   | 2026-10-22T18:20:09.763Z | `TALLY green=7 red=1 unmeasured=0 total=8 run=RED`        | AC(5): `GET /api/admin/analytics/rollup` 500 |
+| 2   | 2026-10-22T18:22:55.415Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      |                                              |
+| 3   | 2026-10-22T18:25:04.833Z | `TALLY green=7 red=1 unmeasured=0 total=8 run=RED`        | AC(5): same 500                              |
+| 4   | 2026-10-22T18:28:38.732Z | `TALLY green=3 red=0 unmeasured=5 total=8 run=UNMEASURED` | adapted arm drew holdout                     |
+| 5   | 2026-10-22T18:30:50.189Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      |                                              |
+| 6   | 2026-10-22T18:32:56.572Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      |                                              |
+| 7   | 2026-10-22T18:35:14.292Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      |                                              |
+
+All seven `[FRESH]` (harnessSha `c3948431…`, ancestor of HEAD). The two REDs are the rollup route's
+Rule K.2 500 (a ClickHouse rollup query that failed), not this PR: the route imports none of the
+files #1081 changes, three manual calls right after run 3 answered 200 (0.4–3.5 s), and a probe
+every 10 s through runs 4–6 saw no non-200. AC(1) and AC(10) were GREEN in all seven runs. Filed as
+FOLLOW-1379. The caveats of §5.23 (a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

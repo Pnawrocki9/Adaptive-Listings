@@ -1,0 +1,95 @@
+{
+  "case_count": 98,
+  "claims_validation_version": "claims-v1",
+  "corpus": "corpus.v4.jsonl",
+  "derived_from": {
+    "corpus": "corpus.v3.jsonl",
+    "manifest": "MANIFEST.v3.json",
+    "corpus_sha256": "5cee507d:02756b57:6db368b9:8191c2d9:67460010:7ec023d1:48104d26:938f06a1"
+  },
+  "corpus_sha256": "4be6afbc:a691994b:288dae20:7bced896:9f13eec2:afbac03d:20c1fd12:d6d5aa38",
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-10-25",
+  "kind": "verdict_delta",
+  "change": "FOLLOW-1381: the digit rule reads a thousands-grouped number (\"949 000\", \"949,000\", \"949.000\", no-break and narrow no-break spaces) as one number, and a decimal comma (\"3,5\") as a decimal point, on BOTH the text and the grounding side. Inputs, raw outputs and prompt digests are v3's byte for byte; only the expected records below differ.",
+  "delta": [
+    {
+      "id": "live.027.listing-012.downsizer.pl",
+      "kind": "live",
+      "changed": {
+        "outcome": {
+          "v3": {
+            "verdict": "REFUSED",
+            "violation": "hallucinated_number"
+          },
+          "v4": {
+            "verdict": "FIT",
+            "description": "Dwupokojowy dom w Ponta do Sol na Maderze \u2014 w\u0142a\u015bciwie dobrana wielko\u015b\u0107, bez zb\u0119dnych metr\u00f3w do utrzymania. 110 mkw. roz\u0142o\u017cone na uroczym parterowym budownictwie oznacza, \u017ce wszystko jest w zasi\u0119gu r\u0119ki, bez schod\u00f3w mi\u0119dzy kondygnacjami i bez przestrzeni, kt\u00f3ra tylko czeka na sprz\u0105tanie.\n\nTaras obiegaj\u0105cy dom dooko\u0142a to miejsce, gdzie mo\u017cna siedzie\u0107 o ka\u017cdej porze dnia \u2014 po prostu wyj\u015b\u0107 na zewn\u0105trz, bez wychodzenia daleko. Widok na Atlantyk jest sta\u0142y, przewidywalny i niczego od ciebie nie wymaga. Ogr\u00f3d tropikalny jest cz\u0119\u015bci\u0105 krajobrazu, a nie projektem do realizacji.\n\nWioska jest pi\u0119\u0107 minut st\u0105d \u2014 piesze zakupy, podstawowe us\u0142ugi blisko, codzienne sprawy do ogarni\u0119cia bez samochodu, je\u015bli zajdzie taka potrzeba. To spokojny rozdzia\u0142, napisany w miejscu, gdzie nie trzeba rezygnowa\u0107 z urody otoczenia, \u017ceby zyska\u0107 spok\u00f3j g\u0142owy.\n\nCena: 285 000 euro.",
+            "verifiedFacts": [
+              "location: Ponta do Sol, Madeira, Portugal",
+              "bedrooms: 2",
+              "property_type: cottage",
+              "terrace: wrap-around",
+              "views: Atlantic Ocean",
+              "size: 110 sqm",
+              "garden: tropical",
+              "distance_to_village: 5 min",
+              "price: \u20ac285,000"
+            ]
+          }
+        },
+        "headline_called": {
+          "v3": false,
+          "v4": true
+        },
+        "headline_violation": {
+          "v3": null,
+          "v4": "empty"
+        },
+        "claims_validation": {
+          "v3": null,
+          "v4": "claims-v1"
+        },
+        "prompt_sha256": {
+          "v3": {
+            "headline_system": null,
+            "headline_user": null
+          },
+          "v4": {
+            "headline_system": "e77c8460:85a6c19f:4de83538:eb0bb6ce:154894ee:e3dfa5c4:04b06a81:d3d73171",
+            "headline_user": "7cb9420d:567ea064:ecf572d9:f1396923:21061621:84a8ad49:f41b2586:67f527b4"
+          }
+        }
+      },
+      "reason": "FALSE refusal fixed. The body states the price as \"285 000 euro\" and the listing as \"\u20ac285,000\". The digit rule split \"285 000\" into \"285\" and \"000\" and grounded neither; FOLLOW-1381 reads a thousands-grouped number as one number on both sides, so both are 285000. No other number in the body is absent from the listing. Now FIT, so the headline is called: its recorded raw headline is null (the case was REFUSED when it was recorded), so the headline is suppressed as empty."
+    }
+  ],
+  "headline_called": 62,
+  "headline_suppressed": 29,
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "FAILED/empty": 2,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/residual_tag": 3,
+    "FAILED/truncated": 1,
+    "NEUTRAL/with_reason": 8,
+    "NEUTRAL/without_reason": 1,
+    "REFUSED/hallucinated_number": 5,
+    "REFUSED/unit_mismatch": 2,
+    "REFUSED/unsupported_amenity": 8,
+    "REFUSED/unsupported_guarantee": 2
+  },
+  "per_verdict": {
+    "FAILED": 10,
+    "FIT": 62,
+    "NEUTRAL": 9,
+    "REFUSED": 17
+  }
+}

@@ -76,8 +76,12 @@ describe('ALLOWED_GENERATION_MODELS', () => {
     expect(ALLOWED_GENERATION_MODELS).toContain('claude-fable-5-1');
   });
 
-  it('default is claude-sonnet-4-6', () => {
-    expect(DEFAULT_GENERATION_MODEL).toBe('claude-sonnet-4-6');
+  it('default is claude-sonnet-5-5 (FOLLOW-1387, CEO 2026-10-25)', () => {
+    expect(DEFAULT_GENERATION_MODEL).toBe('claude-sonnet-5-5');
+  });
+
+  it('keeps claude-sonnet-4-6 selectable after the default moved (FOLLOW-1387)', () => {
+    expect(ALLOWED_GENERATION_MODELS).toContain('claude-sonnet-4-6');
   });
 
   it('config key is generation_model', () => {
@@ -198,10 +202,10 @@ describe('setGlobalGenerationModel', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('succeeds with the default claude-sonnet-4-6', async () => {
+  it('succeeds with the default claude-sonnet-5-5', async () => {
     vi.stubEnv('DATABASE_URL', 'postgresql://test');
     await expect(
-      setGlobalGenerationModel('claude-sonnet-4-6', 'user-uuid'),
+      setGlobalGenerationModel('claude-sonnet-5-5', 'user-uuid'),
     ).resolves.toBeUndefined();
   });
 });

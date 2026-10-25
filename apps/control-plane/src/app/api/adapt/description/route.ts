@@ -85,7 +85,7 @@ import { retrieveListingContext } from '@/lib/rag-retrieval';
 import { fetchDescriptionGrounding } from '@/lib/listing-facts-context';
 import { resolveAdaptGetAuth, type AdaptGetAuthResult } from '@/lib/adapt-get-auth';
 import { getDemoOverride } from '@/lib/demo-override-store';
-import { getGlobalGenerationModel } from '@/lib/global-config-store';
+import { DEFAULT_GENERATION_MODEL, getGlobalGenerationModel } from '@/lib/global-config-store';
 import {
   getListingRevision,
   getPgCachedDescription,
@@ -274,7 +274,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       '[description] global config DB read failed — using default model:',
       err instanceof Error ? err.message : err,
     );
-    globalModel = 'claude-sonnet-4-6';
+    globalModel = DEFAULT_GENERATION_MODEL;
   }
 
   // ── Effective generation model — precedence chain (AC3 / AC5) ─────────────

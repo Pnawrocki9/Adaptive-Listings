@@ -96,7 +96,7 @@ const PutBodySchema = z.object({
    * Must be one of the 13 reachable archetypes.
    */
   override_archetype: z.enum(REACHABLE_ARCHETYPES).nullable().optional(),
-  /** Defaults to claude-sonnet-4-6 when omitted. */
+  /** Defaults to DEMO_DEFAULT_MODEL (claude-sonnet-5-5, FOLLOW-1387) when omitted. */
   override_model: z.enum(DEMO_ALLOWED_MODELS).optional().default(DEMO_DEFAULT_MODEL),
 });
 

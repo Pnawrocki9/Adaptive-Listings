@@ -64,7 +64,7 @@ const YIELD_HUNTER = getPlaybook('yield_hunter');
 const SHIPPED_CTA = YIELD_HUNTER.slots.find((s) => s.slot === 'cta')?.en ?? '';
 
 const HAIKU = 'claude-haiku-4-5';
-const SONNET = 'claude-sonnet-4-6';
+const SONNET = 'claude-sonnet-5-5'; // the default generation model since FOLLOW-1387
 
 const SIMILARITY_HAIKU_BAND = 0.75;
 const SIMILARITY_SONNET_BAND = 0.5;

@@ -6,7 +6,7 @@
  *
  * Behaviour:
  *   - getDemoOverride: returns the current override row for a tenant, or
- *     { enabled: false, overrideArchetype: null, overrideModel: 'claude-sonnet-4-6' }
+ *     { enabled: false, overrideArchetype: null, overrideModel: 'claude-sonnet-5-5' }
  *     when no row exists (the safe/default state).
  *   - upsertDemoOverride: creates or updates the override row atomically.
  *
@@ -84,7 +84,7 @@ export const DEMO_ALLOWED_MODELS = [
 export type DemoAllowedModel = (typeof DEMO_ALLOWED_MODELS)[number];
 
 /** Default model for demo override (must be in DEMO_ALLOWED_MODELS). */
-export const DEMO_DEFAULT_MODEL: DemoAllowedModel = 'claude-sonnet-4-6';
+export const DEMO_DEFAULT_MODEL: DemoAllowedModel = 'claude-sonnet-5-5';
 
 /**
  * Confidence value injected when DEMO MODE is active.

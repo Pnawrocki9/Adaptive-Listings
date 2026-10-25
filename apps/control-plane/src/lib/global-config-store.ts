@@ -34,8 +34,8 @@ import { eq } from 'drizzle-orm';
  *   - apps/control-plane/src/lib/generation-models.ts GENERATION_MODELS (typed on this list: a new
  *     id without a request profile and measured cost does not compile)
  *   - apps/control-plane/src/lib/llm-pricing.ts COST_PER_1K_USD (pinned by its test)
- * The 5.x ids were added by FOLLOW-1377; the default stays Sonnet 4.6 (a default change is a CEO
- * decision).
+ * The 5.x ids were added by FOLLOW-1377. The default is Sonnet 5.5 since FOLLOW-1387 (CEO decision
+ * 2026-10-25, after the FOLLOW-1380 comparison); Sonnet 4.6 stays selectable.
  */
 export const ALLOWED_GENERATION_MODELS = [
   'claude-haiku-4-5-20251001',
@@ -50,7 +50,7 @@ export const ALLOWED_GENERATION_MODELS = [
 export type AllowedGenerationModel = (typeof ALLOWED_GENERATION_MODELS)[number];
 
 /** Default global generation model (safe fallback when no DB row exists). */
-export const DEFAULT_GENERATION_MODEL: AllowedGenerationModel = 'claude-sonnet-4-6';
+export const DEFAULT_GENERATION_MODEL: AllowedGenerationModel = 'claude-sonnet-5-5';
 
 /** Config key name in app_config table. */
 export const GENERATION_MODEL_KEY = 'generation_model' as const;

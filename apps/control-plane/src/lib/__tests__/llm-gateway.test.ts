@@ -117,7 +117,7 @@ describe('callLlmGateway — routing', () => {
     delete process.env.ANTHROPIC_API_KEY;
   });
 
-  it('selects Sonnet for low similarity (sim <= 0.6)', async () => {
+  it('selects the default generation model, Sonnet 5.5, for low similarity (sim <= 0.6) [FOLLOW-1387]', async () => {
     process.env.ANTHROPIC_API_KEY = 'test-key-abc123';
     const mockDirectives: TextDirective[] = [
       {
@@ -132,7 +132,7 @@ describe('callLlmGateway — routing', () => {
 
     const result = await callLlmGateway({ ...BASE_INPUT, similarity: 0.5 });
     expect(result).not.toBeNull();
-    expect(result?.model).toBe('claude-sonnet-4-6');
+    expect(result?.model).toBe('claude-sonnet-5-5');
 
     delete process.env.ANTHROPIC_API_KEY;
   });

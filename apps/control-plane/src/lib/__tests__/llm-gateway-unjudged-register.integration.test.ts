@@ -202,7 +202,7 @@ describe('FOLLOW-1177 / FOLLOW-1183 — the unjudged register, against a live Cl
       const skip = rows.filter((r) => r.source.startsWith('fact_check_unjudged_over_budget'));
       expect(skip).toHaveLength(1);
       expect(skip[0]?.source).toBe('fact_check_unjudged_over_budget_flags_4');
-      expect(skip[0]?.model).toBe('claude-sonnet-4-6');
+      expect(skip[0]?.model).toBe('claude-sonnet-5-5'); // the default since FOLLOW-1387 (no config DB)
       // MP-012's `measure_with` (2) predicate, run against the live rows this batch produced.
       expect(rows.filter((r) => r.source.startsWith('fact_check_judge'))).toEqual([]);
     },

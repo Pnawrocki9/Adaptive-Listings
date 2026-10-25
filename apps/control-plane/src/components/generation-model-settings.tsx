@@ -56,7 +56,7 @@ function costAndTime(model: string): string | null {
 
 export default function GenerationModelSettings() {
   const [state, setState] = useState<GenerationModelState>({
-    generation_model: 'claude-sonnet-4-6',
+    generation_model: 'claude-sonnet-5-5',
     allowed_models: DEFAULT_MODELS,
     is_default: true,
     updated_at: null,
@@ -67,7 +67,7 @@ export default function GenerationModelSettings() {
   // `status` (which is save-only). A failed GET — including a non-2xx body that
   // was previously parsed as config because there was NO `!r.ok` guard — must
   // render its own visible error and disable Save. Otherwise a staff Save would
-  // PUT the `claude-sonnet-4-6` default, resetting the GLOBAL generation model
+  // PUT the `claude-sonnet-5-5` default, resetting the GLOBAL generation model
   // and busting the description cache.
   const [loadStatus, setLoadStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
   const [loadErrorMsg, setLoadErrorMsg] = useState('');
@@ -88,7 +88,7 @@ export default function GenerationModelSettings() {
         if (data && typeof data === 'object') {
           const d = data as Partial<GenerationModelState>;
           setState({
-            generation_model: d.generation_model ?? 'claude-sonnet-4-6',
+            generation_model: d.generation_model ?? 'claude-sonnet-5-5',
             allowed_models:
               Array.isArray(d.allowed_models) && d.allowed_models.length > 0
                 ? d.allowed_models

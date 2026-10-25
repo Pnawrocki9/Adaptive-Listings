@@ -81,7 +81,7 @@ const SHIPPED_CTA = YIELD_HUNTER.slots.find((s) => s.slot === 'cta')?.en ?? '';
  * measurement rather than a comment.
  */
 const HAIKU = 'claude-haiku-4-5';
-const SONNET = 'claude-sonnet-4-6';
+const SONNET = 'claude-sonnet-5-5'; // the default generation model since FOLLOW-1387
 
 /**
  * `similarity` values, named for the band `llm-gateway.ts` routes them to

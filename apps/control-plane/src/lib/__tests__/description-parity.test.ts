@@ -44,6 +44,15 @@ vi.mock('@anthropic-ai/sdk', () => ({
   },
 }));
 vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn(), captureMessage: vi.fn() }));
+// FOLLOW-1387 moved the default generation model to Sonnet 5.5. Every corpus was frozen under the
+// Python job's Sonnet 4.6 default, and 96 of its 98 inputs name no model, so the corpus keeps that
+// default here: it pins what the generator does for a given model, not which model is the default.
+// `global-config-store.test.ts` pins the default itself; `description-generator.follow1377.test.ts`
+// drives the generator with it.
+vi.mock('@/lib/global-config-store', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  DEFAULT_GENERATION_MODEL: 'claude-sonnet-4-6',
+}));
 
 import type { DescriptionRequestedEvent } from '@estalara/shared';
 import { CLAIMS_VALIDATION_VERSION, generateDescription } from '@/lib/description-generator';

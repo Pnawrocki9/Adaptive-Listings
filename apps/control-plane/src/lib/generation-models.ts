@@ -113,7 +113,7 @@ export const GENERATION_MODELS: Readonly<Record<AllowedGenerationModel, Generati
   },
   'claude-sonnet-4-6': {
     label: 'Sonnet 4.6',
-    note: 'Default; balanced',
+    note: 'Previous default; balanced',
     ...NO_PROFILE,
     measured: {
       descriptionTokensIn: 5683,
@@ -125,7 +125,7 @@ export const GENERATION_MODELS: Readonly<Record<AllowedGenerationModel, Generati
   },
   'claude-sonnet-5-5': {
     label: 'Sonnet 5.5',
-    note: 'Newer Sonnet; thinking off, low effort',
+    note: 'Default; thinking off, low effort',
     tokenizerFactor: TOKENIZER_5X,
     reserveTokens: THINKING_RESERVE,
     extras: { thinking: { type: 'between_tools' }, output_config: { effort: 'low' } },

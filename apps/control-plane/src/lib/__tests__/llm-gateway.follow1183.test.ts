@@ -60,7 +60,7 @@ const YIELD_HUNTER = getPlaybook('yield_hunter');
 
 /** The two model strings the band split produces, asserted against the model actually used. */
 const HAIKU = 'claude-haiku-4-5';
-const SONNET = 'claude-sonnet-4-6';
+const SONNET = 'claude-sonnet-5-5'; // the default generation model since FOLLOW-1387
 
 /** `0.6 < similarity <= 0.85` → Haiku; everything else → the generation band. */
 const SIMILARITY_HAIKU_BAND = 0.75;

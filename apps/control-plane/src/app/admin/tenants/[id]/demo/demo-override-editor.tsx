@@ -46,7 +46,7 @@ const ARCHETYPE_LABELS: Record<string, string> = {
   neutral: 'Neutral (no adaptation)',
 };
 
-/** `Sonnet 4.6 — Default; balanced`, from the one model catalog (FOLLOW-1377); the id otherwise. */
+/** `Sonnet 5.5 — Default; thinking off, low effort`, from the one model catalog (FOLLOW-1377); the id otherwise. */
 function modelLabel(model: string): string {
   const hint = generationModelHint(model);
   return hint ? `${hint.label} — ${hint.note}` : model;
@@ -55,7 +55,7 @@ function modelLabel(model: string): string {
 const DEFAULTS: StaffDemoOverride = {
   enabled: false,
   override_archetype: null,
-  override_model: 'claude-sonnet-4-6',
+  override_model: 'claude-sonnet-5-5',
   archetypes: [],
   models: [],
 };

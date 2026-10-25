@@ -27,6 +27,9 @@
  *     "949.000") as one number and a decimal comma as a decimal point, on BOTH sides (FOLLOW-1381,
  *     corpus v4, `normaliseNumberGroups`). Since FOLLOW-1388 the adapt checker reads them the same
  *     way, through the same function (`lib/number-groups.ts`).
+ *   - the amenity vocabulary, its negators and its spec-line negation ("Basen: brak") are ONE list
+ *     shared with the adapt checker (`lib/amenity-lexicon.ts`, FOLLOW-1383): en / pl / es, Polish
+ *     inflection as explicit endings. Python's list was English only.
  *
  * Python-semantics helpers (exported for the generator): Python's `str.strip()` / `str.split()` /
  * `str.splitlines()` whitespace sets differ from ECMAScript's; `len()` and slicing count code
@@ -36,6 +39,7 @@
  * @module apps/control-plane/src/lib/grounding-check
  */
 
+import { AMENITY_RES, NEGATED_AFTER_RE, NEGATOR_RE } from '@/lib/amenity-lexicon';
 import { normaliseNumberGroups } from '@/lib/number-groups';
 
 // ─── Violation codes (ADR-0023 §3) ────────────────────────────────────────────
@@ -265,28 +269,6 @@ function checkBodyFacts(
 
 // ─── Claim containment (`_check_unsupported_claims`, FOLLOW-1305) ────────────
 
-const AMENITY_PATTERNS: readonly string[] = [
-  '(?:swimming[- ])?pools?',
-  '(?:sea|ocean|water|beach|bay)[- ]?views?|(?:sea|ocean)[- ]facing',
-  'gardens?',
-  'garages?',
-  'balcon(?:y|ies)',
-  '(?:roof[- ]?)?terraces?',
-  'elevators?',
-  'gyms?|fitness (?:room|centre|center)',
-  'saunas?',
-  'jacuzzis?|hot[- ]tubs?',
-  'tennis courts?',
-  'fireplaces?',
-  'air[- ]condition(?:ing|ed)',
-  'concierge',
-  'planning (?:permission|consent)|building permits?',
-];
-/** `(?<![\w-])(?:…)(?![\w-])`, `re.IGNORECASE`. */
-const AMENITY_RES: readonly RegExp[] = AMENITY_PATTERNS.map(
-  (p) => new RegExp(`(?<![${PY_WORD}-])(?:${p})(?![${PY_WORD}-])`, 'giu'),
-);
-const NEGATOR_RE = new RegExp(`${B_START}(?:no|not|without|lacks?|lacking|nor)${B_END}`, 'iu');
 const CLAUSE_BREAK_RE = /[.;:!?\n,]/gu;
 const NEGATION_WINDOW = 30;
 
@@ -325,6 +307,9 @@ const NEGATIVE_FIELD_VALUES: ReadonlySet<string> = new Set([
   'none',
   'n/a',
   'null',
+  // FOLLOW-1383: the Polish "no" values of a spec field.
+  'nie',
+  'brak',
 ]);
 
 /**
@@ -351,9 +336,16 @@ function isNegated(text: string, startUtf16: number): boolean {
   return NEGATOR_RE.test(window);
 }
 
-/** `_asserted`: at least one NON-negated match. */
+/**
+ * `_asserted`: at least one NON-negated match. FOLLOW-1383: a match followed by a spec-line
+ * negation ("Basen: brak") is negated too.
+ */
 function asserted(pattern: RegExp, text: string): boolean {
-  for (const m of text.matchAll(pattern)) if (!isNegated(text, m.index)) return true;
+  for (const m of text.matchAll(pattern)) {
+    if (isNegated(text, m.index)) continue;
+    if (NEGATED_AFTER_RE.test(text.slice(m.index + m[0].length))) continue;
+    return true;
+  }
   return false;
 }
 
@@ -385,8 +377,9 @@ function checkUnsupportedClaimsPy(
 ): ClaimViolation | null {
   const grounding = claimGrounding(original, ctx);
 
-  for (const pattern of AMENITY_RES) {
-    if (asserted(pattern, text) && !asserted(pattern, grounding)) return 'unsupported_amenity';
+  // FOLLOW-1383: one group per amenity across en / pl / es (`lib/amenity-lexicon.ts`).
+  for (const { claim, grounding: grounds } of AMENITY_RES) {
+    if (asserted(claim, text) && !asserted(grounds, grounding)) return 'unsupported_amenity';
   }
   if (GUARANTEE_RE.test(text) && !GUARANTEE_RE.test(grounding)) return 'unsupported_guarantee';
   if (

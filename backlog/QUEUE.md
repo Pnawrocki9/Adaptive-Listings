@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 180 (2026-10-19) — **Checkpoint K3 GREEN at `main` `434b2513` (`docs/checkpoints/K3.md`, README §5.31, tag `k3-green` on this ledger's merge): Phase 3 M1 #1042, M2 #1044, M3 #1041, M5 #1043, N2 full #1045 DONE; N1 `--final` reads 0. A RED pair at `3952ac29` was bisected by a read-only forensic (not a Phase 3 regression) → FOLLOW-1352 #1046 (harness predicate) + FOLLOW-1351 #1047 (SDK single-flight chat refresh). **CEO ruling 2026-10-19: Faza Q — the quiz must identify one archetype with ≥ 90 % accuracy (buyer self-confirmation as ground truth, EN + PL mandatory, buyer-side language switcher, 12 results + neutral + traits) and the backoffice must manage the quiz end to end — is INSERTED between K3 and Phase 4.** Plan approved in plan mode (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, copied to `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` by the Q0 PR); packages Q0 docs → Q1 shared → Q2 SDK ∥ Q3 recording ∥ Q7 editor → Q4 fold → Q5 traits → Q6 harness (AC(10), TALLY 8) → Q8 report; checkpoints KQ1 (localhost 3× GREEN 8/8), KQ2 (CEO walkthrough — absorbs the K3 'moment CEO'), KQ3 (production, CTO: ≥ 400 decided runs, pre-registered Wilson bound). Phase 4 (P1–P7) follows KQ2. New stubs: FOLLOW-1353 (Sentry drizzle params, P2), FOLLOW-1354 (SDK adapt fetch timeout, P2); amendments 1307, 1233/1246, 1350. Retro batch owed (weekly): #1042, #1043, #1044, #1047. Next free: FOLLOW-1388, RETRO-368, ESC-089.**
+## ▶️ START HERE — session 180 (2026-10-19) — **Checkpoint K3 GREEN at `main` `434b2513` (`docs/checkpoints/K3.md`, README §5.31, tag `k3-green` on this ledger's merge): Phase 3 M1 #1042, M2 #1044, M3 #1041, M5 #1043, N2 full #1045 DONE; N1 `--final` reads 0. A RED pair at `3952ac29` was bisected by a read-only forensic (not a Phase 3 regression) → FOLLOW-1352 #1046 (harness predicate) + FOLLOW-1351 #1047 (SDK single-flight chat refresh). **CEO ruling 2026-10-19: Faza Q — the quiz must identify one archetype with ≥ 90 % accuracy (buyer self-confirmation as ground truth, EN + PL mandatory, buyer-side language switcher, 12 results + neutral + traits) and the backoffice must manage the quiz end to end — is INSERTED between K3 and Phase 4.** Plan approved in plan mode (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, copied to `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` by the Q0 PR); packages Q0 docs → Q1 shared → Q2 SDK ∥ Q3 recording ∥ Q7 editor → Q4 fold → Q5 traits → Q6 harness (AC(10), TALLY 8) → Q8 report; checkpoints KQ1 (localhost 3× GREEN 8/8), KQ2 (CEO walkthrough — absorbs the K3 'moment CEO'), KQ3 (production, CTO: ≥ 400 decided runs, pre-registered Wilson bound). Phase 4 (P1–P7) follows KQ2. New stubs: FOLLOW-1353 (Sentry drizzle params, P2), FOLLOW-1354 (SDK adapt fetch timeout, P2); amendments 1307, 1233/1246, 1350. Retro batch owed (weekly): #1042, #1043, #1044, #1047. Next free: FOLLOW-1391, RETRO-368, ESC-089.**
 
 ### Dispatch record (session 180)
 
@@ -53,6 +53,14 @@
 - **FOLLOW-1380** — status: DONE # 2026-10-23. Blind compare Haiku 5.5 vs Sonnet 5.5 (24 cases,
   `docs/research/MODEL-COMPARE-HAIKU55-SONNET55-2026-10-22.md`): verdict Sonnet 5.5 (Haiku fails the
   faithfulness/refusal condition; quality not significantly different). Re-run after 1381–1384.
+- **FOLLOW-1388** — status: BACKLOG # P2. `/api/adapt` digit rule (llm-gateway.ts,
+  claim-containment.ts) still splits grouped numbers ("949 000"); apply the FOLLOW-1381
+  normalisation there.
+- **FOLLOW-1389** — status: BACKLOG # P2. Headline first-word proper-name check refuses PL headlines
+  on EN originals ("Dom…", "Dwupokojowe…"): 6 Haiku 5.5 headlines suppressed in the FOLLOW-1381 live
+  run.
+- **FOLLOW-1390** — status: BACKLOG # P2. A leaked `<reasoning_effort>` tag opened a Haiku 5.5 body;
+  add it to the residual-tag list.
 - **FOLLOW-1387** — status: IN_REVIEW # branch
   `ml-engineer/FOLLOW-1381-generator-numbers-headline-locale` (commit 1/3). Default generation model
   → `claude-sonnet-5-5` (CEO 2026-10-25); Sonnet 4.6 stays selectable. Cold description cache. ⚠️

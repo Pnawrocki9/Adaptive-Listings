@@ -728,7 +728,12 @@ function interpretHeadline(
   // FOLLOW-1384: the page's language first, then the facts.
   const languageViolation = checkOutputLanguage(headline, e.locale);
   if (languageViolation) return { headline: null, violation: languageViolation };
-  const violation = checkHeadlineFacts(headline, e.original_description || '', e.listing_context);
+  const violation = checkHeadlineFacts(
+    headline,
+    e.original_description || '',
+    e.listing_context,
+    e.locale,
+  );
   if (violation) return { headline: null, violation };
   return { headline, violation: null };
 }

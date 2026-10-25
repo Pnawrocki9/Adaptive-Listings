@@ -486,14 +486,46 @@ const HEADLINE_STOP_CAPS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * FOLLOW-1389: per page language, the closed list of ordinary words a headline opens with —
+ * property types, room counts, descriptive adjectives. Matched case-insensitively against the
+ * FIRST word only. Its sentence-initial capital is not a name; the same word anywhere else is
+ * checked as before, and another language's list never applies.
+ */
+const HEADLINE_OPENING_WORDS: Readonly<Record<'en' | 'pl' | 'es', RegExp>> = {
+  en: new RegExp(
+    '^(?:(?:one|two|three|four|five|six|single|double)-(?:bed|bedroom|bedroomed|room|storey|story|level|family)|' +
+      'detached|semi-detached|terraced|end-terrace|end-of-terrace|furnished|unfurnished|renovated|' +
+      'refurbished|sunny|corner|ground-floor|top-floor|first-floor|house|home|flat|apartment|villa|' +
+      'studio|penthouse|cottage|bungalow|townhouse|duplex|loft|maisonette|plot|land|freehold|' +
+      'leasehold|large|compact|light-filled|quiet|new|new-build|seafront|waterfront|south-facing)$',
+    'iu',
+  ),
+  pl: new RegExp(
+    '^(?:(?:jedno|dwu|trzy|cztero|pięcio|sześcio|wielo)pokojow[eya]|dom|domek|mieszkanie|' +
+      'apartament|kawalerka|willa|studio|działka|lokal|segment|bliźniak|szeregowiec|penthouse|loft|' +
+      '(?:wolnostojąc|narożn|parterow|piętrow|przestronn|słoneczn|jasn|nowoczesn|komfortow|' +
+      'umeblowan|wykończon|przytuln|rodzinn|now|duż|cich|odnowion|wyremontowan)(?:y|a|e|ą))$',
+    'iu',
+  ),
+  es: new RegExp(
+    '^(?:casa|piso|apartamento|ático|chalet|villa|estudio|dúplex|bungalow|finca|parcela|solar|' +
+      'local|adosad[oa]|(?:luminos|ampli|modern|espacios|precios|bonit|reformad|amueblad|nuev)[oa]|' +
+      'acogedora?|independiente)$',
+    'iu',
+  ),
+};
+
+/**
  * `_check_headline_facts`: digits, then the claim classes, then every capitalised word (first word
  * included) that is not a stop-cap must appear in the grounding whole (Unicode `\b`) or by loose
- * stem.
+ * stem. FOLLOW-1389: with the page's `locale`, a first word in that language's
+ * `HEADLINE_OPENING_WORDS` is not checked (without one, nothing is exempt — the Python behaviour).
  */
 export function checkHeadlineFacts(
   headline: string,
   original: string,
   ctx: Readonly<Record<string, string>>,
+  locale?: 'en' | 'pl' | 'es',
 ): FactViolation | ClaimViolation | null {
   const grounding = factGrounding(original, ctx);
 
@@ -505,9 +537,10 @@ export function checkHeadlineFacts(
 
   const groundingStems = new Set<string>();
   for (const m of grounding.matchAll(GROUNDING_WORD_RE)) groundingStems.add(stemLoose(m[0]));
-  for (const word of pySplit(headline)) {
+  for (const [i, word] of pySplit(headline).entries()) {
     const clean = pyRstripChars(word, '.,;:!?"\')');
     if (!clean) continue;
+    if (i === 0 && locale !== undefined && HEADLINE_OPENING_WORDS[locale].test(clean)) continue;
     const cps = Array.from(clean);
     if (cps.length >= 2 && PY_UPPER_RE.test(cps[0] ?? '') && !HEADLINE_STOP_CAPS.has(clean)) {
       if (!pyWordBoundarySearch(clean, grounding) && !groundingStems.has(stemLoose(clean))) {

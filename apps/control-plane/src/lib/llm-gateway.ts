@@ -18,6 +18,7 @@ import { DAILY_SPEND_CAP_USD, getDailySpend } from '@/lib/llm-spend-counter';
 import { computeCost } from '@/lib/llm-pricing';
 import { generationRequestFor } from '@/lib/generation-models';
 import { normaliseNumberGroups } from '@/lib/number-groups';
+import { hasModelControlTag } from '@/lib/model-control-tags';
 // FOLLOW-1061: the `llm_calls` INSERT moved to its own module so the `/api/adapt` route can book
 // its pre-LLM segment on the SAME register instead of standing up a competing one.
 import { logLlmCallAsync } from '@/lib/llm-calls-register';
@@ -134,7 +135,7 @@ const FACT_CHECK_UNJUDGED_SOURCE = {
 function factCheckSlotRefusedSource(
   playbook: PlaybookEntry,
   slot: string,
-  violation: DirectiveFactViolation | ClaimViolation | TraitViolation,
+  violation: SlotViolation,
 ): string {
   const knownSlot = playbook.slots.some((s) => s.slot === slot) ? slot : 'other';
   return `fact_check_slot_refused_${knownSlot}_${violation}`;
@@ -438,6 +439,12 @@ type DirectiveFactViolation = 'hallucinated_number' | 'hallucinated_proper_name'
 
 /** Familial-status steering, refused on every request [FOLLOW-1360, ESC-086]. */
 type TraitViolation = 'familial_steering';
+
+/** A leaked model-control tag (`<reasoning_effort>`, `<thinking>`), refused first [FOLLOW-1390]. */
+type ContractViolation = 'residual_tag';
+
+/** Every reason a slot can be refused for. */
+type SlotViolation = DirectiveFactViolation | ClaimViolation | TraitViolation | ContractViolation;
 
 function escapeRegExpToken(token: string): string {
   return token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -827,7 +834,11 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
         factViolation === 'hallucinated_number'
           ? null
           : checkUnsupportedClaims(directive.value, claimGrounding);
+      const controlTag: ContractViolation | null = hasModelControlTag(directive.value)
+        ? 'residual_tag'
+        : null;
       const exempt =
+        controlTag === null &&
         claimViolation === null &&
         factViolation === 'hallucinated_proper_name' &&
         ((isNonAssertiveSlot(directive.slot) &&
@@ -836,7 +847,9 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
       const steering: TraitViolation | null = steersByFamilialStatus(directive.value)
         ? 'familial_steering'
         : null;
-      const violation: DirectiveFactViolation | ClaimViolation | TraitViolation | null =
+      // A leaked control tag first: the text is not copy at all [FOLLOW-1390].
+      const violation: SlotViolation | null =
+        controlTag ??
         steering ??
         (factViolation === 'hallucinated_number'
           ? factViolation
@@ -845,10 +858,7 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     });
 
     // One refusal path per refused slot [FOLLOW-1312].
-    const refuseSlot = (
-      directive: TextDirective,
-      violation: DirectiveFactViolation | ClaimViolation | TraitViolation,
-    ): void => {
+    const refuseSlot = (directive: TextDirective, violation: SlotViolation): void => {
       const msg =
         `[llm-gateway] directive fact-check violation: ${violation} ` +
         `archetype=${input.archetypeId} slot=${directive.slot} value=${JSON.stringify(directive.value)}`;
@@ -889,7 +899,7 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     const verdicts: {
       slot: string;
       value: string;
-      violation: DirectiveFactViolation | ClaimViolation | TraitViolation | null;
+      violation: SlotViolation | null;
       directive: TextDirective;
     }[] = [];
     for (const { directive, violation: scannedViolation } of scanned) {

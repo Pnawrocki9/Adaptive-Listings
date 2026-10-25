@@ -40,6 +40,7 @@
  */
 
 import { AMENITY_RES, NEGATED_AFTER_RE, NEGATOR_RE } from '@/lib/amenity-lexicon';
+import { hasModelControlTag } from '@/lib/model-control-tags';
 import { normaliseNumberGroups } from '@/lib/number-groups';
 
 // ─── Violation codes (ADR-0023 §3) ────────────────────────────────────────────
@@ -571,13 +572,16 @@ const RESIDUAL_TAGS: readonly string[] = [
 ];
 
 /**
- * `_body_violates_contract`: residual control tags (case-insensitive), then markdown (`**` or a
+ * `_body_violates_contract`: residual control tags (case-insensitive; FOLLOW-1390 adds the model's
+ * own `reasoning*` / `thinking*` / `effort*` tags, `lib/model-control-tags.ts`), then markdown (`**` or a
  * `#`-opened line), then the English leak markers. Note that a dangling `<verified_facts_used`
  * opening tag is caught HERE as `residual_tag`, before the generator's truncation tell can see it.
  */
 export function bodyViolatesContract(body: string): ContractViolation | null {
   const bodyLower = body.toLowerCase();
   for (const tag of RESIDUAL_TAGS) if (bodyLower.includes(tag)) return 'residual_tag';
+  // FOLLOW-1390: a leaked model-control tag (`<reasoning_effort>`, `<thinking>`, …).
+  if (hasModelControlTag(body)) return 'residual_tag';
   if (body.includes('**')) return 'formatted_body';
   for (const line of pySplitlines(body))
     if (pyLstrip(line).startsWith('#')) return 'formatted_body';

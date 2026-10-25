@@ -17,6 +17,9 @@
  * → `parseAdaptationVerdict` (missing tag ⇒ FIT, ADR-0010) → `parseVerifiedFacts` →
  * `bodyViolatesContract` → truncation (`stop_reason === 'max_tokens'` or a surviving
  * `<verified_facts_used`) → `checkBodyClaims` → (FIT only) headline call → `checkHeadlineFacts`.
+ * FOLLOW-1384 adds `checkOutputLanguage` (not in the Python) after truncation, and before the
+ * headline's fact check: a body in another language than `locale` is `FAILED / wrong_language`,
+ * a headline is suppressed as `wrong_language`.
  * NEUTRAL writes the negative-cache marker to both caches; REFUSED, FAILED and SKIPPED write none.
  *
  * What is NOT ported verbatim, by decision (ADR-0023 §6):
@@ -57,6 +60,7 @@ import { generationRequestFor, type GenerationRequestExtras } from '@/lib/genera
 import { publishPgCachedDescription } from '@/lib/description-pg-cache';
 import { setCachedDescription } from '@/lib/description-cache';
 import { writeDescriptionGenerationAudit } from '@/lib/description-generation-audit';
+import { checkOutputLanguage } from '@/lib/output-language';
 import {
   PY_WS,
   bodyViolatesContract,
@@ -475,7 +479,14 @@ type DescriptionOutcome =
   | { verdict: 'SKIPPED'; reason: 'spend_cap' }
   | {
       verdict: 'FAILED';
-      reason: 'empty' | ContractViolation | 'truncated' | 'timeout' | 'api_error' | 'invalid_event';
+      reason:
+        | 'empty'
+        | ContractViolation
+        | 'truncated'
+        | 'wrong_language'
+        | 'timeout'
+        | 'api_error'
+        | 'invalid_event';
     }
   | { verdict: 'NEUTRAL'; neutralReason: string | null }
   | { verdict: 'REFUSED'; violation: NumberViolation | ClaimViolation }
@@ -492,7 +503,13 @@ interface GenerationReport {
   /** `null` unless the outcome is FIT and the headline passed its check. */
   headline: string | null;
   /** Why `headline` is null on a FIT outcome: its check, an empty reply, or a failed call. */
-  headlineViolation: FactViolation | ClaimViolation | 'empty' | 'call_failed' | null;
+  headlineViolation:
+    | FactViolation
+    | ClaimViolation
+    | 'empty'
+    | 'wrong_language'
+    | 'call_failed'
+    | null;
   /** Set iff the outcome is FIT. */
   claimsValidation: typeof CLAIMS_VALIDATION_VERSION | null;
   writes: {
@@ -681,6 +698,11 @@ function interpretDescription(
     return { verdict: 'FAILED', reason: 'truncated' };
   }
 
+  // FOLLOW-1384: a body in another language than the page's is a contract failure, never
+  // translated.
+  const languageViolation = checkOutputLanguage(description, e.locale);
+  if (languageViolation) return { verdict: 'FAILED', reason: languageViolation };
+
   const claimViolation = checkBodyClaims(
     description,
     e.original_description || '',
@@ -695,11 +717,17 @@ function interpretDescription(
 function interpretHeadline(
   rawText: string,
   e: DescriptionRequestedEvent,
-): { headline: string | null; violation: FactViolation | ClaimViolation | 'empty' | null } {
+): {
+  headline: string | null;
+  violation: FactViolation | ClaimViolation | 'empty' | 'wrong_language' | null;
+} {
   if (!pyStrip(rawText)) return { headline: null, violation: 'empty' };
   const firstLine = pyStrip(rawText).split('\n')[0] ?? '';
   const headline = pySliceCodePoints(pyStrip(pyStripChars(firstLine, '"\'')), 120);
   if (!headline) return { headline: null, violation: 'empty' };
+  // FOLLOW-1384: the page's language first, then the facts.
+  const languageViolation = checkOutputLanguage(headline, e.locale);
+  if (languageViolation) return { headline: null, violation: languageViolation };
   const violation = checkHeadlineFacts(headline, e.original_description || '', e.listing_context);
   if (violation) return { headline: null, violation };
   return { headline, violation: null };

@@ -3351,6 +3351,28 @@ files #1081 changes, three manual calls right after run 3 answered 200 (0.4–3.
 every 10 s through runs 4–6 saw no non-200. AC(1) and AC(10) were GREEN in all seven runs. Filed as
 FOLLOW-1379. The caveats of §5.23 (a)–(d) apply.
 
+### 5.37 — 2026-10-25 (FOLLOW-1381/1382/1387 series at branch HEAD `0a4a772b`, control plane under `next start`, global model `claude-sonnet-5-5`, EXECUTED ×12) — **three consecutive `run=GREEN` with `total=8` (runs 12, 13, 14), each `[FRESH]` — the per-PR series of #1083 (merged as `6aa0303d`)**
+
+**MANUAL, run by the PM.** `CP_MODE=prod scripts/dev/localhost-up.sh` at `0a4a772b`; the local
+`app_config.generation_model` set to `claude-sonnet-5-5` (migration 0018 seeds 4.6) so the series
+exercised the new default. The machine was heavily loaded the whole time (load average 20–40: a
+second Claude session ran e2e tests with docker in another project, and the local ClickHouse spent
+~2 cores merging its own `system.*_log` tables, ~1 bn rows — truncated afterwards, FOLLOW-1391).
+
+| Run(s) | Started (UTC)                 | Result                                                  | Cause                                                 |
+| ------ | ----------------------------- | ------------------------------------------------------- | ----------------------------------------------------- |
+| 1      | 2026-10-25T20:42:13.988Z      | `green=7 red=1` `run=RED`, AC(8)                        | chat shim :8090 did not answer (hop 3, cold shim)     |
+| 2, 3   | 20:48:12.745Z, 20:51:51.801Z  | `green=8` `run=GREEN` ×2                                |                                                       |
+| 4, 5   | 20:57:31.463Z, 20:58:44.635Z  | `HARNESS ABORTED`                                       | preflight timeouts (control plane, ingest) under load |
+| 6      | 20:59:06.569Z                 | `green=7 red=1` `run=RED`, AC(8)                        | chat arm under load                                   |
+| 7      | 21:07:44.653Z                 | `run=UNMEASURED` (holdout)                              |                                                       |
+| 10     | 22:47:32.934Z                 | `HARNESS ABORTED`                                       | control-plane probe timeout                           |
+| 11     | 22:47:51.721Z                 | `green=7 red=1` `run=RED`, AC(5)                        | analytics rollup (FOLLOW-1379)                        |
+| 12–14  | 22:51:29.282Z → 22:56:37.066Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` ×3 | `[FRESH]` harnessSha `0a4a772b…`                      |
+
+No RED in any run touched the description/headline path changed by #1083 (AC(1), AC(2), AC(10) GREEN
+in every run that completed). The caveats of §5.23 (a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

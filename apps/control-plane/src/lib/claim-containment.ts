@@ -23,6 +23,7 @@
  */
 
 import { CLAIMS_VALIDATION_VERSION } from '@/lib/description-generator';
+import { normaliseNumberGroups } from '@/lib/number-groups';
 
 /**
  * The version stamped on every description cache row whose text passed the description-path
@@ -114,11 +115,16 @@ export function buildClaimGrounding(listingContext?: Record<string, string>): Cl
     if (NEGATIVE_FIELD_VALUES.has(value.trim().toLowerCase())) continue;
     lines.push(`${key.replace(/_/g, ' ')}: ${value}`);
     if (AREA_KEY_RE.test(key)) {
-      for (const m of value.matchAll(DIGIT_RE)) areaNumbers.add(canonNumber(m[0]));
+      for (const m of normaliseNumberGroups(value).matchAll(DIGIT_RE)) {
+        areaNumbers.add(canonNumber(m[0]));
+      }
     }
   }
   const text = lines.join('\n');
-  for (const m of text.matchAll(AREA_NUMBER_RE)) areaNumbers.add(canonNumber(m[1] ?? ''));
+  // "1 200 m²" is one number, as in the digit rule [FOLLOW-1388].
+  for (const m of normaliseNumberGroups(text).matchAll(AREA_NUMBER_RE)) {
+    areaNumbers.add(canonNumber(m[1] ?? ''));
+  }
   areaNumbers.delete('');
   return { text, areaNumbers };
 }
@@ -162,7 +168,7 @@ export function checkUnsupportedClaims(
   ) {
     return 'unsupported_guarantee';
   }
-  for (const m of value.matchAll(AREA_NUMBER_RE)) {
+  for (const m of normaliseNumberGroups(value).matchAll(AREA_NUMBER_RE)) {
     if (!grounding.areaNumbers.has(canonNumber(m[1] ?? ''))) return 'unit_mismatch';
   }
   return null;

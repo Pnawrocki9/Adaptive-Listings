@@ -17,6 +17,7 @@ import { DAILY_SPEND_CAP_USD, getDailySpend } from '@/lib/llm-spend-counter';
 // FOLLOW-1297: one price table for the adapt and description paths (ADR-0023 §3).
 import { computeCost } from '@/lib/llm-pricing';
 import { generationRequestFor } from '@/lib/generation-models';
+import { normaliseNumberGroups } from '@/lib/number-groups';
 // FOLLOW-1061: the `llm_calls` INSERT moved to its own module so the `/api/adapt` route can book
 // its pre-LLM segment on the SAME register instead of standing up a competing one.
 import { logLlmCallAsync } from '@/lib/llm-calls-register';
@@ -490,11 +491,14 @@ function isTemplateAuthoredValue(playbook: PlaybookEntry, slot: string, value: s
 }
 
 function checkDirectiveFacts(value: string, grounding: string): DirectiveFactViolation | null {
-  // Same regex both sides: "5" never matches inside "425000" [FOLLOW-457].
+  // Same regex both sides: "5" never matches inside "425000" [FOLLOW-457]. Both sides are
+  // number-normalised first, as on the description path: "949 000" is one number [FOLLOW-1388].
   const groundingNumbers = new Set(
-    Array.from(grounding.matchAll(FACT_CHECK_DIGIT_RE), (m) => canonNumber(m[0])),
+    Array.from(normaliseNumberGroups(grounding).matchAll(FACT_CHECK_DIGIT_RE), (m) =>
+      canonNumber(m[0]),
+    ),
   );
-  for (const match of value.matchAll(FACT_CHECK_DIGIT_RE)) {
+  for (const match of normaliseNumberGroups(value).matchAll(FACT_CHECK_DIGIT_RE)) {
     const canon = canonNumber(match[0]);
     if (canon !== '' && !groundingNumbers.has(canon)) {
       return 'hallucinated_number';

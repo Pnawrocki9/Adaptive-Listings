@@ -25,7 +25,8 @@
  *     `ensure_ascii=True` (its bytes are pinned by the corpus prompt digests).
  *   - the digit and area-unit rules here read a thousands-grouped number ("949 000", "949,000",
  *     "949.000") as one number and a decimal comma as a decimal point, on BOTH sides (FOLLOW-1381,
- *     corpus v4, `normaliseNumberGroups`). The adapt checker still splits "949 000".
+ *     corpus v4, `normaliseNumberGroups`). Since FOLLOW-1388 the adapt checker reads them the same
+ *     way, through the same function (`lib/number-groups.ts`).
  *
  * Python-semantics helpers (exported for the generator): Python's `str.strip()` / `str.split()` /
  * `str.splitlines()` whitespace sets differ from ECMAScript's; `len()` and slicing count code
@@ -34,6 +35,8 @@
  *
  * @module apps/control-plane/src/lib/grounding-check
  */
+
+import { normaliseNumberGroups } from '@/lib/number-groups';
 
 // ─── Violation codes (ADR-0023 §3) ────────────────────────────────────────────
 
@@ -221,35 +224,10 @@ export function stemLoose(word: string): string {
 }
 
 /**
- * A thousands-grouped number: one to three digits, then groups of exactly three, each after the
- * SAME separator — a space, a no-break space (U+00A0), a narrow no-break space (U+202F), a thin
- * space (U+2009), a dot or a comma. It must not start or end inside a longer digit run, and it
- * must not stop in front of a separator and another group of three ("1 150,000" mixes separators,
- * so it is not read as one number); a decimal tail ("1 150 000,50") may follow.
- */
-const DIGIT_GROUPS_RE =
-  /(?<![\p{Nd}.,])\p{Nd}{1,3}([ \u00a0\u202f\u2009.,])\p{Nd}{3}(?:\1\p{Nd}{3})*(?!\p{Nd}|\1\p{Nd}|[ \u00a0\u202f\u2009.,]\p{Nd}{3}(?!\p{Nd}))/gu;
-const GROUP_SEPARATOR_RE = /[ \u00a0\u202f\u2009.,]/gu;
-/** A comma between digits that is not followed by exactly three digits: a decimal comma ("3,5"). */
-const DECIMAL_COMMA_RE = /(?<=\p{Nd}),(?=\p{Nd}{1,2}(?!\p{Nd})|\p{Nd}{4,})/gu;
-
-/**
- * FOLLOW-1381: write every number the way `canonNumber` compares it, on BOTH sides of the digit
- * rule. A thousands-grouped number becomes its digits ("949 000", "949,000", "949.000" → "949000"),
- * so it is checked whole: "949 000" is grounded by "949000" and "949" is not. A remaining decimal
- * comma becomes a point ("3,5" → "3.5"), so a Polish decimal equals an English one and no longer
- * equals "35". A comma before exactly three digits stays a thousands separator, as before.
- */
-function normaliseNumberGroups(s: string): string {
-  return s
-    .replace(DIGIT_GROUPS_RE, (m) => m.replace(GROUP_SEPARATOR_RE, ''))
-    .replace(DECIMAL_COMMA_RE, '.');
-}
-
-/**
  * `_check_numbers`: every digit token of `text` must canonicalise to a digit token of `grounding`.
  * The grounding is tokenised with the SAME regex, so "425000" enters whole and never verifies "5".
- * Both sides are number-normalised first (FOLLOW-1381), so a grouped number is one token.
+ * Both sides are number-normalised first (FOLLOW-1381, `lib/number-groups.ts`), so a grouped
+ * number is one token.
  */
 function checkNumbers(rawText: string, rawGrounding: string): NumberViolation | null {
   const text = normaliseNumberGroups(rawText);

@@ -4,7 +4,8 @@
  * The port of the Modal job `apps/llm-gateway/src/jobs/generate_description.py` (deleted by
  * FOLLOW-1297 PR B; the frozen parity corpus is the record of its behaviour): model resolution,
  * the v1.9 system prompt (byte-identical — the parity corpus pins the sha256 of every rendered
- * prompt) and the headline prompt (rewritten by FOLLOW-1315; corpus v3 re-pins its digests), the
+ * prompt) and the headline prompt (rewritten by FOLLOW-1315, corpus v3; given the locale by
+ * FOLLOW-1382, corpus v5 — both re-pin its digests), the
  * Anthropic calls, the verdict parser, the spend gate, the
  * `llm_calls` rows and both cache writes. The parity test (`__tests__/description-parity.test.ts`)
  * drives `generateDescription` itself with the SDK mocked to return the recorded model output — no
@@ -444,6 +445,30 @@ GROUNDING RULES (same contract as the full description — FOLLOW-169):
 8. Output ONLY the headline text — no surrounding quotes, no preamble, no explanation. Nothing else.
 `;
 
+/** FOLLOW-1382: the language each supported locale names in the headline instruction. */
+const LOCALE_LANGUAGE: Readonly<Record<DescriptionRequestedEvent['locale'], string>> = {
+  en: 'English',
+  pl: 'Polish',
+  es: 'Spanish',
+};
+
+/**
+ * FOLLOW-1382: the last paragraph of the headline user prompt. The headline prompt named no
+ * language, so 12 of 31 headlines in the FOLLOW-1380 comparison followed the original's language
+ * instead of the page's. It reads `event.locale`, the same source as the description prompt. A
+ * capitalised first word must be the listing's own (`checkHeadlineFacts`), so a headline written
+ * in another language than the listing's is asked to open with a name the listing uses.
+ */
+function headlineLanguageInstruction(locale: DescriptionRequestedEvent['locale']): string {
+  const language = LOCALE_LANGUAGE[locale];
+  return (
+    `LANGUAGE: write the headline in ${language} (locale: ${locale}), even when the sources ` +
+    `above are in another language. Compose it natively in ${language}. Keep place names and ` +
+    `other proper names exactly as the listing writes them; when the sources are not in ` +
+    `${language}, start the headline with such a name.`
+  );
+}
+
 // ─── Types (ADR-0023 §3) ──────────────────────────────────────────────────────
 
 type DescriptionOutcome =
@@ -552,7 +577,8 @@ function renderDescriptionPrompt(
 
 /**
  * `_generate_headline`'s prompt assembly (FOLLOW-1305: the whitelist is the listing's fields). The
- * budget is `_HEADLINE_MAX_TOKENS` for a 4.x model, profiled for a 5.x one (FOLLOW-1377).
+ * budget is `_HEADLINE_MAX_TOKENS` for a 4.x model, profiled for a 5.x one (FOLLOW-1377). The
+ * last paragraph names the locale's language (FOLLOW-1382, corpus v5).
  */
 function renderHeadlinePrompt(
   e: DescriptionRequestedEvent,
@@ -580,7 +606,8 @@ function renderHeadlinePrompt(
     `promise (rental potential, yield, move-in ready, guarantees, visa pathways, prime, rare, ` +
     `superlatives) the sources do not state. Sentence case: capitalise only the first word and ` +
     `true proper names. Return ONLY the headline text.\n\n` +
-    factsBlock;
+    factsBlock +
+    `\n\n${headlineLanguageInstruction(e.locale)}`;
   const { maxTokens, extras } = generationRequestFor(model, HEADLINE_MAX_TOKENS);
   return { system: HEADLINE_SYSTEM_PROMPT, user, maxTokens, extras };
 }

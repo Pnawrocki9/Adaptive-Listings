@@ -56,29 +56,29 @@
 - **FOLLOW-1391** — status: BACKLOG # P3. Local ClickHouse container keeps `system.trace_log` /
   `asynchronous_metric_log` / `text_log` unbounded (~1 bn rows, ~2 cores of merges): disable or TTL
   them in `scripts/dev/localhost-up.sh`.
-- **FOLLOW-1392** — status: BACKLOG # P1. Self-correction leak: a Sonnet 5.5 body ended with
-  "Correction: the first sentence above contains a slip…"; add a leak marker so such a body is
-  refused, never served.
-- **FOLLOW-1393** — status: BACKLOG # P2. Guarantee / "no work" claim patterns are English-only
+- **FOLLOW-1392** — status: IN_REVIEW # P1. Self-correction leak: a Sonnet 5.5 body ended with
+  "Correction: the first sentence above contains a slip…"; en/pl/es meta-commentary refused as
+  `meta_commentary` on body, headline and adapt slot (`lib/meta-commentary.ts`); corpus v6.
+- **FOLLOW-1393** — status: IN_REVIEW # P2. Guarantee / "no work" claim patterns are English-only
   ("move-in ready" vs PL "wykończone"): 3 refusals in the FOLLOW-1383 live run.
-- **FOLLOW-1394** — status: BACKLOG # P2. English amenity patterns misfire: "pool of buyers" read as
-  a pool; "sea views" not matched by "views … of the sea".
-- **FOLLOW-1395** — status: BACKLOG # P3. Headline check refuses inflected Polish place names
+- **FOLLOW-1394** — status: IN_REVIEW # P2. English amenity patterns misfire: "pool of buyers" read
+  as a pool; "sea views" not matched by "views … of the sea".
+- **FOLLOW-1395** — status: IN_REVIEW # P3. Headline check refuses inflected Polish place names
   ("Krakowie", "Podgórzu"): the remaining Haiku headline gap.
-- **FOLLOW-1388** — status: IN_REVIEW # P2. Adapt digit + area rules use the shared
-  `lib/number-groups.ts` normaliser.
-- **FOLLOW-1389** — status: IN_REVIEW # P2. First headline word exempt only if in the page
+- **FOLLOW-1388** — status: DONE # #1085 `bd33f229`, 2026-10-26. Adapt digit + area rules use the
+  shared `lib/number-groups.ts` normaliser.
+- **FOLLOW-1389** — status: DONE # #1085 `bd33f229`. First headline word exempt only if in the page
   language's closed opening-word list.
-- **FOLLOW-1390** — status: IN_REVIEW # P2. `reasoning*`/`thinking*`/`effort*` tags refused as
-  `residual_tag` on both paths.
+- **FOLLOW-1390** — status: DONE # #1085 `bd33f229`. `reasoning*`/`thinking*`/`effort*` tags refused
+  as `residual_tag` on both paths.
 - **FOLLOW-1387** — status: DONE # #1083. Default generation model `claude-sonnet-5-5`; prod
   `app_config` seed stays 4.6 until an admin saves (CTO handover).
 - **FOLLOW-1381** — status: DONE # #1083 `6aa0303d`, 2026-10-25. Claim check reads grouped thousands
   as one number.
 - **FOLLOW-1382** — status: DONE # #1083. Headline prompt names the page locale's language.
-- **FOLLOW-1383** — status: IN_REVIEW # P2. Shared en/pl/es amenity lexicon
-  (`lib/amenity-lexicon.ts`) on both paths.
-- **FOLLOW-1384** — status: IN_REVIEW # P2. Function-word language check: body
+- **FOLLOW-1383** — status: DONE # #1085 `bd33f229`, 2026-10-26. Series §5.38. Shared en/pl/es
+  amenity lexicon (`lib/amenity-lexicon.ts`) on both paths.
+- **FOLLOW-1384** — status: DONE # #1085 `bd33f229`. Function-word language check: body
   `FAILED/wrong_language`, headline suppressed.
 - **FOLLOW-1385** — status: BACKLOG # P3. Vacation-rental `copy_template` recommends "turnkey",
   which the claim check refuses.

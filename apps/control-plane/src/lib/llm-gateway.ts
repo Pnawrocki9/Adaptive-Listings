@@ -18,6 +18,7 @@ import { DAILY_SPEND_CAP_USD, getDailySpend } from '@/lib/llm-spend-counter';
 import { computeCost } from '@/lib/llm-pricing';
 import { generationRequestFor } from '@/lib/generation-models';
 import { normaliseNumberGroups } from '@/lib/number-groups';
+import { hasMetaCommentary } from '@/lib/meta-commentary';
 import { hasModelControlTag } from '@/lib/model-control-tags';
 // FOLLOW-1061: the `llm_calls` INSERT moved to its own module so the `/api/adapt` route can book
 // its pre-LLM segment on the SAME register instead of standing up a competing one.
@@ -440,8 +441,11 @@ type DirectiveFactViolation = 'hallucinated_number' | 'hallucinated_proper_name'
 /** Familial-status steering, refused on every request [FOLLOW-1360, ESC-086]. */
 type TraitViolation = 'familial_steering';
 
-/** A leaked model-control tag (`<reasoning_effort>`, `<thinking>`), refused first [FOLLOW-1390]. */
-type ContractViolation = 'residual_tag';
+/**
+ * Not copy at all, refused first: a leaked model-control tag (`<reasoning_effort>`) [FOLLOW-1390],
+ * or a note to the operator ("Correction: …", "Here is the headline") [FOLLOW-1392].
+ */
+type ContractViolation = 'residual_tag' | 'meta_commentary';
 
 /** Every reason a slot can be refused for. */
 type SlotViolation = DirectiveFactViolation | ClaimViolation | TraitViolation | ContractViolation;
@@ -836,7 +840,9 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
           : checkUnsupportedClaims(directive.value, claimGrounding);
       const controlTag: ContractViolation | null = hasModelControlTag(directive.value)
         ? 'residual_tag'
-        : null;
+        : hasMetaCommentary(directive.value)
+          ? 'meta_commentary'
+          : null;
       const exempt =
         controlTag === null &&
         claimViolation === null &&
@@ -847,7 +853,8 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
       const steering: TraitViolation | null = steersByFamilialStatus(directive.value)
         ? 'familial_steering'
         : null;
-      // A leaked control tag first: the text is not copy at all [FOLLOW-1390].
+      // A leaked control tag or meta-commentary first: the text is not copy at all [FOLLOW-1390,
+      // FOLLOW-1392].
       const violation: SlotViolation | null =
         controlTag ??
         steering ??

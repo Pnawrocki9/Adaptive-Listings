@@ -1,0 +1,95 @@
+{
+  "case_count": 98,
+  "change": "FOLLOW-1394: the shared amenity lexicon no longer reads a pool OF people (\"the pool of buyers\", \"a pool of tenants\") or a people-noun pool (\"the demand pool\", \"the tenant pool\") as a swimming pool, and a views-of-the-sea phrasing (\"views of the Montg\u00f3 mountain and, from the upper terrace, of the sea\", \"widokiem na g\u00f3ry i morze\", \"vistas a la monta\u00f1a y al mar\") grounds a sea-view claim. Inputs, raw outputs and prompt digests of the description call are v6's byte for byte; only the expected record below differs.",
+  "claims_validation_version": "claims-v1",
+  "corpus": "corpus.v7.jsonl",
+  "corpus_sha256": "2acf3dc0:32d04bce:7eb94cc2:ef3e938d:15b2ec7f:12066679:75a94352:fbf41a37",
+  "delta": [
+    {
+      "id": "live.011.listing-005.yield_hunter.en",
+      "kind": "live",
+      "changed": {
+        "prompt_sha256": {
+          "v6": {
+            "headline_system": null,
+            "headline_user": null
+          },
+          "v7": {
+            "headline_system": "e77c8460:85a6c19f:4de83538:eb0bb6ce:154894ee:e3dfa5c4:04b06a81:d3d73171",
+            "headline_user": "b00edb7d:3d461223:c8aace0a:11973912:a50b476f:c3b05ee9:75b9f51f:42ec45a4"
+          }
+        },
+        "outcome": {
+          "v6": {
+            "verdict": "REFUSED",
+            "violation": "unsupported_amenity"
+          },
+          "v7": {
+            "verdict": "FIT",
+            "description": "A 45 sqm renovated studio in Barri G\u00f2tic, Barcelona, priced at \u20ac245,000. The asset case rests on a single bedroom in a fully renovated unit \u2014 low management overhead, straightforward tenant profile, and a small footprint that limits capital outlay while keeping the unit competitive in a dense urban rental market.\n\nThe renovation removes near-term capex risk from the equation. A fully updated unit in a historic building in this district targets a defensible tenant demand pool: short-stay, mid-stay, and long-let demand all converge on central Barcelona locations. Void risk is a function of that underlying demand pattern, not of the asset's condition \u2014 and condition here is not a variable working against the investor.\n\nAt \u20ac245,000 for 45 sqm, the acquisition cost is fixed. The listing references a 6.1% yield figure \u2014 verify the basis with the agent (gross or net, and the assumptions behind it) before treating it as a modelled return. If the gross number holds under scrutiny, the net figure and any platform or management costs are the next line items to stress-test.\n\nOne bedroom, fully renovated, central Barcelona. As an income asset, the fundamentals are simple and the moving parts are few.",
+            "verifiedFacts": [
+              "location: Barri G\u00f2tic, Barcelona, Spain",
+              "price: \u20ac245,000",
+              "living_area: 45 sqm",
+              "bedrooms: 1 (studio)",
+              "fully renovated: yes",
+              "yield figure stated in listing: 6.1%",
+              "positioned as rental investment: yes",
+              "historic building: yes"
+            ]
+          }
+        },
+        "headline_called": {
+          "v6": false,
+          "v7": true
+        },
+        "headline_violation": {
+          "v6": null,
+          "v7": "empty"
+        },
+        "claims_validation": {
+          "v6": null,
+          "v7": "claims-v1"
+        }
+      },
+      "reason": "FALSE refusal fixed. The body's only amenity hit was \"a defensible tenant demand pool\" \u2014 a market, not a swimming pool. Every other claim is the listing's (\"fully renovated\", 45 sqm, \u20ac245,000). Now FIT, so the headline is called: its recorded raw headline is null (the case was REFUSED when it was recorded), so the headline is suppressed as empty."
+    }
+  ],
+  "derived_from": {
+    "corpus": "corpus.v6.jsonl",
+    "manifest": "MANIFEST.v6.json",
+    "corpus_sha256": "cb96e311:404e98ce:89b5db25:a24a0bf4:e1128890:e900a725:8719b895:88be3302"
+  },
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-10-26",
+  "headline_called": 63,
+  "headline_suppressed": 30,
+  "kind": "verdict_delta",
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "FAILED/empty": 2,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/meta_commentary": 1,
+    "FAILED/residual_tag": 3,
+    "FAILED/truncated": 1,
+    "NEUTRAL/with_reason": 8,
+    "NEUTRAL/without_reason": 1,
+    "REFUSED/hallucinated_number": 5,
+    "REFUSED/unit_mismatch": 2,
+    "REFUSED/unsupported_amenity": 6,
+    "REFUSED/unsupported_guarantee": 2
+  },
+  "per_verdict": {
+    "FAILED": 11,
+    "FIT": 63,
+    "NEUTRAL": 9,
+    "REFUSED": 15
+  }
+}

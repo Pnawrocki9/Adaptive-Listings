@@ -3373,6 +3373,20 @@ second Claude session ran e2e tests with docker in another project, and the loca
 No RED in any run touched the description/headline path changed by #1083 (AC(1), AC(2), AC(10) GREEN
 in every run that completed). The caveats of §5.23 (a)–(d) apply.
 
+### 5.38 — 2026-10-26 (FOLLOW-1383/1384/1388/1389/1390 series at branch HEAD `1f326021`, control plane under `next start`, global model `claude-sonnet-5-5`, EXECUTED ×3) — **three consecutive `run=GREEN` with `total=8` (runs 20, 21, 22), each `[FRESH]` — the per-PR series of #1085 (merged as `bd33f229`)**
+
+**MANUAL, run by the PM.** `CP_MODE=prod scripts/dev/localhost-up.sh` at `1f326021`; the local
+`app_config.generation_model` set to `claude-sonnet-5-5`, as in §5.37.
+
+| Run(s) | Started (UTC)            | Result                                               | Cause                            |
+| ------ | ------------------------ | ---------------------------------------------------- | -------------------------------- |
+| 20     | 2026-10-26T00:11:33.203Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `1f326021…` |
+| 21     | 00:13:30.293Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `1f326021…` |
+| 22     | 00:15:02.010Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `1f326021…` |
+
+Three consecutive GREEN runs, no RED or ABORTED run in the series. The caveats of §5.23 (a)–(d)
+apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

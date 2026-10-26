@@ -8,13 +8,15 @@
  * area). This module is the deterministic, BOUNDED check for those classes: closed lexicons,
  * stated as such. The amenity vocabulary covers en / pl / es (FOLLOW-1383, `lib/amenity-lexicon.ts`,
  * shared with the description path), so "kominek" grounds "fireplace" and a Polish text is checked
- * like an English one; the guarantee and no-work patterns are still English only. The general
+ * like an English one; since FOLLOW-1393 so are the guarantee, no-work and condition-fact patterns
+ * (`lib/condition-lexicon.ts`, also shared). The general
  * typed claim contract is FOLLOW-1311, and this module does not pretend to be it.
  *
- * The description path's copy of the guarantee and unit patterns lives in `lib/grounding-check.ts`
+ * The description path's copy of the unit pattern lives in `lib/grounding-check.ts`
  * (the port of the deleted Modal job's `_check_unsupported_claims`, pinned by the frozen parity
- * corpus — FOLLOW-1297, ADR-0023): same patterns, same codes. The amenity vocabulary (FOLLOW-1383)
- * and the number normaliser (FOLLOW-1388) are already one module each. Unifying the rest is
+ * corpus — FOLLOW-1297, ADR-0023): same patterns, same codes. The amenity vocabulary (FOLLOW-1383),
+ * the number normaliser (FOLLOW-1388) and the guarantee / condition vocabulary (FOLLOW-1393) are
+ * already one module each. Unifying the rest is
  * FOLLOW-1311.
  *
  * Grounding is the listing's OWN words only (§E.7.0, ESC-076): every positive field of the
@@ -27,6 +29,7 @@
 
 import { CLAIMS_VALIDATION_VERSION } from '@/lib/description-generator';
 import { AMENITY_RES, NEGATED_AFTER_RE, NEGATOR_RE } from '@/lib/amenity-lexicon';
+import { CONDITION_FACT_RE, GUARANTEE_RE, NO_WORK_CLAIM_RE } from '@/lib/condition-lexicon';
 import { normaliseNumberGroups } from '@/lib/number-groups';
 
 /**
@@ -44,13 +47,6 @@ export type ClaimViolation = 'unsupported_amenity' | 'unsupported_guarantee' | '
 
 const CLAUSE_BREAK_RE = /[.;:!?\n,]/g;
 const NEGATION_WINDOW = 30;
-
-const GUARANTEE_RE =
-  /\bguarantee(?:d|s)?\b|\brisk[- ]free\b|\b(?:no|zero)[- ]risk\b|\bassured (?:income|returns?|yields?|rent)\b/i;
-const NO_WORK_CLAIM_RE =
-  /\b(?:no|zero) (?:work|works|renovation|repairs?|refurbishment)\b|\b(?:needs?|requires?) no (?:work|works|renovation|repairs?)\b|\bnothing (?:here )?(?:needs|requires) (?:work|doing|fixing|renovat\w*)\b|\bturn-?key\b|\bmove[- ]in[- ]ready\b|\bready to move in\b/i;
-const CONDITION_FACT_RE =
-  /\b(?:fully|newly|recently|completely) (?:renovated|refurbished|restored)\b|\bnew[- ]build\b|\bnewly built\b|\bturn-?key\b|\bmove[- ]in[- ]ready\b|\bready to move in\b|\bno work needed\b/i;
 
 const AREA_UNIT =
   '(?:m²|m2|sq\\.?\\s?m|sqm|square\\s+met(?:re|er)s?|sq\\.?\\s?ft|sqft|square\\s+f(?:ee|oo)t)';
@@ -149,9 +145,11 @@ export function checkUnsupportedClaims(
   if (GUARANTEE_RE.test(value) && !GUARANTEE_RE.test(grounding.text)) {
     return 'unsupported_guarantee';
   }
+  // en / pl / es, one list with the description path; a negated condition fact grounds nothing
+  // [FOLLOW-1393].
   if (
     NO_WORK_CLAIM_RE.test(value) &&
-    !(NO_WORK_CLAIM_RE.test(grounding.text) || CONDITION_FACT_RE.test(grounding.text))
+    !(NO_WORK_CLAIM_RE.test(grounding.text) || asserted(CONDITION_FACT_RE, grounding.text))
   ) {
     return 'unsupported_guarantee';
   }

@@ -29,7 +29,9 @@
  *     way, through the same function (`lib/number-groups.ts`).
  *   - the amenity vocabulary, its negators and its spec-line negation ("Basen: brak") are ONE list
  *     shared with the adapt checker (`lib/amenity-lexicon.ts`, FOLLOW-1383): en / pl / es, Polish
- *     inflection as explicit endings. Python's list was English only.
+ *     inflection as explicit endings. Python's list was English only. So, since FOLLOW-1393, are the
+ *     guarantee, no-work and condition-fact patterns (`lib/condition-lexicon.ts`); a condition fact
+ *     grounds a no-work claim only when it is not negated.
  *
  * Python-semantics helpers (exported for the generator): Python's `str.strip()` / `str.split()` /
  * `str.splitlines()` whitespace sets differ from ECMAScript's; `len()` and slicing count code
@@ -40,6 +42,8 @@
  */
 
 import { AMENITY_RES, NEGATED_AFTER_RE, NEGATOR_RE } from '@/lib/amenity-lexicon';
+import { CONDITION_FACT_RE, GUARANTEE_RE, NO_WORK_CLAIM_RE } from '@/lib/condition-lexicon';
+import { hasMetaCommentary } from '@/lib/meta-commentary';
 import { hasModelControlTag } from '@/lib/model-control-tags';
 import { normaliseNumberGroups } from '@/lib/number-groups';
 
@@ -49,7 +53,11 @@ export type NumberViolation = 'hallucinated_number';
 export type FactViolation = NumberViolation | 'hallucinated_proper_name';
 /** = `claim-containment.ts` `ClaimViolation`; restated here so this module has no adapt import. */
 export type ClaimViolation = 'unsupported_amenity' | 'unsupported_guarantee' | 'unit_mismatch';
-export type ContractViolation = 'residual_tag' | 'formatted_body' | 'leak_marker';
+export type ContractViolation =
+  | 'residual_tag'
+  | 'formatted_body'
+  | 'leak_marker'
+  | 'meta_commentary';
 
 // ─── Python string semantics ──────────────────────────────────────────────────
 
@@ -273,27 +281,6 @@ function checkBodyFacts(
 const CLAUSE_BREAK_RE = /[.;:!?\n,]/gu;
 const NEGATION_WINDOW = 30;
 
-const GUARANTEE_RE = new RegExp(
-  `${B_START}guarantee(?:d|s)?${B_END}|${B_START}risk[- ]free${B_END}|` +
-    `${B_START}(?:no|zero)[- ]risk${B_END}|` +
-    `${B_START}assured (?:income|returns?|yields?|rent)${B_END}`,
-  'iu',
-);
-const NO_WORK_CLAIM_RE = new RegExp(
-  `${B_START}(?:no|zero) (?:work|works|renovation|repairs?|refurbishment)${B_END}|` +
-    `${B_START}(?:needs?|requires?) no (?:work|works|renovation|repairs?)${B_END}|` +
-    `${B_START}nothing (?:here )?(?:needs|requires) (?:work|doing|fixing|renovat[${PY_WORD}]*)${B_END}|` +
-    `${B_START}turn-?key${B_END}|${B_START}move[- ]in[- ]ready${B_END}|${B_START}ready to move in${B_END}`,
-  'iu',
-);
-const CONDITION_FACT_RE = new RegExp(
-  `${B_START}(?:fully|newly|recently|completely) (?:renovated|refurbished|restored)${B_END}|` +
-    `${B_START}new[- ]build${B_END}|${B_START}newly built${B_END}|${B_START}turn-?key${B_END}|` +
-    `${B_START}move[- ]in[- ]ready${B_END}|${B_START}ready to move in${B_END}|` +
-    `${B_START}no work needed${B_END}`,
-  'iu',
-);
-
 const AREA_UNIT =
   `(?:m²|m2|sq\\.?${PY_WS}?m|sqm|square${PY_WS}+met(?:re|er)s?|sq\\.?${PY_WS}?ft|sqft|` +
   `square${PY_WS}+f(?:ee|oo)t)`;
@@ -382,10 +369,12 @@ function checkUnsupportedClaimsPy(
   for (const { claim, grounding: grounds } of AMENITY_RES) {
     if (asserted(claim, text) && !asserted(grounds, grounding)) return 'unsupported_amenity';
   }
+  // FOLLOW-1393: one guarantee / no-work / condition list across en / pl / es
+  // (`lib/condition-lexicon.ts`); a condition fact counts only when it is not negated.
   if (GUARANTEE_RE.test(text) && !GUARANTEE_RE.test(grounding)) return 'unsupported_guarantee';
   if (
     NO_WORK_CLAIM_RE.test(text) &&
-    !(NO_WORK_CLAIM_RE.test(grounding) || CONDITION_FACT_RE.test(grounding))
+    !(NO_WORK_CLAIM_RE.test(grounding) || asserted(CONDITION_FACT_RE, grounding))
   ) {
     return 'unsupported_guarantee';
   }
@@ -517,10 +506,92 @@ const HEADLINE_OPENING_WORDS: Readonly<Record<'en' | 'pl' | 'es', RegExp>> = {
 };
 
 /**
+ * FOLLOW-1395: the closed set of Polish case endings a place name takes in a headline, as
+ * `[ending in the headline, ending in the facts]` — locative, genitive, instrumental, dative of a
+ * masculine (`Kraków` → `Krakowie`, `Gdańsk` → `Gdańsku`, `Straszyn` → `Straszynie`), feminine
+ * (`Warszawa` → `Warszawie`, `Albufeira` → `Albufeirze`, `Praga` → `Pradze`) or neuter
+ * (`Podgórze` → `Podgórzu`) noun. Stems are compared with `ó` read as `o` (`Kraków` /
+ * `Krakowie`; a listing written without diacritics, `Podgorze`, also grounds `Podgórze`). Nothing else: no fuzzy match, no other language.
+ */
+const POLISH_CASE_ENDINGS: readonly (readonly [string, string])[] = [
+  // the nominative itself, `ó` read as `o` (`Podgórze` / `Podgorze`)
+  ['', ''],
+  // masculine, consonant-final nominative
+  ['u', ''],
+  ['a', ''],
+  ['em', ''],
+  ['iem', ''],
+  ['ie', ''],
+  ['owi', ''],
+  ['rze', 'r'],
+  ['cie', 't'],
+  ['dzie', 'd'],
+  ['le', 'ł'],
+  // feminine, -a nominative
+  ['y', 'a'],
+  ['i', 'a'],
+  ['ę', 'a'],
+  ['ą', 'a'],
+  ['ie', 'a'],
+  ['rze', 'ra'],
+  ['ce', 'ka'],
+  ['dze', 'ga'],
+  ['le', 'ła'],
+  // neuter, -e / -o nominative
+  ['u', 'e'],
+  ['a', 'e'],
+  ['em', 'e'],
+  ['u', 'o'],
+  ['a', 'o'],
+  ['em', 'o'],
+  ['ie', 'o'],
+];
+const POLISH_MIN_STEM = 3;
+const CAPITALISED_FACT_TOKEN_RE = /\p{Uppercase}\p{L}{2,}/gu;
+
+/** One word is the other under one `POLISH_CASE_ENDINGS` rule (either word may be the inflected one). */
+function polishCaseForms(a: string, b: string): boolean {
+  const fold = (s: string) => s.toLowerCase().replaceAll('ó', 'o');
+  const x = a.toLowerCase();
+  const y = b.toLowerCase();
+  for (const [inflected, nominative] of POLISH_CASE_ENDINGS) {
+    for (const [t, f] of [
+      [x, y],
+      [y, x],
+    ] as const) {
+      if (!t.endsWith(inflected) || !f.endsWith(nominative)) continue;
+      const tStem = t.slice(0, t.length - inflected.length);
+      const fStem = f.slice(0, f.length - nominative.length);
+      if (Array.from(tStem).length < POLISH_MIN_STEM) continue;
+      if (fold(tStem) === fold(fStem)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * FOLLOW-1395: is a capitalised headline word a Polish case form of a capitalised word of the
+ * listing's own text or fields ("Krakowie" of "Kraków", "Albufeirze" of "Albufeira")?
+ */
+function isPolishCaseFormOfFact(
+  word: string,
+  original: string,
+  ctx: Readonly<Record<string, string>>,
+): boolean {
+  const facts = [original, ...Object.values(ctx)].join(' ');
+  for (const m of facts.matchAll(CAPITALISED_FACT_TOKEN_RE)) {
+    if (polishCaseForms(word, m[0])) return true;
+  }
+  return false;
+}
+
+/**
  * `_check_headline_facts`: digits, then the claim classes, then every capitalised word (first word
  * included) that is not a stop-cap must appear in the grounding whole (Unicode `\b`) or by loose
  * stem. FOLLOW-1389: with the page's `locale`, a first word in that language's
  * `HEADLINE_OPENING_WORDS` is not checked (without one, nothing is exempt — the Python behaviour).
+ * FOLLOW-1395: on a Polish page, a word that is a Polish case form of a capitalised word of the
+ * listing (`POLISH_CASE_ENDINGS`) is the listing's own name.
  */
 export function checkHeadlineFacts(
   headline: string,
@@ -544,7 +615,11 @@ export function checkHeadlineFacts(
     if (i === 0 && locale !== undefined && HEADLINE_OPENING_WORDS[locale].test(clean)) continue;
     const cps = Array.from(clean);
     if (cps.length >= 2 && PY_UPPER_RE.test(cps[0] ?? '') && !HEADLINE_STOP_CAPS.has(clean)) {
-      if (!pyWordBoundarySearch(clean, grounding) && !groundingStems.has(stemLoose(clean))) {
+      if (
+        !pyWordBoundarySearch(clean, grounding) &&
+        !groundingStems.has(stemLoose(clean)) &&
+        !(locale === 'pl' && isPolishCaseFormOfFact(clean, original, ctx))
+      ) {
         return 'hallucinated_proper_name';
       }
     }
@@ -573,9 +648,11 @@ const RESIDUAL_TAGS: readonly string[] = [
 
 /**
  * `_body_violates_contract`: residual control tags (case-insensitive; FOLLOW-1390 adds the model's
- * own `reasoning*` / `thinking*` / `effort*` tags, `lib/model-control-tags.ts`), then markdown (`**` or a
- * `#`-opened line), then the English leak markers. Note that a dangling `<verified_facts_used`
- * opening tag is caught HERE as `residual_tag`, before the generator's truncation tell can see it.
+ * own `reasoning*` / `thinking*` / `effort*` tags, `lib/model-control-tags.ts`), then markdown (`**`
+ * or a `#`-opened line), then the English leak markers, then (FOLLOW-1392, not in the Python) model
+ * meta-commentary in en / pl / es (`lib/meta-commentary.ts`) as `meta_commentary`. Note that a
+ * dangling `<verified_facts_used` opening tag is caught HERE as `residual_tag`, before the
+ * generator's truncation tell can see it.
  */
 export function bodyViolatesContract(body: string): ContractViolation | null {
   const bodyLower = body.toLowerCase();
@@ -586,5 +663,7 @@ export function bodyViolatesContract(body: string): ContractViolation | null {
   for (const line of pySplitlines(body))
     if (pyLstrip(line).startsWith('#')) return 'formatted_body';
   for (const marker of BODY_LEAK_MARKERS) if (bodyLower.includes(marker)) return 'leak_marker';
+  // FOLLOW-1392: a note to the operator ("Correction: the first sentence above …"), en/pl/es.
+  if (hasMetaCommentary(body)) return 'meta_commentary';
   return null;
 }

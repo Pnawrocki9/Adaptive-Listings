@@ -29,7 +29,9 @@
  *     way, through the same function (`lib/number-groups.ts`).
  *   - the amenity vocabulary, its negators and its spec-line negation ("Basen: brak") are ONE list
  *     shared with the adapt checker (`lib/amenity-lexicon.ts`, FOLLOW-1383): en / pl / es, Polish
- *     inflection as explicit endings. Python's list was English only.
+ *     inflection as explicit endings. Python's list was English only. So, since FOLLOW-1393, are the
+ *     guarantee, no-work and condition-fact patterns (`lib/condition-lexicon.ts`); a condition fact
+ *     grounds a no-work claim only when it is not negated.
  *
  * Python-semantics helpers (exported for the generator): Python's `str.strip()` / `str.split()` /
  * `str.splitlines()` whitespace sets differ from ECMAScript's; `len()` and slicing count code
@@ -40,6 +42,7 @@
  */
 
 import { AMENITY_RES, NEGATED_AFTER_RE, NEGATOR_RE } from '@/lib/amenity-lexicon';
+import { CONDITION_FACT_RE, GUARANTEE_RE, NO_WORK_CLAIM_RE } from '@/lib/condition-lexicon';
 import { hasMetaCommentary } from '@/lib/meta-commentary';
 import { hasModelControlTag } from '@/lib/model-control-tags';
 import { normaliseNumberGroups } from '@/lib/number-groups';
@@ -278,27 +281,6 @@ function checkBodyFacts(
 const CLAUSE_BREAK_RE = /[.;:!?\n,]/gu;
 const NEGATION_WINDOW = 30;
 
-const GUARANTEE_RE = new RegExp(
-  `${B_START}guarantee(?:d|s)?${B_END}|${B_START}risk[- ]free${B_END}|` +
-    `${B_START}(?:no|zero)[- ]risk${B_END}|` +
-    `${B_START}assured (?:income|returns?|yields?|rent)${B_END}`,
-  'iu',
-);
-const NO_WORK_CLAIM_RE = new RegExp(
-  `${B_START}(?:no|zero) (?:work|works|renovation|repairs?|refurbishment)${B_END}|` +
-    `${B_START}(?:needs?|requires?) no (?:work|works|renovation|repairs?)${B_END}|` +
-    `${B_START}nothing (?:here )?(?:needs|requires) (?:work|doing|fixing|renovat[${PY_WORD}]*)${B_END}|` +
-    `${B_START}turn-?key${B_END}|${B_START}move[- ]in[- ]ready${B_END}|${B_START}ready to move in${B_END}`,
-  'iu',
-);
-const CONDITION_FACT_RE = new RegExp(
-  `${B_START}(?:fully|newly|recently|completely) (?:renovated|refurbished|restored)${B_END}|` +
-    `${B_START}new[- ]build${B_END}|${B_START}newly built${B_END}|${B_START}turn-?key${B_END}|` +
-    `${B_START}move[- ]in[- ]ready${B_END}|${B_START}ready to move in${B_END}|` +
-    `${B_START}no work needed${B_END}`,
-  'iu',
-);
-
 const AREA_UNIT =
   `(?:m²|m2|sq\\.?${PY_WS}?m|sqm|square${PY_WS}+met(?:re|er)s?|sq\\.?${PY_WS}?ft|sqft|` +
   `square${PY_WS}+f(?:ee|oo)t)`;
@@ -387,10 +369,12 @@ function checkUnsupportedClaimsPy(
   for (const { claim, grounding: grounds } of AMENITY_RES) {
     if (asserted(claim, text) && !asserted(grounds, grounding)) return 'unsupported_amenity';
   }
+  // FOLLOW-1393: one guarantee / no-work / condition list across en / pl / es
+  // (`lib/condition-lexicon.ts`); a condition fact counts only when it is not negated.
   if (GUARANTEE_RE.test(text) && !GUARANTEE_RE.test(grounding)) return 'unsupported_guarantee';
   if (
     NO_WORK_CLAIM_RE.test(text) &&
-    !(NO_WORK_CLAIM_RE.test(grounding) || CONDITION_FACT_RE.test(grounding))
+    !(NO_WORK_CLAIM_RE.test(grounding) || asserted(CONDITION_FACT_RE, grounding))
   ) {
     return 'unsupported_guarantee';
   }

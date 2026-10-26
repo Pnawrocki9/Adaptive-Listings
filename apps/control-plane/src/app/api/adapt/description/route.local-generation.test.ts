@@ -73,7 +73,7 @@ describe('description route — FOLLOW-1297 in-process generation', () => {
     mockGenerate.mockReset().mockResolvedValue({
       outcome: { verdict: 'FIT', description: 'x', verifiedFacts: [] },
       headline: null,
-      claimsValidation: 'claims-v1',
+      claimsValidation: 'claims-v2',
       writes: { pg: 'published', redis: 'written', audit: 'written' },
     });
   });

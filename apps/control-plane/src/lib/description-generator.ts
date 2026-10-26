@@ -93,8 +93,12 @@ import {
  * The version stamped on every FIT cache row whose text passed `checkBodyClaims` (FOLLOW-1305).
  * The single definition; `claim-containment.ts` re-exports it for the read path's legacy
  * admission. Bumping it re-validates every cached row by regenerating it, once.
+ *
+ * - `claims-v1` — FOLLOW-1305, the first claim check.
+ * - `claims-v2` — 2026-10-26, FOLLOW-1406: copy cached before the familial-steering refusal
+ *   (FOLLOW-1400) and the FOLLOW-1381–1405 claim-check fixes is regenerated once instead of served.
  */
-export const CLAIMS_VALIDATION_VERSION = 'claims-v1';
+export const CLAIMS_VALIDATION_VERSION = 'claims-v2';
 
 /** G-03: total budget per call (deadline on the whole, retries included). */
 const DESCRIPTION_DEADLINE_MS = 75_000;

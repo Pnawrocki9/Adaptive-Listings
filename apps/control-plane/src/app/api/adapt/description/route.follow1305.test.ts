@@ -76,10 +76,14 @@ const { mockGenerateDescription } = vi.hoisted(() => ({
     }),
   ),
 }));
-vi.mock('@/lib/description-generator', () => ({
+vi.mock('@/lib/description-generator', async (importOriginal) => ({
   generateDescription: mockGenerateDescription,
-  // `lib/claim-containment` re-exports the stamp from the generator module.
-  CLAIMS_VALIDATION_VERSION: 'claims-v1',
+  // `lib/claim-containment` re-exports the stamp from the generator module: the REAL constant, so
+  // a bump is exercised here rather than pinned (FOLLOW-1406).
+  CLAIMS_VALIDATION_VERSION:
+    // eslint-disable-next-line @typescript-eslint/consistent-type-imports -- vi.mock importOriginal generic requires inline import() type
+    (await importOriginal<typeof import('@/lib/description-generator')>())
+      .CLAIMS_VALIDATION_VERSION,
 }));
 
 import { GET } from './route';
@@ -163,6 +167,47 @@ describe('FOLLOW-1305 — a legacy (unstamped) cache hit is not trusted FIT', ()
 
     const body = (await (await GET(request())).json()) as { source: string };
     expect(body.source).toBe('template_fallback');
+  });
+
+  it('FOLLOW-1406: a claims-v1 Postgres FIT row (cached before FOLLOW-1400) is a miss and regenerates once', async () => {
+    mockGetPgCachedDescription.mockResolvedValueOnce(pgRow(SAFE_TEXT, 'claims-v1'));
+    mockGetCachedDescription.mockResolvedValueOnce(null);
+
+    const body = (await (await GET(request())).json()) as { source: string; description: string };
+
+    expect(body.source).toBe('template_fallback');
+    expect(body.description).not.toBe(SAFE_TEXT);
+    expect(mockSetCachedDescription).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(generationsStarted()).toBe(1);
+    });
+  });
+
+  it('FOLLOW-1406: a claims-v1 Redis FIT entry is a miss: no Postgres backfill, regenerates once', async () => {
+    mockGetPgCachedDescription.mockResolvedValueOnce(null);
+    mockGetCachedDescription.mockResolvedValueOnce({
+      text: SAFE_TEXT,
+      headline: null,
+      generated_at: '2026-10-01T00:00:00.000Z',
+      claims_validation: 'claims-v1',
+    });
+
+    const body = (await (await GET(request())).json()) as { source: string };
+
+    expect(body.source).toBe('template_fallback');
+    expect(mockInsertPgCachedDescription).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(generationsStarted()).toBe(1);
+    });
+  });
+
+  it('FOLLOW-1406: a claims-v2 Postgres FIT row is a hit', async () => {
+    mockGetPgCachedDescription.mockResolvedValueOnce(pgRow(SAFE_TEXT, 'claims-v2'));
+
+    const body = (await (await GET(request())).json()) as { source: string; description: string };
+
+    expect(body).toMatchObject({ source: 'ai_cached', description: SAFE_TEXT });
+    expect(generationsStarted()).toBe(0);
   });
 
   it('positive control: a stamped Postgres hit is served as ai_cached and the warm copies the stamp', async () => {

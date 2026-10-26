@@ -44,7 +44,7 @@ const { mockGenerateDescription } = vi.hoisted(() => ({
 vi.mock('@/lib/description-generator', () => ({
   generateDescription: mockGenerateDescription,
   // `lib/claim-containment` re-exports the stamp from the generator module.
-  CLAIMS_VALIDATION_VERSION: 'claims-v1',
+  CLAIMS_VALIDATION_VERSION: 'claims-v2',
 }));
 
 // ─── Hoisted stubs ────────────────────────────────────────────────────────────

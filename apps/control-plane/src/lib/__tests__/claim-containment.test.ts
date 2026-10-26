@@ -90,15 +90,23 @@ describe('isTrustedDescriptionHit (legacy admission)', () => {
     expect(isTrustedDescriptionHit('NEUTRAL', null)).toBe(true);
   });
 
-  it('the version equals the generator constant (the writer of every stamp) and the frozen manifest', () => {
+  it('FOLLOW-1406: a claims-v1 FIT hit (cached before the FOLLOW-1381–1405 checks) is not trusted', () => {
+    expect(CLAIMS_VALIDATION_VERSION).toBe('claims-v2');
+    expect(isTrustedDescriptionHit('FIT', 'claims-v1')).toBe(false);
+    expect(isTrustedDescriptionHit(undefined, 'claims-v1')).toBe(false);
+    expect(isTrustedDescriptionHit('FIT', 'claims-v2')).toBe(true);
+    expect(isTrustedDescriptionHit('NEUTRAL', 'claims-v1')).toBe(true);
+  });
+
+  it('the version equals the generator constant (the writer of every stamp) and the current parity manifest', () => {
     expect(CLAIMS_VALIDATION_VERSION).toBe(GENERATOR_CLAIMS_VALIDATION_VERSION);
-    // The manifest records the constant of the Python job the corpus was frozen from.
-    const manifest = JSON.parse(
-      readFileSync(
-        path.resolve(__dirname, '../__fixtures__/description-parity/MANIFEST.json'),
-        'utf8',
-      ),
-    ) as { claims_validation_version: string };
-    expect(manifest.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    const manifest = (file: string) =>
+      JSON.parse(
+        readFileSync(path.resolve(__dirname, '../__fixtures__/description-parity', file), 'utf8'),
+      ) as { claims_validation_version: string };
+    // The current contract (FOLLOW-1406: corpus v10, a stamp-only re-freeze of v9).
+    expect(manifest('MANIFEST.v10.json').claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    // The Python job the corpus was first frozen from stamped claims-v1; that record never moves.
+    expect(manifest('MANIFEST.json').claims_validation_version).toBe('claims-v1');
   });
 });

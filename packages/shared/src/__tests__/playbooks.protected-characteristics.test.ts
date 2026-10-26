@@ -281,9 +281,8 @@ describe('every served playbook string is free of protected characteristics', ()
 describe('no copy_template recommends a familial-steering phrase [FOLLOW-1400]', () => {
   const PROHIBITIONS: readonly string[] = [
     'yield_hunter en: dream, perfect for, family-friendly',
-    // Matched on the quoted negation `nie "miejsce dla dzieci"`; its "family-tenant retention"
-    // framing (EN too) is outside the scanner's vocabulary and is reported, not changed, here.
-    'yield_hunter pl: ogród to udogodnienie zwiększające retencję rodzinnego najemcy',
+    // FOLLOW-1407 retired the yield_hunter pl pin (`nie "miejsce dla dzieci"`): the garden is now
+    // a lettability fact, and the family-occupant framing has its own scan below.
     'vacation_rental_investor en: family home, retirement',
     'family_buyer en: Never call an area family-friendly',
     'family_buyer pl: Nie nazywaj okolicy przyjazną rodzinom',
@@ -303,5 +302,76 @@ describe('no copy_template recommends a familial-steering phrase [FOLLOW-1400]',
     const unpinned = matched.filter((m) => !PROHIBITIONS.some((pin) => m.startsWith(pin)));
     expect(unpinned).toEqual([]);
     expect(matched).toHaveLength(PROHIBITIONS.length);
+  });
+});
+
+/**
+ * FOLLOW-1407: two templates contradicted the familial-steering refusal that runs on every request
+ * (ESC-088, FOLLOW-1400). yield_hunter framed a garden as "family-tenant retention" (en) /
+ * "retencję rodzinnego najemcy" (pl) — a feature sold by who will live there; family_buyer allowed
+ * the reader's children or household "unless the listing text itself does" (and "unless the
+ * reader's profile adds it") — the refusal admits no such exception, whoever wrote the words.
+ * Neither was visible to `steersByFamilialStatus`, so these two scans read the templates directly.
+ */
+describe('no copy_template contradicts the familial-steering refusal [FOLLOW-1407]', () => {
+  const templateSentences = (): { where: string; sentence: string }[] =>
+    [...getAllPlaybooks().values()].flatMap((p) =>
+      Object.entries(p.copy_template).flatMap(([locale, text]) =>
+        text
+          .split(/(?<=[.;:])\s+/)
+          .map((sentence) => ({ where: `${p.archetype} ${locale}`, sentence })),
+      ),
+    );
+
+  /** The reader's children or household, in the three template languages. */
+  const HOUSEHOLD =
+    /(?<![\p{L}])(?:child|children|kids?|household|dzieci|dziecko|domownik\p{L}*|gospodarstw\p{L}*|hijos?|hogar)(?![\p{L}])/iu;
+  /** An exception clause: the ban would hold only sometimes. */
+  const EXCEPTION =
+    /(?<![\p{L}])(?:unless|except|chyba że|jeśli nie robi|o ile|salvo que|a menos que|excepto)(?![\p{L}])/iu;
+  /** A feature framed by a family occupant (a tenant, a renter, a buyer). */
+  const FAMILY_OCCUPANT =
+    /(?:family[- ](?:tenants?|renters?|occupiers?|retention)|rodzinn\p{L}*\s+najem\p{L}*|najemc\p{L}*\s+z\s+dzie\p{L}*|inquilin\p{L}*\s+familiar\p{L}*|familias?\s+inquilinas?)/iu;
+
+  it('the scans see the wording FOLLOW-1407 retired', () => {
+    expect(
+      HOUSEHOLD.test("never refer to the reader's children or household unless the listing does") &&
+        EXCEPTION.test("never refer to the reader's children or household unless the listing does"),
+    ).toBe(true);
+    expect(EXCEPTION.test('i nie odnoś się do dzieci, jeśli nie robi tego sam opis oferty')).toBe(
+      true,
+    );
+    expect(
+      FAMILY_OCCUPANT.test('a garden is outdoor amenity that supports family-tenant retention'),
+    ).toBe(true);
+    expect(FAMILY_OCCUPANT.test('ogród zwiększający retencję rodzinnego najemcy')).toBe(true);
+    expect(FAMILY_OCCUPANT.test('Single-family house with a garden')).toBe(false);
+  });
+
+  it('no template allows the reader’s children or household under an exception', () => {
+    const hits = templateSentences()
+      .filter(({ sentence }) => HOUSEHOLD.test(sentence) && EXCEPTION.test(sentence))
+      .map(({ where, sentence }) => `${where}: ${sentence}`);
+    expect(hits).toEqual([]);
+  });
+
+  it('no template frames a feature by a family occupant', () => {
+    const hits = templateSentences()
+      .filter(({ sentence }) => FAMILY_OCCUPANT.test(sentence))
+      .map(({ where, sentence }) => `${where}: ${sentence}`);
+    expect(hits).toEqual([]);
+  });
+
+  it('family_buyer bans the reader’s children and household outright, in every locale', () => {
+    const family = getAllPlaybooks().get('family_buyer')!;
+    expect(family.copy_template.en).toContain(
+      "never refer to the reader's children or household composition, even when the listing text does",
+    );
+    expect(family.copy_template.pl).toContain(
+      'nie odnoś się do dzieci czytelnika ani do składu jego gospodarstwa domowego, nawet jeśli robi to opis oferty',
+    );
+    expect(family.copy_template.es).toContain(
+      'ni hagas referencia a los hijos del lector ni a la composición de su hogar, aunque lo haga el propio anuncio',
+    );
   });
 });

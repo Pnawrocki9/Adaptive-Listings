@@ -3409,6 +3409,20 @@ was visible, and the run therefore never clicked, so no conversion was requested
 FOLLOW-1398 (wait for a stable CTA). AC(10) was GREEN in all seven runs, AC(1) and AC(2) in every
 run but run 30, where they were UNMEASURED (holdout). The caveats of §5.23 (a)–(d) apply.
 
+### 5.40 — 2026-10-26 (FOLLOW-1400/1401/1402/1403/1404/1405 series at branch HEAD `dc9da931`, control plane under `next start`, global model `claude-sonnet-5-5`, EXECUTED ×3) — **three consecutive `run=GREEN` with `total=8` (runs 40, 41, 42), each `[FRESH]` — the per-PR series of #1089 (merged as `6e4fd350`)**
+
+**MANUAL, run by the PM.** `CP_MODE=prod scripts/dev/localhost-up.sh` at `dc9da931`; the local
+`app_config.generation_model` set to `claude-sonnet-5-5`, as in §5.37.
+
+| Run(s) | Started (UTC)            | Result                                               | Cause                            |
+| ------ | ------------------------ | ---------------------------------------------------- | -------------------------------- |
+| 40     | 2026-10-26T03:27:30.868Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `dc9da931…` |
+| 41     | 03:29:06.647Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `dc9da931…` |
+| 42     | 03:30:40.145Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `dc9da931…` |
+
+Three consecutive GREEN runs, no RED or ABORTED run in the series. The caveats of §5.23 (a)–(d)
+apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

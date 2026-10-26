@@ -597,3 +597,18 @@ the invoking command.
   live-measured for NEW failure classes (visible reasoning, thinking under `disabled`), not only for
   the class it targets — the targeted metric went 16/48 → 0/48 on every variant, and only the side
   count told them apart.
+
+- **2026-10-26 / FOLLOW-1406–1407** · **Built:** `claims-v2` (a `claims-v1` FIT row in Postgres or
+  Redis is a miss, regenerated once; proven against PGlite with the real migrations — the upsert's
+  `<=` revision guard lets the regenerated row replace the v1 row at the same revision); corpus v10
+  = stamp-only re-freeze of v9, guarded byte for byte (`v10 === v9.split(OLD).join(NEW)`), older
+  guards replay with the current stamp as they replay the current digests; yield_hunter /
+  family_buyer templates no longer recommend or excuse familial wording, with two template scans. ·
+  **Real vs placeholder judgment call:** route tests mocked the generator with a literal
+  `'claims-v1'`, so they stayed green under any bump and proved nothing about it; the new tests take
+  the REAL constant through `importOriginal`. The 542 failures were the frozen corpora asserting the
+  CURRENT constant — history must pin its own literal, only the newest corpus pins the constant. ·
+  **Guardrail I'd add:** a version stamp's tests must include one that reads the real constant on
+  the read path (not a mocked literal); and a fair-housing template scan reads exception clauses
+  ("unless", "chyba że", "salvo que"), not only banned phrases — the family_buyer exception was
+  invisible to the phrase scanner.

@@ -3,7 +3,7 @@
  *
  * The FOLLOW-1399 comparison traced 16 of its 25 description refusals (both models) to one word
  * family: "turnkey" / "pod klucz" / "llave en mano", which the `second_home_buyer` and
- * `vacation_rental_investor` templates recommended in en/pl/es, and which `NO_WORK_CLAIM_RE`
+ * `vacation_rental_investor` templates recommended in en/pl/es, and which the no-work check
  * refuses unless the listing itself says it (a "furnished" listing does not). `first_time_buyer`
  * recommended "move-in ready" / "gotowe do wprowadzenia" / "llave en mano" the same way. A template
  * that asks for a claim the listing must ground can only produce refusals, or — where the listing
@@ -16,7 +16,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { getAllPlaybooks } from '@estalara/shared/playbooks';
-import { GUARANTEE_RE, NO_WORK_CLAIM_RE } from '@/lib/condition-lexicon';
+import { GUARANTEE_RE, assertsNoWorkClaim } from '@/lib/condition-lexicon';
 
 const PROHIBITIONS: readonly string[] = [
   'golden_visa_buyer en: loophole, easy, fast-track, guaranteed approval',
@@ -29,7 +29,7 @@ describe('FOLLOW-1401 — copy templates and the no-work / guarantee vocabulary'
     Object.entries(p.copy_template).flatMap(([locale, text]) =>
       text
         .split(/(?<=[.;:])\s+/)
-        .filter((sentence) => NO_WORK_CLAIM_RE.test(sentence) || GUARANTEE_RE.test(sentence))
+        .filter((sentence) => assertsNoWorkClaim(sentence) || GUARANTEE_RE.test(sentence))
         .map((sentence) => `${p.archetype} ${locale}: ${sentence}`),
     ),
   );

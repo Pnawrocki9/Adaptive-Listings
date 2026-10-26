@@ -42,7 +42,7 @@
  */
 
 import { AMENITY_RES, NEGATED_AFTER_RE, NEGATOR_RE } from '@/lib/amenity-lexicon';
-import { CONDITION_FACT_RE, GUARANTEE_RE, NO_WORK_CLAIM_RE } from '@/lib/condition-lexicon';
+import { CONDITION_FACT_RE, GUARANTEE_RE, assertsNoWorkClaim } from '@/lib/condition-lexicon';
 import { hasMetaCommentary } from '@/lib/meta-commentary';
 import { hasModelControlTag } from '@/lib/model-control-tags';
 import { normaliseNumberGroups } from '@/lib/number-groups';
@@ -373,8 +373,8 @@ function checkUnsupportedClaimsPy(
   // (`lib/condition-lexicon.ts`); a condition fact counts only when it is not negated.
   if (GUARANTEE_RE.test(text) && !GUARANTEE_RE.test(grounding)) return 'unsupported_guarantee';
   if (
-    NO_WORK_CLAIM_RE.test(text) &&
-    !(NO_WORK_CLAIM_RE.test(grounding) || asserted(CONDITION_FACT_RE, grounding))
+    assertsNoWorkClaim(text) &&
+    !(assertsNoWorkClaim(grounding) || asserted(CONDITION_FACT_RE, grounding))
   ) {
     return 'unsupported_guarantee';
   }

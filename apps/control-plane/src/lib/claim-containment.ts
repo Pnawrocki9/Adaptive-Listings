@@ -29,7 +29,7 @@
 
 import { CLAIMS_VALIDATION_VERSION } from '@/lib/description-generator';
 import { AMENITY_RES, NEGATED_AFTER_RE, NEGATOR_RE } from '@/lib/amenity-lexicon';
-import { CONDITION_FACT_RE, GUARANTEE_RE, NO_WORK_CLAIM_RE } from '@/lib/condition-lexicon';
+import { CONDITION_FACT_RE, GUARANTEE_RE, assertsNoWorkClaim } from '@/lib/condition-lexicon';
 import { normaliseNumberGroups } from '@/lib/number-groups';
 
 /**
@@ -148,8 +148,8 @@ export function checkUnsupportedClaims(
   // en / pl / es, one list with the description path; a negated condition fact grounds nothing
   // [FOLLOW-1393].
   if (
-    NO_WORK_CLAIM_RE.test(value) &&
-    !(NO_WORK_CLAIM_RE.test(grounding.text) || asserted(CONDITION_FACT_RE, grounding.text))
+    assertsNoWorkClaim(value) &&
+    !(assertsNoWorkClaim(grounding.text) || asserted(CONDITION_FACT_RE, grounding.text))
   ) {
     return 'unsupported_guarantee';
   }

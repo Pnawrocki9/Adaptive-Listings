@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 180 (2026-10-19) — **Checkpoint K3 GREEN at `main` `434b2513` (`docs/checkpoints/K3.md`, README §5.31, tag `k3-green` on this ledger's merge): Phase 3 M1 #1042, M2 #1044, M3 #1041, M5 #1043, N2 full #1045 DONE; N1 `--final` reads 0. A RED pair at `3952ac29` was bisected by a read-only forensic (not a Phase 3 regression) → FOLLOW-1352 #1046 (harness predicate) + FOLLOW-1351 #1047 (SDK single-flight chat refresh). **CEO ruling 2026-10-19: Faza Q — the quiz must identify one archetype with ≥ 90 % accuracy (buyer self-confirmation as ground truth, EN + PL mandatory, buyer-side language switcher, 12 results + neutral + traits) and the backoffice must manage the quiz end to end — is INSERTED between K3 and Phase 4.** Plan approved in plan mode (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, copied to `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` by the Q0 PR); packages Q0 docs → Q1 shared → Q2 SDK ∥ Q3 recording ∥ Q7 editor → Q4 fold → Q5 traits → Q6 harness (AC(10), TALLY 8) → Q8 report; checkpoints KQ1 (localhost 3× GREEN 8/8), KQ2 (CEO walkthrough — absorbs the K3 'moment CEO'), KQ3 (production, CTO: ≥ 400 decided runs, pre-registered Wilson bound). Phase 4 (P1–P7) follows KQ2. New stubs: FOLLOW-1353 (Sentry drizzle params, P2), FOLLOW-1354 (SDK adapt fetch timeout, P2); amendments 1307, 1233/1246, 1350. Retro batch owed (weekly): #1042, #1043, #1044, #1047. Next free: FOLLOW-1396, RETRO-368, ESC-089.**
+## ▶️ START HERE — session 180 (2026-10-19) — **Checkpoint K3 GREEN at `main` `434b2513` (`docs/checkpoints/K3.md`, README §5.31, tag `k3-green` on this ledger's merge): Phase 3 M1 #1042, M2 #1044, M3 #1041, M5 #1043, N2 full #1045 DONE; N1 `--final` reads 0. A RED pair at `3952ac29` was bisected by a read-only forensic (not a Phase 3 regression) → FOLLOW-1352 #1046 (harness predicate) + FOLLOW-1351 #1047 (SDK single-flight chat refresh). **CEO ruling 2026-10-19: Faza Q — the quiz must identify one archetype with ≥ 90 % accuracy (buyer self-confirmation as ground truth, EN + PL mandatory, buyer-side language switcher, 12 results + neutral + traits) and the backoffice must manage the quiz end to end — is INSERTED between K3 and Phase 4.** Plan approved in plan mode (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, copied to `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` by the Q0 PR); packages Q0 docs → Q1 shared → Q2 SDK ∥ Q3 recording ∥ Q7 editor → Q4 fold → Q5 traits → Q6 harness (AC(10), TALLY 8) → Q8 report; checkpoints KQ1 (localhost 3× GREEN 8/8), KQ2 (CEO walkthrough — absorbs the K3 'moment CEO'), KQ3 (production, CTO: ≥ 400 decided runs, pre-registered Wilson bound). Phase 4 (P1–P7) follows KQ2. New stubs: FOLLOW-1353 (Sentry drizzle params, P2), FOLLOW-1354 (SDK adapt fetch timeout, P2); amendments 1307, 1233/1246, 1350. Retro batch owed (weekly): #1042, #1043, #1044, #1047. Next free: FOLLOW-1398, RETRO-368, ESC-089.**
 
 ### Dispatch record (session 180)
 
@@ -56,6 +56,11 @@
 - **FOLLOW-1391** — status: BACKLOG # P3. Local ClickHouse container keeps `system.trace_log` /
   `asynchronous_metric_log` / `text_log` unbounded (~1 bn rows, ~2 cores of merges): disable or TTL
   them in `scripts/dev/localhost-up.sh`.
+- **FOLLOW-1396** — status: BACKLOG # P3. Headline check refuses exonyms ("Warsaw" for "Warszawa"):
+  the main Haiku 5.5 EN headline refusal after FOLLOW-1395.
+- **FOLLOW-1397** — status: BACKLOG # P3. Number words ("1,15 mln PLN" vs 1150000) refused as
+  `hallucinated_number`; read mln/tys./k/M as multipliers. Also: ADR-0023 dated note for
+  `meta_commentary`.
 - **FOLLOW-1392** — status: IN_REVIEW # P1. Self-correction leak: a Sonnet 5.5 body ended with
   "Correction: the first sentence above contains a slip…"; en/pl/es meta-commentary refused as
   `meta_commentary` on body, headline and adapt slot (`lib/meta-commentary.ts`); corpus v6.

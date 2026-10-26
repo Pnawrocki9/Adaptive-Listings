@@ -5,14 +5,17 @@
  * Codex review reproduced against the real gateway (F-02): an amenity the listing does not have
  * (pool, sea view), a guarantee the listing does not make ("nothing needs work", "guaranteed
  * income"), and a grounded number re-read under the wrong unit (the listing price written as an
- * area). This module is the deterministic, BOUNDED check for those classes: an English lexicon,
- * stated as such. A non-English listing whose copy names an amenity in another language is not
- * caught here — the general typed claim contract is FOLLOW-1311 (built once, in TypeScript, after
- * FOLLOW-1297), and this module does not pretend to be it.
+ * area). This module is the deterministic, BOUNDED check for those classes: closed lexicons,
+ * stated as such. The amenity vocabulary covers en / pl / es (FOLLOW-1383, `lib/amenity-lexicon.ts`,
+ * shared with the description path), so "kominek" grounds "fireplace" and a Polish text is checked
+ * like an English one; the guarantee and no-work patterns are still English only. The general
+ * typed claim contract is FOLLOW-1311, and this module does not pretend to be it.
  *
- * The description path's copy of these patterns lives in `lib/grounding-check.ts` (the port of
- * the deleted Modal job's `_check_unsupported_claims`, pinned by the frozen parity corpus —
- * FOLLOW-1297, ADR-0023): same patterns, same codes. Unifying the two is FOLLOW-1311.
+ * The description path's copy of the guarantee and unit patterns lives in `lib/grounding-check.ts`
+ * (the port of the deleted Modal job's `_check_unsupported_claims`, pinned by the frozen parity
+ * corpus — FOLLOW-1297, ADR-0023): same patterns, same codes. The amenity vocabulary (FOLLOW-1383)
+ * and the number normaliser (FOLLOW-1388) are already one module each. Unifying the rest is
+ * FOLLOW-1311.
  *
  * Grounding is the listing's OWN words only (§E.7.0, ESC-076): every positive field of the
  * listing context as `key: value`. Not the session's events (a buyer asking "is there a pool?"
@@ -23,6 +26,8 @@
  */
 
 import { CLAIMS_VALIDATION_VERSION } from '@/lib/description-generator';
+import { AMENITY_RES, NEGATED_AFTER_RE, NEGATOR_RE } from '@/lib/amenity-lexicon';
+import { normaliseNumberGroups } from '@/lib/number-groups';
 
 /**
  * The version stamped on every description cache row whose text passed the description-path
@@ -37,29 +42,6 @@ export { CLAIMS_VALIDATION_VERSION };
 /** Why a value was refused by this module. */
 export type ClaimViolation = 'unsupported_amenity' | 'unsupported_guarantee' | 'unit_mismatch';
 
-/** Amenity groups. Grounded only by a NON-NEGATED occurrence of the same group in the listing. */
-const AMENITY_PATTERNS: readonly string[] = [
-  '(?:swimming[- ])?pools?',
-  '(?:sea|ocean|water|beach|bay)[- ]?views?|(?:sea|ocean)[- ]facing',
-  'gardens?',
-  'garages?',
-  'balcon(?:y|ies)',
-  '(?:roof[- ]?)?terraces?',
-  'elevators?',
-  'gyms?|fitness (?:room|centre|center)',
-  'saunas?',
-  'jacuzzis?|hot[- ]tubs?',
-  'tennis courts?',
-  'fireplaces?',
-  'air[- ]condition(?:ing|ed)',
-  'concierge',
-  'planning (?:permission|consent)|building permits?',
-];
-const AMENITY_RES: readonly RegExp[] = AMENITY_PATTERNS.map(
-  (p) => new RegExp(`(?<![\\p{L}\\p{N}_-])(?:${p})(?![\\p{L}\\p{N}_-])`, 'giu'),
-);
-
-const NEGATOR_RE = /\b(?:no|not|without|lacks?|lacking|nor)\b/i;
 const CLAUSE_BREAK_RE = /[.;:!?\n,]/g;
 const NEGATION_WINDOW = 30;
 
@@ -83,6 +65,9 @@ const NEGATIVE_FIELD_VALUES: ReadonlySet<string> = new Set([
   'none',
   'n/a',
   'null',
+  // The Polish "no" values of a spec field [FOLLOW-1383].
+  'nie',
+  'brak',
 ]);
 
 /** Digits and the decimal point — the same canonicalisation `checkDirectiveFacts` uses. */
@@ -114,11 +99,16 @@ export function buildClaimGrounding(listingContext?: Record<string, string>): Cl
     if (NEGATIVE_FIELD_VALUES.has(value.trim().toLowerCase())) continue;
     lines.push(`${key.replace(/_/g, ' ')}: ${value}`);
     if (AREA_KEY_RE.test(key)) {
-      for (const m of value.matchAll(DIGIT_RE)) areaNumbers.add(canonNumber(m[0]));
+      for (const m of normaliseNumberGroups(value).matchAll(DIGIT_RE)) {
+        areaNumbers.add(canonNumber(m[0]));
+      }
     }
   }
   const text = lines.join('\n');
-  for (const m of text.matchAll(AREA_NUMBER_RE)) areaNumbers.add(canonNumber(m[1] ?? ''));
+  // "1 200 m²" is one number, as in the digit rule [FOLLOW-1388].
+  for (const m of normaliseNumberGroups(text).matchAll(AREA_NUMBER_RE)) {
+    areaNumbers.add(canonNumber(m[1] ?? ''));
+  }
   areaNumbers.delete('');
   return { text, areaNumbers };
 }
@@ -132,7 +122,9 @@ function isNegated(text: string, start: number): boolean {
 }
 
 function asserted(pattern: RegExp, text: string): boolean {
-  return Array.from(text.matchAll(pattern)).some((m) => !isNegated(text, m.index));
+  return Array.from(text.matchAll(pattern)).some(
+    (m) => !isNegated(text, m.index) && !NEGATED_AFTER_RE.test(text.slice(m.index + m[0].length)),
+  );
 }
 
 /**
@@ -148,8 +140,9 @@ export function checkUnsupportedClaims(
   value: string,
   grounding: ClaimGrounding,
 ): ClaimViolation | null {
-  for (const pattern of AMENITY_RES) {
-    if (asserted(pattern, value) && !asserted(pattern, grounding.text)) {
+  // One group per amenity across en / pl / es (`lib/amenity-lexicon.ts`) [FOLLOW-1383].
+  for (const { claim, grounding: grounds } of AMENITY_RES) {
+    if (asserted(claim, value) && !asserted(grounds, grounding.text)) {
       return 'unsupported_amenity';
     }
   }
@@ -162,7 +155,7 @@ export function checkUnsupportedClaims(
   ) {
     return 'unsupported_guarantee';
   }
-  for (const m of value.matchAll(AREA_NUMBER_RE)) {
+  for (const m of normaliseNumberGroups(value).matchAll(AREA_NUMBER_RE)) {
     if (!grounding.areaNumbers.has(canonNumber(m[1] ?? ''))) return 'unit_mismatch';
   }
   return null;

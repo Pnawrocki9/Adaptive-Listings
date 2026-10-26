@@ -25,7 +25,11 @@
  *     `ensure_ascii=True` (its bytes are pinned by the corpus prompt digests).
  *   - the digit and area-unit rules here read a thousands-grouped number ("949 000", "949,000",
  *     "949.000") as one number and a decimal comma as a decimal point, on BOTH sides (FOLLOW-1381,
- *     corpus v4, `normaliseNumberGroups`). The adapt checker still splits "949 000".
+ *     corpus v4, `normaliseNumberGroups`). Since FOLLOW-1388 the adapt checker reads them the same
+ *     way, through the same function (`lib/number-groups.ts`).
+ *   - the amenity vocabulary, its negators and its spec-line negation ("Basen: brak") are ONE list
+ *     shared with the adapt checker (`lib/amenity-lexicon.ts`, FOLLOW-1383): en / pl / es, Polish
+ *     inflection as explicit endings. Python's list was English only.
  *
  * Python-semantics helpers (exported for the generator): Python's `str.strip()` / `str.split()` /
  * `str.splitlines()` whitespace sets differ from ECMAScript's; `len()` and slicing count code
@@ -34,6 +38,10 @@
  *
  * @module apps/control-plane/src/lib/grounding-check
  */
+
+import { AMENITY_RES, NEGATED_AFTER_RE, NEGATOR_RE } from '@/lib/amenity-lexicon';
+import { hasModelControlTag } from '@/lib/model-control-tags';
+import { normaliseNumberGroups } from '@/lib/number-groups';
 
 // ─── Violation codes (ADR-0023 §3) ────────────────────────────────────────────
 
@@ -221,35 +229,10 @@ export function stemLoose(word: string): string {
 }
 
 /**
- * A thousands-grouped number: one to three digits, then groups of exactly three, each after the
- * SAME separator — a space, a no-break space (U+00A0), a narrow no-break space (U+202F), a thin
- * space (U+2009), a dot or a comma. It must not start or end inside a longer digit run, and it
- * must not stop in front of a separator and another group of three ("1 150,000" mixes separators,
- * so it is not read as one number); a decimal tail ("1 150 000,50") may follow.
- */
-const DIGIT_GROUPS_RE =
-  /(?<![\p{Nd}.,])\p{Nd}{1,3}([ \u00a0\u202f\u2009.,])\p{Nd}{3}(?:\1\p{Nd}{3})*(?!\p{Nd}|\1\p{Nd}|[ \u00a0\u202f\u2009.,]\p{Nd}{3}(?!\p{Nd}))/gu;
-const GROUP_SEPARATOR_RE = /[ \u00a0\u202f\u2009.,]/gu;
-/** A comma between digits that is not followed by exactly three digits: a decimal comma ("3,5"). */
-const DECIMAL_COMMA_RE = /(?<=\p{Nd}),(?=\p{Nd}{1,2}(?!\p{Nd})|\p{Nd}{4,})/gu;
-
-/**
- * FOLLOW-1381: write every number the way `canonNumber` compares it, on BOTH sides of the digit
- * rule. A thousands-grouped number becomes its digits ("949 000", "949,000", "949.000" → "949000"),
- * so it is checked whole: "949 000" is grounded by "949000" and "949" is not. A remaining decimal
- * comma becomes a point ("3,5" → "3.5"), so a Polish decimal equals an English one and no longer
- * equals "35". A comma before exactly three digits stays a thousands separator, as before.
- */
-function normaliseNumberGroups(s: string): string {
-  return s
-    .replace(DIGIT_GROUPS_RE, (m) => m.replace(GROUP_SEPARATOR_RE, ''))
-    .replace(DECIMAL_COMMA_RE, '.');
-}
-
-/**
  * `_check_numbers`: every digit token of `text` must canonicalise to a digit token of `grounding`.
  * The grounding is tokenised with the SAME regex, so "425000" enters whole and never verifies "5".
- * Both sides are number-normalised first (FOLLOW-1381), so a grouped number is one token.
+ * Both sides are number-normalised first (FOLLOW-1381, `lib/number-groups.ts`), so a grouped
+ * number is one token.
  */
 function checkNumbers(rawText: string, rawGrounding: string): NumberViolation | null {
   const text = normaliseNumberGroups(rawText);
@@ -287,28 +270,6 @@ function checkBodyFacts(
 
 // ─── Claim containment (`_check_unsupported_claims`, FOLLOW-1305) ────────────
 
-const AMENITY_PATTERNS: readonly string[] = [
-  '(?:swimming[- ])?pools?',
-  '(?:sea|ocean|water|beach|bay)[- ]?views?|(?:sea|ocean)[- ]facing',
-  'gardens?',
-  'garages?',
-  'balcon(?:y|ies)',
-  '(?:roof[- ]?)?terraces?',
-  'elevators?',
-  'gyms?|fitness (?:room|centre|center)',
-  'saunas?',
-  'jacuzzis?|hot[- ]tubs?',
-  'tennis courts?',
-  'fireplaces?',
-  'air[- ]condition(?:ing|ed)',
-  'concierge',
-  'planning (?:permission|consent)|building permits?',
-];
-/** `(?<![\w-])(?:…)(?![\w-])`, `re.IGNORECASE`. */
-const AMENITY_RES: readonly RegExp[] = AMENITY_PATTERNS.map(
-  (p) => new RegExp(`(?<![${PY_WORD}-])(?:${p})(?![${PY_WORD}-])`, 'giu'),
-);
-const NEGATOR_RE = new RegExp(`${B_START}(?:no|not|without|lacks?|lacking|nor)${B_END}`, 'iu');
 const CLAUSE_BREAK_RE = /[.;:!?\n,]/gu;
 const NEGATION_WINDOW = 30;
 
@@ -347,6 +308,9 @@ const NEGATIVE_FIELD_VALUES: ReadonlySet<string> = new Set([
   'none',
   'n/a',
   'null',
+  // FOLLOW-1383: the Polish "no" values of a spec field.
+  'nie',
+  'brak',
 ]);
 
 /**
@@ -373,9 +337,16 @@ function isNegated(text: string, startUtf16: number): boolean {
   return NEGATOR_RE.test(window);
 }
 
-/** `_asserted`: at least one NON-negated match. */
+/**
+ * `_asserted`: at least one NON-negated match. FOLLOW-1383: a match followed by a spec-line
+ * negation ("Basen: brak") is negated too.
+ */
 function asserted(pattern: RegExp, text: string): boolean {
-  for (const m of text.matchAll(pattern)) if (!isNegated(text, m.index)) return true;
+  for (const m of text.matchAll(pattern)) {
+    if (isNegated(text, m.index)) continue;
+    if (NEGATED_AFTER_RE.test(text.slice(m.index + m[0].length))) continue;
+    return true;
+  }
   return false;
 }
 
@@ -407,8 +378,9 @@ function checkUnsupportedClaimsPy(
 ): ClaimViolation | null {
   const grounding = claimGrounding(original, ctx);
 
-  for (const pattern of AMENITY_RES) {
-    if (asserted(pattern, text) && !asserted(pattern, grounding)) return 'unsupported_amenity';
+  // FOLLOW-1383: one group per amenity across en / pl / es (`lib/amenity-lexicon.ts`).
+  for (const { claim, grounding: grounds } of AMENITY_RES) {
+    if (asserted(claim, text) && !asserted(grounds, grounding)) return 'unsupported_amenity';
   }
   if (GUARANTEE_RE.test(text) && !GUARANTEE_RE.test(grounding)) return 'unsupported_guarantee';
   if (
@@ -515,14 +487,46 @@ const HEADLINE_STOP_CAPS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * FOLLOW-1389: per page language, the closed list of ordinary words a headline opens with —
+ * property types, room counts, descriptive adjectives. Matched case-insensitively against the
+ * FIRST word only. Its sentence-initial capital is not a name; the same word anywhere else is
+ * checked as before, and another language's list never applies.
+ */
+const HEADLINE_OPENING_WORDS: Readonly<Record<'en' | 'pl' | 'es', RegExp>> = {
+  en: new RegExp(
+    '^(?:(?:one|two|three|four|five|six|single|double)-(?:bed|bedroom|bedroomed|room|storey|story|level|family)|' +
+      'detached|semi-detached|terraced|end-terrace|end-of-terrace|furnished|unfurnished|renovated|' +
+      'refurbished|sunny|corner|ground-floor|top-floor|first-floor|house|home|flat|apartment|villa|' +
+      'studio|penthouse|cottage|bungalow|townhouse|duplex|loft|maisonette|plot|land|freehold|' +
+      'leasehold|large|compact|light-filled|quiet|new|new-build|seafront|waterfront|south-facing)$',
+    'iu',
+  ),
+  pl: new RegExp(
+    '^(?:(?:jedno|dwu|trzy|cztero|pięcio|sześcio|wielo)pokojow[eya]|dom|domek|mieszkanie|' +
+      'apartament|kawalerka|willa|studio|działka|lokal|segment|bliźniak|szeregowiec|penthouse|loft|' +
+      '(?:wolnostojąc|narożn|parterow|piętrow|przestronn|słoneczn|jasn|nowoczesn|komfortow|' +
+      'umeblowan|wykończon|przytuln|rodzinn|now|duż|cich|odnowion|wyremontowan)(?:y|a|e|ą))$',
+    'iu',
+  ),
+  es: new RegExp(
+    '^(?:casa|piso|apartamento|ático|chalet|villa|estudio|dúplex|bungalow|finca|parcela|solar|' +
+      'local|adosad[oa]|(?:luminos|ampli|modern|espacios|precios|bonit|reformad|amueblad|nuev)[oa]|' +
+      'acogedora?|independiente)$',
+    'iu',
+  ),
+};
+
+/**
  * `_check_headline_facts`: digits, then the claim classes, then every capitalised word (first word
  * included) that is not a stop-cap must appear in the grounding whole (Unicode `\b`) or by loose
- * stem.
+ * stem. FOLLOW-1389: with the page's `locale`, a first word in that language's
+ * `HEADLINE_OPENING_WORDS` is not checked (without one, nothing is exempt — the Python behaviour).
  */
 export function checkHeadlineFacts(
   headline: string,
   original: string,
   ctx: Readonly<Record<string, string>>,
+  locale?: 'en' | 'pl' | 'es',
 ): FactViolation | ClaimViolation | null {
   const grounding = factGrounding(original, ctx);
 
@@ -534,9 +538,10 @@ export function checkHeadlineFacts(
 
   const groundingStems = new Set<string>();
   for (const m of grounding.matchAll(GROUNDING_WORD_RE)) groundingStems.add(stemLoose(m[0]));
-  for (const word of pySplit(headline)) {
+  for (const [i, word] of pySplit(headline).entries()) {
     const clean = pyRstripChars(word, '.,;:!?"\')');
     if (!clean) continue;
+    if (i === 0 && locale !== undefined && HEADLINE_OPENING_WORDS[locale].test(clean)) continue;
     const cps = Array.from(clean);
     if (cps.length >= 2 && PY_UPPER_RE.test(cps[0] ?? '') && !HEADLINE_STOP_CAPS.has(clean)) {
       if (!pyWordBoundarySearch(clean, grounding) && !groundingStems.has(stemLoose(clean))) {
@@ -567,13 +572,16 @@ const RESIDUAL_TAGS: readonly string[] = [
 ];
 
 /**
- * `_body_violates_contract`: residual control tags (case-insensitive), then markdown (`**` or a
+ * `_body_violates_contract`: residual control tags (case-insensitive; FOLLOW-1390 adds the model's
+ * own `reasoning*` / `thinking*` / `effort*` tags, `lib/model-control-tags.ts`), then markdown (`**` or a
  * `#`-opened line), then the English leak markers. Note that a dangling `<verified_facts_used`
  * opening tag is caught HERE as `residual_tag`, before the generator's truncation tell can see it.
  */
 export function bodyViolatesContract(body: string): ContractViolation | null {
   const bodyLower = body.toLowerCase();
   for (const tag of RESIDUAL_TAGS) if (bodyLower.includes(tag)) return 'residual_tag';
+  // FOLLOW-1390: a leaked model-control tag (`<reasoning_effort>`, `<thinking>`, …).
+  if (hasModelControlTag(body)) return 'residual_tag';
   if (body.includes('**')) return 'formatted_body';
   for (const line of pySplitlines(body))
     if (pyLstrip(line).startsWith('#')) return 'formatted_body';

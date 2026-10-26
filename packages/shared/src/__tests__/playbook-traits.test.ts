@@ -216,7 +216,7 @@ describe('playbook merges (FOLLOW-1360)', () => {
     for (const locale of ['en', 'pl', 'es'] as const) {
       expect(p.copy_template[locale]).toMatch(/HARD RULES:/);
     }
-    expect(p.copy_template.en).toMatch(/do not assume children/i);
+    expect(p.copy_template.en).toMatch(/never write about children/i); // FOLLOW-1407
     expect(p.description).toMatch(/has_children/);
   });
 

@@ -1,0 +1,47 @@
+{
+  "case_count": 98,
+  "change": "FOLLOW-1402: the description user prompt ends with a paragraph naming the output language (\"LANGUAGE: write the description body in English (locale: en). original_description and listing_context may be in another language ...\"), read from event.locale, for every model. v9 is a PROMPT-DIGEST RE-FREEZE of v8: inputs, raw outputs, expected verdicts, headlines, violations, stamps, the description SYSTEM prompt and both headline prompts are v8's byte for byte; only prompt_sha256.description_user differs, in every case. No check changed.",
+  "claims_validation_version": "claims-v1",
+  "corpus": "corpus.v9.jsonl",
+  "corpus_sha256": "de05d8b2:394d6762:572db880:4514a13c:501abdd0:df133fb2:26d0fef3:0667dd9b",
+  "delta": [],
+  "derived_from": {
+    "corpus": "corpus.v8.jsonl",
+    "manifest": "MANIFEST.v8.json",
+    "corpus_sha256": "3e5bceda:18b306c3:2358d1c0:915028f4:d7c5b452:e39fca2c:c9f315e2:0ce28fb7"
+  },
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-10-26",
+  "headline_called": 61,
+  "headline_suppressed": 29,
+  "kind": "prompt_digest_refreeze",
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "FAILED/empty": 2,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/meta_commentary": 1,
+    "FAILED/residual_tag": 3,
+    "FAILED/truncated": 1,
+    "NEUTRAL/with_reason": 8,
+    "NEUTRAL/without_reason": 1,
+    "REFUSED/familial_steering": 3,
+    "REFUSED/hallucinated_number": 5,
+    "REFUSED/unit_mismatch": 2,
+    "REFUSED/unsupported_amenity": 5,
+    "REFUSED/unsupported_guarantee": 2
+  },
+  "per_verdict": {
+    "FAILED": 11,
+    "FIT": 61,
+    "NEUTRAL": 9,
+    "REFUSED": 17
+  },
+  "recorded_outputs_predate_prompt": "Every raw_description in this corpus was produced by an older description prompt. They are replayed through the unchanged checks, so they pin the checks and the new prompt bytes, NOT what the new prompt makes the model write."
+}

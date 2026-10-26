@@ -11,8 +11,9 @@
  * which decide which listing cards are promoted.
  *
  * NOT SCANNED, deliberately: `copy_template` (voice instructions to a model; they contain these
- * words only as prohibitions: "never call an area family-friendly") and the trait add-ons (pinned
- * by `playbook-traits.test.ts`). NOT SCANNED, KNOWN GAP: `description`, `signals` and
+ * words only as prohibitions: "never call an area family-friendly"; since FOLLOW-1400 the
+ * last describe block below holds that claim against `steersByFamilialStatus`) and the trait
+ * add-ons (pinned by `playbook-traits.test.ts`). NOT SCANNED, KNOWN GAP: `description`, `signals` and
  * `feature_priority`. `description` and `signals` DO reach the LLM prompts
  * (`apps/control-plane/src/lib/llm-gateway.ts`), so this is a gap, not an exemption; a follow-up
  * scrubs and scans them.
@@ -25,6 +26,7 @@
 import { describe, it, expect } from 'vitest';
 import { getAllPlaybooks } from '../playbooks/index.js';
 import type { PlaybookEntry } from '../playbooks/types.js';
+import { steersByFamilialStatus } from '../playbooks/traits.js';
 
 type Locale = 'en' | 'pl' | 'es';
 
@@ -265,5 +267,41 @@ describe('every served playbook string is free of protected characteristics', ()
       expect(slot?.pl?.length).toBeGreaterThan(0);
       expect(slot?.es?.length).toBeGreaterThan(0);
     }
+  });
+});
+
+/**
+ * FOLLOW-1400: a `copy_template` must never RECOMMEND a phrase the familial-steering refusal
+ * refuses — the description path and `/api/adapt` both refuse it, so the template would only
+ * produce refusals. The diaspora PL template recommended "zabezpieczenie dla rodziny w kraju" and
+ * "adres rozpoznawalny dla rodziny"; Sonnet 5.5 wrote them (FOLLOW-1399). A template may still
+ * NAME a steering phrase inside a prohibition ("Never call an area family-friendly", an "Avoid:"
+ * list): those sentences are pinned below, so a new matching sentence fails until it is reviewed.
+ */
+describe('no copy_template recommends a familial-steering phrase [FOLLOW-1400]', () => {
+  const PROHIBITIONS: readonly string[] = [
+    'yield_hunter en: dream, perfect for, family-friendly',
+    // Matched on the quoted negation `nie "miejsce dla dzieci"`; its "family-tenant retention"
+    // framing (EN too) is outside the scanner's vocabulary and is reported, not changed, here.
+    'yield_hunter pl: ogród to udogodnienie zwiększające retencję rodzinnego najemcy',
+    'vacation_rental_investor en: family home, retirement',
+    'family_buyer en: Never call an area family-friendly',
+    'family_buyer pl: Nie nazywaj okolicy przyjazną rodzinom',
+    'family_buyer es: Nunca llames a una zona apta para familias',
+    'student_parent en: family home, retirement',
+  ];
+
+  it('every template sentence the scanner matches is a pinned prohibition', () => {
+    const matched = [...getAllPlaybooks().values()].flatMap((p) =>
+      Object.entries(p.copy_template).flatMap(([locale, text]) =>
+        text
+          .split(/(?<=[.;:])\s+/)
+          .filter((sentence) => steersByFamilialStatus(sentence))
+          .map((sentence) => `${p.archetype} ${locale}: ${sentence}`),
+      ),
+    );
+    const unpinned = matched.filter((m) => !PROHIBITIONS.some((pin) => m.startsWith(pin)));
+    expect(unpinned).toEqual([]);
+    expect(matched).toHaveLength(PROHIBITIONS.length);
   });
 });

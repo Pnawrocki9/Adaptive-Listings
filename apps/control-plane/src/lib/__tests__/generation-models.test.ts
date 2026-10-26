@@ -41,7 +41,9 @@ describe('generation-models', () => {
 
   it('scales a 5.x budget by the tokenizer factor and adds the reserve', () => {
     expect(generationRequestFor('claude-haiku-5-5', 450).maxTokens).toBe(1020);
-    expect(generationRequestFor('claude-sonnet-5-5', 450).maxTokens).toBe(2720);
+    // FOLLOW-1403: Sonnet 5.5 still thinks on some calls at between_tools + low; its own reserve.
+    expect(generationRequestFor('claude-sonnet-5-5', 450).maxTokens).toBe(6720);
+    expect(generationRequestFor('claude-sonnet-5-5', 60).maxTokens).toBe(6096);
     expect(generationRequestFor('claude-opus-5-5', 2000).maxTokens).toBe(5200);
     expect(generationRequestFor('claude-fable-5-1', 60).maxTokens).toBe(2096);
   });

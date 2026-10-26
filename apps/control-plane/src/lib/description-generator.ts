@@ -20,6 +20,10 @@
  * FOLLOW-1384 adds `checkOutputLanguage` (not in the Python) after truncation, and before the
  * headline's fact check: a body in another language than `locale` is `FAILED / wrong_language`,
  * a headline is suppressed as `wrong_language`.
+ * FOLLOW-1400 adds the familial-steering refusal `/api/adapt` runs (`steersByFamilialStatus`, one
+ * implementation): a body is `REFUSED / familial_steering` after the language check and before
+ * `checkBodyClaims`, a headline is suppressed as `familial_steering` — on every request, with or
+ * without the `has_children` trait, whoever wrote the words (ESC-086, ESC-088).
  * NEUTRAL writes the negative-cache marker to both caches; REFUSED, FAILED and SKIPPED write none.
  *
  * What is NOT ported verbatim, by decision (ADR-0023 §6):
@@ -47,7 +51,11 @@ import Anthropic from '@anthropic-ai/sdk';
 import * as Sentry from '@sentry/nextjs';
 import { DescriptionRequestedEventSchema } from '@estalara/shared';
 import type { DescriptionCacheValue, DescriptionRequestedEvent } from '@estalara/shared';
-import { getTraitAddOns, renderTraitRules } from '@estalara/shared/playbook-traits';
+import {
+  getTraitAddOns,
+  renderTraitRules,
+  steersByFamilialStatus,
+} from '@estalara/shared/playbook-traits';
 import {
   ALLOWED_GENERATION_MODELS,
   DEFAULT_GENERATION_MODEL,
@@ -451,7 +459,8 @@ GROUNDING RULES (same contract as the full description — FOLLOW-169):
 8. Output ONLY the headline text — no surrounding quotes, no preamble, no explanation. Nothing else.
 `;
 
-/** FOLLOW-1382: the language each supported locale names in the headline instruction. */
+/** FOLLOW-1382: the language each supported locale names in the headline instruction (and, since
+ * FOLLOW-1402, in the description instruction). */
 const LOCALE_LANGUAGE: Readonly<Record<DescriptionRequestedEvent['locale'], string>> = {
   en: 'English',
   pl: 'Polish',
@@ -475,7 +484,34 @@ function headlineLanguageInstruction(locale: DescriptionRequestedEvent['locale']
   );
 }
 
+/**
+ * FOLLOW-1402: the paragraph that closes the description user prompt. The prompt named the page
+ * only by its code ("locale: en"); in the FOLLOW-1399 comparison Haiku 5.5 wrote Polish on 6 of 16
+ * English pages built from a Polish original. The language is now named, and the sources are said
+ * to be possibly in another language — the FOLLOW-1382 treatment of the headline. Every model gets
+ * it (one prompt); the system prompt and the rest of the user prompt are unchanged.
+ *
+ * At the END only, by measurement (Haiku 5.5, the 16 cross-language cases x 3 per variant): the
+ * same paragraph also placed at the START of the user prompt, or the language named in its first
+ * lines, made Haiku write its reasoning into the visible reply ("I need to run the archetype-fit
+ * gate first …") or think through its whole budget despite `thinking: disabled` — 4 to 10 of 48
+ * replies FAILED. With the closing paragraph alone, 1 of 96 did, and Polish bodies on English pages
+ * fell from 16 of 48 (old prompt) to 0 of 96.
+ */
+function descriptionLanguageInstruction(locale: DescriptionRequestedEvent['locale']): string {
+  const language = LOCALE_LANGUAGE[locale];
+  return (
+    `LANGUAGE: write the description body in ${language} (locale: ${locale}). ` +
+    `original_description and listing_context may be in another language: do not answer in ` +
+    `their language and do not translate them word for word; compose the body natively in ` +
+    `${language}. Keep place names and other proper names exactly as the listing writes them.`
+  );
+}
+
 // ─── Types (ADR-0023 §3) ──────────────────────────────────────────────────────
+
+/** Familial-status steering, refused on every request as on `/api/adapt` [FOLLOW-1400]. */
+type FamilialSteering = 'familial_steering';
 
 type DescriptionOutcome =
   | { verdict: 'SKIPPED'; reason: 'spend_cap' }
@@ -491,7 +527,7 @@ type DescriptionOutcome =
         | 'invalid_event';
     }
   | { verdict: 'NEUTRAL'; neutralReason: string | null }
-  | { verdict: 'REFUSED'; violation: NumberViolation | ClaimViolation }
+  | { verdict: 'REFUSED'; violation: NumberViolation | ClaimViolation | FamilialSteering }
   | { verdict: 'FIT'; description: string; verifiedFacts: string[] };
 
 /** The outcomes the pure interpreter can produce (no I/O, so no SKIPPED / timeout / api_error). */
@@ -512,6 +548,7 @@ interface GenerationReport {
     | 'wrong_language'
     | 'residual_tag'
     | 'meta_commentary'
+    | FamilialSteering
     | 'call_failed'
     | null;
   /** Set iff the outcome is FIT. */
@@ -591,6 +628,9 @@ function renderDescriptionPrompt(
       'Remember: do not invent numbers, ratings, distances, percentages, prices, ' +
       'dates, or proper names that are not in original_description or ' +
       'listing_context. Finish with the <verified_facts_used> JSON block.',
+    '',
+    // FOLLOW-1402 (corpus v9): the output language, named.
+    descriptionLanguageInstruction(e.locale),
   ].join('\n');
   const { maxTokens, extras } = generationRequestFor(model, maxTokensFor(e.original_description));
   return { system, user, maxTokens, extras };
@@ -707,6 +747,12 @@ function interpretDescription(
   const languageViolation = checkOutputLanguage(description, e.locale);
   if (languageViolation) return { verdict: 'FAILED', reason: languageViolation };
 
+  // FOLLOW-1400: familial-status steering is refused before the claim check, as `/api/adapt`
+  // orders it; refused, never stripped.
+  if (steersByFamilialStatus(description)) {
+    return { verdict: 'REFUSED', violation: 'familial_steering' };
+  }
+
   const claimViolation = checkBodyClaims(
     description,
     e.original_description || '',
@@ -730,6 +776,7 @@ function interpretHeadline(
     | 'wrong_language'
     | 'residual_tag'
     | 'meta_commentary'
+    | FamilialSteering
     | null;
 } {
   if (!pyStrip(rawText)) return { headline: null, violation: 'empty' };
@@ -743,6 +790,8 @@ function interpretHeadline(
   // FOLLOW-1384: the page's language first, then the facts.
   const languageViolation = checkOutputLanguage(headline, e.locale);
   if (languageViolation) return { headline: null, violation: languageViolation };
+  // FOLLOW-1400: familial-status steering, as on the body and on `/api/adapt`.
+  if (steersByFamilialStatus(headline)) return { headline: null, violation: 'familial_steering' };
   const violation = checkHeadlineFacts(
     headline,
     e.original_description || '',

@@ -137,13 +137,19 @@ describe('generateDescription — 5.x generation models (FOLLOW-1377)', () => {
     expect(bodies()[0]).toMatchObject({ model: 'claude-sonnet-5-5' });
   });
 
-  it('Sonnet 5.5: between_tools at low effort, with the thinking reserve', async () => {
+  it('Sonnet 5.5: between_tools at low effort, with its own thinking reserve (FOLLOW-1403)', async () => {
     mockCreate
       .mockResolvedValueOnce(textReply(FIT_RAW))
       .mockResolvedValueOnce(textReply(HEADLINE_RAW));
     await generateDescription({ ...EVENT, generation_model: 'claude-sonnet-5-5' });
-    expect(bodies()[0]).toMatchObject({
-      max_tokens: 2720, // ceil(450 * 1.6) + 2000
+    const [desc, head] = bodies();
+    expect(desc).toMatchObject({
+      max_tokens: 6720, // ceil(450 * 1.6) + 6000
+      thinking: { type: 'between_tools' },
+      output_config: { effort: 'low' },
+    });
+    expect(head).toMatchObject({
+      max_tokens: 6096, // ceil(60 * 1.6) + 6000
       thinking: { type: 'between_tools' },
       output_config: { effort: 'low' },
     });

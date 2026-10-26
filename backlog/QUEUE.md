@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 180 (2026-10-19) — **Checkpoint K3 GREEN at `main` `434b2513` (`docs/checkpoints/K3.md`, README §5.31, tag `k3-green` on this ledger's merge): Phase 3 M1 #1042, M2 #1044, M3 #1041, M5 #1043, N2 full #1045 DONE; N1 `--final` reads 0. A RED pair at `3952ac29` was bisected by a read-only forensic (not a Phase 3 regression) → FOLLOW-1352 #1046 (harness predicate) + FOLLOW-1351 #1047 (SDK single-flight chat refresh). **CEO ruling 2026-10-19: Faza Q — the quiz must identify one archetype with ≥ 90 % accuracy (buyer self-confirmation as ground truth, EN + PL mandatory, buyer-side language switcher, 12 results + neutral + traits) and the backoffice must manage the quiz end to end — is INSERTED between K3 and Phase 4.** Plan approved in plan mode (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, copied to `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` by the Q0 PR); packages Q0 docs → Q1 shared → Q2 SDK ∥ Q3 recording ∥ Q7 editor → Q4 fold → Q5 traits → Q6 harness (AC(10), TALLY 8) → Q8 report; checkpoints KQ1 (localhost 3× GREEN 8/8), KQ2 (CEO walkthrough — absorbs the K3 'moment CEO'), KQ3 (production, CTO: ≥ 400 decided runs, pre-registered Wilson bound). Phase 4 (P1–P7) follows KQ2. New stubs: FOLLOW-1353 (Sentry drizzle params, P2), FOLLOW-1354 (SDK adapt fetch timeout, P2); amendments 1307, 1233/1246, 1350. Retro batch owed (weekly): #1042, #1043, #1044, #1047. Next free: FOLLOW-1406, RETRO-368, ESC-089.**
+## ▶️ START HERE — session 180 (2026-10-19) — **Checkpoint K3 GREEN at `main` `434b2513` (`docs/checkpoints/K3.md`, README §5.31, tag `k3-green` on this ledger's merge): Phase 3 M1 #1042, M2 #1044, M3 #1041, M5 #1043, N2 full #1045 DONE; N1 `--final` reads 0. A RED pair at `3952ac29` was bisected by a read-only forensic (not a Phase 3 regression) → FOLLOW-1352 #1046 (harness predicate) + FOLLOW-1351 #1047 (SDK single-flight chat refresh). **CEO ruling 2026-10-19: Faza Q — the quiz must identify one archetype with ≥ 90 % accuracy (buyer self-confirmation as ground truth, EN + PL mandatory, buyer-side language switcher, 12 results + neutral + traits) and the backoffice must manage the quiz end to end — is INSERTED between K3 and Phase 4.** Plan approved in plan mode (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, copied to `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` by the Q0 PR); packages Q0 docs → Q1 shared → Q2 SDK ∥ Q3 recording ∥ Q7 editor → Q4 fold → Q5 traits → Q6 harness (AC(10), TALLY 8) → Q8 report; checkpoints KQ1 (localhost 3× GREEN 8/8), KQ2 (CEO walkthrough — absorbs the K3 'moment CEO'), KQ3 (production, CTO: ≥ 400 decided runs, pre-registered Wilson bound). Phase 4 (P1–P7) follows KQ2. New stubs: FOLLOW-1353 (Sentry drizzle params, P2), FOLLOW-1354 (SDK adapt fetch timeout, P2); amendments 1307, 1233/1246, 1350. Retro batch owed (weekly): #1042, #1043, #1044, #1047. Next free: FOLLOW-1409, RETRO-368, ESC-089.**
 
 ### Dispatch record (session 180)
 
@@ -64,23 +64,39 @@
 - **FOLLOW-1398** — status: BACKLOG # P3. Harness AC(5): the CTA `locator.click` can time out (5000
   ms, "element is not stable") when the CTA re-renders after adaptation (README §5.39 run 33); wait
   for a stable CTA before clicking.
-- **FOLLOW-1400** — status: BACKLOG # P1 compliance. The description path does not run the
-  familial-steering check: Sonnet 5.5 wrote "dla rodziny" for the diaspora profile 4× in the
-  FOLLOW-1399 study, 2 served. Run the same steering guard as `/api/adapt` (FOLLOW-1360/1366) on
+- **FOLLOW-1406** — status: BACKLOG # P1 compliance. Bump `CLAIMS_VALIDATION_VERSION` to `claims-v2`
+  (with a parity-corpus re-freeze) so copy cached before FOLLOW-1400 ("dla rodziny") is regenerated
+  once, not served.
+- **FOLLOW-1407** — status: BACKLOG # P2 compliance. Templates still conflicting with the steering
+  refusal: yield_hunter frames a garden as "family-tenant retention"; family_buyer says "never refer
+  to the reader's children… unless the listing text itself does" (contradicts refusal on every
+  request). CEO wording questions (diaspora "zabezpieczenie dla rodziny w kraju"; PL "rodzinna
+  okolica" parity) recorded with it.
+- **FOLLOW-1408** — status: BACKLOG # P3. No negation guard for guarantees ("no guarantee of income"
+  refused); first_time_buyer headline persona still says "move-in readiness".
+- **FOLLOW-1400** — status: IN_REVIEW # branch
+  `ml-engineer/FOLLOW-1400-steering-and-generator-fixes`. P1 compliance. The description path does
+  not run the familial-steering check: Sonnet 5.5 wrote "dla rodziny" for the diaspora profile 4× in
+  the FOLLOW-1399 study, 2 served. Run the same steering guard as `/api/adapt` (FOLLOW-1360/1366) on
   descriptions and headlines, en/pl/es.
-- **FOLLOW-1401** — status: BACKLOG # P2. "turnkey" / "pod klucz" / "llave en mano" in the
-  second_home_buyer and vacation_rental_investor templates (en/pl/es) conflicts with the claim
-  check: 16 of 25 refusals (supersedes the narrower FOLLOW-1385).
-- **FOLLOW-1402** — status: BACKLOG # P2. Haiku 5.5 answers in the source language on cross-language
-  pages (6/16 EN pages from PL originals; all caught by FOLLOW-1384, none served): strengthen the
-  description prompt's language instruction, re-test.
-- **FOLLOW-1403** — status: BACKLOG # P2. Sonnet 5.5 still thinks at `effort: low` (5/60), 2 calls
-  exhausted the 2,720-token budget (empty / truncated): raise the reserve or disable thinking for
-  the description call.
-- **FOLLOW-1404** — status: BACKLOG # P3. No-work claim check lacks a negation guard ("it is not
-  move-in ready" refused): 3 false positives.
-- **FOLLOW-1405** — status: BACKLOG # P3. Decades ("lata 30.", "1930s") refused as invented numbers:
-  4 false positives.
+- **FOLLOW-1401** — status: IN_REVIEW # branch
+  `ml-engineer/FOLLOW-1400-steering-and-generator-fixes`. P2. "turnkey" / "pod klucz" / "llave en
+  mano" in the second_home_buyer and vacation_rental_investor templates (en/pl/es) conflicts with
+  the claim check: 16 of 25 refusals (supersedes the narrower FOLLOW-1385).
+- **FOLLOW-1402** — status: IN_REVIEW # branch
+  `ml-engineer/FOLLOW-1400-steering-and-generator-fixes`. P2. Haiku 5.5 answers in the source
+  language on cross-language pages (6/16 EN pages from PL originals; all caught by FOLLOW-1384, none
+  served): strengthen the description prompt's language instruction, re-test.
+- **FOLLOW-1403** — status: IN_REVIEW # branch
+  `ml-engineer/FOLLOW-1400-steering-and-generator-fixes`. P2. Sonnet 5.5 still thinks at
+  `effort: low` (5/60), 2 calls exhausted the 2,720-token budget (empty / truncated): raise the
+  reserve or disable thinking for the description call.
+- **FOLLOW-1404** — status: IN_REVIEW # branch
+  `ml-engineer/FOLLOW-1400-steering-and-generator-fixes`. P3. No-work claim check lacks a negation
+  guard ("it is not move-in ready" refused): 3 false positives.
+- **FOLLOW-1405** — status: IN_REVIEW # branch
+  `ml-engineer/FOLLOW-1400-steering-and-generator-fixes`. P3. Decades ("lata 30.", "1930s") refused
+  as invented numbers: 4 false positives.
 - **FOLLOW-1399** — status: DONE # 2026-10-26. Blind re-run Haiku 5.5 vs Sonnet 5.5, 60 cases
   (`docs/research/MODEL-COMPARE-RERUN-2026-10-26.md`): Sonnet 5.5 stays (Haiku 6 vs 0 Polish bodies
   on EN pages, more invented facts; refusals level 12 vs 13; served 42 vs 45; overall tie p = 0.50;
@@ -110,8 +126,9 @@
   amenity lexicon (`lib/amenity-lexicon.ts`) on both paths.
 - **FOLLOW-1384** — status: DONE # #1085 `bd33f229`. Function-word language check: body
   `FAILED/wrong_language`, headline suppressed.
-- **FOLLOW-1385** — status: BACKLOG # P3. Vacation-rental `copy_template` recommends "turnkey",
-  which the claim check refuses.
+- **FOLLOW-1385** — status: SUPERSEDED # by FOLLOW-1401 (same fix, wider: second_home_buyer,
+  vacation_rental_investor and first_time_buyer templates, en/pl/es). Vacation-rental
+  `copy_template` recommends "turnkey", which the claim check refuses.
 - **FOLLOW-1386** — status: BACKLOG # P3. Polish room-count convention ("dwupokojowe" = 1 bedroom +
   living room) mistranslated by both models; add guidance.
 - **FOLLOW-1368** — status: BACKLOG # ESC-087 option 3: `/api/adapt` uses the playbook branch only

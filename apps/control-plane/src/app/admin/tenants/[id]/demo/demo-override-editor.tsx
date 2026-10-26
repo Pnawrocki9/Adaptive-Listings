@@ -46,7 +46,7 @@ const ARCHETYPE_LABELS: Record<string, string> = {
   neutral: 'Neutral (no adaptation)',
 };
 
-/** `Sonnet 5.5 — Default; thinking off, low effort`, from the one model catalog (FOLLOW-1377); the id otherwise. */
+/** `Sonnet 5.5 — Default; low effort, rarely thinks`, from the one model catalog (FOLLOW-1377); the id otherwise. */
 function modelLabel(model: string): string {
   const hint = generationModelHint(model);
   return hint ? `${hint.label} — ${hint.note}` : model;

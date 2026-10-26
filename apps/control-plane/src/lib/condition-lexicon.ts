@@ -12,7 +12,8 @@
  *     garantizada", "risk-free", "bez ryzyka"). Grounded ONLY by the listing's own guarantee, in
  *     any language (the seller's claim, ESC-076). A condition fact never grounds it.
  *   - `NO_WORK_CLAIM_RE` — a claim that nothing needs doing ("move-in ready", "no renovation",
- *     "gotowe do zamieszkania", "nie wymaga remontu", "listo para entrar a vivir").
+ *     "gotowe do zamieszkania", "nie wymaga remontu", "listo para entrar a vivir"). Read through
+ *     `assertsNoWorkClaim` (FOLLOW-1404): a NEGATED match ("it is not move-in ready") is no claim.
  *   - `CONDITION_FACT_RE` — a condition fact in the listing that grounds such a claim ("fully
  *     renovated", "wykończone", "do zamieszkania", "po remoncie", "gotowe do wprowadzenia",
  *     "reformado", "a estrenar"). Global: callers read it NON-negated, so "nie jest wykończone"
@@ -23,6 +24,8 @@
  *
  * @module apps/control-plane/src/lib/condition-lexicon
  */
+
+import { NEGATED_AFTER_RE, NEGATOR_RE } from '@/lib/amenity-lexicon';
 
 const W = '\\p{L}\\p{N}_';
 
@@ -53,8 +56,8 @@ export const GUARANTEE_RE = wordRe(
   'iu',
 );
 
-/** A claim that the property needs no work. Not global: callers `test` it. */
-export const NO_WORK_CLAIM_RE = wordRe(
+/** A claim that the property needs no work. Read through {@link assertsNoWorkClaim}. */
+const NO_WORK_CLAIM_RE = wordRe(
   [
     // en (the FOLLOW-1305 patterns, unchanged)
     '(?:no|zero) (?:work|works|renovation|repairs?|refurbishment)',
@@ -110,3 +113,53 @@ export const CONDITION_FACT_RE = wordRe(
   ],
   'giu',
 );
+
+/** The global twin of `NO_WORK_CLAIM_RE`, for `matchAll`. */
+const NO_WORK_CLAIM_ALL_RE = new RegExp(NO_WORK_CLAIM_RE.source, 'giu');
+
+/** The amenity negation window: same clause, 30 code points before the match. */
+const NEGATION_WINDOW = 30;
+const CLAUSE_BREAK_RE = /[.;:!?\n,]/gu;
+
+/** "not only" / "not just" / "nie tylko" / "no solo": a negator that affirms what follows. */
+const AFFIRMING_NEGATION_RE = wordRe(
+  ['(?:not|nie|no) (?:just|only|merely|tylko|s[oó]lo|solamente)'],
+  'iu',
+);
+
+function clauseBefore(text: string, start: number): string {
+  const before = Array.from(text.slice(0, start));
+  const window = before.slice(Math.max(0, before.length - NEGATION_WINDOW)).join('');
+  let cut = 0;
+  for (const m of window.matchAll(CLAUSE_BREAK_RE)) cut = m.index + m[0].length;
+  return window.slice(cut);
+}
+
+/**
+ * Does `text` claim the property needs no work — at least one match of the no-work vocabulary
+ * that is not negated [FOLLOW-1404]?
+ *
+ * Negation reuses the amenity rule (`NEGATOR_RE` in the same clause within 30 code points before
+ * the match, or `NEGATED_AFTER_RE` right after it: "Turnkey: no"), with two limits that keep the
+ * check fail-closed:
+ *   - a phrase that is itself negative ("no renovation", "nie wymaga remontu", "bez remontu",
+ *     "sin reformas") is a claim whatever precedes it — the negator before it belongs to another
+ *     phrase ("bez balkonu nie wymaga remontu"), not to the claim;
+ *   - "not only" / "not just" / "nie tylko" / "no solo" affirm, they do not negate.
+ *
+ * Used for the generated text AND for the listing's grounding, on both paths: a listing that says
+ * "nie jest gotowe do zamieszkania" no longer grounds "move-in ready".
+ *
+ * @param text - Generated copy, or the listing's grounding text.
+ * @returns `true` when a non-negated no-work claim is present.
+ */
+export function assertsNoWorkClaim(text: string): boolean {
+  for (const m of text.matchAll(NO_WORK_CLAIM_ALL_RE)) {
+    if (NEGATOR_RE.test(m[0].split(/\s/u)[0] ?? '')) return true;
+    const before = clauseBefore(text, m.index);
+    const negatedBefore = NEGATOR_RE.test(before) && !AFFIRMING_NEGATION_RE.test(before);
+    if (negatedBefore || NEGATED_AFTER_RE.test(text.slice(m.index + m[0].length))) continue;
+    return true;
+  }
+  return false;
+}

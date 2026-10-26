@@ -18,6 +18,7 @@ import { DAILY_SPEND_CAP_USD, getDailySpend } from '@/lib/llm-spend-counter';
 import { computeCost } from '@/lib/llm-pricing';
 import { generationRequestFor } from '@/lib/generation-models';
 import { normaliseNumberGroups } from '@/lib/number-groups';
+import { stripGroundedDecades } from '@/lib/decade-expressions';
 import { hasMetaCommentary } from '@/lib/meta-commentary';
 import { hasModelControlTag } from '@/lib/model-control-tags';
 // FOLLOW-1061: the `llm_calls` INSERT moved to its own module so the `/api/adapt` route can book
@@ -509,7 +510,14 @@ function checkDirectiveFacts(value: string, grounding: string): DirectiveFactVio
       canonNumber(m[0]),
     ),
   );
-  for (const match of normaliseNumberGroups(value).matchAll(FACT_CHECK_DIGIT_RE)) {
+  // A decade is checked as a decade, then kept out of the digit rule, as on the description path
+  // [FOLLOW-1405].
+  const withoutDecades = stripGroundedDecades(
+    normaliseNumberGroups(value),
+    normaliseNumberGroups(grounding),
+  );
+  if (withoutDecades === null) return 'hallucinated_number';
+  for (const match of withoutDecades.matchAll(FACT_CHECK_DIGIT_RE)) {
     const canon = canonNumber(match[0]);
     if (canon !== '' && !groundingNumbers.has(canon)) {
       return 'hallucinated_number';

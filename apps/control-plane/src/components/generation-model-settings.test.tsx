@@ -136,7 +136,7 @@ describe('GenerationModelSettings — cost and time per model (FOLLOW-1377)', ()
     expect(sonnet).toBe('Sonnet 4.6Previous default; balanced≈ $0.03≈ 13 s');
     // FOLLOW-1387: the default label moved to Sonnet 5.5.
     expect(screen.getByTestId('model-hint-claude-sonnet-5-5').textContent).toContain(
-      'Default; thinking off, low effort',
+      'Default; low effort, rarely thinks',
     );
     const haiku55 = screen.getByTestId('model-hint-claude-haiku-5-5').textContent;
     expect(haiku55).toContain('≈ $0.001'); // three decimals below a cent, never "$0.00"

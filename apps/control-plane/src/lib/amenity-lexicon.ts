@@ -32,7 +32,20 @@ interface AmenityDef {
   readonly alsoGroundedBy?: readonly string[];
 }
 
-const POOL = ['(?:swimming[- ])?pools?', 'basen(?:u|em|ie|y|ów|ami|ach|om)?', 'piscinas?'];
+/**
+ * FOLLOW-1394: people a "pool" can be made of. "The pool of buyers", "a pool of finished-product
+ * tenants" and "the demand pool" are a market, not a swimming pool; "a pool of 10 x 5 m" and
+ * "the swimming pool of the complex" are still a pool.
+ */
+const POOL_PEOPLE =
+  'buyers?|purchasers?|tenants?|renters?|lessees?|households?|occupants?|guests?|investors?|' +
+  'bidders?|applicants?|candidates?|people|families|end[- ]users?|demand|talent|labou?r';
+const POOL = [
+  'swimming[- ]pools?',
+  `(?<!(?:${POOL_PEOPLE}|rental|resale)[- ])pools?(?![ \\t]+of[ \\t]+(?:[\\p{L}-]+[ \\t]+){0,2}(?:${POOL_PEOPLE})(?![\\p{L}]))`,
+  'basen(?:u|em|ie|y|ów|ami|ach|om)?',
+  'piscinas?',
+];
 const GARAGE = [
   'garages?',
   'garaż(?:u|em|e|y|ów|ami|ach|owy|owa|owe|ową|owym|owej|owego|owych)?',
@@ -43,9 +56,19 @@ const AMENITIES: readonly AmenityDef[] = [
   { names: POOL },
   {
     names: [
-      '(?:sea|ocean|water|beach|bay)[- ]?views?|(?:sea|ocean)[- ]facing',
+      '(?:sea|ocean|water|beach|bay)[- ]?views?|(?:sea|ocean)[- ]facing|' +
+        // FOLLOW-1394: the views-of-the-sea phrasing is the same claim.
+        'views? (?:of|over|across|to|towards) the (?:sea|ocean|bay|beach)',
       'widok(?:u|iem|i|ów|ami)? na (?:morze|ocean|zatokę|plażę)',
       'vistas? (?:al|a la|sobre el|sobre la|del) (?:mar|océano|bahía|playa)|frente al mar',
+    ],
+    // FOLLOW-1394: a view that names other things before the sea, in the same sentence ("views
+    // of the Montgó mountain and, from the upper terrace, of the sea", "widokiem na góry i
+    // morze", "vistas a la montaña y al mar").
+    alsoGroundedBy: [
+      `views? (?:of|over|across|to|towards)[^.;!?\\n]{0,80}?(?<![\\p{L}])(?:of |over |across |to |and )the (?:sea|ocean|bay)`,
+      `widok(?:u|iem|i|ów|ami)? na [^.;!?\\n]{0,60}?(?<![\\p{L}])(?:morze|ocean|zatokę)`,
+      `vistas? (?:a|al|sobre|hacia)[^.;!?\\n]{0,60}?(?<![\\p{L}])(?:mar|océano|bahía)`,
     ],
   },
   {

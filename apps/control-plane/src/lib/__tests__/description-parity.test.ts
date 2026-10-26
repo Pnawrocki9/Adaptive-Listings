@@ -162,7 +162,7 @@ const HEADLINE_SHA = new Map(CASES_V5.map((c) => [c.id, c.expected.prompt_sha256
 
 /**
  * The verdict deltas after v5, oldest first, each derived from the corpus before it (v6 from v5).
- * FOLLOW-1392 — v6 (meta-commentary).
+ * FOLLOW-1392 — v6 (meta-commentary); FOLLOW-1394 — v7 (a pool of people, views of the sea).
  */
 const VERDICT_DELTAS: {
   version: number;
@@ -170,15 +170,16 @@ const VERDICT_DELTAS: {
   ids: string[];
   cases: Case[];
   manifest: ManifestV3;
-}[] = [{ version: 6, ticket: 'FOLLOW-1392', ids: ['live.016.listing-007.yield_hunter.en'] }].map(
-  (d) => ({
-    ...d,
-    cases: readCorpus(`corpus.v${String(d.version)}.jsonl`),
-    manifest: JSON.parse(
-      readFileSync(join(FIXTURE_DIR, `MANIFEST.v${String(d.version)}.json`), 'utf8'),
-    ) as ManifestV3,
-  }),
-);
+}[] = [
+  { version: 6, ticket: 'FOLLOW-1392', ids: ['live.016.listing-007.yield_hunter.en'] },
+  { version: 7, ticket: 'FOLLOW-1394', ids: ['live.011.listing-005.yield_hunter.en'] },
+].map((d) => ({
+  ...d,
+  cases: readCorpus(`corpus.v${String(d.version)}.jsonl`),
+  manifest: JSON.parse(
+    readFileSync(join(FIXTURE_DIR, `MANIFEST.v${String(d.version)}.json`), 'utf8'),
+  ) as ManifestV3,
+}));
 /** Every case a verdict delta after v5 changed: v1–v5 no longer replay it. */
 const LATER_DELTA_IDS = new Set(VERDICT_DELTAS.flatMap((d) => d.manifest.delta.map((x) => x.id)));
 
@@ -670,5 +671,20 @@ describe('description parity corpus v6 (FOLLOW-1392 — meta-commentary)', () =>
     expect(v6.expected.outcome).toEqual({ verdict: 'FAILED', reason: 'meta_commentary' });
     expect(v6.raw_description.text).toContain('The original description flags');
     expect(v6.expected.headline_called).toBe(false);
+  });
+});
+
+describe('description parity corpus v7 (FOLLOW-1394 — a pool of people is not a pool)', () => {
+  it('the one v7 delta is the demand-pool false refusal: REFUSED/unsupported_amenity → FIT', () => {
+    const id = 'live.011.listing-005.yield_hunter.en';
+    const v6 = VERDICT_DELTAS[0]!.cases.find((c) => c.id === id)!;
+    const v7 = VERDICT_DELTAS[1]!.cases.find((c) => c.id === id)!;
+    expect(v6.expected.outcome).toEqual({ verdict: 'REFUSED', violation: 'unsupported_amenity' });
+    expect(v7.expected.outcome.verdict).toBe('FIT');
+    expect(v7.expected.outcome.description).toContain('a defensible tenant demand pool');
+    expect(v7.expected.claims_validation).toBe(CLAIMS_VALIDATION_VERSION);
+    // The recorded raw headline is null (the case was REFUSED when recorded): suppressed as empty.
+    expect(v7.raw_headline).toBeNull();
+    expect(v7.expected.headline_violation).toBe('empty');
   });
 });

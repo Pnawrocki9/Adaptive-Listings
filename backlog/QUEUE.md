@@ -64,39 +64,40 @@
 - **FOLLOW-1398** — status: BACKLOG # P3. Harness AC(5): the CTA `locator.click` can time out (5000
   ms, "element is not stable") when the CTA re-renders after adaptation (README §5.39 run 33); wait
   for a stable CTA before clicking.
-- **FOLLOW-1406** — status: BACKLOG # P1 compliance. Bump `CLAIMS_VALIDATION_VERSION` to `claims-v2`
-  (with a parity-corpus re-freeze) so copy cached before FOLLOW-1400 ("dla rodziny") is regenerated
-  once, not served.
-- **FOLLOW-1407** — status: BACKLOG # P2 compliance. Templates still conflicting with the steering
-  refusal: yield_hunter frames a garden as "family-tenant retention"; family_buyer says "never refer
-  to the reader's children… unless the listing text itself does" (contradicts refusal on every
-  request). CEO wording questions (diaspora "zabezpieczenie dla rodziny w kraju"; PL "rodzinna
-  okolica" parity) recorded with it.
+- **FOLLOW-1406** — status: IN_REVIEW # branch
+  `ml-engineer/FOLLOW-1406-claims-v2-and-template-conflicts`. P1 compliance.
+  `CLAIMS_VALIDATION_VERSION` is `claims-v2`: a `claims-v1` FIT row (Postgres or Redis) is a miss
+  and is regenerated once on its next request. Parity corpus v10 = stamp-only re-freeze of v9. CTO
+  handover: the production description cache regenerates lazily, once per (listing, archetype,
+  locale, model) pair, after deploy (about USD 0.025 per pair, measured locally).
+- **FOLLOW-1407** — status: IN_REVIEW # branch
+  `ml-engineer/FOLLOW-1406-claims-v2-and-template-conflicts`. P2 compliance. yield_hunter (en/pl): a
+  garden is a lettability / tenant-retention fact as the listing states it, no family tenant;
+  family_buyer (en/pl/es): never the reader's children or household composition, no exception. Two
+  new template scans. Steering vocabulary unchanged; OPEN CEO wording questions: diaspora
+  "zabezpieczenie dla rodziny w kraju"; PL "rodzinna okolica" parity. Not in scope, reported: the
+  upsizer template still frames copy by children ("the next child has their own room"),
+  lifestyle_expat cites "international families", and the family_buyer `description` still says
+  children are assumed with the has_children trait.
 - **FOLLOW-1408** — status: BACKLOG # P3. No negation guard for guarantees ("no guarantee of income"
   refused); first_time_buyer headline persona still says "move-in readiness".
-- **FOLLOW-1400** — status: IN_REVIEW # branch
-  `ml-engineer/FOLLOW-1400-steering-and-generator-fixes`. P1 compliance. The description path does
-  not run the familial-steering check: Sonnet 5.5 wrote "dla rodziny" for the diaspora profile 4× in
-  the FOLLOW-1399 study, 2 served. Run the same steering guard as `/api/adapt` (FOLLOW-1360/1366) on
-  descriptions and headlines, en/pl/es.
-- **FOLLOW-1401** — status: IN_REVIEW # branch
-  `ml-engineer/FOLLOW-1400-steering-and-generator-fixes`. P2. "turnkey" / "pod klucz" / "llave en
-  mano" in the second_home_buyer and vacation_rental_investor templates (en/pl/es) conflicts with
-  the claim check: 16 of 25 refusals (supersedes the narrower FOLLOW-1385).
-- **FOLLOW-1402** — status: IN_REVIEW # branch
-  `ml-engineer/FOLLOW-1400-steering-and-generator-fixes`. P2. Haiku 5.5 answers in the source
-  language on cross-language pages (6/16 EN pages from PL originals; all caught by FOLLOW-1384, none
-  served): strengthen the description prompt's language instruction, re-test.
-- **FOLLOW-1403** — status: IN_REVIEW # branch
-  `ml-engineer/FOLLOW-1400-steering-and-generator-fixes`. P2. Sonnet 5.5 still thinks at
-  `effort: low` (5/60), 2 calls exhausted the 2,720-token budget (empty / truncated): raise the
-  reserve or disable thinking for the description call.
-- **FOLLOW-1404** — status: IN_REVIEW # branch
-  `ml-engineer/FOLLOW-1400-steering-and-generator-fixes`. P3. No-work claim check lacks a negation
-  guard ("it is not move-in ready" refused): 3 false positives.
-- **FOLLOW-1405** — status: IN_REVIEW # branch
-  `ml-engineer/FOLLOW-1400-steering-and-generator-fixes`. P3. Decades ("lata 30.", "1930s") refused
-  as invented numbers: 4 false positives.
+- **FOLLOW-1400** — status: DONE # #1089 `6e4fd350`, 2026-10-26. Series §5.40. P1 compliance. The
+  description path does not run the familial-steering check: Sonnet 5.5 wrote "dla rodziny" for the
+  diaspora profile 4× in the FOLLOW-1399 study, 2 served. Run the same steering guard as
+  `/api/adapt` (FOLLOW-1360/1366) on descriptions and headlines, en/pl/es.
+- **FOLLOW-1401** — status: DONE # #1089 `6e4fd350`. P2. "turnkey" / "pod klucz" / "llave en mano"
+  in the second_home_buyer and vacation_rental_investor templates (en/pl/es) conflicts with the
+  claim check: 16 of 25 refusals (supersedes the narrower FOLLOW-1385).
+- **FOLLOW-1402** — status: DONE # #1089 `6e4fd350`. P2. Haiku 5.5 answers in the source language on
+  cross-language pages (6/16 EN pages from PL originals; all caught by FOLLOW-1384, none served):
+  strengthen the description prompt's language instruction, re-test.
+- **FOLLOW-1403** — status: DONE # #1089 `6e4fd350`. P2. Sonnet 5.5 still thinks at `effort: low`
+  (5/60), 2 calls exhausted the 2,720-token budget (empty / truncated): raise the reserve or disable
+  thinking for the description call.
+- **FOLLOW-1404** — status: DONE # #1089 `6e4fd350`. P3. No-work claim check lacks a negation guard
+  ("it is not move-in ready" refused): 3 false positives.
+- **FOLLOW-1405** — status: DONE # #1089 `6e4fd350`. P3. Decades ("lata 30.", "1930s") refused as
+  invented numbers: 4 false positives.
 - **FOLLOW-1399** — status: DONE # 2026-10-26. Blind re-run Haiku 5.5 vs Sonnet 5.5, 60 cases
   (`docs/research/MODEL-COMPARE-RERUN-2026-10-26.md`): Sonnet 5.5 stays (Haiku 6 vs 0 Polish bodies
   on EN pages, more invented facts; refusals level 12 vs 13; served 42 vs 45; overall tie p = 0.50;

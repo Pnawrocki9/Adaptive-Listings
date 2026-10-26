@@ -24,7 +24,9 @@
  *     "[añadir …]") and a self-correction in flight ("A two-bedroom... no, a two-room flat").
  *
  * What is deliberately NOT here: "the listing" on its own ("The listing names two items" talks
- * to the buyer about the advert) and "here is a home that…" (copy, not a preamble — only "here
+ * to the buyer about the advert), a statement of what the listing leaves out ("Nie podano danych
+ * o rentowności", "the information given in the listing", "los datos proporcionados por el
+ * vendedor" — the FOLLOW-1392 live re-run's one false positive) and "here is a home that…" (copy, not a preamble — only "here
  * is/here's" + the/a/your + a word for the text itself, or a line-opening preamble ending in a
  * colon, counts).
  *
@@ -111,8 +113,8 @@ const PHRASES = [
   '(?:the )?(?:listing|description|text|sentence|paragraph|copy|headline|facts?) (?:above|below)',
   '(?:the )?above (?:listing|description|text|sentence|paragraph|copy|headline|facts?)',
   '(?:the )?(?:facts?|information|details|data|listing|text|description) (?:provided|supplied|given) (?:to me|above|below|in the prompt)',
-  'the (?:facts?|information|details|data) (?:provided|supplied|given)(?! by)',
-  'the provided (?:facts?|information|details|data|listing|text|description)',
+  'the facts? (?:provided|supplied|given)(?! by)',
+  'the provided (?:facts?|listing|text|description)',
   '(?:verified|listing) facts (?:provided|given|supplied|list)',
   '(?:the|my|this|your|system|user) prompt(?! (?:sale|handover|completion|response|reply|payment|service|attention|access|transfer|exchange))',
   '(?:the|my|these|your) instructions',
@@ -129,7 +131,8 @@ const PHRASES = [
   'oto (?:poprawion\\p{L}* |zaktualizowan\\p{L}* |now\\p{L}* |dostosowan\\p{L}* )?(?:opis|tekst|wersj\\p{L}*|nagłówek|propozycj\\p{L}*|treść)',
   'poniżej (?:znajdziesz |przedstawiam |zamieszczam )?(?:opis|tekst|wersj\\p{L}*|nagłówek)',
   'powyższ\\p{L}* (?:opis\\p{L}*|tekst\\p{L}*|zdani\\p{L}*|ogłoszeni\\p{L}*|fakt\\p{L}*|akapit\\p{L}*|nagłów\\p{L}*)',
-  '(?:podan|dostarczon|przekazan|zweryfikowan)\\p{L}* (?:fakt\\p{L}*|informacj\\p{L}*|dan\\p{L}*)',
+  '(?:podan|dostarczon|przekazan|zweryfikowan)\\p{L}* fakt\\p{L}*',
+  'dostarczon\\p{L}* (?:informacj|dan)\\p{L}*',
   '(?:fakt\\p{L}*|informacj\\p{L}*|dan\\p{L}*) (?:podan|dostarczon|przekazan)\\p{L}* (?:powyżej|poniżej|w prompcie)',
   'w prompcie',
   '(?:zgodnie z |według )instrukcj\\p{L}*',
@@ -146,8 +149,8 @@ const PHRASES = [
   `he aqu[ií] (?:el|la|tu|su|una|un|mi) ${TEXT_WORDS_ES}`,
   'a continuaci[oó]n,? (?:se presenta|presento|tienes|el texto|la descripci[oó]n|el titular)',
   '(?:la descripci[oó]n|el texto|la frase|el anuncio|el p[aá]rrafo|el titular) (?:anterior|de arriba)',
-  '(?:los|las) (?:datos|hechos|informaci[oó]n|detalles) (?:proporcionad|facilitad|suministrad)\\p{L}*',
-  'la informaci[oó]n (?:proporcionada|facilitada|suministrada)',
+  '(?:los|las) (?:datos|hechos|informaci[oó]n|detalles) (?:proporcionad|facilitad|suministrad)\\p{L}*(?! por)',
+  'la informaci[oó]n (?:proporcionada|facilitada|suministrada)(?! por)',
   '(?:seg[uú]n|siguiendo) (?:las )?instrucciones',
   'las instrucciones',
   'el prompt',

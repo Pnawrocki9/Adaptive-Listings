@@ -93,6 +93,10 @@ const LEGITIMATE: readonly string[] = [
   'Viewings by appointment; the agency answers within a day.',
   'Two bedrooms widen the pool of households that can rent it.',
   'Price: 799000 PLN. Notes on the building: a lift and a bike room.',
+  // The FOLLOW-1392 live re-run's one false positive (Haiku 5.5, alb.yield_hunter.pl).
+  'Nie podano danych o rentowności, obłożeniu ani czynszu.',
+  'The information given in the listing is limited to the floor area.',
+  'Los datos proporcionados por el vendedor incluyen el IBI.',
 ];
 
 describe('FOLLOW-1392 — hasMetaCommentary', () => {

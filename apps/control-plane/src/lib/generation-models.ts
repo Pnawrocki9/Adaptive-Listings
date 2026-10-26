@@ -13,7 +13,11 @@
  * prompt counts ~1.4–1.6x more tokens. So, per model:
  *   - Haiku 5.5 accepts `thinking: {type: 'disabled'}`. Sonnet 5.5 takes `between_tools` instead,
  *     at `effort: 'low'`: at its default `high` effort it still thought 2,498 tokens on a 220-word
- *     original and ran out; at `low` it thought 0 on every call. It keeps the thinking reserve.
+ *     original and ran out; at `low` it thought 0 on 4 calls. Sonnet 5.5 rejects `disabled` at
+ *     every effort level and `between_tools` + `low` is the least thinking the API offers
+ *     (platform docs, "Troubleshooting thinking", checked 2026-10-26), yet on 5 of 60 FOLLOW-1399
+ *     calls it still thought, and 2 exhausted the 2,000-token reserve (no text / a truncated audit
+ *     block). FOLLOW-1403 gives it its own, larger reserve.
  *   - Opus 5.5 and Fable 5.1 cannot turn thinking off; they run at `effort: 'low'` and get a
  *     thinking reserve on top of the text budget.
  *   - Every 5.x text budget is scaled by the tokenizer factor.
@@ -71,6 +75,13 @@ const TOKENIZER_5X = 1.6;
  * room to spare; a reply that still runs out is `truncated` and never served.
  */
 const THINKING_RESERVE = 2000;
+/**
+ * Sonnet 5.5 at `between_tools` + `low` (FOLLOW-1403). FOLLOW-1399 saw it think on 5 of 60 calls,
+ * 1,487 to more than 2,720 output tokens per call; the reserve covers that with room for the text.
+ * A cap, not a charge: a call that does not think bills only its text; a call that thinks now
+ * completes (about USD 0.03 more than the failed call it replaces) instead of failing.
+ */
+const SONNET_55_THINKING_RESERVE = 6000;
 /** Haiku 5.5, thinking off: a Polish description used 566 of the scaled 720-token floor. */
 const HEADROOM_RESERVE = 300;
 
@@ -125,9 +136,9 @@ export const GENERATION_MODELS: Readonly<Record<AllowedGenerationModel, Generati
   },
   'claude-sonnet-5-5': {
     label: 'Sonnet 5.5',
-    note: 'Default; thinking off, low effort',
+    note: 'Default; low effort, rarely thinks',
     tokenizerFactor: TOKENIZER_5X,
-    reserveTokens: THINKING_RESERVE,
+    reserveTokens: SONNET_55_THINKING_RESERVE,
     extras: { thinking: { type: 'between_tools' }, output_config: { effort: 'low' } },
     measured: {
       descriptionTokensIn: 7896,

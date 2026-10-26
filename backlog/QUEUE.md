@@ -110,8 +110,9 @@
   amenity lexicon (`lib/amenity-lexicon.ts`) on both paths.
 - **FOLLOW-1384** — status: DONE # #1085 `bd33f229`. Function-word language check: body
   `FAILED/wrong_language`, headline suppressed.
-- **FOLLOW-1385** — status: BACKLOG # P3. Vacation-rental `copy_template` recommends "turnkey",
-  which the claim check refuses.
+- **FOLLOW-1385** — status: SUPERSEDED # by FOLLOW-1401 (same fix, wider: second_home_buyer,
+  vacation_rental_investor and first_time_buyer templates, en/pl/es). Vacation-rental
+  `copy_template` recommends "turnkey", which the claim check refuses.
 - **FOLLOW-1386** — status: BACKLOG # P3. Polish room-count convention ("dwupokojowe" = 1 bedroom +
   living room) mistranslated by both models; add guidance.
 - **FOLLOW-1368** — status: BACKLOG # ESC-087 option 3: `/api/adapt` uses the playbook branch only

@@ -1,0 +1,174 @@
+{
+  "case_count": 98,
+  "change": "FOLLOW-1400: the description path runs the familial-steering refusal `/api/adapt` runs (`steersByFamilialStatus`, en/pl/es, every request): a body is REFUSED/familial_steering after the language check and before the claim check, a headline is suppressed as familial_steering before its fact check. Inputs, raw outputs and prompt digests of the description call are v7's byte for byte; only the expected record below differs.",
+  "claims_validation_version": "claims-v1",
+  "corpus": "corpus.v8.jsonl",
+  "corpus_sha256": "3e5bceda:18b306c3:2358d1c0:915028f4:d7c5b452:e39fca2c:c9f315e2:0ce28fb7",
+  "delta": [
+    {
+      "id": "live.002.listing-001.family_buyer.en",
+      "kind": "live",
+      "changed": {
+        "prompt_sha256": {
+          "v7": {
+            "headline_system": "e77c8460:85a6c19f:4de83538:eb0bb6ce:154894ee:e3dfa5c4:04b06a81:d3d73171",
+            "headline_user": "0abc6e50:c2b33414:48fbc674:363b2494:1fee631e:59d201c9:c72674ec:43ab59c0"
+          },
+          "v8": {
+            "headline_system": null,
+            "headline_user": null
+          }
+        },
+        "outcome": {
+          "v7": {
+            "verdict": "FIT",
+            "description": "Four bedrooms, three bathrooms, and 380 sqm of living space \u2014 this beachfront villa has the room a family needs to settle properly, rather than compromise. The layout gives everyone somewhere to be: space for younger children to spread out, room for teenagers to have their own corner, and enough left over for life to happen without everyone on top of each other.\n\nThe private pool is the kind of thing that shifts where a weekend actually gets spent. With direct beach access beyond that, summers have a shape to them that a family can build routines around \u2014 mornings at the water, afternoons at the pool, no complicated logistics.\n\nThree bathrooms across four bedrooms means the morning rush has somewhere to go. At 380 sqm, there is generous storage, genuine flexibility in how rooms are used, and the breathing room that makes a large family home feel calm rather than crowded. Panoramic sea views run through the living spaces, so the setting is present in daily life, not just on arrival.\n\nThis is a home a family grows into. The space is there for the years ahead \u2014 not a property you outgrow when a second child needs their own room or a teenager needs a door to close.",
+            "verifiedFacts": [
+              "bedrooms: 4",
+              "bathrooms: 3",
+              "size: 380 sqm",
+              "pool: private",
+              "location: beachfront",
+              "views: panoramic sea views"
+            ]
+          },
+          "v8": {
+            "verdict": "REFUSED",
+            "violation": "familial_steering"
+          }
+        },
+        "headline_called": {
+          "v7": true,
+          "v8": false
+        },
+        "headline": {
+          "v7": "Spacious 4-Bedroom Beachfront Villa With Private Pool & Panoramic Sea Views",
+          "v8": null
+        },
+        "claims_validation": {
+          "v7": "claims-v1",
+          "v8": null
+        }
+      },
+      "reason": "TRUE refusal under the shared vocabulary. The FIT body says \"a large family home\" (and addresses the reader's children: \"space for younger children\", \"a second child\"); `/api/adapt` refuses the same words. Now REFUSED/familial_steering before the claim check, so no headline is called."
+    },
+    {
+      "id": "live.026.listing-011.diaspora_buyer.en",
+      "kind": "live",
+      "changed": {
+        "outcome": {
+          "v7": {
+            "verdict": "REFUSED",
+            "violation": "unsupported_amenity"
+          },
+          "v8": {
+            "verdict": "REFUSED",
+            "violation": "familial_steering"
+          }
+        }
+      },
+      "reason": "Same outcome class, earlier reason. The body says \"a full-size family home\"; familial steering is now checked before the claim check (the `/api/adapt` order), so REFUSED/unsupported_amenity becomes REFUSED/familial_steering."
+    },
+    {
+      "id": "live.029.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.family_buyer.en",
+      "kind": "live",
+      "changed": {
+        "headline_violation": {
+          "v7": "hallucinated_proper_name",
+          "v8": "familial_steering"
+        }
+      },
+      "reason": "Body unchanged (FIT). The raw headline \"Quiet-Street 3-Bed Family Home With Mature Garden, Near Schools & Waterway\" was suppressed as hallucinated_proper_name; it is now suppressed first as familial_steering (\"Family Home\")."
+    },
+    {
+      "id": "live.032.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.neutral.en",
+      "kind": "live",
+      "changed": {
+        "prompt_sha256": {
+          "v7": {
+            "headline_system": "e77c8460:85a6c19f:4de83538:eb0bb6ce:154894ee:e3dfa5c4:04b06a81:d3d73171",
+            "headline_user": "8d5435b9:ec47fb11:fa6c3770:08485a3d:bc9639cb:c41c8d51:7d914f14:f9291d17"
+          },
+          "v8": {
+            "headline_system": null,
+            "headline_user": null
+          }
+        },
+        "outcome": {
+          "v7": {
+            "verdict": "FIT",
+            "description": "A three-bedroom, two-bathroom single-family home on a quiet residential street. The open-plan living area keeps the main floor practical and connected, while the attached two-car garage adds everyday convenience. A screened lanai extends the living space outdoors, and the mature garden gives the property a settled, established feel.\n\nThe layout is conventional and suits a range of buyers \u2014 those looking for a family home, a comfortable downsize, or simply a well-presented property with sound fundamentals. Schools, the intracoastal waterway, and local amenities are all close by, making the location functional for day-to-day living.\n\nA balanced, considered home that delivers on the basics without overclaiming.",
+            "verifiedFacts": [
+              "bedrooms: 3",
+              "bathrooms: 2",
+              "property_type: single-family home",
+              "street_character: quiet residential",
+              "living_area: open-plan",
+              "garage: attached two-car",
+              "outdoor_feature: screened lanai",
+              "garden: mature",
+              "nearby: schools",
+              "nearby: intracoastal waterway",
+              "nearby: local amenities"
+            ]
+          },
+          "v8": {
+            "verdict": "REFUSED",
+            "violation": "familial_steering"
+          }
+        },
+        "headline_called": {
+          "v7": true,
+          "v8": false
+        },
+        "headline_violation": {
+          "v7": "hallucinated_number",
+          "v8": null
+        },
+        "claims_validation": {
+          "v7": "claims-v1",
+          "v8": null
+        }
+      },
+      "reason": "TRUE refusal under the shared vocabulary. The FIT body says the house suits \"those looking for a family home\" (\"single-family home\" alone does not match); `/api/adapt` refuses the same words. Now REFUSED/familial_steering, so no headline is called."
+    }
+  ],
+  "derived_from": {
+    "corpus": "corpus.v7.jsonl",
+    "manifest": "MANIFEST.v7.json",
+    "corpus_sha256": "2acf3dc0:32d04bce:7eb94cc2:ef3e938d:15b2ec7f:12066679:75a94352:fbf41a37"
+  },
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-10-26",
+  "headline_called": 61,
+  "headline_suppressed": 29,
+  "kind": "verdict_delta",
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "FAILED/empty": 2,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/meta_commentary": 1,
+    "FAILED/residual_tag": 3,
+    "FAILED/truncated": 1,
+    "NEUTRAL/with_reason": 8,
+    "NEUTRAL/without_reason": 1,
+    "REFUSED/familial_steering": 3,
+    "REFUSED/hallucinated_number": 5,
+    "REFUSED/unit_mismatch": 2,
+    "REFUSED/unsupported_amenity": 5,
+    "REFUSED/unsupported_guarantee": 2
+  },
+  "per_verdict": {
+    "FAILED": 11,
+    "FIT": 61,
+    "NEUTRAL": 9,
+    "REFUSED": 17
+  }
+}

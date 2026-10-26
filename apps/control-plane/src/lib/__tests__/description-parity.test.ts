@@ -162,7 +162,8 @@ const HEADLINE_SHA = new Map(CASES_V5.map((c) => [c.id, c.expected.prompt_sha256
 
 /**
  * The verdict deltas after v5, oldest first, each derived from the corpus before it (v6 from v5).
- * FOLLOW-1392 — v6 (meta-commentary); FOLLOW-1394 — v7 (a pool of people, views of the sea).
+ * FOLLOW-1392 — v6 (meta-commentary); FOLLOW-1394 — v7 (a pool of people, views of the sea);
+ * FOLLOW-1400 — v8 (familial steering, refused as on `/api/adapt`).
  */
 const VERDICT_DELTAS: {
   version: number;
@@ -173,6 +174,16 @@ const VERDICT_DELTAS: {
 }[] = [
   { version: 6, ticket: 'FOLLOW-1392', ids: ['live.016.listing-007.yield_hunter.en'] },
   { version: 7, ticket: 'FOLLOW-1394', ids: ['live.011.listing-005.yield_hunter.en'] },
+  {
+    version: 8,
+    ticket: 'FOLLOW-1400',
+    ids: [
+      'live.002.listing-001.family_buyer.en',
+      'live.026.listing-011.diaspora_buyer.en',
+      'live.029.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.family_buyer.en',
+      'live.032.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.neutral.en',
+    ],
+  },
 ].map((d) => ({
   ...d,
   cases: readCorpus(`corpus.v${String(d.version)}.jsonl`),
@@ -559,7 +570,8 @@ describe('description parity corpus v5 (FOLLOW-1382 — the current contract: he
     const calling = CASES_V5.filter((c) => c.expected.headline_called);
     expect(calling.length).toBe(MANIFEST_V5.headline_called);
     const locales = new Set<string>();
-    for (const c of calling) {
+    // A case a later verdict delta stopped before the headline (FOLLOW-1400) no longer calls it.
+    for (const c of calling.filter((x) => !LATER_DELTA_IDS.has(x.id))) {
       const v4 = CASES_V4.find((x) => x.id === c.id)!;
       mockCreate.mockReset();
       mockCreate
@@ -686,5 +698,41 @@ describe('description parity corpus v7 (FOLLOW-1394 — a pool of people is not 
     // The recorded raw headline is null (the case was REFUSED when recorded): suppressed as empty.
     expect(v7.raw_headline).toBeNull();
     expect(v7.expected.headline_violation).toBe('empty');
+  });
+});
+
+describe('description parity corpus v8 (FOLLOW-1400 — familial steering on the description path)', () => {
+  const v7 = (id: string) => VERDICT_DELTAS[1]!.cases.find((c) => c.id === id)!;
+  const v8 = (id: string) => VERDICT_DELTAS[2]!.cases.find((c) => c.id === id)!;
+
+  it('two FIT bodies that say "family home" are now REFUSED / familial_steering', () => {
+    for (const id of [
+      'live.002.listing-001.family_buyer.en',
+      'live.032.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.neutral.en',
+    ]) {
+      expect(v7(id).expected.outcome.verdict, id).toBe('FIT');
+      expect(v8(id).expected.outcome, id).toEqual({
+        verdict: 'REFUSED',
+        violation: 'familial_steering',
+      });
+      expect(v8(id).expected.headline_called, id).toBe(false);
+      expect(v8(id).raw_description.text, id).toMatch(/family home/i);
+    }
+  });
+
+  it('a refused body is refused for steering first, as `/api/adapt` orders it', () => {
+    const id = 'live.026.listing-011.diaspora_buyer.en';
+    expect(v7(id).expected.outcome).toEqual({
+      verdict: 'REFUSED',
+      violation: 'unsupported_amenity',
+    });
+    expect(v8(id).expected.outcome).toEqual({ verdict: 'REFUSED', violation: 'familial_steering' });
+  });
+
+  it('a steering headline is suppressed as familial_steering before its fact check', () => {
+    const id = 'live.029.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.family_buyer.en';
+    expect(v7(id).expected.headline_violation).toBe('hallucinated_proper_name');
+    expect(v8(id).expected.outcome).toEqual(v7(id).expected.outcome);
+    expect(v8(id).expected.headline_violation).toBe('familial_steering');
   });
 });

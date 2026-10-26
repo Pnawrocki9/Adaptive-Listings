@@ -506,10 +506,92 @@ const HEADLINE_OPENING_WORDS: Readonly<Record<'en' | 'pl' | 'es', RegExp>> = {
 };
 
 /**
+ * FOLLOW-1395: the closed set of Polish case endings a place name takes in a headline, as
+ * `[ending in the headline, ending in the facts]` — locative, genitive, instrumental, dative of a
+ * masculine (`Kraków` → `Krakowie`, `Gdańsk` → `Gdańsku`, `Straszyn` → `Straszynie`), feminine
+ * (`Warszawa` → `Warszawie`, `Albufeira` → `Albufeirze`, `Praga` → `Pradze`) or neuter
+ * (`Podgórze` → `Podgórzu`) noun. Stems are compared with `ó` read as `o` (`Kraków` /
+ * `Krakowie`; a listing written without diacritics, `Podgorze`, also grounds `Podgórze`). Nothing else: no fuzzy match, no other language.
+ */
+const POLISH_CASE_ENDINGS: readonly (readonly [string, string])[] = [
+  // the nominative itself, `ó` read as `o` (`Podgórze` / `Podgorze`)
+  ['', ''],
+  // masculine, consonant-final nominative
+  ['u', ''],
+  ['a', ''],
+  ['em', ''],
+  ['iem', ''],
+  ['ie', ''],
+  ['owi', ''],
+  ['rze', 'r'],
+  ['cie', 't'],
+  ['dzie', 'd'],
+  ['le', 'ł'],
+  // feminine, -a nominative
+  ['y', 'a'],
+  ['i', 'a'],
+  ['ę', 'a'],
+  ['ą', 'a'],
+  ['ie', 'a'],
+  ['rze', 'ra'],
+  ['ce', 'ka'],
+  ['dze', 'ga'],
+  ['le', 'ła'],
+  // neuter, -e / -o nominative
+  ['u', 'e'],
+  ['a', 'e'],
+  ['em', 'e'],
+  ['u', 'o'],
+  ['a', 'o'],
+  ['em', 'o'],
+  ['ie', 'o'],
+];
+const POLISH_MIN_STEM = 3;
+const CAPITALISED_FACT_TOKEN_RE = /\p{Uppercase}\p{L}{2,}/gu;
+
+/** One word is the other under one `POLISH_CASE_ENDINGS` rule (either word may be the inflected one). */
+function polishCaseForms(a: string, b: string): boolean {
+  const fold = (s: string) => s.toLowerCase().replaceAll('ó', 'o');
+  const x = a.toLowerCase();
+  const y = b.toLowerCase();
+  for (const [inflected, nominative] of POLISH_CASE_ENDINGS) {
+    for (const [t, f] of [
+      [x, y],
+      [y, x],
+    ] as const) {
+      if (!t.endsWith(inflected) || !f.endsWith(nominative)) continue;
+      const tStem = t.slice(0, t.length - inflected.length);
+      const fStem = f.slice(0, f.length - nominative.length);
+      if (Array.from(tStem).length < POLISH_MIN_STEM) continue;
+      if (fold(tStem) === fold(fStem)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * FOLLOW-1395: is a capitalised headline word a Polish case form of a capitalised word of the
+ * listing's own text or fields ("Krakowie" of "Kraków", "Albufeirze" of "Albufeira")?
+ */
+function isPolishCaseFormOfFact(
+  word: string,
+  original: string,
+  ctx: Readonly<Record<string, string>>,
+): boolean {
+  const facts = [original, ...Object.values(ctx)].join(' ');
+  for (const m of facts.matchAll(CAPITALISED_FACT_TOKEN_RE)) {
+    if (polishCaseForms(word, m[0])) return true;
+  }
+  return false;
+}
+
+/**
  * `_check_headline_facts`: digits, then the claim classes, then every capitalised word (first word
  * included) that is not a stop-cap must appear in the grounding whole (Unicode `\b`) or by loose
  * stem. FOLLOW-1389: with the page's `locale`, a first word in that language's
  * `HEADLINE_OPENING_WORDS` is not checked (without one, nothing is exempt — the Python behaviour).
+ * FOLLOW-1395: on a Polish page, a word that is a Polish case form of a capitalised word of the
+ * listing (`POLISH_CASE_ENDINGS`) is the listing's own name.
  */
 export function checkHeadlineFacts(
   headline: string,
@@ -533,7 +615,11 @@ export function checkHeadlineFacts(
     if (i === 0 && locale !== undefined && HEADLINE_OPENING_WORDS[locale].test(clean)) continue;
     const cps = Array.from(clean);
     if (cps.length >= 2 && PY_UPPER_RE.test(cps[0] ?? '') && !HEADLINE_STOP_CAPS.has(clean)) {
-      if (!pyWordBoundarySearch(clean, grounding) && !groundingStems.has(stemLoose(clean))) {
+      if (
+        !pyWordBoundarySearch(clean, grounding) &&
+        !groundingStems.has(stemLoose(clean)) &&
+        !(locale === 'pl' && isPolishCaseFormOfFact(clean, original, ctx))
+      ) {
         return 'hallucinated_proper_name';
       }
     }

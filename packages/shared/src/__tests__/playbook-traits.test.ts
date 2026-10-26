@@ -217,6 +217,10 @@ describe('playbook merges (FOLLOW-1360)', () => {
       expect(p.copy_template[locale]).toMatch(/HARD RULES:/);
     }
     expect(p.copy_template.en).toMatch(/never write about children/i); // FOLLOW-1407
+    // FOLLOW-1409: the description reaches the /api/adapt prompts; it never tells the model to
+    // assume children, with or without the has_children trait (ESC-088).
+    expect(p.description).not.toMatch(/assum/i);
+    expect(p.description).toMatch(/never refers to children or household composition/i);
     expect(p.description).toMatch(/has_children/);
   });
 

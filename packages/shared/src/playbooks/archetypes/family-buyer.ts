@@ -3,7 +3,7 @@ import type { PlaybookEntry } from '../types.js';
 export const familyBuyerPlaybook: PlaybookEntry = {
   archetype: 'family_buyer',
   description:
-    'Household moving up to more space, flexible rooms and outdoor areas (children are assumed only when the has_children trait is present)',
+    'Buyer moving up to more space, flexible rooms and outdoor areas (the copy never refers to children or household composition, with or without the has_children trait)',
   slots: [
     {
       slot: 'headline',

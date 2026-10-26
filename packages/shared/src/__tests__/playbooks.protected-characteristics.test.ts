@@ -16,7 +16,7 @@
  * add-ons (pinned by `playbook-traits.test.ts`). NOT SCANNED, KNOWN GAP: `description`, `signals` and
  * `feature_priority`. `description` and `signals` DO reach the LLM prompts
  * (`apps/control-plane/src/lib/llm-gateway.ts`), so this is a gap, not an exemption; a follow-up
- * scrubs and scans them.
+ * scrubs and scans them (FOLLOW-1409 scans `description` for children only).
  *
  * NOT IN THE LIST, deliberately (pending a compliance ruling): `expat` (a residence
  * status, not a national origin), `retire*` (a life stage, not an age). The list is stems matched
@@ -287,6 +287,10 @@ describe('no copy_template recommends a familial-steering phrase [FOLLOW-1400]',
     'family_buyer en: Never call an area family-friendly',
     'family_buyer pl: Nie nazywaj okolicy przyjazną rodzinom',
     'family_buyer es: Nunca llames a una zona apta para familias',
+    // FOLLOW-1409: upsizer carries the same ban as family_buyer.
+    'upsizer en: Never call an area family-friendly',
+    'upsizer pl: Nie nazywaj okolicy przyjazną rodzinom',
+    'upsizer es: Nunca llames a una zona apta para familias',
     'student_parent en: family home, retirement',
   ];
 
@@ -373,5 +377,121 @@ describe('no copy_template contradicts the familial-steering refusal [FOLLOW-140
     expect(family.copy_template.es).toContain(
       'ni hagas referencia a los hijos del lector ni a la composición de su hogar, aunque lo haga el propio anuncio',
     );
+  });
+});
+
+/**
+ * FOLLOW-1409: three templates still framed a home by who would live in it, which the
+ * familial-steering refusal forbids on every request (ESC-088): `upsizer` sold rooms as "the
+ * second child's bedroom" / "where the next child has their own room" (pl, es alike) and let PL and
+ * ES copy refer to districts "dobrze ocenianych przez rodziny" / "bien valoradas por familias";
+ * `lifestyle_expat` placed the reader among "international families". None of these matched
+ * `steersByFamilialStatus`, so these scans read the templates directly. `family_buyer`'s
+ * `description` (it reaches the `/api/adapt` prompts) told the model that children "are assumed"
+ * when the `has_children` trait is present; the trait's own rules forbid referring to children.
+ */
+describe('no copy_template frames a home by its occupants [FOLLOW-1409]', () => {
+  const templateSentences = (): { where: string; sentence: string }[] =>
+    [...getAllPlaybooks().values()].flatMap((p) =>
+      Object.entries(p.copy_template).flatMap(([locale, text]) =>
+        text
+          .split(/(?<=[.;:])\s+/)
+          .map((sentence) => ({ where: `${p.archetype} ${locale}`, sentence })),
+      ),
+    );
+
+  /** A child, in the three template languages. */
+  const CHILD =
+    /(?<![\p{L}])(?:child\p{L}*|kids?|teen\p{L}*|dzie(?:ci|ck|ć)\p{L}*|nastolat\p{L}*|hij[oa]s?|niñ\p{L}*|adolescent\p{L}*)(?![\p{L}])/iu;
+  /** Families as the residents or the judges of an area. */
+  const AREA_BY_FAMILIES =
+    /(?:international\s+families|families\s+(?:have|already|live|settled)|(?:rated|valued|popular|chosen)\s+(?:\p{L}+\s+)?(?:by|with|among)\s+families|(?:ocenian|lubian|wybieran|popularn)\p{L}*\s+(?:\p{L}+\s+)?(?:przez|wśród)\s+rodzin\p{L}*|(?:valorad|elegid|preferid|popular)\p{L}*\s+(?:\p{L}+\s+)?(?:por|entre)\s+(?:las\s+)?familias|familias\s+internacionales)/iu;
+
+  /**
+   * Every template sentence that names a child: a prohibition, or `student_parent`'s purpose (the
+   * reader buys for a student; the student is the buyer's stated purpose, not an occupant the copy
+   * imagines). A new match fails until it is reviewed and pinned here.
+   */
+  const CHILD_PINS: readonly string[] = [
+    'family_buyer en: never write about children',
+    "family_buyer en: Never call an area family-friendly, safe, or suited to families, and never refer to the reader's children",
+    'family_buyer pl: nigdy nie pisz o dzieciach',
+    'family_buyer pl: Nie nazywaj okolicy przyjazną rodzinom',
+    'family_buyer es: nunca escribas sobre hijos',
+    'family_buyer es: Nunca llames a una zona apta para familias',
+    'upsizer en: never write about children',
+    "upsizer en: Never call an area family-friendly, safe, or suited to families, and never refer to the reader's children",
+    'upsizer pl: nigdy nie pisz o dzieciach',
+    'upsizer pl: Nie nazywaj okolicy przyjazną rodzinom',
+    'upsizer es: nunca escribas sobre hijos',
+    'upsizer es: Nunca llames a una zona apta para familias',
+    'student_parent en: The reader is a parent buying for a child going to university',
+    'student_parent en: a calm home for the child today',
+    'student_parent pl: Czytelnik to rodzic kupujący dla dziecka idącego na studia',
+    'student_parent pl: spokojny dom dla dziecka teraz',
+    'student_parent es: El lector es progenitor que compra para un hijo',
+    'student_parent es: hogar tranquilo para el hijo hoy',
+  ];
+
+  it('the scans see the wording FOLLOW-1409 retired', () => {
+    for (const retired of [
+      "a room that becomes the second child's bedroom, a study that becomes a teenager's space",
+      'Frame the home as the one where the next child has their own room',
+      'pokój, który stanie się sypialnią drugiego dziecka',
+      'gdzie kolejne dziecko ma swój pokój',
+      'una habitación que se convertirá en el cuarto del segundo hijo',
+      'donde el próximo hijo tiene su propia habitación',
+    ]) {
+      expect(CHILD.test(retired), retired).toBe(true);
+    }
+    for (const retired of [
+      'W PL możesz odnosić się ogólnie do dzielnic dobrze ocenianych przez rodziny',
+      'En contexto ES referencia genérica a zonas residenciales bien valoradas por familias',
+      'neighbourhoods where international families have already settled',
+      'barrios con familias internacionales ya asentadas',
+    ]) {
+      expect(AREA_BY_FAMILIES.test(retired), retired).toBe(true);
+    }
+    expect(
+      AREA_BY_FAMILIES.test('Single-family house in an established international community'),
+    ).toBe(false);
+  });
+
+  it('every template sentence naming a child is a pinned prohibition or purpose', () => {
+    const matched = templateSentences()
+      .filter(({ sentence }) => CHILD.test(sentence))
+      .map(({ where, sentence }) => `${where}: ${sentence}`);
+    const unpinned = matched.filter((m) => !CHILD_PINS.some((pin) => m.startsWith(pin)));
+    expect(unpinned).toEqual([]);
+    expect(matched).toHaveLength(CHILD_PINS.length);
+  });
+
+  it('no template characterises an area by the families who live in or rate it', () => {
+    const hits = templateSentences()
+      .filter(({ sentence }) => AREA_BY_FAMILIES.test(sentence))
+      .map(({ where, sentence }) => `${where}: ${sentence}`);
+    expect(hits).toEqual([]);
+  });
+
+  it('upsizer bans the reader’s children and household outright, in every locale', () => {
+    const upsizer = getAllPlaybooks().get('upsizer')!;
+    expect(upsizer.copy_template.en).toContain(
+      "never refer to the reader's children or household composition, even when the listing text does",
+    );
+    expect(upsizer.copy_template.pl).toContain(
+      'nie odnoś się do dzieci czytelnika ani do składu jego gospodarstwa domowego, nawet jeśli robi to opis oferty',
+    );
+    expect(upsizer.copy_template.es).toContain(
+      'ni hagas referencia a los hijos del lector ni a la composición de su hogar, aunque lo haga el propio anuncio',
+    );
+  });
+
+  it('no playbook description tells the model to assume children', () => {
+    const hits = [...getAllPlaybooks().values()]
+      .filter((p) => p.archetype !== 'student_parent')
+      .filter((p) => CHILD.test(p.description) && !/\bnever\b/i.test(p.description))
+      .map((p) => `${p.archetype}: ${p.description}`);
+    expect(hits).toEqual([]);
+    expect(getAllPlaybooks().get('family_buyer')!.description).not.toMatch(/assum/i);
   });
 });

@@ -1,7 +1,8 @@
 /**
  * FOLLOW-1297 — the parity test (ADR-0023 §4, CONVENTIONS_PATCH Rule Z); FOLLOW-1314 — corpus v2;
  * FOLLOW-1315 — corpus v3; FOLLOW-1381 — corpus v4; FOLLOW-1382 — corpus v5; FOLLOW-1392 and later —
- * corpus v6+ (verdict deltas, see `VERDICT_DELTAS`).
+ * corpus v6+ (verdict deltas, see `VERDICT_DELTAS`); FOLLOW-1402 — corpus v9 (a prompt re-freeze
+ * between them).
  *
  * Drives `generateDescription` — the production entry point — with the Anthropic SDK mocked to
  * return the RAW model outputs recorded in the frozen corpus, and demands, for every case,
@@ -38,6 +39,11 @@
  *     corpus before them (like v4): same inputs, raw outputs and prompt digests; the expected
  *     record differs ONLY in the cases the manifest lists, each with its reason. The LAST one is
  *     the CURRENT contract; every older guard stops replaying a case a later delta changed.
+ *   - `corpus.v9.jsonl` + `MANIFEST.v9.json` — FOLLOW-1402 appended a language paragraph to the
+ *     description USER prompt, so v9 is a prompt-digest re-freeze of v8 (like v5): only
+ *     `prompt_sha256.description_user` differs, in every case, and the v9 guard proves the new
+ *     prompt is the v8 prompt plus that paragraph, byte for byte. Every guard replays
+ *     with the CURRENT description user digests (v9's), as the headline digests are replayed.
  *
  * No other I/O happens: the test env configures no Redis, ClickHouse, Postgres or Sentry, so the
  * spend gate reads 0, every write reports `not_configured` and no row is written.
@@ -159,6 +165,17 @@ const MANIFEST_V5 = JSON.parse(
  * as v5; each of those guards asserts they were that corpus's only change).
  */
 const HEADLINE_SHA = new Map(CASES_V5.map((c) => [c.id, c.expected.prompt_sha256] as const));
+const CASES_V9: Case[] = readCorpus('corpus.v9.jsonl');
+const MANIFEST_V9 = JSON.parse(
+  readFileSync(join(FIXTURE_DIR, 'MANIFEST.v9.json'), 'utf8'),
+) as ManifestV3;
+/**
+ * The CURRENT description user prompt digests, by case id (FOLLOW-1402 re-froze them as v9; its
+ * guard asserts they were that corpus's only change).
+ */
+const DESCRIPTION_USER_SHA = new Map(
+  CASES_V9.map((c) => [c.id, c.expected.prompt_sha256.description_user] as const),
+);
 
 /**
  * The verdict deltas after v5, oldest first, each derived from the corpus before it (v6 from v5).
@@ -193,6 +210,19 @@ const VERDICT_DELTAS: {
 }));
 /** Every case a verdict delta after v5 changed: v1–v5 no longer replay it. */
 const LATER_DELTA_IDS = new Set(VERDICT_DELTAS.flatMap((d) => d.manifest.delta.map((x) => x.id)));
+/** Every case a verdict delta after v9 changed: the v9 guard no longer replays it. */
+const AFTER_V9_DELTA_IDS = new Set(
+  VERDICT_DELTAS.filter((d) => d.version > 9).flatMap((d) => d.manifest.delta.map((x) => x.id)),
+);
+
+/** The corpus a verdict delta is derived from: the one numbered just before it. */
+function corpusBefore(version: number): { cases: Case[]; manifest: ManifestV3 } {
+  if (version - 1 === 5) return { cases: CASES_V5, manifest: MANIFEST_V5 };
+  if (version - 1 === 9) return { cases: CASES_V9, manifest: MANIFEST_V9 };
+  const d = VERDICT_DELTAS.find((x) => x.version === version - 1);
+  if (d === undefined) throw new Error(`no corpus v${String(version - 1)}`);
+  return d;
+}
 
 /** sha256 hex in colon-separated 8-char groups — the generator's `digest_format`. */
 function sha(text: string): string {
@@ -221,7 +251,8 @@ async function expectIdentical(c: Case, headlineSha = c.expected.prompt_sha256):
   expect(desc.model).toBe(c.expected.model);
   expect(desc.max_tokens).toBe(c.expected.max_tokens);
   expect(sha(desc.system)).toBe(c.expected.prompt_sha256.description_system);
-  expect(sha(desc.messages[0]!.content)).toBe(c.expected.prompt_sha256.description_user);
+  // The current description user prompt (v9, FOLLOW-1402); the system prompt is v1's.
+  expect(sha(desc.messages[0]!.content)).toBe(DESCRIPTION_USER_SHA.get(c.id));
 
   expect(report.outcome).toEqual(c.expected.outcome);
   expect(report.claimsValidation).toBe(c.expected.claims_validation);
@@ -603,8 +634,7 @@ describe('description parity corpus v5 (FOLLOW-1382 — the current contract: he
 describe.each(VERDICT_DELTAS.map((d, i) => [d.version, d.ticket, d, i] as const))(
   'description parity corpus v%i (%s — verdict delta)',
   (version, _ticket, d, i) => {
-    const prevCases = i === 0 ? CASES_V5 : VERDICT_DELTAS[i - 1]!.cases;
-    const prevManifest = i === 0 ? MANIFEST_V5 : VERDICT_DELTAS[i - 1]!.manifest;
+    const { cases: prevCases, manifest: prevManifest } = corpusBefore(version);
     const prevName = `corpus.v${String(version - 1)}.jsonl`;
     const laterIds = new Set(
       VERDICT_DELTAS.slice(i + 1).flatMap((x) => x.manifest.delta.map((y) => y.id)),
@@ -734,5 +764,86 @@ describe('description parity corpus v8 (FOLLOW-1400 — familial steering on the
     expect(v7(id).expected.headline_violation).toBe('hallucinated_proper_name');
     expect(v8(id).expected.outcome).toEqual(v7(id).expected.outcome);
     expect(v8(id).expected.headline_violation).toBe('familial_steering');
+  });
+});
+
+/** FOLLOW-1402: the paragraph the description user prompt now ends with, per locale. */
+function descriptionLanguageParagraph(locale: string): string {
+  const language = ({ en: 'English', pl: 'Polish', es: 'Spanish' } as Record<string, string>)[
+    locale
+  ]!;
+  return (
+    `\n\nLANGUAGE: write the description body in ${language} (locale: ${locale}). ` +
+    `original_description and listing_context may be in another language: do not answer in ` +
+    `their language and do not translate them word for word; compose the body natively in ` +
+    `${language}. Keep place names and other proper names exactly as the listing writes them.`
+  );
+}
+
+describe('description parity corpus v9 (FOLLOW-1402 — description language, prompt re-freeze)', () => {
+  const v8 = VERDICT_DELTAS.find((d) => d.version === 8)!;
+
+  beforeEach(() => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'parity-'.repeat(4));
+    mockCreate.mockReset();
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('v9 is v8 with ONLY the description USER prompt digests changed', () => {
+    expect(MANIFEST_V9.corpus).toBe('corpus.v9.jsonl');
+    expect(MANIFEST_V9.kind).toBe('prompt_digest_refreeze');
+    expect(MANIFEST_V9.derived_from.corpus).toBe('corpus.v8.jsonl');
+    expect(MANIFEST_V9.derived_from.corpus_sha256).toBe(v8.manifest.corpus_sha256);
+    expect(sha(readFileSync(join(FIXTURE_DIR, 'corpus.v9.jsonl'), 'utf8'))).toBe(
+      MANIFEST_V9.corpus_sha256,
+    );
+    expect(MANIFEST_V9.case_count).toBe(CASES_V9.length);
+    expect(MANIFEST_V9.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(MANIFEST_V9.delta).toEqual([]);
+    expect(MANIFEST_V9.per_verdict).toEqual(v8.manifest.per_verdict);
+    expect(MANIFEST_V9.per_reason).toEqual(v8.manifest.per_reason);
+    expect(CASES_V9.map((c) => c.id)).toEqual(v8.cases.map((c) => c.id));
+    for (const [i, v9] of CASES_V9.entries()) {
+      const prev = v8.cases[i]!;
+      const { prompt_sha256: p9, ...rest9 } = v9.expected;
+      const { prompt_sha256: p8, ...rest8 } = prev.expected;
+      expect(v9.kind, v9.id).toBe(prev.kind);
+      expect(v9.input, v9.id).toEqual(prev.input);
+      expect(v9.raw_description, v9.id).toEqual(prev.raw_description);
+      expect(v9.raw_headline, v9.id).toBe(prev.raw_headline);
+      expect(rest9, v9.id).toEqual(rest8);
+      expect(p9.description_system, v9.id).toBe(p8.description_system);
+      expect(p9.headline_system, v9.id).toBe(p8.headline_system);
+      expect(p9.headline_user, v9.id).toBe(p8.headline_user);
+      expect(p9.description_user, v9.id).not.toBe(p8.description_user);
+    }
+  });
+
+  it('every new description user prompt is the v8 prompt plus the language paragraph, byte for byte', async () => {
+    const locales = new Set<string>();
+    for (const c of CASES_V9) {
+      const prev = v8.cases.find((x) => x.id === c.id)!;
+      mockCreate.mockReset();
+      mockCreate
+        .mockResolvedValueOnce(response(c.raw_description.text, c.raw_description.stop_reason))
+        .mockResolvedValueOnce(response(c.raw_headline ?? '', 'end_turn'));
+      await generateDescription(c.input);
+      const user = (mockCreate.mock.calls[0]![0] as CreateParams).messages[0]!.content;
+      const paragraph = descriptionLanguageParagraph(c.input.locale);
+      expect(user.endsWith(paragraph), c.id).toBe(true);
+      expect(sha(user.slice(0, user.length - paragraph.length)), c.id).toBe(
+        prev.expected.prompt_sha256.description_user,
+      );
+      locales.add(c.input.locale);
+    }
+    expect(locales.size).toBeGreaterThan(1);
+  });
+
+  describe.each(
+    CASES_V9.filter((c) => !AFTER_V9_DELTA_IDS.has(c.id)).map((c) => [c.id, c] as const),
+  )('%s', (_id, c) => {
+    it('generates identically to the v9 record', async () => {
+      await expectIdentical(c);
+    });
   });
 });

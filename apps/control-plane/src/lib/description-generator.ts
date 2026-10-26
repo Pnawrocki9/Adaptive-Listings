@@ -459,7 +459,8 @@ GROUNDING RULES (same contract as the full description — FOLLOW-169):
 8. Output ONLY the headline text — no surrounding quotes, no preamble, no explanation. Nothing else.
 `;
 
-/** FOLLOW-1382: the language each supported locale names in the headline instruction. */
+/** FOLLOW-1382: the language each supported locale names in the headline instruction (and, since
+ * FOLLOW-1402, in the description instruction). */
 const LOCALE_LANGUAGE: Readonly<Record<DescriptionRequestedEvent['locale'], string>> = {
   en: 'English',
   pl: 'Polish',
@@ -480,6 +481,30 @@ function headlineLanguageInstruction(locale: DescriptionRequestedEvent['locale']
     `above are in another language. Compose it natively in ${language}. Keep place names and ` +
     `other proper names exactly as the listing writes them; when the sources are not in ` +
     `${language}, start the headline with such a name.`
+  );
+}
+
+/**
+ * FOLLOW-1402: the paragraph that closes the description user prompt. The prompt named the page
+ * only by its code ("locale: en"); in the FOLLOW-1399 comparison Haiku 5.5 wrote Polish on 6 of 16
+ * English pages built from a Polish original. The language is now named, and the sources are said
+ * to be possibly in another language — the FOLLOW-1382 treatment of the headline. Every model gets
+ * it (one prompt); the system prompt and the rest of the user prompt are unchanged.
+ *
+ * At the END only, by measurement (Haiku 5.5, the 16 cross-language cases x 3 per variant): the
+ * same paragraph also placed at the START of the user prompt, or the language named in its first
+ * lines, made Haiku write its reasoning into the visible reply ("I need to run the archetype-fit
+ * gate first …") or think through its whole budget despite `thinking: disabled` — 4 to 10 of 48
+ * replies FAILED. With the closing paragraph alone, 1 of 96 did, and Polish bodies on English pages
+ * fell from 16 of 48 (old prompt) to 0 of 96.
+ */
+function descriptionLanguageInstruction(locale: DescriptionRequestedEvent['locale']): string {
+  const language = LOCALE_LANGUAGE[locale];
+  return (
+    `LANGUAGE: write the description body in ${language} (locale: ${locale}). ` +
+    `original_description and listing_context may be in another language: do not answer in ` +
+    `their language and do not translate them word for word; compose the body natively in ` +
+    `${language}. Keep place names and other proper names exactly as the listing writes them.`
   );
 }
 
@@ -603,6 +628,9 @@ function renderDescriptionPrompt(
       'Remember: do not invent numbers, ratings, distances, percentages, prices, ' +
       'dates, or proper names that are not in original_description or ' +
       'listing_context. Finish with the <verified_facts_used> JSON block.',
+    '',
+    // FOLLOW-1402 (corpus v9): the output language, named.
+    descriptionLanguageInstruction(e.locale),
   ].join('\n');
   const { maxTokens, extras } = generationRequestFor(model, maxTokensFor(e.original_description));
   return { system, user, maxTokens, extras };

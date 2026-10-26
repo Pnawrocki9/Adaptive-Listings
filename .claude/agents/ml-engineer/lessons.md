@@ -570,3 +570,13 @@ the invoking command.
   **Guardrail I'd add:** a model comparison must diagnose every refusal (generator token vs
   normalised cross-check) before a refusal count enters a decision rule. Every generator output also
   needs a language check: the generator served a Polish body on an EN page and no check caught it.
+
+- **2026-10-26 / FOLLOW-1399** · **Built:** the FOLLOW-1380 comparison at n = 60 (34 Polish
+  originals, seeded draw), headlines judged, every refusal diagnosed to its trigger phrase. · **Real
+  vs placeholder judgment call:** "refusals level 12 vs 13" looks like parity, but 16 of 25 refusals
+  were the same template word ("turnkey" / "pod klucz") that both models copy from `copy_template`;
+  the count measures template adherence, not faithfulness. My own deterministic number check also
+  misread decimal commas ("3,4 m") as invented numbers until I read the hits. · **Guardrail I'd
+  add:** before any judge spend, run the deterministic checks and read every hit by hand; and budget
+  judge calls from a 2-call pilot (Opus 5.5 at low effort cost USD 0.018 per pair judgment, the
+  whole budget hinged on it).

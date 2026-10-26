@@ -46,6 +46,7 @@ import { CONDITION_FACT_RE, GUARANTEE_RE, assertsNoWorkClaim } from '@/lib/condi
 import { hasMetaCommentary } from '@/lib/meta-commentary';
 import { hasModelControlTag } from '@/lib/model-control-tags';
 import { normaliseNumberGroups } from '@/lib/number-groups';
+import { stripGroundedDecades } from '@/lib/decade-expressions';
 
 // ─── Violation codes (ADR-0023 §3) ────────────────────────────────────────────
 
@@ -240,11 +241,15 @@ export function stemLoose(word: string): string {
  * `_check_numbers`: every digit token of `text` must canonicalise to a digit token of `grounding`.
  * The grounding is tokenised with the SAME regex, so "425000" enters whole and never verifies "5".
  * Both sides are number-normalised first (FOLLOW-1381, `lib/number-groups.ts`), so a grouped
- * number is one token.
+ * number is one token. A decade expression ("lat 30.", "1930s") is checked as a decade first
+ * (FOLLOW-1405, `lib/decade-expressions.ts`).
  */
 function checkNumbers(rawText: string, rawGrounding: string): NumberViolation | null {
-  const text = normaliseNumberGroups(rawText);
   const grounding = normaliseNumberGroups(rawGrounding);
+  // A decade is checked as a decade, then kept out of the digit rule [FOLLOW-1405].
+  const withoutDecades = stripGroundedDecades(normaliseNumberGroups(rawText), grounding);
+  if (withoutDecades === null) return 'hallucinated_number';
+  const text = withoutDecades;
   const grounded = new Set<string>();
   for (const m of grounding.matchAll(FACT_CHECK_DIGIT_RE)) {
     const canon = canonNumber(m[0]);

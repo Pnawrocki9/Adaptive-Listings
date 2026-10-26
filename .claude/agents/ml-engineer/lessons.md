@@ -580,3 +580,20 @@ the invoking command.
   add:** before any judge spend, run the deterministic checks and read every hit by hand; and budget
   judge calls from a 2-call pilot (Opus 5.5 at low effort cost USD 0.018 per pair judgment, the
   whole budget hinged on it).
+
+- **2026-10-26 / FOLLOW-1400–1405** · **Built:** the familial-steering refusal on generated bodies
+  and headlines (`steersByFamilialStatus`, the `/api/adapt` implementation, corpus v8); templates
+  that no longer recommend refused words ("turnkey" family, "dla rodziny"), each pinned by a test
+  over every `copy_template` sentence; a Sonnet 5.5 thinking reserve of 6,000; a closing language
+  paragraph on the description prompt (corpus v9 re-freeze); `assertsNoWorkClaim` (negation, both
+  paths); `stripGroundedDecades` (both digit rules). · **Real vs placeholder judgment calls:** (1)
+  the brief asked for the language at the START and end of the prompt; measured, any change at the
+  start made Haiku 5.5 write its reasoning into the reply (4–10 of 48 FAILED) — shipped end-only and
+  said so; (2) the staff note "thinking off" for Sonnet 5.5 was false (16 of 20 thinking-prone calls
+  thought) — renamed; (3) the diaspora template RECOMMENDED the exact phrase the steering check
+  refuses, so the guard alone would only have converted served copy into refusals; (4) a negation
+  guard on a claim check is a fail-open risk, so a self-negative phrase ("nie wymaga remontu") stays
+  a claim whatever precedes it and "not only" affirms. · **Guardrail I'd add:** a prompt edit is
+  live-measured for NEW failure classes (visible reasoning, thinking under `disabled`), not only for
+  the class it targets — the targeted metric went 16/48 → 0/48 on every variant, and only the side
+  count told them apart.

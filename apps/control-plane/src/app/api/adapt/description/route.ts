@@ -48,7 +48,8 @@
  * cache-miss path, which regenerates it once under the check). It is not re-checked on read:
  * that needs the listing's text, i.e. a backend fetch on every hit of this <100ms path, while a
  * miss costs one regeneration per legacy row, once. The warm/backfill writers below copy the
- * stamp, so neither can launder a legacy entry into a trusted one.
+ * stamp, so neither can launder a legacy entry into a trusted one. A hit stamped with an OLDER
+ * version is legacy in the same way (FOLLOW-1406: `claims-v1` rows after the bump to `claims-v2`).
  *
  * FOLLOW-1291 (revision fence, Codex F-03/F-17): every layer is fenced by the listing's revision
  * (`listing_revisions`, advanced by the listing.updated webhook — a LOCAL revision, see
@@ -307,7 +308,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     pgHit !== null && isTrustedDescriptionHit(pgHit.verdict, pgHit.claimsValidation);
   if (pgHit !== null && !pgTrusted) {
     console.warn(
-      `[description] legacy Postgres hit without claim validation served as a miss ` +
+      `[description] legacy Postgres hit without the current claim validation served as a miss ` +
         `tenant=${tenantId} listing=${listing_id} archetype=${archetypeId}`,
     );
   }
@@ -406,7 +407,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       : null;
   if (redisHit !== null && cached === null) {
     console.warn(
-      `[description] legacy Redis hit without claim validation served as a miss ` +
+      `[description] legacy Redis hit without the current claim validation served as a miss ` +
         `tenant=${tenantId} listing=${listing_id} archetype=${archetypeId}`,
     );
   }

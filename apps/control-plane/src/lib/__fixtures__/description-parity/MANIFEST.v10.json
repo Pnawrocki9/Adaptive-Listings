@@ -1,0 +1,52 @@
+{
+  "case_count": 98,
+  "change": "FOLLOW-1406: CLAIMS_VALIDATION_VERSION is bumped from claims-v1 to claims-v2, so copy cached before the familial-steering refusal (FOLLOW-1400) and the FOLLOW-1381 to FOLLOW-1405 claim-check fixes is regenerated once instead of served. v10 is a STAMP-ONLY RE-FREEZE of v9: every byte is v9's except the value of expected.claims_validation, which reads claims-v2 in every case where v9 reads claims-v1 (the 61 FIT cases); a null stamp stays null. No input, raw output, verdict, headline, violation or prompt digest changed, and no check changed.",
+  "claims_validation_version": "claims-v2",
+  "corpus": "corpus.v10.jsonl",
+  "corpus_sha256": "92932613:76c1ca09:6b58751e:efa596ac:730d7be3:279a1083:d0432823:2ff323f2",
+  "delta": [],
+  "derived_from": {
+    "corpus": "corpus.v9.jsonl",
+    "manifest": "MANIFEST.v9.json",
+    "corpus_sha256": "de05d8b2:394d6762:572db880:4514a13c:501abdd0:df133fb2:26d0fef3:0667dd9b"
+  },
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-10-26",
+  "headline_called": 61,
+  "headline_suppressed": 29,
+  "kind": "stamp_refreeze",
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "FAILED/empty": 2,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/meta_commentary": 1,
+    "FAILED/residual_tag": 3,
+    "FAILED/truncated": 1,
+    "NEUTRAL/with_reason": 8,
+    "NEUTRAL/without_reason": 1,
+    "REFUSED/familial_steering": 3,
+    "REFUSED/hallucinated_number": 5,
+    "REFUSED/unit_mismatch": 2,
+    "REFUSED/unsupported_amenity": 5,
+    "REFUSED/unsupported_guarantee": 2
+  },
+  "per_verdict": {
+    "FAILED": 11,
+    "FIT": 61,
+    "NEUTRAL": 9,
+    "REFUSED": 17
+  },
+  "recorded_outputs_predate_prompt": "Every raw_description in this corpus was produced by an older description prompt. They are replayed through the unchanged checks, so they pin the checks and the new prompt bytes, NOT what the new prompt makes the model write.",
+  "stamp_refreeze": {
+    "from": "claims-v1",
+    "to": "claims-v2",
+    "cases": 61
+  }
+}

@@ -52,9 +52,13 @@ const { pendingAfter, mockOriginal, dispatched } = vi.hoisted(() => ({
   dispatched: [] as DispatchedEvent[],
 }));
 
-vi.mock('@/lib/description-generator', () => ({
-  // `lib/claim-containment` re-exports the stamp from the generator module.
-  CLAIMS_VALIDATION_VERSION: 'claims-v1',
+vi.mock('@/lib/description-generator', async (importOriginal) => ({
+  // `lib/claim-containment` re-exports the stamp from the generator module: the REAL constant, so
+  // the FOLLOW-1406 bump is exercised against real SQL rather than pinned.
+  CLAIMS_VALIDATION_VERSION:
+    // eslint-disable-next-line @typescript-eslint/consistent-type-imports -- vi.mock importOriginal generic requires inline import() type
+    (await importOriginal<typeof import('@/lib/description-generator')>())
+      .CLAIMS_VALIDATION_VERSION,
   generateDescription: (event: DispatchedEvent) => {
     dispatched.push(event);
     return Promise.resolve({
@@ -321,6 +325,53 @@ describe(
       expect(await activeRows()).toEqual([
         { description: 'Regenerated under the claim check.', model: SONNET },
       ]);
+    });
+  },
+);
+
+// ─── FOLLOW-1406 ──────────────────────────────────────────────────────────────
+
+describe(
+  'FOLLOW-1406: a row stamped by an older claim check is regenerated once, in place',
+  { timeout: 30_000 },
+  () => {
+    it('a claims-v1 FIT row is a miss; the regenerated row replaces it and is then served', async () => {
+      // Cached before FOLLOW-1400 and the FOLLOW-1381–1405 checks, at the current revision (0).
+      expect(
+        await publishPgCachedDescription({
+          tenantId: TENANT_ID,
+          listingId: LISTING_ID,
+          archetype: ARCHETYPE,
+          locale: 'en',
+          description: 'A family home for your children.',
+          headline: null,
+          model: SONNET,
+          verdict: 'FIT',
+          claimsValidation: 'claims-v1',
+          listingRevision: 0,
+        }),
+      ).toBe('published');
+
+      const first = await read();
+      expect(first.source).toBe('template_fallback');
+      expect(first.description).not.toBe('A family home for your children.');
+      expect(dispatched).toHaveLength(1);
+
+      // The regeneration publishes at the same revision under the current stamp: it replaces the
+      // v1 row (the upsert's revision guard is `<=`), it is not refused as stale.
+      expect(await complete(dispatched[0]!, 'A two-bed flat with a private pool.')).toBe(
+        'published',
+      );
+      expect(await read()).toMatchObject({
+        source: 'ai_cached',
+        description: 'A two-bed flat with a private pool.',
+      });
+      expect(dispatched).toHaveLength(1); // once: the second read is a hit
+      const stamps = await pg.query<{ claims_validation: string | null }>(
+        'SELECT claims_validation FROM description_cache_persistent WHERE invalidated_at IS NULL',
+      );
+      expect(stamps.rows).toEqual([{ claims_validation: CLAIMS_VALIDATION_VERSION }]);
+      expect(CLAIMS_VALIDATION_VERSION).not.toBe('claims-v1');
     });
   },
 );

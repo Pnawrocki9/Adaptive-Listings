@@ -2,7 +2,7 @@
  * FOLLOW-1297 — the parity test (ADR-0023 §4, CONVENTIONS_PATCH Rule Z); FOLLOW-1314 — corpus v2;
  * FOLLOW-1315 — corpus v3; FOLLOW-1381 — corpus v4; FOLLOW-1382 — corpus v5; FOLLOW-1392 and later —
  * corpus v6+ (verdict deltas, see `VERDICT_DELTAS`); FOLLOW-1402 — corpus v9 (a prompt re-freeze
- * between them).
+ * between them); FOLLOW-1406 — corpus v10 (a stamp-only re-freeze, the current contract).
  *
  * Drives `generateDescription` — the production entry point — with the Anthropic SDK mocked to
  * return the RAW model outputs recorded in the frozen corpus, and demands, for every case,
@@ -44,6 +44,11 @@
  *     `prompt_sha256.description_user` differs, in every case, and the v9 guard proves the new
  *     prompt is the v8 prompt plus that paragraph, byte for byte. Every guard replays
  *     with the CURRENT description user digests (v9's), as the headline digests are replayed.
+ *   - `corpus.v10.jsonl` + `MANIFEST.v10.json` — FOLLOW-1406 bumped `CLAIMS_VALIDATION_VERSION`
+ *     from `claims-v1` to `claims-v2`, so v10 is a STAMP-ONLY re-freeze of v9: its bytes are v9's
+ *     with every `"claims_validation": "claims-v1"` read as `"claims-v2"`, and nothing else. The
+ *     v10 guard proves that byte for byte; every older guard replays with the CURRENT stamp
+ *     (v10's), as it replays the current prompt digests, and its manifest keeps `claims-v1`.
  *
  * No other I/O happens: the test env configures no Redis, ClickHouse, Postgres or Sentry, so the
  * spend gate reads 0, every write reports `not_configured` and no row is written.
@@ -176,6 +181,17 @@ const MANIFEST_V9 = JSON.parse(
 const DESCRIPTION_USER_SHA = new Map(
   CASES_V9.map((c) => [c.id, c.expected.prompt_sha256.description_user] as const),
 );
+/** The claims-validation stamp every corpus v1–v9 was frozen with (the manifests keep it). */
+const FROZEN_STAMP = 'claims-v1';
+const CASES_V10: Case[] = readCorpus('corpus.v10.jsonl');
+const MANIFEST_V10 = JSON.parse(
+  readFileSync(join(FIXTURE_DIR, 'MANIFEST.v10.json'), 'utf8'),
+) as ManifestV3 & { stamp_refreeze: { from: string; to: string; cases: number } };
+/**
+ * The CURRENT claims-validation stamp, by case id (FOLLOW-1406 re-froze it as v10; its guard
+ * asserts it was that corpus's only change).
+ */
+const STAMP = new Map(CASES_V10.map((c) => [c.id, c.expected.claims_validation] as const));
 
 /**
  * The verdict deltas after v5, oldest first, each derived from the corpus before it (v6 from v5).
@@ -219,6 +235,7 @@ const AFTER_V9_DELTA_IDS = new Set(
 function corpusBefore(version: number): { cases: Case[]; manifest: ManifestV3 } {
   if (version - 1 === 5) return { cases: CASES_V5, manifest: MANIFEST_V5 };
   if (version - 1 === 9) return { cases: CASES_V9, manifest: MANIFEST_V9 };
+  if (version - 1 === 10) return { cases: CASES_V10, manifest: MANIFEST_V10 };
   const d = VERDICT_DELTAS.find((x) => x.version === version - 1);
   if (d === undefined) throw new Error(`no corpus v${String(version - 1)}`);
   return d;
@@ -255,7 +272,8 @@ async function expectIdentical(c: Case, headlineSha = c.expected.prompt_sha256):
   expect(sha(desc.messages[0]!.content)).toBe(DESCRIPTION_USER_SHA.get(c.id));
 
   expect(report.outcome).toEqual(c.expected.outcome);
-  expect(report.claimsValidation).toBe(c.expected.claims_validation);
+  // The current stamp (v10, FOLLOW-1406); a FIT case of an older corpus recorded `claims-v1`.
+  expect(report.claimsValidation).toBe(STAMP.get(c.id));
   expect(report.writes).toEqual({
     pg:
       report.outcome.verdict === 'FIT' || report.outcome.verdict === 'NEUTRAL'
@@ -293,7 +311,7 @@ describe('description parity corpus v1 (frozen from the Python job — ADR-0023 
   it('the manifest describes this corpus and meets the composition minima', () => {
     expect(CASES.length).toBe(MANIFEST.case_count);
     expect(CASES.length).toBeGreaterThanOrEqual(50);
-    expect(MANIFEST.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(MANIFEST.claims_validation_version).toBe(FROZEN_STAMP);
     expect(MANIFEST.per_kind.live).toBeGreaterThanOrEqual(30);
     expect(MANIFEST.per_kind.hand1305).toBeGreaterThanOrEqual(9);
     expect(MANIFEST.per_verdict.NEUTRAL).toBeGreaterThanOrEqual(3);
@@ -342,7 +360,7 @@ describe('description parity corpus v2 (FOLLOW-1314 — the current contract)', 
     expect(MANIFEST_V2.corpus).toBe('corpus.v2.jsonl');
     expect(MANIFEST_V2.derived_from.corpus).toBe('corpus.v1.jsonl');
     expect(MANIFEST_V2.case_count).toBe(CASES_V2.length);
-    expect(MANIFEST_V2.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(MANIFEST_V2.claims_validation_version).toBe(FROZEN_STAMP);
     expect(sha(readFileSync(join(FIXTURE_DIR, 'corpus.v1.jsonl'), 'utf8'))).toBe(
       MANIFEST_V2.derived_from.corpus_sha256,
     );
@@ -405,7 +423,7 @@ describe('description parity corpus v3 (FOLLOW-1315 — headline prompt re-freez
     expect(MANIFEST_V3.derived_from.corpus).toBe('corpus.v2.jsonl');
     expect(MANIFEST_V3.derived_from.corpus_sha256).toBe(MANIFEST_V2.corpus_sha256);
     expect(MANIFEST_V3.case_count).toBe(CASES_V3.length);
-    expect(MANIFEST_V3.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(MANIFEST_V3.claims_validation_version).toBe(FROZEN_STAMP);
     expect(MANIFEST_V3.delta).toEqual([]);
     expect(MANIFEST_V3.per_verdict).toEqual(MANIFEST_V2.per_verdict);
     expect(MANIFEST_V3.per_reason).toEqual(MANIFEST_V2.per_reason);
@@ -470,7 +488,7 @@ describe('description parity corpus v4 (FOLLOW-1381 — grouped numbers)', () =>
     expect(MANIFEST_V4.derived_from.corpus).toBe('corpus.v3.jsonl');
     expect(MANIFEST_V4.derived_from.corpus_sha256).toBe(MANIFEST_V3.corpus_sha256);
     expect(MANIFEST_V4.case_count).toBe(CASES_V4.length);
-    expect(MANIFEST_V4.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(MANIFEST_V4.claims_validation_version).toBe(FROZEN_STAMP);
     expect(sha(readFileSync(join(FIXTURE_DIR, 'corpus.v3.jsonl'), 'utf8'))).toBe(
       MANIFEST_V4.derived_from.corpus_sha256,
     );
@@ -562,7 +580,7 @@ describe('description parity corpus v5 (FOLLOW-1382 — the current contract: he
     expect(MANIFEST_V5.derived_from.corpus).toBe('corpus.v4.jsonl');
     expect(MANIFEST_V5.derived_from.corpus_sha256).toBe(MANIFEST_V4.corpus_sha256);
     expect(MANIFEST_V5.case_count).toBe(CASES_V5.length);
-    expect(MANIFEST_V5.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(MANIFEST_V5.claims_validation_version).toBe(FROZEN_STAMP);
     expect(MANIFEST_V5.delta).toEqual([]);
     expect(MANIFEST_V5.per_verdict).toEqual(MANIFEST_V4.per_verdict);
     expect(MANIFEST_V5.per_reason).toEqual(MANIFEST_V4.per_reason);
@@ -659,7 +677,7 @@ describe.each(VERDICT_DELTAS.map((d, i) => [d.version, d.ticket, d, i] as const)
         d.manifest.corpus_sha256,
       );
       expect(d.manifest.case_count).toBe(d.cases.length);
-      expect(d.manifest.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+      expect(d.manifest.claims_validation_version).toBe(FROZEN_STAMP);
       expect(d.cases.map((c) => c.id)).toEqual(prevCases.map((c) => c.id));
       expect([...ids].sort()).toEqual([...d.ids].sort());
       for (const [j, cur] of d.cases.entries()) {
@@ -724,7 +742,7 @@ describe('description parity corpus v7 (FOLLOW-1394 — a pool of people is not 
     expect(v6.expected.outcome).toEqual({ verdict: 'REFUSED', violation: 'unsupported_amenity' });
     expect(v7.expected.outcome.verdict).toBe('FIT');
     expect(v7.expected.outcome.description).toContain('a defensible tenant demand pool');
-    expect(v7.expected.claims_validation).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(v7.expected.claims_validation).toBe(FROZEN_STAMP);
     // The recorded raw headline is null (the case was REFUSED when recorded): suppressed as empty.
     expect(v7.raw_headline).toBeNull();
     expect(v7.expected.headline_violation).toBe('empty');
@@ -798,7 +816,7 @@ describe('description parity corpus v9 (FOLLOW-1402 — description language, pr
       MANIFEST_V9.corpus_sha256,
     );
     expect(MANIFEST_V9.case_count).toBe(CASES_V9.length);
-    expect(MANIFEST_V9.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(MANIFEST_V9.claims_validation_version).toBe(FROZEN_STAMP);
     expect(MANIFEST_V9.delta).toEqual([]);
     expect(MANIFEST_V9.per_verdict).toEqual(v8.manifest.per_verdict);
     expect(MANIFEST_V9.per_reason).toEqual(v8.manifest.per_reason);
@@ -843,6 +861,81 @@ describe('description parity corpus v9 (FOLLOW-1402 — description language, pr
     CASES_V9.filter((c) => !AFTER_V9_DELTA_IDS.has(c.id)).map((c) => [c.id, c] as const),
   )('%s', (_id, c) => {
     it('generates identically to the v9 record', async () => {
+      await expectIdentical(c);
+    });
+  });
+});
+
+describe('description parity corpus v10 (FOLLOW-1406 — claims-v2, stamp-only re-freeze)', () => {
+  const V9_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v9.jsonl'), 'utf8');
+  const V10_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v10.jsonl'), 'utf8');
+  const OLD = '"claims_validation": "claims-v1"';
+  const NEW = '"claims_validation": "claims-v2"';
+
+  beforeEach(() => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'parity-'.repeat(4));
+    mockCreate.mockReset();
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('the manifest describes v10 as a stamp re-freeze of v9 under the current constant', () => {
+    expect(MANIFEST_V10.corpus).toBe('corpus.v10.jsonl');
+    expect(MANIFEST_V10.kind).toBe('stamp_refreeze');
+    expect(MANIFEST_V10.derived_from.corpus).toBe('corpus.v9.jsonl');
+    expect(MANIFEST_V10.derived_from.manifest).toBe('MANIFEST.v9.json');
+    expect(MANIFEST_V10.derived_from.corpus_sha256).toBe(MANIFEST_V9.corpus_sha256);
+    expect(sha(V9_TEXT)).toBe(MANIFEST_V10.derived_from.corpus_sha256);
+    expect(sha(V10_TEXT)).toBe(MANIFEST_V10.corpus_sha256);
+    expect(MANIFEST_V10.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(MANIFEST_V10.stamp_refreeze).toEqual({
+      from: FROZEN_STAMP,
+      to: CLAIMS_VALIDATION_VERSION,
+      cases: MANIFEST_V9.per_verdict.FIT,
+    });
+    expect(MANIFEST_V10.delta).toEqual([]);
+    expect(MANIFEST_V10.case_count).toBe(CASES_V10.length);
+    const m10 = MANIFEST_V10 as unknown as Record<string, unknown>;
+    const m9 = MANIFEST_V9 as unknown as Record<string, unknown>;
+    // Every other manifest field is v9's: counts, composition, digest format.
+    const own = ['change', 'corpus', 'corpus_sha256', 'derived_from', 'kind'];
+    own.push('claims_validation_version', 'stamp_refreeze');
+    expect(Object.keys(m10).sort()).toEqual([...new Set([...Object.keys(m9), ...own])].sort());
+    for (const key of Object.keys(m9)) {
+      if (own.includes(key)) continue;
+      expect(m10[key], key).toEqual(m9[key]);
+    }
+  });
+
+  it('v10 is v9 byte for byte except the stamp value, in every FIT case and nowhere else', () => {
+    expect(V9_TEXT.split(OLD).length - 1).toBe(MANIFEST_V9.per_verdict.FIT);
+    expect(V10_TEXT.split(NEW).length - 1).toBe(MANIFEST_V9.per_verdict.FIT);
+    expect(V9_TEXT.includes(NEW)).toBe(false);
+    expect(V10_TEXT.includes('claims-v1')).toBe(false);
+    expect(V10_TEXT).toBe(V9_TEXT.split(OLD).join(NEW));
+    expect(V10_TEXT.length).toBe(V9_TEXT.length); // same-length value: no byte shifted
+  });
+
+  it('per case: only expected.claims_validation moved, claims-v1 → claims-v2, null stays null', () => {
+    expect(CASES_V10.map((c) => c.id)).toEqual(CASES_V9.map((c) => c.id));
+    for (const [i, v10] of CASES_V10.entries()) {
+      const v9 = CASES_V9[i]!;
+      const { claims_validation: s10, ...rest10 } = v10.expected;
+      const { claims_validation: s9, ...rest9 } = v9.expected;
+      expect({ ...v10, expected: rest10 }, v10.id).toEqual({ ...v9, expected: rest9 });
+      if (v9.expected.outcome.verdict === 'FIT') {
+        expect(s9, v10.id).toBe(FROZEN_STAMP);
+        expect(s10, v10.id).toBe(CLAIMS_VALIDATION_VERSION);
+      } else {
+        expect(s9, v10.id).toBeNull();
+        expect(s10, v10.id).toBeNull();
+      }
+    }
+  });
+
+  describe.each(
+    CASES_V10.filter((c) => !AFTER_V9_DELTA_IDS.has(c.id)).map((c) => [c.id, c] as const),
+  )('%s', (_id, c) => {
+    it('generates identically to the v10 record', async () => {
       await expectIdentical(c);
     });
   });

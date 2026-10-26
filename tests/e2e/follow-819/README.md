@@ -3387,6 +3387,28 @@ in every run that completed). The caveats of §5.23 (a)–(d) apply.
 Three consecutive GREEN runs, no RED or ABORTED run in the series. The caveats of §5.23 (a)–(d)
 apply.
 
+### 5.39 — 2026-10-26 (FOLLOW-1392/1393/1394/1395 series at branch HEAD `df69dd2d`, control plane under `next start`, global model `claude-sonnet-5-5`, EXECUTED ×7) — **three consecutive `run=GREEN` with `total=8` (runs 34, 35, 36), each `[FRESH]`; run 30 `run=UNMEASURED` (holdout), run 33 `run=RED` on AC(5) only (a harness flake, FOLLOW-1398) — the per-PR series of #1086 (merged as `9560950a`)**
+
+**MANUAL, run by the PM.** `CP_MODE=prod scripts/dev/localhost-up.sh` at `df69dd2d`; the local
+`app_config.generation_model` set to `claude-sonnet-5-5`, as in §5.37.
+
+| Run | Started (UTC)            | `TALLY`                                                   | Note                                                   |
+| --- | ------------------------ | --------------------------------------------------------- | ------------------------------------------------------ |
+| 30  | 2026-10-26T01:14:32.967Z | `TALLY green=3 red=0 unmeasured=5 total=8 run=UNMEASURED` | adapted arm drew holdout                               |
+| 31  | 01:16:15.132Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      |                                                        |
+| 32  | 01:17:51.945Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      |                                                        |
+| 33  | 01:19:40.402Z            | `TALLY green=7 red=1 unmeasured=0 total=8 run=RED`        | AC(5): CTA `locator.click` timeout 5000 ms, no overlay |
+| 34  | 01:21:26.606Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      |                                                        |
+| 35  | 01:23:09.738Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      |                                                        |
+| 36  | 01:24:53.442Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      |                                                        |
+
+All seven `[FRESH]` (harnessSha `df69dd2d…`, ancestor of HEAD, clean tree). The RED in run 33 is a
+harness flake, not this PR: the CTA button was found, but Playwright's click waited 5000 ms for it
+to become stable ("element is not stable": the CTA re-rendered after adaptation), no quiz overlay
+was visible, and the run therefore never clicked, so no conversion was requested. Filed as
+FOLLOW-1398 (wait for a stable CTA). AC(10) was GREEN in all seven runs, AC(1) and AC(2) in every
+run but run 30, where they were UNMEASURED (holdout). The caveats of §5.23 (a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

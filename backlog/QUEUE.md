@@ -64,26 +64,23 @@
 - **FOLLOW-1398** — status: BACKLOG # P3. Harness AC(5): the CTA `locator.click` can time out (5000
   ms, "element is not stable") when the CTA re-renders after adaptation (README §5.39 run 33); wait
   for a stable CTA before clicking.
-- **FOLLOW-1409** — status: BACKLOG # P2 compliance. Residual family framing in templates: upsizer
-  ("the next child has their own room"; pl/es "dzielnic dobrze ocenianych przez rodziny" /
-  "valoradas por familias"; still registered though the quiz no longer assigns it) and
-  lifestyle_expat ("international families"); family_buyer `description` field still says children
-  are assumed with the has_children trait (pinned by a test).
-- **FOLLOW-1406** — status: IN_REVIEW # branch
-  `ml-engineer/FOLLOW-1406-claims-v2-and-template-conflicts`. P1 compliance.
+- **FOLLOW-1409** — status: IN_REVIEW # branch `ml-engineer/FOLLOW-1409-residual-family-framing`. P2
+  compliance. upsizer (en/pl/es) describes rooms as the listing states them, never who occupies
+  them, and carries family_buyer's outright ban; the PL/ES "districts rated by families" sentences
+  are gone; lifestyle_expat says "international residents"; the family_buyer `description` says the
+  copy never refers to children or household composition, with or without the has_children trait.
+  Three new template scans. Steering vocabulary and refusal unchanged.
+- **FOLLOW-1406** — status: DONE # #1090 `156cc5b1`, 2026-10-26. Series §5.41. P1 compliance.
   `CLAIMS_VALIDATION_VERSION` is `claims-v2`: a `claims-v1` FIT row (Postgres or Redis) is a miss
   and is regenerated once on its next request. Parity corpus v10 = stamp-only re-freeze of v9. CTO
   handover: the production description cache regenerates lazily, once per (listing, archetype,
   locale, model) pair, after deploy (about USD 0.025 per pair, measured locally).
-- **FOLLOW-1407** — status: IN_REVIEW # branch
-  `ml-engineer/FOLLOW-1406-claims-v2-and-template-conflicts`. P2 compliance. yield_hunter (en/pl): a
-  garden is a lettability / tenant-retention fact as the listing states it, no family tenant;
-  family_buyer (en/pl/es): never the reader's children or household composition, no exception. Two
-  new template scans. Steering vocabulary unchanged; OPEN CEO wording questions: diaspora
-  "zabezpieczenie dla rodziny w kraju"; PL "rodzinna okolica" parity. Not in scope, reported: the
-  upsizer template still frames copy by children ("the next child has their own room"),
-  lifestyle_expat cites "international families", and the family_buyer `description` still says
-  children are assumed with the has_children trait.
+- **FOLLOW-1407** — status: DONE # #1090 `156cc5b1`, 2026-10-26. Series §5.41. P2 compliance.
+  yield_hunter (en/pl): a garden is a lettability / tenant-retention fact as the listing states it,
+  no family tenant; family_buyer (en/pl/es): never the reader's children or household composition,
+  no exception. Two new template scans. Steering vocabulary unchanged; OPEN CEO wording questions:
+  diaspora "zabezpieczenie dla rodziny w kraju"; PL "rodzinna okolica" parity. The residual upsizer,
+  lifestyle_expat and family_buyer `description` wording it reported is FOLLOW-1409.
 - **FOLLOW-1408** — status: BACKLOG # P3. No negation guard for guarantees ("no guarantee of income"
   refused); first_time_buyer headline persona still says "move-in readiness".
 - **FOLLOW-1400** — status: DONE # #1089 `6e4fd350`, 2026-10-26. Series §5.40. P1 compliance. The

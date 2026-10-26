@@ -612,3 +612,16 @@ the invoking command.
   the read path (not a mocked literal); and a fair-housing template scan reads exception clauses
   ("unless", "chyba że", "salvo que"), not only banned phrases — the family_buyer exception was
   invisible to the phrase scanner.
+
+- **2026-10-26 / FOLLOW-1409** · **Built:** upsizer (en/pl/es) rewritten to describe rooms as the
+  listing states them, never their occupants, with family_buyer's outright ban; lifestyle_expat
+  "international residents"; family_buyer `description` no longer tells the /api/adapt model to
+  assume children; three scans (child mentions pinned, areas characterised by families, descriptions
+  assuming children). · **Real vs placeholder judgment call:** the brief scoped the playbooks, but
+  `ARCHETYPE_GUIDANCE` in `description-generator.ts` is a second copy of the voice (the headline
+  persona on EVERY FIT headline, and the voice fallback) and still says family_buyer "school
+  catchment quality … neighbourhood safety", upsizer "the next chapter in family life", diaspora
+  "family ties"; changing it moves the frozen headline prompt digests (a corpus re-freeze), so it
+  was reported, not silently folded in. · **Guardrail I'd add:** a fair-housing scan covers every
+  string that reaches a prompt, not one source of it — enumerate prompt inputs from the prompt
+  builder (`renderHeadlinePrompt`, `buildSonnetPrompt`), not from the playbook type.

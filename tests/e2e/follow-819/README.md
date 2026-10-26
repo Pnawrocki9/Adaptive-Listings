@@ -3423,6 +3423,22 @@ run but run 30, where they were UNMEASURED (holdout). The caveats of §5.23 (a)�
 Three consecutive GREEN runs, no RED or ABORTED run in the series. The caveats of §5.23 (a)–(d)
 apply.
 
+### 5.41 — 2026-10-26 (FOLLOW-1406/1407 series at branch HEAD `2903eada`, control plane under `next start`, global model `claude-sonnet-5-5`, EXECUTED ×5) — **three `run=GREEN` with `total=8` (runs 50, 52, 54), each `[FRESH]`, no RED; runs 51 and 53 `run=UNMEASURED` (holdout) — the per-PR series of #1090 (merged as `156cc5b1`)**
+
+**MANUAL, run by the PM.** `CP_MODE=prod scripts/dev/localhost-up.sh` at `2903eada`; the local
+`app_config.generation_model` set to `claude-sonnet-5-5`, as in §5.37.
+
+| Run | Started (UTC)            | Result           | Note                                 |
+| --- | ------------------------ | ---------------- | ------------------------------------ |
+| 50  | 2026-10-26T04:12:24.855Z | `run=GREEN`      | `total=8`                            |
+| 51  | 04:14:07.153Z            | `run=UNMEASURED` | AC(8): the chat session drew holdout |
+| 52  | 04:15:06.570Z            | `run=GREEN`      | `total=8`                            |
+| 53  | 04:16:36.936Z            | `run=UNMEASURED` | holdout                              |
+| 54  | 04:18:13.459Z            | `run=GREEN`      | `total=8`                            |
+
+All five `[FRESH]` (harnessSha `2903eada…`). Three GREEN runs and no RED or ABORTED run in the
+series; the two UNMEASURED runs are holdout draws, not failures. The caveats of §5.23 (a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

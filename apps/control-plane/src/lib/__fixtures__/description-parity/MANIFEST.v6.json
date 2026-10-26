@@ -1,0 +1,63 @@
+{
+  "case_count": 98,
+  "change": "FOLLOW-1392: the description contract refuses model meta-commentary (a note to the operator, the model speaking as itself, a preamble, a reference to its own inputs, a word count, a placeholder, a self-correction) in en / pl / es as FAILED / meta_commentary (lib/meta-commentary.ts), after the older leak markers. Inputs, raw outputs and prompt digests are v5's byte for byte; only the expected record below differs.",
+  "claims_validation_version": "claims-v1",
+  "corpus": "corpus.v6.jsonl",
+  "corpus_sha256": "cb96e311:404e98ce:89b5db25:a24a0bf4:e1128890:e900a725:8719b895:88be3302",
+  "delta": [
+    {
+      "id": "live.016.listing-007.yield_hunter.en",
+      "kind": "live",
+      "changed": {
+        "outcome": {
+          "v5": {
+            "verdict": "REFUSED",
+            "violation": "unsupported_amenity"
+          },
+          "v6": {
+            "verdict": "FAILED",
+            "reason": "meta_commentary"
+          }
+        }
+      },
+      "reason": "TRUE leak now caught by an earlier check. The body tells the buyer \"The original description flags strong rental yield in high season\": it talks about the model's input, not the listing. FAILED / meta_commentary now runs in the contract step, before the claim check that refused it as unsupported_amenity (\"the demand pool\" read as a swimming pool, FOLLOW-1394). Not served either way; no headline call either way."
+    }
+  ],
+  "derived_from": {
+    "corpus": "corpus.v5.jsonl",
+    "manifest": "MANIFEST.v5.json",
+    "corpus_sha256": "3533e26f:a0fc6778:ac589fd7:2143f8dd:fa158ed4:f924a3b1:4b556f44:ece848bc"
+  },
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-10-26",
+  "headline_called": 62,
+  "headline_suppressed": 29,
+  "kind": "verdict_delta",
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "FAILED/empty": 2,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/meta_commentary": 1,
+    "FAILED/residual_tag": 3,
+    "FAILED/truncated": 1,
+    "NEUTRAL/with_reason": 8,
+    "NEUTRAL/without_reason": 1,
+    "REFUSED/hallucinated_number": 5,
+    "REFUSED/unit_mismatch": 2,
+    "REFUSED/unsupported_amenity": 7,
+    "REFUSED/unsupported_guarantee": 2
+  },
+  "per_verdict": {
+    "FAILED": 11,
+    "FIT": 62,
+    "NEUTRAL": 9,
+    "REFUSED": 16
+  }
+}

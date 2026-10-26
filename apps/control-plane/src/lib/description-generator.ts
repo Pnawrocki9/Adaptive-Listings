@@ -61,6 +61,7 @@ import { publishPgCachedDescription } from '@/lib/description-pg-cache';
 import { setCachedDescription } from '@/lib/description-cache';
 import { writeDescriptionGenerationAudit } from '@/lib/description-generation-audit';
 import { checkOutputLanguage } from '@/lib/output-language';
+import { hasMetaCommentary } from '@/lib/meta-commentary';
 import { hasModelControlTag } from '@/lib/model-control-tags';
 import {
   PY_WS,
@@ -510,6 +511,7 @@ interface GenerationReport {
     | 'empty'
     | 'wrong_language'
     | 'residual_tag'
+    | 'meta_commentary'
     | 'call_failed'
     | null;
   /** Set iff the outcome is FIT. */
@@ -721,7 +723,14 @@ function interpretHeadline(
   e: DescriptionRequestedEvent,
 ): {
   headline: string | null;
-  violation: FactViolation | ClaimViolation | 'empty' | 'wrong_language' | 'residual_tag' | null;
+  violation:
+    | FactViolation
+    | ClaimViolation
+    | 'empty'
+    | 'wrong_language'
+    | 'residual_tag'
+    | 'meta_commentary'
+    | null;
 } {
   if (!pyStrip(rawText)) return { headline: null, violation: 'empty' };
   const firstLine = pyStrip(rawText).split('\n')[0] ?? '';
@@ -729,6 +738,8 @@ function interpretHeadline(
   if (!headline) return { headline: null, violation: 'empty' };
   // FOLLOW-1390: a leaked model-control tag, as in the body.
   if (hasModelControlTag(headline)) return { headline: null, violation: 'residual_tag' };
+  // FOLLOW-1392: a note to the operator, as in the body.
+  if (hasMetaCommentary(headline)) return { headline: null, violation: 'meta_commentary' };
   // FOLLOW-1384: the page's language first, then the facts.
   const languageViolation = checkOutputLanguage(headline, e.locale);
   if (languageViolation) return { headline: null, violation: languageViolation };

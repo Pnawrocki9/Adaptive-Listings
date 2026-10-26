@@ -40,6 +40,7 @@
  */
 
 import { AMENITY_RES, NEGATED_AFTER_RE, NEGATOR_RE } from '@/lib/amenity-lexicon';
+import { hasMetaCommentary } from '@/lib/meta-commentary';
 import { hasModelControlTag } from '@/lib/model-control-tags';
 import { normaliseNumberGroups } from '@/lib/number-groups';
 
@@ -49,7 +50,11 @@ export type NumberViolation = 'hallucinated_number';
 export type FactViolation = NumberViolation | 'hallucinated_proper_name';
 /** = `claim-containment.ts` `ClaimViolation`; restated here so this module has no adapt import. */
 export type ClaimViolation = 'unsupported_amenity' | 'unsupported_guarantee' | 'unit_mismatch';
-export type ContractViolation = 'residual_tag' | 'formatted_body' | 'leak_marker';
+export type ContractViolation =
+  | 'residual_tag'
+  | 'formatted_body'
+  | 'leak_marker'
+  | 'meta_commentary';
 
 // ─── Python string semantics ──────────────────────────────────────────────────
 
@@ -573,9 +578,11 @@ const RESIDUAL_TAGS: readonly string[] = [
 
 /**
  * `_body_violates_contract`: residual control tags (case-insensitive; FOLLOW-1390 adds the model's
- * own `reasoning*` / `thinking*` / `effort*` tags, `lib/model-control-tags.ts`), then markdown (`**` or a
- * `#`-opened line), then the English leak markers. Note that a dangling `<verified_facts_used`
- * opening tag is caught HERE as `residual_tag`, before the generator's truncation tell can see it.
+ * own `reasoning*` / `thinking*` / `effort*` tags, `lib/model-control-tags.ts`), then markdown (`**`
+ * or a `#`-opened line), then the English leak markers, then (FOLLOW-1392, not in the Python) model
+ * meta-commentary in en / pl / es (`lib/meta-commentary.ts`) as `meta_commentary`. Note that a
+ * dangling `<verified_facts_used` opening tag is caught HERE as `residual_tag`, before the
+ * generator's truncation tell can see it.
  */
 export function bodyViolatesContract(body: string): ContractViolation | null {
   const bodyLower = body.toLowerCase();
@@ -586,5 +593,7 @@ export function bodyViolatesContract(body: string): ContractViolation | null {
   for (const line of pySplitlines(body))
     if (pyLstrip(line).startsWith('#')) return 'formatted_body';
   for (const marker of BODY_LEAK_MARKERS) if (bodyLower.includes(marker)) return 'leak_marker';
+  // FOLLOW-1392: a note to the operator ("Correction: the first sentence above …"), en/pl/es.
+  if (hasMetaCommentary(body)) return 'meta_commentary';
   return null;
 }

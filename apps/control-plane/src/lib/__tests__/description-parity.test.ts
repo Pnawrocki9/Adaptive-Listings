@@ -1,6 +1,7 @@
 /**
  * FOLLOW-1297 — the parity test (ADR-0023 §4, CONVENTIONS_PATCH Rule Z); FOLLOW-1314 — corpus v2;
- * FOLLOW-1315 — corpus v3; FOLLOW-1381 — corpus v4; FOLLOW-1382 — corpus v5.
+ * FOLLOW-1315 — corpus v3; FOLLOW-1381 — corpus v4; FOLLOW-1382 — corpus v5; FOLLOW-1392 and later —
+ * corpus v6+ (verdict deltas, see `VERDICT_DELTAS`).
  *
  * Drives `generateDescription` — the production entry point — with the Anthropic SDK mocked to
  * return the RAW model outputs recorded in the frozen corpus, and demands, for every case,
@@ -29,10 +30,14 @@
  *     thousands-grouped number as one number on both sides, so v4 is a verdict delta of v3 (like
  *     v2): same inputs, raw outputs and prompt digests; the expected record differs ONLY in the
  *     case `MANIFEST.v4.json` lists, with its reason. The v1–v3 guards no longer replay it.
- *   - `corpus.v5.jsonl` + `MANIFEST.v5.json` — the CURRENT contract. FOLLOW-1382 appended a
+ *   - `corpus.v5.jsonl` + `MANIFEST.v5.json` — FOLLOW-1382 appended a
  *     language paragraph to the headline USER prompt, so v5 is a prompt-digest re-freeze of v4
  *     (like v3): only `prompt_sha256.headline_user` differs, in every case that calls the headline,
  *     and the v5 guard proves the new prompt is the v4 prompt plus that paragraph, byte for byte.
+ *   - `corpus.v6.jsonl` + `MANIFEST.v6.json` onwards (`VERDICT_DELTAS`) — verdict deltas of the
+ *     corpus before them (like v4): same inputs, raw outputs and prompt digests; the expected
+ *     record differs ONLY in the cases the manifest lists, each with its reason. The LAST one is
+ *     the CURRENT contract; every older guard stops replaying a case a later delta changed.
  *
  * No other I/O happens: the test env configures no Redis, ClickHouse, Postgres or Sentry, so the
  * spend gate reads 0, every write reports `not_configured` and no row is written.
@@ -155,6 +160,28 @@ const MANIFEST_V5 = JSON.parse(
  */
 const HEADLINE_SHA = new Map(CASES_V5.map((c) => [c.id, c.expected.prompt_sha256] as const));
 
+/**
+ * The verdict deltas after v5, oldest first, each derived from the corpus before it (v6 from v5).
+ * FOLLOW-1392 — v6 (meta-commentary).
+ */
+const VERDICT_DELTAS: {
+  version: number;
+  ticket: string;
+  ids: string[];
+  cases: Case[];
+  manifest: ManifestV3;
+}[] = [{ version: 6, ticket: 'FOLLOW-1392', ids: ['live.016.listing-007.yield_hunter.en'] }].map(
+  (d) => ({
+    ...d,
+    cases: readCorpus(`corpus.v${String(d.version)}.jsonl`),
+    manifest: JSON.parse(
+      readFileSync(join(FIXTURE_DIR, `MANIFEST.v${String(d.version)}.json`), 'utf8'),
+    ) as ManifestV3,
+  }),
+);
+/** Every case a verdict delta after v5 changed: v1–v5 no longer replay it. */
+const LATER_DELTA_IDS = new Set(VERDICT_DELTAS.flatMap((d) => d.manifest.delta.map((x) => x.id)));
+
 /** sha256 hex in colon-separated 8-char groups — the generator's `digest_format`. */
 function sha(text: string): string {
   const hex = createHash('sha256').update(text, 'utf8').digest('hex');
@@ -251,9 +278,9 @@ describe('description parity corpus v1 (frozen from the Python job — ADR-0023 
 
   // FOLLOW-1314 / FOLLOW-1381: the cases v2 and v4 changed are no longer the contract here.
   describe.each(
-    CASES.filter((c) => !DELTA_IDS.has(c.id) && !V4_DELTA_IDS.has(c.id)).map(
-      (c) => [c.id, c] as const,
-    ),
+    CASES.filter(
+      (c) => !DELTA_IDS.has(c.id) && !V4_DELTA_IDS.has(c.id) && !LATER_DELTA_IDS.has(c.id),
+    ).map((c) => [c.id, c] as const),
   )('%s', (_id, c) => {
     it('generates identically: model, max_tokens, prompts, verdict, reason, text, facts, headline, stamp', async () => {
       await expectIdentical(c, HEADLINE_SHA.get(c.id));
@@ -311,14 +338,15 @@ describe('description parity corpus v2 (FOLLOW-1314 — the current contract)', 
 
   // FOLLOW-1315 / FOLLOW-1382: the headline prompt digests are the current ones (v3, then v5).
   // FOLLOW-1381: the case v4 changed is guarded by v4.
-  describe.each(CASES_V2.filter((c) => !V4_DELTA_IDS.has(c.id)).map((c) => [c.id, c] as const))(
-    '%s',
-    (_id, c) => {
-      it('generates identically to the v2 record', async () => {
-        await expectIdentical(c, HEADLINE_SHA.get(c.id));
-      });
-    },
-  );
+  describe.each(
+    CASES_V2.filter((c) => !V4_DELTA_IDS.has(c.id) && !LATER_DELTA_IDS.has(c.id)).map(
+      (c) => [c.id, c] as const,
+    ),
+  )('%s', (_id, c) => {
+    it('generates identically to the v2 record', async () => {
+      await expectIdentical(c, HEADLINE_SHA.get(c.id));
+    });
+  });
 });
 
 describe('description parity corpus v3 (FOLLOW-1315 — headline prompt re-freeze)', () => {
@@ -375,14 +403,15 @@ describe('description parity corpus v3 (FOLLOW-1315 — headline prompt re-freez
   });
 
   // FOLLOW-1381: the case v4 changed is guarded by v4.
-  describe.each(CASES_V3.filter((c) => !V4_DELTA_IDS.has(c.id)).map((c) => [c.id, c] as const))(
-    '%s',
-    (_id, c) => {
-      it('generates identically to the v3 record', async () => {
-        await expectIdentical(c, HEADLINE_SHA.get(c.id));
-      });
-    },
-  );
+  describe.each(
+    CASES_V3.filter((c) => !V4_DELTA_IDS.has(c.id) && !LATER_DELTA_IDS.has(c.id)).map(
+      (c) => [c.id, c] as const,
+    ),
+  )('%s', (_id, c) => {
+    it('generates identically to the v3 record', async () => {
+      await expectIdentical(c, HEADLINE_SHA.get(c.id));
+    });
+  });
 });
 
 describe('description parity corpus v4 (FOLLOW-1381 — grouped numbers)', () => {
@@ -454,11 +483,14 @@ describe('description parity corpus v4 (FOLLOW-1381 — grouped numbers)', () =>
     expect(v4.expected.headline_violation).toBe('empty');
   });
 
-  describe.each(CASES_V4.map((c) => [c.id, c] as const))('%s', (_id, c) => {
-    it('generates identically to the v4 record', async () => {
-      await expectIdentical(c, HEADLINE_SHA.get(c.id));
-    });
-  });
+  describe.each(CASES_V4.filter((c) => !LATER_DELTA_IDS.has(c.id)).map((c) => [c.id, c] as const))(
+    '%s',
+    (_id, c) => {
+      it('generates identically to the v4 record', async () => {
+        await expectIdentical(c, HEADLINE_SHA.get(c.id));
+      });
+    },
+  );
 });
 
 /** FOLLOW-1382: the paragraph the headline user prompt now ends with, per locale. */
@@ -545,9 +577,98 @@ describe('description parity corpus v5 (FOLLOW-1382 — the current contract: he
     expect(locales.size).toBeGreaterThan(1);
   });
 
-  describe.each(CASES_V5.map((c) => [c.id, c] as const))('%s', (_id, c) => {
-    it('generates identically to the v5 record', async () => {
-      await expectIdentical(c);
+  describe.each(CASES_V5.filter((c) => !LATER_DELTA_IDS.has(c.id)).map((c) => [c.id, c] as const))(
+    '%s',
+    (_id, c) => {
+      it('generates identically to the v5 record', async () => {
+        await expectIdentical(c);
+      });
+    },
+  );
+});
+
+describe.each(VERDICT_DELTAS.map((d, i) => [d.version, d.ticket, d, i] as const))(
+  'description parity corpus v%i (%s — verdict delta)',
+  (version, _ticket, d, i) => {
+    const prevCases = i === 0 ? CASES_V5 : VERDICT_DELTAS[i - 1]!.cases;
+    const prevManifest = i === 0 ? MANIFEST_V5 : VERDICT_DELTAS[i - 1]!.manifest;
+    const prevName = `corpus.v${String(version - 1)}.jsonl`;
+    const laterIds = new Set(
+      VERDICT_DELTAS.slice(i + 1).flatMap((x) => x.manifest.delta.map((y) => y.id)),
+    );
+    const ids = new Set(d.manifest.delta.map((x) => x.id));
+
+    beforeEach(() => {
+      vi.stubEnv('ANTHROPIC_API_KEY', 'parity-'.repeat(4));
+      mockCreate.mockReset();
     });
+    afterEach(() => vi.unstubAllEnvs());
+
+    it('is the corpus before it with ONLY the listed expected records changed', () => {
+      expect(d.manifest.corpus).toBe(`corpus.v${String(version)}.jsonl`);
+      expect(d.manifest.kind).toBe('verdict_delta');
+      expect(d.manifest.derived_from.corpus).toBe(prevName);
+      expect(d.manifest.derived_from.corpus_sha256).toBe(prevManifest.corpus_sha256);
+      expect(sha(readFileSync(join(FIXTURE_DIR, prevName), 'utf8'))).toBe(
+        d.manifest.derived_from.corpus_sha256,
+      );
+      expect(sha(readFileSync(join(FIXTURE_DIR, d.manifest.corpus), 'utf8'))).toBe(
+        d.manifest.corpus_sha256,
+      );
+      expect(d.manifest.case_count).toBe(d.cases.length);
+      expect(d.manifest.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+      expect(d.cases.map((c) => c.id)).toEqual(prevCases.map((c) => c.id));
+      expect([...ids].sort()).toEqual([...d.ids].sort());
+      for (const [j, cur] of d.cases.entries()) {
+        const prev = prevCases[j]!;
+        expect(cur.kind, cur.id).toBe(prev.kind);
+        expect(cur.input, cur.id).toEqual(prev.input);
+        expect(cur.raw_description, cur.id).toEqual(prev.raw_description);
+        expect(cur.raw_headline, cur.id).toBe(prev.raw_headline);
+        expect(cur.expected.model, cur.id).toBe(prev.expected.model);
+        expect(cur.expected.max_tokens, cur.id).toBe(prev.expected.max_tokens);
+        expect(cur.expected.prompt_sha256.description_system, cur.id).toBe(
+          prev.expected.prompt_sha256.description_system,
+        );
+        expect(cur.expected.prompt_sha256.description_user, cur.id).toBe(
+          prev.expected.prompt_sha256.description_user,
+        );
+        if (ids.has(cur.id)) expect(cur.expected, cur.id).not.toEqual(prev.expected);
+        else expect(cur.expected, cur.id).toEqual(prev.expected);
+      }
+      // The manifest's counts are this corpus's counts.
+      for (const verdict of ['FIT', 'NEUTRAL', 'REFUSED', 'FAILED']) {
+        expect(d.manifest.per_verdict[verdict] ?? 0, verdict).toBe(
+          d.cases.filter((c) => c.expected.outcome.verdict === verdict).length,
+        );
+      }
+      expect(d.manifest.headline_called).toBe(
+        d.cases.filter((c) => c.expected.headline_called).length,
+      );
+      expect(d.manifest.headline_suppressed).toBe(
+        d.cases.filter((c) => c.expected.headline_called && c.expected.headline === null).length,
+      );
+    });
+
+    describe.each(d.cases.filter((c) => !laterIds.has(c.id)).map((c) => [c.id, c] as const))(
+      '%s',
+      (_id, c) => {
+        it(`generates identically to the v${String(version)} record`, async () => {
+          await expectIdentical(c);
+        });
+      },
+    );
+  },
+);
+
+describe('description parity corpus v6 (FOLLOW-1392 — meta-commentary)', () => {
+  it('the one v6 delta is a true leak caught earlier: REFUSED/unsupported_amenity → FAILED/meta_commentary', () => {
+    const id = 'live.016.listing-007.yield_hunter.en';
+    const v5 = CASES_V5.find((c) => c.id === id)!;
+    const v6 = VERDICT_DELTAS[0]!.cases.find((c) => c.id === id)!;
+    expect(v5.expected.outcome).toEqual({ verdict: 'REFUSED', violation: 'unsupported_amenity' });
+    expect(v6.expected.outcome).toEqual({ verdict: 'FAILED', reason: 'meta_commentary' });
+    expect(v6.raw_description.text).toContain('The original description flags');
+    expect(v6.expected.headline_called).toBe(false);
   });
 });

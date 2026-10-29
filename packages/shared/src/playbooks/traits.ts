@@ -147,7 +147,7 @@ const ADD_ONS: Readonly<Record<TraitId, TraitAddOn>> = {
     trait: 'has_children',
     source: null,
     rules: [
-      'Write for a household with children: foreground what a family weighs, as the listing states it — the bedroom count (a room each), a garden or outdoor space to play, storage, the layout — and schools, nurseries, parks or playgrounds only where the listing names them.',
+      'Write for a household with children: foreground what a family weighs, as the listing states it — the bedroom count (a room each), a garden or outdoor space to play, storage, the layout — and schools, nurseries, parks or playgrounds only where the listing names them (when it names none, leave them out rather than noting their absence).',
       'Never invent a school, catchment, playground, distance or safety claim, and call an area safe or family-friendly only if the listing does.',
     ],
     listing_rules: null,

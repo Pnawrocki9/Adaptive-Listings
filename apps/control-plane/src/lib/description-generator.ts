@@ -99,8 +99,12 @@ import {
  * - `claims-v1` — FOLLOW-1305, the first claim check.
  * - `claims-v2` — 2026-10-26, FOLLOW-1406: copy cached before the familial-steering refusal
  *   (FOLLOW-1400) and the FOLLOW-1381–1405 claim-check fixes is regenerated once instead of served.
+ * - `claims-v3` — 2026-10-29, FOLLOW-1411: a `claims-v2` row never passed the two checks FOLLOW-1411
+ *   added (a statement about residents' race, ethnic origin or religion; a school, nursery or
+ *   playground the listing does not name), and was written under templates that ESC-089 replaced
+ *   with family-fitted ones; it is regenerated once instead of served.
  */
-export const CLAIMS_VALIDATION_VERSION = 'claims-v2';
+export const CLAIMS_VALIDATION_VERSION = 'claims-v3';
 
 /** G-03: total budget per call (deadline on the whole, retries included). */
 const DESCRIPTION_DEADLINE_MS = 75_000;

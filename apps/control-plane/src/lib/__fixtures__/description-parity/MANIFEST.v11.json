@@ -1,0 +1,173 @@
+{
+  "case_count": 98,
+  "change": "FOLLOW-1411 (ESC-089, CEO 2026-10-29): the familial-steering refusal FOLLOW-1400 put on the description path is lifted; the one protected-ground check left (a statement about the race, ethnic origin or religion of residents or neighbours, REFUSED/protected_ground) matches no case. The four cases v8 changed go back to their v7 outcome. FOLLOW-1411 also adds schools, nurseries and playgrounds to the amenity vocabulary; no case changes for it. Inputs, raw outputs and description prompt digests are v10's byte for byte; only the expected records below differ. Stamps are the current claims-v2.",
+  "claims_validation_version": "claims-v2",
+  "corpus": "corpus.v11.jsonl",
+  "corpus_sha256": "40a42867:c7bb73c5:69a0c587:67eb4e49:840134e2:d5264e87:83cd6422:898945a2",
+  "delta": [
+    {
+      "id": "live.002.listing-001.family_buyer.en",
+      "kind": "live",
+      "changed": {
+        "prompt_sha256": {
+          "v10": {
+            "headline_system": null,
+            "headline_user": null
+          },
+          "v11": {
+            "headline_system": "e77c8460:85a6c19f:4de83538:eb0bb6ce:154894ee:e3dfa5c4:04b06a81:d3d73171",
+            "headline_user": "0abc6e50:c2b33414:48fbc674:363b2494:1fee631e:59d201c9:c72674ec:43ab59c0"
+          }
+        },
+        "outcome": {
+          "v10": {
+            "verdict": "REFUSED",
+            "violation": "familial_steering"
+          },
+          "v11": {
+            "verdict": "FIT",
+            "description": "Four bedrooms, three bathrooms, and 380 sqm of living space \u2014 this beachfront villa has the room a family needs to settle properly, rather than compromise. The layout gives everyone somewhere to be: space for younger children to spread out, room for teenagers to have their own corner, and enough left over for life to happen without everyone on top of each other.\n\nThe private pool is the kind of thing that shifts where a weekend actually gets spent. With direct beach access beyond that, summers have a shape to them that a family can build routines around \u2014 mornings at the water, afternoons at the pool, no complicated logistics.\n\nThree bathrooms across four bedrooms means the morning rush has somewhere to go. At 380 sqm, there is generous storage, genuine flexibility in how rooms are used, and the breathing room that makes a large family home feel calm rather than crowded. Panoramic sea views run through the living spaces, so the setting is present in daily life, not just on arrival.\n\nThis is a home a family grows into. The space is there for the years ahead \u2014 not a property you outgrow when a second child needs their own room or a teenager needs a door to close.",
+            "verifiedFacts": [
+              "bedrooms: 4",
+              "bathrooms: 3",
+              "size: 380 sqm",
+              "pool: private",
+              "location: beachfront",
+              "views: panoramic sea views"
+            ]
+          }
+        },
+        "headline_called": {
+          "v10": false,
+          "v11": true
+        },
+        "headline": {
+          "v10": null,
+          "v11": "Spacious 4-Bedroom Beachfront Villa With Private Pool & Panoramic Sea Views"
+        },
+        "claims_validation": {
+          "v10": null,
+          "v11": "claims-v2"
+        }
+      },
+      "reason": "ESC-089 lifts the familial-steering refusal (FOLLOW-1400). The FIT body (\"a large family home\", \"space for younger children\", \"a second child\") is family-fitted copy for a family_buyer and every fact in it is the listing's; the claim check passes it, as it did in v7. Back to v7's record (FIT, headline called, the same headline), stamped with the current claims-v2."
+    },
+    {
+      "id": "live.026.listing-011.diaspora_buyer.en",
+      "kind": "live",
+      "changed": {
+        "outcome": {
+          "v10": {
+            "verdict": "REFUSED",
+            "violation": "familial_steering"
+          },
+          "v11": {
+            "verdict": "REFUSED",
+            "violation": "unsupported_amenity"
+          }
+        }
+      },
+      "reason": "ESC-089: no familial-steering check runs first any more, so the body is refused by the claim check, as in v7: REFUSED/unsupported_amenity (an amenity the listing does not state). Still refused, for a fact."
+    },
+    {
+      "id": "live.029.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.family_buyer.en",
+      "kind": "live",
+      "changed": {
+        "headline_violation": {
+          "v10": "familial_steering",
+          "v11": "hallucinated_proper_name"
+        }
+      },
+      "reason": "ESC-089: the raw headline (\"Quiet-Street 3-Bed Family Home With Mature Garden, Near Schools & Waterway\") is no longer suppressed for steering; its fact check runs and suppresses it as in v7 (hallucinated_proper_name, the Title-Case words). The body is unchanged (FIT)."
+    },
+    {
+      "id": "live.032.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.neutral.en",
+      "kind": "live",
+      "changed": {
+        "prompt_sha256": {
+          "v10": {
+            "headline_system": null,
+            "headline_user": null
+          },
+          "v11": {
+            "headline_system": "e77c8460:85a6c19f:4de83538:eb0bb6ce:154894ee:e3dfa5c4:04b06a81:d3d73171",
+            "headline_user": "8d5435b9:ec47fb11:fa6c3770:08485a3d:bc9639cb:c41c8d51:7d914f14:f9291d17"
+          }
+        },
+        "outcome": {
+          "v10": {
+            "verdict": "REFUSED",
+            "violation": "familial_steering"
+          },
+          "v11": {
+            "verdict": "FIT",
+            "description": "A three-bedroom, two-bathroom single-family home on a quiet residential street. The open-plan living area keeps the main floor practical and connected, while the attached two-car garage adds everyday convenience. A screened lanai extends the living space outdoors, and the mature garden gives the property a settled, established feel.\n\nThe layout is conventional and suits a range of buyers \u2014 those looking for a family home, a comfortable downsize, or simply a well-presented property with sound fundamentals. Schools, the intracoastal waterway, and local amenities are all close by, making the location functional for day-to-day living.\n\nA balanced, considered home that delivers on the basics without overclaiming.",
+            "verifiedFacts": [
+              "bedrooms: 3",
+              "bathrooms: 2",
+              "property_type: single-family home",
+              "street_character: quiet residential",
+              "living_area: open-plan",
+              "garage: attached two-car",
+              "outdoor_feature: screened lanai",
+              "garden: mature",
+              "nearby: schools",
+              "nearby: intracoastal waterway",
+              "nearby: local amenities"
+            ]
+          }
+        },
+        "headline_called": {
+          "v10": false,
+          "v11": true
+        },
+        "headline_violation": {
+          "v10": null,
+          "v11": "hallucinated_number"
+        },
+        "claims_validation": {
+          "v10": null,
+          "v11": "claims-v2"
+        }
+      },
+      "reason": "ESC-089: the FIT body (\"those looking for a family home\") is served again, as in v7: FIT, headline called, the recorded headline suppressed by its fact check (hallucinated_number), stamped with the current claims-v2."
+    }
+  ],
+  "derived_from": {
+    "corpus": "corpus.v10.jsonl",
+    "manifest": "MANIFEST.v10.json",
+    "corpus_sha256": "92932613:76c1ca09:6b58751e:efa596ac:730d7be3:279a1083:d0432823:2ff323f2"
+  },
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-10-29",
+  "headline_called": 63,
+  "headline_suppressed": 30,
+  "kind": "verdict_delta",
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "FAILED/empty": 2,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/meta_commentary": 1,
+    "FAILED/residual_tag": 3,
+    "FAILED/truncated": 1,
+    "NEUTRAL/with_reason": 8,
+    "NEUTRAL/without_reason": 1,
+    "REFUSED/hallucinated_number": 5,
+    "REFUSED/unit_mismatch": 2,
+    "REFUSED/unsupported_amenity": 6,
+    "REFUSED/unsupported_guarantee": 2
+  },
+  "per_verdict": {
+    "FAILED": 11,
+    "FIT": 63,
+    "NEUTRAL": 9,
+    "REFUSED": 15
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "case_count": 98,
+  "change": "FOLLOW-1411 (ESC-089): the headline persona (ARCHETYPE_GUIDANCE) of family_buyer, upsizer, lifestyle_expat and second_home_buyer is family-fitted again, with schools, parks and safety \"only as the listing states them\". v12 is a PROMPT-DIGEST RE-FREEZE of v11: every byte is v11's except prompt_sha256.headline_user of the cases listed under refrozen (a headline-calling case of one of those four archetypes), and each new prompt is the v11 prompt with the persona text in persona_change swapped, byte for byte. No verdict, headline, violation or stamp moved; no check changed.",
+  "claims_validation_version": "claims-v2",
+  "corpus": "corpus.v12.jsonl",
+  "corpus_sha256": "19784580:e20f13eb:66720d78:6e6f5bf7:ef4a3ccc:c4b043d8:12a73e5e:8ec609a2",
+  "delta": [],
+  "derived_from": {
+    "corpus": "corpus.v11.jsonl",
+    "manifest": "MANIFEST.v11.json",
+    "corpus_sha256": "40a42867:c7bb73c5:69a0c587:67eb4e49:840134e2:d5264e87:83cd6422:898945a2"
+  },
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-10-29",
+  "headline_called": 63,
+  "headline_suppressed": 30,
+  "kind": "prompt_digest_refreeze",
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "FAILED/empty": 2,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/meta_commentary": 1,
+    "FAILED/residual_tag": 3,
+    "FAILED/truncated": 1,
+    "NEUTRAL/with_reason": 8,
+    "NEUTRAL/without_reason": 1,
+    "REFUSED/hallucinated_number": 5,
+    "REFUSED/unit_mismatch": 2,
+    "REFUSED/unsupported_amenity": 6,
+    "REFUSED/unsupported_guarantee": 2
+  },
+  "per_verdict": {
+    "FAILED": 11,
+    "FIT": 63,
+    "NEUTRAL": 9,
+    "REFUSED": 15
+  },
+  "persona_change": {
+    "family_buyer": {
+      "from": "Lead with school catchment quality, number of bedrooms, garden size, and neighbourhood safety. Highlight proximity to parks and quiet streets. Avoid investment/yield language.",
+      "to": "Write for a family moving up: lead with the number of bedrooms, room to grow, garden size and storage. Schools, parks, quiet streets and neighbourhood safety only as the listing states them. Avoid investment/yield language."
+    },
+    "lifestyle_expat": {
+      "from": "Emphasise walkability, international community presence, English-language services, expat social network, proximity to international schools, and modern amenities. Relocation practicalities matter (utilities, local support).",
+      "to": "Emphasise walkability, international community presence, English-language services, expat social network, international schools only as the listing states them, and modern amenities. Relocation practicalities matter (utilities, local support)."
+    },
+    "upsizer": {
+      "from": "Lead with extra bedrooms, flexible living space, potential for extension, good school catchment, and larger garden. Frame as the next chapter in family life.",
+      "to": "Lead with extra bedrooms, flexible living space, potential for extension, and larger garden; schools only as the listing states them. Frame as the next chapter in family life."
+    },
+    "second_home_buyer": {
+      "from": "Emphasise lifestyle benefit, rental income potential during vacant periods, proximity to desired leisure activities, and seasonal access.",
+      "to": "Emphasise lifestyle benefit for weekends, holidays and occasional family use, rental income potential during vacant periods, proximity to desired leisure activities, and seasonal access."
+    }
+  },
+  "recorded_outputs_predate_prompt": "Every raw_headline in this corpus was produced by an older headline prompt. They are replayed through the unchanged checks, so they pin the checks and the new prompt bytes, NOT what the new prompt makes the model write.",
+  "refrozen": [
+    "live.002.listing-001.family_buyer.en",
+    "live.018.listing-008.family_buyer.en",
+    "live.019.listing-008.upsizer.es",
+    "live.024.listing-010.second_home_buyer.en",
+    "live.029.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.family_buyer.en"
+  ]
+}

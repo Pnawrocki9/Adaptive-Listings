@@ -90,11 +90,13 @@ describe('isTrustedDescriptionHit (legacy admission)', () => {
     expect(isTrustedDescriptionHit('NEUTRAL', null)).toBe(true);
   });
 
-  it('FOLLOW-1406: a claims-v1 FIT hit (cached before the FOLLOW-1381–1405 checks) is not trusted', () => {
-    expect(CLAIMS_VALIDATION_VERSION).toBe('claims-v2');
+  it('FOLLOW-1406 / FOLLOW-1411: a claims-v1 or claims-v2 FIT hit is not trusted', () => {
+    expect(CLAIMS_VALIDATION_VERSION).toBe('claims-v3');
     expect(isTrustedDescriptionHit('FIT', 'claims-v1')).toBe(false);
     expect(isTrustedDescriptionHit(undefined, 'claims-v1')).toBe(false);
-    expect(isTrustedDescriptionHit('FIT', 'claims-v2')).toBe(true);
+    // FOLLOW-1411: a claims-v2 row never passed the protected-ground or school grounding check.
+    expect(isTrustedDescriptionHit('FIT', 'claims-v2')).toBe(false);
+    expect(isTrustedDescriptionHit('FIT', 'claims-v3')).toBe(true);
     expect(isTrustedDescriptionHit('NEUTRAL', 'claims-v1')).toBe(true);
   });
 
@@ -104,8 +106,10 @@ describe('isTrustedDescriptionHit (legacy admission)', () => {
       JSON.parse(
         readFileSync(path.resolve(__dirname, '../__fixtures__/description-parity', file), 'utf8'),
       ) as { claims_validation_version: string };
-    // The current contract (FOLLOW-1406: corpus v10, a stamp-only re-freeze of v9).
-    expect(manifest('MANIFEST.v10.json').claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    // The current contract (FOLLOW-1411: corpus v13, a stamp-only re-freeze of v12). History pins
+    // its own literal: v10 (FOLLOW-1406) introduced claims-v2.
+    expect(manifest('MANIFEST.v13.json').claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(manifest('MANIFEST.v10.json').claims_validation_version).toBe('claims-v2');
     // The Python job the corpus was first frozen from stamped claims-v1; that record never moves.
     expect(manifest('MANIFEST.json').claims_validation_version).toBe('claims-v1');
   });

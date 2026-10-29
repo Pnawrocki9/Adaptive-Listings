@@ -2937,6 +2937,13 @@ These events are consumed by TICKET-PILOT-003 (CTA lift dashboard) and feed the 
 4. Return JSON adaptation directive to SDK (single round-trip, batched)
 ```
 
+> **Dated note (2026-10-29, ESC-089, FOLLOW-1411):** step 3c is superseded for familial status.
+> The CEO ruled that copy must fit the archetype and that fair-housing (familial-status) limits are
+> not a constraint at this stage (EU first market). What runs on every request instead is one
+> narrow guard: a statement about the race, ethnic origin or religion of residents or neighbours is
+> refused (`describesResidentsByProtectedGround`, `packages/shared/src/playbooks/traits.ts`;
+> violation `protected_ground` on `/api/adapt` and the description path).
+
 ### E.2. Content generation — gdzie LLM, gdzie templates
 
 | Element | Strategia | Uzasadnienie |
@@ -3427,6 +3434,12 @@ guidance `description`; dołącza `listing_rules` i jeden slot/akapit z playbook
 Playbooki scalone: `family_buyer` ← `upsizer` (bez założenia dzieci, chyba że `has_children`),
 `yield_hunter` ← `portfolio_builder`; opis `diaspora_buyer` zawężony do powrotu. Grounding nadal
 według §E.7.0 (ESC-076): cecha nie dodaje twierdzeń, których listing nie popiera.
+
+> **Dated note (2026-10-29, ESC-089, FOLLOW-1411):** superseded for familial status. The
+> FOLLOW-1360 limits ("bez założenia dzieci", `has_children` restricted to physical facts, no
+> school, a familial-steering refusal on every request) are lifted: `family_buyer` is family-framed
+> again and `has_children` writes for a household with children. Grounding (§E.7.0) is unchanged:
+> schools, nurseries, parks and playgrounds only where the listing names them.
 
 **Właściciel (Rule H):** Q1 (`traits.ts`, allow-lista, schemat), Q5 (scalenia playbooków, cecha →
 `listing_rules` + slot, guidance w `description-generator.ts`, parytet opisów).
@@ -4151,6 +4164,15 @@ Gdy SDK musi wypełnić placeholder np. `{price}` lub `{school_rating}` w adapto
 > serving **100%** of traffic — but that predates FOLLOW-1022 and nobody has re-measured. The
 > `source` distribution in `adaptation_decisions` answers it and is folded into FOLLOW-1155's
 > localhost session.
+
+> **Dated note (2026-10-29, ESC-089, FOLLOW-1411) — family claims stay grounded.** The CEO's
+> ruling of 2026-10-29 lifts the familial-status limits on copy (see the note under §O.4); it does
+> not touch this rule. Copy may mention schools, nurseries, playgrounds, children's rooms or a
+> garden to play in only where the listing states them: since FOLLOW-1411 a school, nursery or
+> playground the listing does not name is refused by the claim check on both paths
+> (`unsupported_amenity`, `apps/control-plane/src/lib/amenity-lexicon.ts`). A subjective area claim
+> ("family-friendly", "safe") is treated like any other ungrounded area claim — the templates ask
+> for it only where the listing says it; no deterministic check reads it today.
 
 **Fundamentalna zasada:** AI-adapted copy NIGDY nie wypiera agentowego oryginału na pierwszej wizycie buyera. Dopiero gdy Sonnet skończy generację (w tle, dla konkretnej kombinacji listing × archetype × locale), kolejny buyer w tej samej kombinacji dostaje wersję zoptymalizowaną. Dodatkowo: Sonnet NIGDY nie zmyśla faktów (liczb, nazw, ratings) których nie ma w `original_description` ani `listing_context`.
 
@@ -5268,6 +5290,17 @@ Estymacje na podstawie analogicznych SaaS:
 - Buyer może opt-out 1-click (cookie sets, persistence cross-session)
 - Limit adaptation aggressiveness: max 30% headline/copy delta od oryginału (etyczne nie-misleading)
 - Fair-housing constraint linter: nigdy nie filtrujemy/adaptujemy na podstawie chronionych klas (race, religion, family status etc.) — to jest hard-coded, nie konfigurowalne
+
+> **Superseded for familial status by ESC-089 (CEO 2026-10-29), FOLLOW-1411.** CEO, verbatim: „Fair
+> housing dotyczy głównie stanów zjednoczonych, nasz pierwszy rynek to Europa. […] nasze copy ma
+> być skuteczne i ma się idealnie dopasowywać do archetypu, a nie ograniczać Fair Housing, które
+> mało nas dotyczy na tym etapie rozwoju.” Copy may use family status (children, room for a
+> family, schools the listing names). The 2026-05-14 ruling (FOLLOW-034) and ESC-088 are
+> superseded for familial status. What stays hard-coded: no statement about the race, ethnic origin
+> or religion of residents or neighbours (EU Directive 2000/43/EC; PL Act of 3 Dec 2010 on equal
+> treatment), refused on every request whoever wrote the words; buyer nationality or origin
+> (diaspora, international buyers) is targeting, not a protected-ground statement. A US launch
+> needs a fresh review.
 
 ### O.5. Reliance na third parties
 
@@ -6643,6 +6676,9 @@ To jest **architectural checklist** dla każdego ticketu w Sprint 0-7. Każda de
 - ✅ Już planowany w Sekcji E.3.2 (weighted objective: `brand_safety_score`)
 - ✅ Sprint 8+ implementation
 - **Implication dla Profile Mode:** linter musi być gotowy ZANIM Profile Mode aktywny u pierwszego customer — bez tego ryzyko Fair Housing Act violation
+
+> **Dated note (2026-10-29, ESC-089):** for the EU-first stage the familial-status part of this
+> linter is superseded (see §O.4); the race / ethnic origin / religion guard of FOLLOW-1411 stands.
 
 #### U.11.4. Co BĘDZIE w Sprint 12+ (placeholder spec)
 

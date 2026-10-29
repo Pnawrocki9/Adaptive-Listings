@@ -7,8 +7,9 @@
  *      builds the prompt it always built);
  *   2. no trait text bypasses grounding: for every trait, a claim its rules exist to prevent, once
  *      a model writes it anyway, is refused by the same deterministic checks as without the trait;
- *   3. `has_children` never emits familial-status steering, even where the listing's own words
- *      contain it.
+ *   3. (FOLLOW-1411, ESC-089) family wording is served — the FOLLOW-1360 familial-steering
+ *      refusal is lifted — while a school or playground the listing does not name is refused, and
+ *      a statement about residents' race, ethnic origin or religion is refused on every request.
  *
  * @module apps/control-plane/src/lib/__tests__/llm-gateway.follow1360.test
  */
@@ -134,7 +135,8 @@ describe('FOLLOW-1360 — traits in the gateway', () => {
       seasoned_investor: 'guaranteed income across your portfolio',
       buying_from_abroad: 'completion in 14 days from abroad',
       will_let: 'terrace ideal for holiday letting',
-      has_children: 'family-friendly area close to 3 schools',
+      // FOLLOW-1411: no number and no steering phrase — only the school-and-playground grounding.
+      has_children: 'close to good schools and a playground',
     };
 
     it('covers every trait (guards the guard)', () => {
@@ -165,23 +167,66 @@ describe('FOLLOW-1360 — traits in the gateway', () => {
     );
   });
 
-  describe('has_children never steers by familial status', () => {
-    const STEERING = [
-      'family-friendly house in Lisbon',
-      'ideal for families, with a garden',
-      'a safe neighbourhood for children',
-      'your children will love the garden',
+  describe("family wording is archetype fit; residents' race, ethnicity, religion is not [FOLLOW-1411]", () => {
+    const FAMILY = [
+      'family home with two bedrooms and a garden in Lisbon',
+      'two bedrooms, a room each for the children, and a garden to play in',
+      'dom dla rodziny z dwiema sypialniami i ogrodem',
+      'casa para familias con dos dormitorios y jardín',
     ];
 
-    it.each(STEERING)('refuses %j even though every word is otherwise harmless', async (value) => {
+    it.each(FAMILY)('serves %j with the has_children trait', async (value) => {
       const { result, reasons } = await run([['headline', value]], ['has_children']);
+      expect(reasons).toEqual([]);
+      expect(result?.directives.map((d) => d.value)).toEqual([value]);
+    });
+
+    it.each(FAMILY)('serves %j without any trait', async (value) => {
+      const { result } = await run([['headline', value]]);
+      expect(result?.directives.map((d) => d.value)).toEqual([value]);
+    });
+
+    it('serves a school the listing names, refuses one it does not', async () => {
+      mockCreate.mockResolvedValue(
+        anthropicResponse([['headline', 'two-bedroom house with a garden, close to schools']]),
+      );
+      const reasons: FallbackReason[] = [];
+      const grounded = await callLlmGateway({
+        archetypeId: 'family_buyer',
+        confidence: 0.75,
+        similarity: 0.75,
+        basePlaybook: PLAYBOOK,
+        listingContext: {
+          ...LISTING_CONTEXT,
+          listing_description: 'a house with two bedrooms and a garden, close to schools',
+        },
+        traits: ['has_children'],
+        onFallback: (reason) => reasons.push(reason),
+      });
+      expect(reasons).toEqual([]);
+      expect(grounded?.directives).toHaveLength(1);
+
+      const { result, reasons: r2 } = await run(
+        [['headline', 'two-bedroom house with a garden, close to schools']],
+        ['has_children'],
+      );
+      expect(result).toBeNull();
+      expect(r2).toEqual(['fact_check_refused']);
+    });
+
+    it.each([
+      'two-bedroom house among Catholic neighbours',
+      'dom w dzielnicy głównie katolickiej',
+      'casa en un barrio mayoritariamente musulmán',
+    ])('refuses %j on every request (protected ground)', async (value) => {
+      const { result, reasons } = await run([['headline', value]]);
       expect(result).toBeNull();
       expect(reasons).toEqual(['fact_check_refused']);
     });
 
     it('refuses it even where the listing itself says it (the seller is no licence)', async () => {
       mockCreate.mockResolvedValue(
-        anthropicResponse([['headline', 'family-friendly house in Lisbon']]),
+        anthropicResponse([['headline', 'two-bedroom house among Catholic neighbours']]),
       );
       const reasons: FallbackReason[] = [];
       const result = await callLlmGateway({
@@ -191,37 +236,22 @@ describe('FOLLOW-1360 — traits in the gateway', () => {
         basePlaybook: PLAYBOOK,
         listingContext: {
           ...LISTING_CONTEXT,
-          listing_description: 'a family-friendly house in Lisbon with two bedrooms',
+          listing_description: 'a house with two bedrooms among Catholic neighbours',
         },
-        traits: ['has_children'],
         onFallback: (reason) => reasons.push(reason),
       });
       expect(result).toBeNull();
       expect(reasons).toEqual(['fact_check_refused']);
     });
 
-    it('serves only the physical fact when one slot steers and another states it', async () => {
-      const { result } = await run(
-        [
-          ['headline', 'family-friendly house in Lisbon'],
-          ['feature', 'two bedrooms and a garden'],
-        ],
-        ['has_children'],
-      );
-      expect(result?.directives.map((d) => d.value)).toEqual(['two bedrooms and a garden']);
-    });
-
-    it('refuses steering on EVERY request, with or without the trait', async () => {
-      const { result, reasons } = await run([['headline', 'family-friendly house in Lisbon']]);
-      expect(result).toBeNull();
-      expect(reasons).toEqual(['fact_check_refused']);
-    });
-
-    it('refuses PL and ES steering without any trait', async () => {
-      for (const value of ['okolica przyjazna rodzinom', 'ideal para familias']) {
-        const { result } = await run([['headline', value]]);
-        expect(result).toBeNull();
-      }
+    it('serves the grounded slot when another slot is refused for a protected ground', async () => {
+      const { result } = await run([
+        ['headline', 'two-bedroom house among Catholic neighbours'],
+        ['feature', 'two bedrooms and a garden for the family'],
+      ]);
+      expect(result?.directives.map((d) => d.value)).toEqual([
+        'two bedrooms and a garden for the family',
+      ]);
     });
   });
 });

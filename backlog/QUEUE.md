@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 180 (2026-10-19) — **Checkpoint K3 GREEN at `main` `434b2513` (`docs/checkpoints/K3.md`, README §5.31, tag `k3-green` on this ledger's merge): Phase 3 M1 #1042, M2 #1044, M3 #1041, M5 #1043, N2 full #1045 DONE; N1 `--final` reads 0. A RED pair at `3952ac29` was bisected by a read-only forensic (not a Phase 3 regression) → FOLLOW-1352 #1046 (harness predicate) + FOLLOW-1351 #1047 (SDK single-flight chat refresh). **CEO ruling 2026-10-19: Faza Q — the quiz must identify one archetype with ≥ 90 % accuracy (buyer self-confirmation as ground truth, EN + PL mandatory, buyer-side language switcher, 12 results + neutral + traits) and the backoffice must manage the quiz end to end — is INSERTED between K3 and Phase 4.** Plan approved in plan mode (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, copied to `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` by the Q0 PR); packages Q0 docs → Q1 shared → Q2 SDK ∥ Q3 recording ∥ Q7 editor → Q4 fold → Q5 traits → Q6 harness (AC(10), TALLY 8) → Q8 report; checkpoints KQ1 (localhost 3× GREEN 8/8), KQ2 (CEO walkthrough — absorbs the K3 'moment CEO'), KQ3 (production, CTO: ≥ 400 decided runs, pre-registered Wilson bound). Phase 4 (P1–P7) follows KQ2. New stubs: FOLLOW-1353 (Sentry drizzle params, P2), FOLLOW-1354 (SDK adapt fetch timeout, P2); amendments 1307, 1233/1246, 1350. Retro batch owed (weekly): #1042, #1043, #1044, #1047. Next free: FOLLOW-1410, RETRO-368, ESC-089.**
+## ▶️ START HERE — session 180 (2026-10-19) — **Checkpoint K3 GREEN at `main` `434b2513` (`docs/checkpoints/K3.md`, README §5.31, tag `k3-green` on this ledger's merge): Phase 3 M1 #1042, M2 #1044, M3 #1041, M5 #1043, N2 full #1045 DONE; N1 `--final` reads 0. A RED pair at `3952ac29` was bisected by a read-only forensic (not a Phase 3 regression) → FOLLOW-1352 #1046 (harness predicate) + FOLLOW-1351 #1047 (SDK single-flight chat refresh). **CEO ruling 2026-10-19: Faza Q — the quiz must identify one archetype with ≥ 90 % accuracy (buyer self-confirmation as ground truth, EN + PL mandatory, buyer-side language switcher, 12 results + neutral + traits) and the backoffice must manage the quiz end to end — is INSERTED between K3 and Phase 4.** Plan approved in plan mode (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, copied to `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` by the Q0 PR); packages Q0 docs → Q1 shared → Q2 SDK ∥ Q3 recording ∥ Q7 editor → Q4 fold → Q5 traits → Q6 harness (AC(10), TALLY 8) → Q8 report; checkpoints KQ1 (localhost 3× GREEN 8/8), KQ2 (CEO walkthrough — absorbs the K3 'moment CEO'), KQ3 (production, CTO: ≥ 400 decided runs, pre-registered Wilson bound). Phase 4 (P1–P7) follows KQ2. New stubs: FOLLOW-1353 (Sentry drizzle params, P2), FOLLOW-1354 (SDK adapt fetch timeout, P2); amendments 1307, 1233/1246, 1350. Retro batch owed (weekly): #1042, #1043, #1044, #1047. Next free: FOLLOW-1415, RETRO-368, ESC-090.**
 
 ### Dispatch record (session 180)
 
@@ -64,11 +64,30 @@
 - **FOLLOW-1398** — status: BACKLOG # P3. Harness AC(5): the CTA `locator.click` can time out (5000
   ms, "element is not stable") when the CTA re-renders after adaptation (README §5.39 run 33); wait
   for a stable CTA before clicking.
-- **FOLLOW-1409** — status: BACKLOG # P2 compliance. Residual family framing in templates: upsizer
-  ("the next child has their own room"; pl/es "dzielnic dobrze ocenianych przez rodziny" /
-  "valoradas por familias"; still registered though the quiz no longer assigns it) and
-  lifestyle_expat ("international families"); family_buyer `description` field still says children
-  are assumed with the has_children trait (pinned by a test).
+- **FOLLOW-1412** — status: BACKLOG # P2, ESC-089. Restore family-fitted served slot variants
+  (pre-FOLLOW-1366 headline/CTA/feature-label strings for family_buyer and upsizer, e.g. "Room to
+  Grow" family wording); boosts `good_school_district` / `family_area` have no producer (inert) —
+  wire or drop.
+- **FOLLOW-1413** — status: BACKLOG # P3. Negation over a comma list ("nie wymienia szkół,
+  przedszkoli ani placów zabaw") reads the middle items as asserted: fail-closed false refusal for
+  every amenity group.
+- **FOLLOW-1414** — status: BACKLOG # P3. Seen live in FOLLOW-1411: headline typo "dwuipokojowe"; a
+  body saying "The listing says the home is close to schools" (talks about the listing, not the
+  home) — tighten the prompt.
+- **FOLLOW-1411** — status: IN_REVIEW # branch
+  `ml-engineer/FOLLOW-1411-archetype-fit-over-fair-housing` (not pushed). P1, ESC-089 (CEO
+  2026-10-29): familial-steering refusal lifted on `/api/adapt` and the description path; one guard
+  kept on every request (`describesResidentsByProtectedGround`: residents' race, ethnic origin or
+  religion, en/pl/es, `protected_ground`); schools, nurseries and playgrounds grounded by the claim
+  check (`unsupported_amenity`); family_buyer/upsizer/diaspora/second_home/lifestyle_expat/
+  yield_hunter templates, `has_children` and four headline personas family-fitted. Parity corpus v11
+  (verdict delta), v12 (persona re-freeze), v13 (`claims-v3` stamp re-freeze). Live (Sonnet 5.5, 28
+  cases, USD 0.73): 26 FIT. CTO handover: the production description cache regenerates lazily once
+  per pair after deploy (`claims-v2` rows are misses).
+- **FOLLOW-1410** — status: CANCELLED # filed on the closed PR #1091 (headline persona family/school
+  framing); ESC-089 (CEO 2026-10-29) allows that framing; grounding still applies.
+- **FOLLOW-1409** — status: WONTFIX # PR #1091 closed unmerged: superseded by the CEO ruling
+  ESC-089.
 - **FOLLOW-1406** — status: IN_REVIEW # branch
   `ml-engineer/FOLLOW-1406-claims-v2-and-template-conflicts`. P1 compliance.
   `CLAIMS_VALIDATION_VERSION` is `claims-v2`: a `claims-v1` FIT row (Postgres or Redis) is a miss

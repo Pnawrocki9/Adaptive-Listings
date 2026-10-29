@@ -21,6 +21,30 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## RESOLVED — ESC-089: fair-housing restrictions on copy — CEO ruling: archetype fit first, familial-status limits lifted [FOLLOW-1411]
+
+**Filed by:** pm-orchestrator (CEO ruling in chat, 2026-10-29) **Date:** 2026-10-29 **Affects:** the
+familial-steering refusal on `/api/adapt` (FOLLOW-1360) and on descriptions/headlines (FOLLOW-1400),
+playbook templates and the headline persona (FOLLOW-1366, 1401, 1407), the 2026-05-14 fair-housing
+ruling (FOLLOW-034) and ESC-088 **Type:** compliance posture (CEO decision)
+
+**CEO ruling (verbatim, 2026-10-29):** "Fair housing dotyczy głównie stanów zjednoczonych, nasz
+pierwszy rynek to Europa. A nawet jak będziemy działać w USA to problem fair housing dotyczy głównie
+platform społecznościowych a nie SaaS takiego jak nasza Estalara. W skrócie, nasze copy ma być
+skuteczne i ma się idealnie dopasowywać do archetypu, a nie ograniczać Fair Housing, które mało nas
+dotyczy na tym etapie rozwoju."
+
+**Consequences (PM, applied under FOLLOW-1411):** the familial-status refusal is lifted on every
+path; templates, trait add-ons (incl. `has_children`) and the headline persona may fit family
+archetypes (children, room for a family, schools) — but every factual claim stays grounded in the
+listing (ESC-076 / §E.7.0 is about truthfulness, not fair housing: never invent a school, a garden
+or a catchment). PR #1091 (FOLLOW-1409) closed unmerged; FOLLOW-1410 cancelled. **PM recommendation
+kept, pending CEO objection:** a narrow guard stays against statements about the race, ethnic origin
+or religion of residents/neighbours (EU Directive 2000/43/EC; PL Act of 3 Dec 2010 on equal
+treatment cover access to housing on those grounds; familial status is not a protected ground
+there). The 2026-05-14 FHA ruling and ESC-088 are superseded for familial status. US launch would
+need a fresh review.
+
 ## RESOLVED — ESC-088: the quiz trait `has_children` puts self-declared familial status into the signal space — does the 2026-05-14 fair-housing ruling still hold, and may it shape copy? [FOLLOW-1360]
 
 **Filed by:** pm-orchestrator (from the Opus grounding/fair-housing review of PR #1064, 2026-10-20)

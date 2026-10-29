@@ -10,7 +10,7 @@ import type { PlaybookEntry } from '@estalara/shared/playbooks';
 import {
   getTraitAddOns,
   renderTraitRules,
-  steersByFamilialStatus,
+  describesResidentsByProtectedGround,
 } from '@estalara/shared/playbook-traits';
 import { getGlobalGenerationModel } from '@/lib/global-config-store';
 import { DAILY_SPEND_CAP_USD, getDailySpend } from '@/lib/llm-spend-counter';
@@ -439,8 +439,12 @@ const FACT_CHECK_DIGIT_RE = /\d[\d.,/%m²sqft-]*/g;
 
 type DirectiveFactViolation = 'hallucinated_number' | 'hallucinated_proper_name';
 
-/** Familial-status steering, refused on every request [FOLLOW-1360, ESC-086]. */
-type TraitViolation = 'familial_steering';
+/**
+ * A statement about the race, ethnic origin or religion of residents or neighbours, refused on
+ * every request [FOLLOW-1411, ESC-089]. Replaces FOLLOW-1360's familial-steering refusal, which
+ * ESC-089 lifted: family wording is archetype fit, not a violation.
+ */
+type ProtectedGroundViolation = 'protected_ground';
 
 /**
  * Not copy at all, refused first: a leaked model-control tag (`<reasoning_effort>`) [FOLLOW-1390],
@@ -449,7 +453,11 @@ type TraitViolation = 'familial_steering';
 type ContractViolation = 'residual_tag' | 'meta_commentary';
 
 /** Every reason a slot can be refused for. */
-type SlotViolation = DirectiveFactViolation | ClaimViolation | TraitViolation | ContractViolation;
+type SlotViolation =
+  | DirectiveFactViolation
+  | ClaimViolation
+  | ProtectedGroundViolation
+  | ContractViolation;
 
 function escapeRegExpToken(token: string): string {
   return token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -838,8 +846,8 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     // Deterministic scan first; exemptions by PROVENANCE only; numbers/claims never exempt
     // [FOLLOW-1176, FOLLOW-1305].
     const claimGrounding = buildClaimGrounding(input.listingContext);
-    // Familial-status steering is refused on EVERY request, trait or not; the seller's wording is
-    // no licence (fair-housing exposure, ESC-086) [FOLLOW-1360].
+    // A statement about residents' race, ethnic origin or religion is refused on EVERY request;
+    // the seller's wording is no licence [FOLLOW-1411, ESC-089]. Family wording is not refused.
     const scanned = directives.map((directive) => {
       const factViolation = checkDirectiveFacts(directive.value, grounding);
       const claimViolation: ClaimViolation | null =
@@ -858,14 +866,16 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
         ((isNonAssertiveSlot(directive.slot) &&
           isTemplateAuthoredValue(input.basePlaybook, directive.slot, directive.value)) ||
           isAuthoredSectionLabel(input.basePlaybook, directive.slot, directive.value));
-      const steering: TraitViolation | null = steersByFamilialStatus(directive.value)
-        ? 'familial_steering'
+      const protectedGround: ProtectedGroundViolation | null = describesResidentsByProtectedGround(
+        directive.value,
+      )
+        ? 'protected_ground'
         : null;
       // A leaked control tag or meta-commentary first: the text is not copy at all [FOLLOW-1390,
       // FOLLOW-1392].
       const violation: SlotViolation | null =
         controlTag ??
-        steering ??
+        protectedGround ??
         (factViolation === 'hallucinated_number'
           ? factViolation
           : (claimViolation ?? (exempt ? null : factViolation)));

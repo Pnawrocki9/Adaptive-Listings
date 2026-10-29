@@ -20,10 +20,12 @@
  * FOLLOW-1384 adds `checkOutputLanguage` (not in the Python) after truncation, and before the
  * headline's fact check: a body in another language than `locale` is `FAILED / wrong_language`,
  * a headline is suppressed as `wrong_language`.
- * FOLLOW-1400 adds the familial-steering refusal `/api/adapt` runs (`steersByFamilialStatus`, one
- * implementation): a body is `REFUSED / familial_steering` after the language check and before
- * `checkBodyClaims`, a headline is suppressed as `familial_steering` — on every request, with or
- * without the `has_children` trait, whoever wrote the words (ESC-086, ESC-088).
+ * FOLLOW-1400 added the familial-steering refusal `/api/adapt` ran; ESC-089 (CEO 2026-10-29)
+ * lifted it, and FOLLOW-1411 put the one protected-ground guard left in its place
+ * (`describesResidentsByProtectedGround`, one implementation with `/api/adapt`): a body that makes
+ * a statement about the race, ethnic origin or religion of residents or neighbours is
+ * `REFUSED / protected_ground` after the language check and before `checkBodyClaims`, a headline
+ * is suppressed as `protected_ground` — on every request, whoever wrote the words.
  * NEUTRAL writes the negative-cache marker to both caches; REFUSED, FAILED and SKIPPED write none.
  *
  * What is NOT ported verbatim, by decision (ADR-0023 §6):
@@ -54,7 +56,7 @@ import type { DescriptionCacheValue, DescriptionRequestedEvent } from '@estalara
 import {
   getTraitAddOns,
   renderTraitRules,
-  steersByFamilialStatus,
+  describesResidentsByProtectedGround,
 } from '@estalara/shared/playbook-traits';
 import {
   ALLOWED_GENERATION_MODELS,
@@ -97,8 +99,12 @@ import {
  * - `claims-v1` — FOLLOW-1305, the first claim check.
  * - `claims-v2` — 2026-10-26, FOLLOW-1406: copy cached before the familial-steering refusal
  *   (FOLLOW-1400) and the FOLLOW-1381–1405 claim-check fixes is regenerated once instead of served.
+ * - `claims-v3` — 2026-10-29, FOLLOW-1411: a `claims-v2` row never passed the two checks FOLLOW-1411
+ *   added (a statement about residents' race, ethnic origin or religion; a school, nursery or
+ *   playground the listing does not name), and was written under templates that ESC-089 replaced
+ *   with family-fitted ones; it is regenerated once instead of served.
  */
-export const CLAIMS_VALIDATION_VERSION = 'claims-v2';
+export const CLAIMS_VALIDATION_VERSION = 'claims-v3';
 
 /** G-03: total budget per call (deadline on the whole, retries included). */
 const DESCRIPTION_DEADLINE_MS = 75_000;
@@ -121,12 +127,13 @@ const ARCHETYPE_GUIDANCE: Readonly<Record<string, string>> = {
     'void risk mitigation, and price-per-sqm vs local average. ' +
     'Mention transport links only when they affect rental demand.',
   family_buyer:
-    'Lead with school catchment quality, number of bedrooms, garden size, and ' +
-    'neighbourhood safety. Highlight proximity to parks and quiet streets. ' +
-    'Avoid investment/yield language.',
+    'Write for a family moving up: lead with the number of bedrooms, room to grow, garden ' +
+    'size and storage. Schools, parks, quiet streets and neighbourhood safety only as the ' +
+    'listing states them. Avoid investment/yield language.',
   lifestyle_expat:
     'Emphasise walkability, international community presence, English-language services, ' +
-    'expat social network, proximity to international schools, and modern amenities. ' +
+    'expat social network, international schools only as the listing states them, and modern ' +
+    'amenities. ' +
     'Relocation practicalities matter (utilities, local support).',
   first_time_buyer:
     'Lead with affordability, mortgage eligibility, move-in readiness, and Help-to-Buy ' +
@@ -142,7 +149,8 @@ const ARCHETYPE_GUIDANCE: Readonly<Record<string, string>> = {
     'lift access, proximity to healthcare, and social amenities. Avoid stairs/large gardens.',
   upsizer:
     'Lead with extra bedrooms, flexible living space, potential for extension, ' +
-    'good school catchment, and larger garden. Frame as the next chapter in family life.',
+    'and larger garden; schools only as the listing states them. Frame as the next chapter in ' +
+    'family life.',
   retiree_relocator:
     'Emphasise warm climate, healthcare quality, low cost of living, expat community for ' +
     'the target region, accessibility, and low-maintenance property.',
@@ -165,8 +173,9 @@ const ARCHETYPE_GUIDANCE: Readonly<Record<string, string>> = {
     'Acknowledge dual-market awareness (local vs origin country), family ties, ' +
     'remittance-funded purchase practicalities, and long-term capital preservation.',
   second_home_buyer:
-    'Emphasise lifestyle benefit, rental income potential during vacant periods, ' +
-    'proximity to desired leisure activities, and seasonal access.',
+    'Emphasise lifestyle benefit for weekends, holidays and occasional family use, rental ' +
+    'income potential during vacant periods, proximity to desired leisure activities, and ' +
+    'seasonal access.',
   student_parent:
     'Focus on proximity to the target university, room count for student plus guests, ' +
     'post-graduation rental yield, and low-maintenance features.',
@@ -514,8 +523,11 @@ function descriptionLanguageInstruction(locale: DescriptionRequestedEvent['local
 
 // ─── Types (ADR-0023 §3) ──────────────────────────────────────────────────────
 
-/** Familial-status steering, refused on every request as on `/api/adapt` [FOLLOW-1400]. */
-type FamilialSteering = 'familial_steering';
+/**
+ * A statement about residents' race, ethnic origin or religion, refused on every request as on
+ * `/api/adapt` [FOLLOW-1411, ESC-089]; FOLLOW-1400's `familial_steering` is lifted.
+ */
+type ProtectedGround = 'protected_ground';
 
 type DescriptionOutcome =
   | { verdict: 'SKIPPED'; reason: 'spend_cap' }
@@ -531,7 +543,7 @@ type DescriptionOutcome =
         | 'invalid_event';
     }
   | { verdict: 'NEUTRAL'; neutralReason: string | null }
-  | { verdict: 'REFUSED'; violation: NumberViolation | ClaimViolation | FamilialSteering }
+  | { verdict: 'REFUSED'; violation: NumberViolation | ClaimViolation | ProtectedGround }
   | { verdict: 'FIT'; description: string; verifiedFacts: string[] };
 
 /** The outcomes the pure interpreter can produce (no I/O, so no SKIPPED / timeout / api_error). */
@@ -552,7 +564,7 @@ interface GenerationReport {
     | 'wrong_language'
     | 'residual_tag'
     | 'meta_commentary'
-    | FamilialSteering
+    | ProtectedGround
     | 'call_failed'
     | null;
   /** Set iff the outcome is FIT. */
@@ -751,10 +763,10 @@ function interpretDescription(
   const languageViolation = checkOutputLanguage(description, e.locale);
   if (languageViolation) return { verdict: 'FAILED', reason: languageViolation };
 
-  // FOLLOW-1400: familial-status steering is refused before the claim check, as `/api/adapt`
-  // orders it; refused, never stripped.
-  if (steersByFamilialStatus(description)) {
-    return { verdict: 'REFUSED', violation: 'familial_steering' };
+  // FOLLOW-1411: a statement about residents' race, ethnic origin or religion is refused before
+  // the claim check, as `/api/adapt` orders it; refused, never stripped.
+  if (describesResidentsByProtectedGround(description)) {
+    return { verdict: 'REFUSED', violation: 'protected_ground' };
   }
 
   const claimViolation = checkBodyClaims(
@@ -780,7 +792,7 @@ function interpretHeadline(
     | 'wrong_language'
     | 'residual_tag'
     | 'meta_commentary'
-    | FamilialSteering
+    | ProtectedGround
     | null;
 } {
   if (!pyStrip(rawText)) return { headline: null, violation: 'empty' };
@@ -794,8 +806,10 @@ function interpretHeadline(
   // FOLLOW-1384: the page's language first, then the facts.
   const languageViolation = checkOutputLanguage(headline, e.locale);
   if (languageViolation) return { headline: null, violation: languageViolation };
-  // FOLLOW-1400: familial-status steering, as on the body and on `/api/adapt`.
-  if (steersByFamilialStatus(headline)) return { headline: null, violation: 'familial_steering' };
+  // FOLLOW-1411: residents' race, ethnic origin or religion, as on the body and on `/api/adapt`.
+  if (describesResidentsByProtectedGround(headline)) {
+    return { headline: null, violation: 'protected_ground' };
+  }
   const violation = checkHeadlineFacts(
     headline,
     e.original_description || '',

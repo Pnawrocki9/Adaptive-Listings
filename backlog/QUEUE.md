@@ -64,9 +64,16 @@
 - **FOLLOW-1398** — status: BACKLOG # P3. Harness AC(5): the CTA `locator.click` can time out (5000
   ms, "element is not stable") when the CTA re-renders after adaptation (README §5.39 run 33); wait
   for a stable CTA before clicking.
-- **FOLLOW-1411** — status: IN_PROGRESS # P1, ESC-089 (CEO 2026-10-29): lift familial-status
-  refusals on every path, restore archetype-fit family framing in templates/traits/headline persona;
-  keep grounding and a narrow race/ethnicity/religion guard.
+- **FOLLOW-1411** — status: IN_REVIEW # branch
+  `ml-engineer/FOLLOW-1411-archetype-fit-over-fair-housing` (not pushed). P1, ESC-089 (CEO
+  2026-10-29): familial-steering refusal lifted on `/api/adapt` and the description path; one guard
+  kept on every request (`describesResidentsByProtectedGround`: residents' race, ethnic origin or
+  religion, en/pl/es, `protected_ground`); schools, nurseries and playgrounds grounded by the claim
+  check (`unsupported_amenity`); family_buyer/upsizer/diaspora/second_home/lifestyle_expat/
+  yield_hunter templates, `has_children` and four headline personas family-fitted. Parity corpus v11
+  (verdict delta), v12 (persona re-freeze), v13 (`claims-v3` stamp re-freeze). Live (Sonnet 5.5, 28
+  cases, USD 0.73): 26 FIT. CTO handover: the production description cache regenerates lazily once
+  per pair after deploy (`claims-v2` rows are misses).
 - **FOLLOW-1410** — status: CANCELLED # filed on the closed PR #1091 (headline persona family/school
   framing); ESC-089 (CEO 2026-10-29) allows that framing; grounding still applies.
 - **FOLLOW-1409** — status: WONTFIX # PR #1091 closed unmerged: superseded by the CEO ruling

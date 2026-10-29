@@ -612,3 +612,26 @@ the invoking command.
   the read path (not a mocked literal); and a fair-housing template scan reads exception clauses
   ("unless", "chyba że", "salvo que"), not only banned phrases — the family_buyer exception was
   invisible to the phrase scanner.
+
+- **2026-10-29 / FOLLOW-1411** · **Built:** the ESC-089 lift — `steersByFamilialStatus` retired on
+  `/api/adapt` and the description path; `describesResidentsByProtectedGround` (a closed en/pl/es
+  phrase list: statements about residents' race, ethnic origin or religion, `protected_ground`) runs
+  where it ran; schools, nurseries and playgrounds joined the amenity lexicon (both paths);
+  family_buyer, upsizer, diaspora, second_home, lifestyle_expat and yield_hunter templates,
+  `has_children` and four headline personas family-fitted with "only as the listing states"; corpus
+  v11 (the four v8 cases back to v7) + v12 (persona re-freeze, proven by swapping the persona text
+  back byte for byte). · **Real vs placeholder judgment calls:** (1) the steering list was also the
+  only thing that caught "safe for children" and "great area for kids"; no claim check ever read a
+  school — lifting it alone would have made "never invent a school" a prompt wish, so the
+  school/nursery/playground grounding shipped with the lift; "safe area" stays a subjective,
+  unchecked area claim (as the brief ruled), and is reported, not hidden; (2) colour words count
+  only before a word for people ("mostly white walls", "pueblos blancos"), historic quarter names
+  pass, and nationality is targeting — each pinned by a passing control; (3) the brief expected no
+  stamp bump because the lift only turns refusals into FITs — true for the lift, false for the
+  change: the same ticket ADDED two refusal classes that no `claims-v2` row ever passed, so
+  `claims-v3` (corpus v13); (4) live, the school check refused two honest Polish bodies that said
+  the listing names no schools ("nie wymienia szkół, przedszkoli ani placów zabaw"): the
+  30-character negation window stops at a comma, so the second item of a negated list reads as
+  asserted; fixed in the prompt (omit, do not narrate absence), not in the window. · **Guardrail I'd
+  add:** before removing a refusal, list every claim class it was incidentally catching and name the
+  check that still catches each one — or ship that check with the removal.

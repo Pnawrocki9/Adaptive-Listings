@@ -338,6 +338,83 @@ async function productionPromptFieldReads(): Promise<string[]> {
   return [...reads].sort();
 }
 
+/**
+ * The property names of the backend's PUBLIC listing-details DTO (FOLLOW-1317).
+ *
+ * `GET /api/v1/listing/details` answers `ListingResponseTO`. These are its declared properties,
+ * read from the product repo at `core-master/src/main/kotlin/com/time2show/core/dto/
+ * ListingResponseTO.kt:26-150` on 2026-10-16, with the mapper that fills them at
+ * `service/web/ListingServiceImpl.kt:918-992`. That repo is not a dependency of this one, so this
+ * is the one list here that cannot be derived at run time — it is the external contract, and the
+ * citation above is how it is re-checked.
+ *
+ * What it is FOR: the CEO ruling of 2026-09-22 (FOLLOW-820 condition 1) says a fixture-grounded run
+ * counts as GO evidence only once the fixture serves the grounding fields production serves. A
+ * field that exists only in the fixture satisfies no such thing — it grounds a measurement on input
+ * production can never produce. FOLLOW-1249 enforced the ruling one way round (the fixture serves
+ * nothing the reader does not read); this is the other way round, and it is the half that was
+ * missing: the fixture published `streetAddress` for three weeks, a field this DTO has never had.
+ */
+const BACKEND_LISTING_DTO_FIELDS = [
+  'additionalSpaces',
+  'agent',
+  'amenities',
+  'availableFrom',
+  'bathrooms',
+  'bedrooms',
+  'buildingMaterial',
+  'calenderEvents',
+  'city',
+  'cityPlaceUuid',
+  'country',
+  'createdAt',
+  'currency',
+  'description',
+  'district',
+  'districtPlaceUuid',
+  'energyRating',
+  'finishingState',
+  'floor',
+  'floorPlans',
+  'fullBathrooms',
+  'headline',
+  'heatingTypes',
+  'highlights',
+  'images',
+  'kitchenType',
+  'latitude',
+  'livingArea',
+  'locationAccuracyMeters',
+  'locationDisclosureLevel',
+  'longitude',
+  'lotArea',
+  'marketType',
+  'monthlyFee',
+  'nearbyPlaces',
+  'orientation',
+  'ownershipForm',
+  'parcelNumber',
+  'price',
+  'priceEur',
+  'pricePerSquareMeter',
+  'priceUsd',
+  'propertyType',
+  'publicLocationLabel',
+  'referenceNumber',
+  'region',
+  'rooms',
+  'sewerType',
+  'status',
+  'stories',
+  'totalFloors',
+  'transactionType',
+  'uuid',
+  'videos',
+  'waterSource',
+  'yearBuilt',
+  'zipcode',
+];
+
 /** The text of the page element publishing `data-estalara-fact="<key>"`, or null if absent. */
 function publishedFact(html: string, key: string): string | null {
   const match = new RegExp(`data-estalara-fact="${key}"[^>]*>([^<]*)<`).exec(html);
@@ -376,19 +453,49 @@ describe('FOLLOW-1249 — the fixture grounding source is PRODUCTION-SHAPED (CEO
     expect(reads).toContain('description');
   });
 
-  it('serves EXACTLY the field set the production prompt consumer reads, plus the listing identity', async () => {
-    const reads = await productionPromptFieldReads();
+  /** The fixture's served payload, minus `uuid` — the listing's identity, not a grounding fact. */
+  async function servedGroundingFields(): Promise<string[]> {
     const res = await fetch(
       `${origin}/api/v1/listing/details?listing-uuid=${FIXTURE_LISTING_ID}&locale=EN`,
     );
     expect(res.status).toBe(200);
     const listing = (await res.json()) as Record<string, unknown>;
-
-    // `uuid` is the listing's identity, which the backend also returns. It is not a grounding fact.
-    const served = Object.keys(listing)
+    return Object.keys(listing)
       .filter((key) => key !== 'uuid')
       .sort();
-    expect(served).toEqual(reads);
+  }
+
+  /**
+   * FOLLOW-1249 asserted set EQUALITY here. FOLLOW-1317 made the reader tolerant of every price
+   * and location shape the backend DTO can answer with (`price` + `currency`, `priceEur`,
+   * `priceUsd`; `publicLocationLabel`, `district`, `city`, `region`), so the reader now READS more
+   * fields than any single listing CARRIES — and the fixture listing, like a real one, carries one
+   * shape. Equality would therefore force the fixture to publish a page stating both an entered
+   * price and two FX conversions of it, which no listing does. The ruling's substance is kept as
+   * the two one-way checks below: nothing served that production does not read (this one), and
+   * nothing served that the backend DTO does not have (the next one). The slot-coverage check
+   * after them is what stops the subset from going thin.
+   */
+  it('serves no field the production prompt consumer does not read', async () => {
+    const reads = await productionPromptFieldReads();
+    const served = await servedGroundingFields();
+
+    expect(served.length).toBeGreaterThan(0);
+    expect(served.filter((field) => !reads.includes(field))).toEqual([]);
+  });
+
+  it('serves no field the real backend DTO does not carry (CEO ruling 2026-09-22)', async () => {
+    const served = await servedGroundingFields();
+
+    expect(served.filter((field) => !BACKEND_LISTING_DTO_FIELDS.includes(field))).toEqual([]);
+  });
+
+  it('the production reader itself reads no field the real backend DTO does not carry', async () => {
+    // The mirror of the check above, on the other side of the wire: a reader looking for a field
+    // production cannot send is a mapping bug, and FOLLOW-1317's was exactly that (`streetAddress`).
+    const reads = await productionPromptFieldReads();
+
+    expect(reads.filter((field) => !BACKEND_LISTING_DTO_FIELDS.includes(field))).toEqual([]);
   });
 
   it('every served field reaches the REAL reader with a usable type, so each one lands in the prompt', async () => {

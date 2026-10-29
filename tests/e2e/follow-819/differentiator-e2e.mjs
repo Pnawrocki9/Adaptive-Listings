@@ -3747,10 +3747,20 @@ export function evaluateGroundingProbe(probe, listingId) {
   const factsKeys = [];
   if (str(listing.headline)) factsKeys.push('listing_title');
   if (str(listing.description)) factsKeys.push('listing_description');
-  if (typeof listing.price === 'number' && Number.isFinite(listing.price)) {
+  const fxPrice =
+    (typeof listing.priceEur === 'number' && Number.isFinite(listing.priceEur)) ||
+    (typeof listing.priceUsd === 'number' && Number.isFinite(listing.priceUsd));
+  if ((typeof listing.price === 'number' && Number.isFinite(listing.price)) || fxPrice) {
     factsKeys.push('listing_price');
   }
-  if (str(listing.streetAddress) || str(listing.city) || str(listing.region)) {
+  // FOLLOW-1317: the backend DTO has no `streetAddress`; the street, when disclosed, is inside
+  // `publicLocationLabel`, and `district` joins the label.
+  if (
+    str(listing.publicLocationLabel) ||
+    str(listing.district) ||
+    str(listing.city) ||
+    str(listing.region)
+  ) {
     factsKeys.push('listing_location');
   }
   if (factsKeys.length === 0) {

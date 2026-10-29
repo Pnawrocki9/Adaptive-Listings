@@ -554,23 +554,34 @@ Transfer-Encoding: chunked
 (The `x-estalara-facts-source` path is the checkout the server was started from — that run was from
 a worktree. The header names the file, which is the point: grounding provenance on the wire.)
 
+The transcript above is the 2026-09-22 payload, kept as recorded. FOLLOW-1317 renamed one field in
+it: `streetAddress` → `publicLocationLabel`, same value. The backend's public detail DTO has no
+`streetAddress` (`ListingResponseTO.kt:36-59`: address precision is gated behind
+`locationDisclosureLevel` and published as `publicLocationLabel`), so the fixture had been grounding
+on a field production cannot send — which is what the CEO ruling cited below forbids. Every run
+recorded in this file before 2026-10-16 was measured on the old payload.
+
 **What it serves, and why not more.** Exactly what `fixture-listing.html`, the page under test,
 publishes, and nothing else: the `headline` and `description` slot text, plus the structured facts
-the page publishes as `data-estalara-fact` elements (`price`, `currency`, `streetAddress`, `city`,
-`region`, added by FOLLOW-1249). That is the whole field set `fetchListingTextFields()` reads into
-the `/api/adapt` prompt, so the prompt carries `listing_title`, `listing_description`,
-`listing_price` and `listing_location`, as production's does. CEO ruling 2026-09-22 (FOLLOW-820
-condition 1): a fixture-grounded run is GO evidence only once the fixture serves the grounding
-fields production uses. `grounding-source.test.ts` derives that field set from the production reader
-at run time and fails if the server serves a different one. The fixture listing is a synthetic
-listing whose facts ARE that page: a grounding source that knew a district or a bedroom count the
-page never shows would let the model write copy the page cannot support, which is the injection this
-harness exists to catch (ESC-076 / MASTER*DESIGN §E.7.0; FOLLOW-1225 scope: *"do not hand-write
-facts into the prompt path to make AC(1) go green"\_). A fact enters the grounding only by being
-published on the page first. Consequence to expect, not to fix here: the page publishes no bedroom
-count, area, district or highlights, which feed `fetchListingPlaceholderFacts()` rather than the
-prompt. So no `{bedrooms}` / `{sqm}` / `{key_feature}` token resolves server-side, and a directive
-carrying one is discarded exactly as against a thin real listing (FOLLOW-1018 / ESC-074).
+the page publishes as `data-estalara-fact` elements (`price`, `currency`, `publicLocationLabel`,
+`city`, `region`; added by FOLLOW-1249, `publicLocationLabel` renamed from `streetAddress` by
+FOLLOW-1317). That is the whole field set `fetchListingTextFields()` reads into the `/api/adapt`
+prompt, so the prompt carries `listing_title`, `listing_description`, `listing_price` and
+`listing_location`, as production's does. CEO ruling 2026-09-22 (FOLLOW-820 condition 1): a
+fixture-grounded run is GO evidence only once the fixture serves the grounding fields production
+uses. `grounding-source.test.ts` derives that field set from the production reader at run time and
+fails if the server serves a field the reader does not read, or (FOLLOW-1317) a field the backend
+DTO does not carry; it stopped asserting plain set EQUALITY when the reader became tolerant of
+several price and location shapes at once, since no single listing carries all of them. The fixture
+listing is a synthetic listing whose facts ARE that page: a grounding source that knew a district or
+a bedroom count the page never shows would let the model write copy the page cannot support, which
+is the injection this harness exists to catch (ESC-076 / MASTER*DESIGN §E.7.0; FOLLOW-1225 scope:
+*"do not hand-write facts into the prompt path to make AC(1) go green"\_). A fact enters the
+grounding only by being published on the page first. Consequence to expect, not to fix here: the
+page publishes no bedroom count, area, district or highlights, which feed
+`fetchListingPlaceholderFacts()` rather than the prompt. So no `{bedrooms}` / `{sqm}` /
+`{key_feature}` token resolves server-side, and a directive carrying one is discarded exactly as
+against a thin real listing (FOLLOW-1018 / ESC-074).
 
 **Why not the real Spring backend, which would be the better source.** It cannot answer for this
 listing. Measured 2026-09-20:

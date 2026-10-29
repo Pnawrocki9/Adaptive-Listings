@@ -1313,7 +1313,7 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
           "groundingMissing": false,
           "listingContext": {
             "listing_description": "A calm, well-connected home in the old town.",
-            "listing_location": "Lisbon",
+            "listing_location": "Alfama, Lisbon",
             "listing_price": "450000 EUR",
             "listing_title": "Sunlit apartment with river views",
           },
@@ -1373,7 +1373,7 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
           "groundingMissing": false,
           "listingContext": {
             "listing_description": "A calm, well-connected home in the old town.",
-            "listing_location": "Lisbon",
+            "listing_location": "Alfama, Lisbon",
             "listing_price": "450000 EUR",
             "listing_title": "Sunlit apartment with river views",
           },
@@ -1438,7 +1438,7 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
           "groundingMissing": false,
           "listingContext": {
             "listing_description": "A calm, well-connected home in the old town.",
-            "listing_location": "Lisbon",
+            "listing_location": "Alfama, Lisbon",
             "listing_price": "450000 EUR",
             "listing_title": "Sunlit apartment with river views",
           },
@@ -1560,7 +1560,7 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
           "groundingMissing": false,
           "listingContext": {
             "listing_description": "A calm, well-connected home in the old town.",
-            "listing_location": "Lisbon",
+            "listing_location": "Alfama, Lisbon",
             "listing_price": "450000 EUR",
             "listing_title": "Sunlit apartment with river views",
           },
@@ -1619,7 +1619,7 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
           "groundingMissing": false,
           "listingContext": {
             "listing_description": "A calm, well-connected home in the old town.",
-            "listing_location": "Lisbon",
+            "listing_location": "Alfama, Lisbon",
             "listing_price": "450000 EUR",
             "listing_title": "Sunlit apartment with river views",
           },
@@ -1671,7 +1671,7 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
           "groundingMissing": false,
           "listingContext": {
             "listing_description": "A calm, well-connected home in the old town.",
-            "listing_location": "Lisbon",
+            "listing_location": "Alfama, Lisbon",
             "listing_price": "450000 EUR",
             "listing_title": "Sunlit apartment with river views",
           },
@@ -1728,7 +1728,7 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
           "groundingMissing": false,
           "listingContext": {
             "listing_description": "A calm, well-connected home in the old town.",
-            "listing_location": "Lisbon",
+            "listing_location": "Alfama, Lisbon",
             "listing_price": "450000 EUR",
             "listing_title": "Sunlit apartment with river views",
           },
@@ -1895,7 +1895,7 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
           "groundingMissing": false,
           "listingContext": {
             "listing_description": "A calm, well-connected home in the old town.",
-            "listing_location": "Lisbon",
+            "listing_location": "Alfama, Lisbon",
             "listing_price": "450000 EUR",
             "listing_title": "Sunlit apartment with river views",
           },

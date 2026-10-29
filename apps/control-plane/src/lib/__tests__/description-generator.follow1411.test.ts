@@ -1,22 +1,17 @@
 /**
- * FOLLOW-1400 — the description path runs the familial-steering refusal `/api/adapt` runs.
+ * FOLLOW-1411 — ESC-089 lifts the familial-steering refusal on the description path.
  *
- * FOLLOW-1360 made `/api/adapt` refuse any directive `steersByFamilialStatus` matches, on every
- * request, with or without the `has_children` trait, whoever wrote the words (ESC-086; ESC-088
- * kept the trait as built on exactly that condition). The description generator did not run it:
- * in the FOLLOW-1399 comparison Sonnet 5.5 wrote "dla rodziny" in four Polish bodies and two were
- * served. The same function now runs on the body (`REFUSED / familial_steering`) and on the
- * headline (`headlineViolation: 'familial_steering'`): one vocabulary, one implementation
- * (`@estalara/shared/playbook-traits`), refuse — never strip.
+ * FOLLOW-1400 made the description generator refuse what `/api/adapt` refused under FOLLOW-1360
+ * (`steersByFamilialStatus`): "dla rodziny", "family home", "ideal for families". The CEO ruled on
+ * 2026-10-29 (ESC-089) that copy must fit the archetype and that familial-status limits are not a
+ * constraint at this stage. The same four FOLLOW-1399 study bodies (compare-1399 `gen.jsonl`,
+ * 2026-10-26, verbatim) now go to the claim check instead: each is served or refused on its FACTS.
  *
- * The four bodies below are the study's, verbatim (compare-1399 `gen.jsonl`, 2026-10-26). Two were
- * served (fx, wro); two were refused for another reason (jav: "pod klucz"; lis: "lat 30."), and
- * are now refused for steering first, as `/api/adapt` orders it.
- *
- * Controls: the vocabulary is phrases, not the word "family". A property type ("single-family
- * home", "dom jednorodzinny"), a diaspora's relatives recognising an address ("adres, który
- * rodzina rozpozna"), and "rodzinna okolica" are not in it and are served — the boundary is the
- * shared list, not decided here.
+ * What stays refused, on the body and the headline, on every request, whoever wrote the words:
+ * a statement about the race, ethnic origin or religion of residents or neighbours
+ * (`REFUSED / protected_ground`, `describesResidentsByProtectedGround`, one implementation with
+ * `/api/adapt`). What stays refused as before, as a fact: a school, nursery or playground the
+ * listing does not name (`unsupported_amenity`, FOLLOW-1411 `amenity-lexicon.ts`).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -30,7 +25,7 @@ vi.mock('@anthropic-ai/sdk', () => ({
 vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn(), captureMessage: vi.fn() }));
 
 import type { DescriptionRequestedEvent } from '@estalara/shared';
-import { steersByFamilialStatus } from '@estalara/shared/playbook-traits';
+import { describesResidentsByProtectedGround } from '@estalara/shared/playbook-traits';
 import { generateDescription } from '@/lib/description-generator';
 
 // ─── The FOLLOW-1399 outputs (Sonnet 5.5, PL pages), verbatim ─────────────────
@@ -141,42 +136,57 @@ const STUDY: [string, Listing, string, string][] = [
   ['lis.diaspora_buyer.pl', LIS, 'diaspora_buyer', SONNET_LIS_DIASPORA_PL],
 ];
 
-describe('FOLLOW-1400 — a description that steers by familial status is refused', () => {
+describe('FOLLOW-1411 — family wording is served; each study body is judged on its facts', () => {
   beforeEach(() => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'test-key-'.repeat(3));
     mockCreate.mockReset();
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it.each(STUDY)('%s: REFUSED / familial_steering, nothing cached', async (_id, l, a, body) => {
-    mockCreate.mockResolvedValueOnce(reply(fit(body)));
+  // fx and wro: every school, nursery and playground they name is in the listing → FIT.
+  // jav: "pod klucz" for a listing sold furnished is a no-work claim (FOLLOW-1401) → REFUSED.
+  // lis: "Adres znajomy dla rodziny" and "dom rodzinny" are no longer refused → FIT.
+  const EXPECTED: Record<string, unknown> = {
+    'fx.diaspora_buyer.pl': 'FIT',
+    'jav.second_home_buyer.pl': { verdict: 'REFUSED', violation: 'unsupported_guarantee' },
+    'wro.diaspora_buyer.pl': 'FIT',
+    'lis.diaspora_buyer.pl': 'FIT',
+  };
+
+  it.each(STUDY)('%s: the familial-steering refusal no longer applies', async (id, l, a, body) => {
+    mockCreate
+      .mockResolvedValueOnce(reply(fit(body)))
+      .mockResolvedValueOnce(reply(String(l.context.listing_title)));
     const report = await generateDescription(event(l, a, 'pl'));
-    expect(report.outcome).toEqual({ verdict: 'REFUSED', violation: 'familial_steering' });
-    expect(report.claimsValidation).toBeNull();
-    expect(report.writes).toEqual({ pg: 'skipped', redis: 'skipped', audit: 'skipped' });
-    // No headline is requested for a refused body.
-    expect(mockCreate).toHaveBeenCalledTimes(1);
+    const expected = EXPECTED[id];
+    if (expected === 'FIT') {
+      expect(report.outcome.verdict).toBe('FIT');
+      expect(report.claimsValidation).not.toBeNull();
+    } else {
+      expect(report.outcome).toEqual(expected);
+    }
+    expect(report.outcome).not.toEqual({ verdict: 'REFUSED', violation: 'familial_steering' });
   });
 
-  it.each(STUDY)(
-    '%s: refused for a buyer who declared has_children too (ESC-088: every request)',
-    async (_id, l, a, body) => {
-      mockCreate.mockResolvedValueOnce(reply(fit(body)));
-      const report = await generateDescription(event(l, a, 'pl', ['has_children']));
-      expect(report.outcome).toEqual({ verdict: 'REFUSED', violation: 'familial_steering' });
-    },
-  );
+  it.each(STUDY)('%s: the same with the has_children trait', async (id, l, a, body) => {
+    mockCreate
+      .mockResolvedValueOnce(reply(fit(body)))
+      .mockResolvedValueOnce(reply(String(l.context.listing_title)));
+    const report = await generateDescription(event(l, a, 'pl', ['has_children']));
+    expect(report.outcome.verdict).toBe(EXPECTED[id] === 'FIT' ? 'FIT' : 'REFUSED');
+  });
 
-  it('refuses even where the listing itself says it (the seller is no licence)', async () => {
+  it('a family-friendly body the listing grounds is served (the seller said it)', async () => {
     const listing: Listing = {
       original: 'Family-friendly three-bedroom house with a garden.',
       context: { listing_title: '3 bed house' },
     };
-    mockCreate.mockResolvedValueOnce(
-      reply(fit('A family-friendly three-bedroom house with a garden.')),
-    );
+    mockCreate
+      .mockResolvedValueOnce(reply(fit('A family-friendly three-bedroom house with a garden.')))
+      .mockResolvedValueOnce(reply('Family home with three bedrooms and a garden'));
     const report = await generateDescription(event(listing, 'family_buyer', 'en'));
-    expect(report.outcome).toEqual({ verdict: 'REFUSED', violation: 'familial_steering' });
+    expect(report.outcome.verdict).toBe('FIT');
+    expect(report.headline).toBe('Family home with three bedrooms and a garden');
   });
 
   const ES_VILLA: Listing = {
@@ -186,58 +196,100 @@ describe('FOLLOW-1400 — a description that steers by familial status is refuse
   const ES_BODY = 'Una villa de cuatro dormitorios en Jávea, con piscina privada y jardín.';
 
   it.each([
-    ['en', FX, HAIKU_FX_DIASPORA_EN, 'Family-friendly three-bedroom home in Palm Coast, FL'],
+    ['en', FX, HAIKU_FX_DIASPORA_EN, 'Three-bedroom family home in Palm Coast, close to schools'],
     ['pl', WRO, HAIKU_WRO_DIASPORA_PL, 'Mieszkanie dla rodziny z ogródkiem na Jagodnie'],
     ['es', ES_VILLA, ES_BODY, 'Villa para familias con piscina en Jávea'],
   ] as const)(
-    'a %s headline that steers is suppressed as familial_steering; the body is served',
+    'a %s family headline is served with its body (FOLLOW-1400 suppressed it)',
     async (locale, l, body, headline) => {
       mockCreate.mockResolvedValueOnce(reply(fit(body))).mockResolvedValueOnce(reply(headline));
       const report = await generateDescription(event(l, 'diaspora_buyer', locale));
       expect(report.outcome.verdict).toBe('FIT');
-      expect(report.headline).toBeNull();
-      expect(report.headlineViolation).toBe('familial_steering');
+      expect(report.headlineViolation).toBeNull();
+      expect(report.headline).toBe(headline);
     },
   );
 });
 
-describe('FOLLOW-1400 — controls: the vocabulary is phrases, not the word "family"', () => {
+describe('FOLLOW-1411 — what stays refused', () => {
   beforeEach(() => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'test-key-'.repeat(3));
     mockCreate.mockReset();
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it('fx.diaspora_buyer.en (Haiku, "single-family home") is served with its headline', async () => {
+  const PLAIN: Listing = {
+    original: 'Three-bedroom house with a garden on a quiet street.',
+    context: { listing_title: '3 bed house with garden' },
+  };
+
+  it.each([
+    ['en', 'A three-bedroom family house with a garden, close to good schools.'],
+    ['en', 'A three-bedroom house with a garden and a playground at the end of the street.'],
+    ['pl', 'Dom z trzema sypialniami i ogrodem, blisko szkoły i przedszkola.'],
+    ['es', 'Casa de tres dormitorios con jardín, cerca de colegios y guarderías.'],
+  ] as const)(
+    '%s: a school, nursery or playground the listing does not name is REFUSED',
+    async (locale, body) => {
+      mockCreate.mockResolvedValueOnce(reply(fit(body)));
+      const report = await generateDescription(event(PLAIN, 'family_buyer', locale));
+      expect(report.outcome).toEqual({ verdict: 'REFUSED', violation: 'unsupported_amenity' });
+      expect(report.writes).toEqual({ pg: 'skipped', redis: 'skipped', audit: 'skipped' });
+    },
+  );
+
+  it('the routine of a school day names no school and is served', async () => {
     mockCreate
-      .mockResolvedValueOnce(reply(fit(HAIKU_FX_DIASPORA_EN)))
       .mockResolvedValueOnce(
-        reply('Three-bedroom home with screened lanai and garden in Palm Coast, FL'),
-      );
-    const report = await generateDescription(event(FX, 'diaspora_buyer', 'en'));
+        reply(fit('A three-bedroom family house with a garden for mornings before school.')),
+      )
+      .mockResolvedValueOnce(reply('Three-bedroom house with a garden'));
+    const report = await generateDescription(event(PLAIN, 'family_buyer', 'en'));
     expect(report.outcome.verdict).toBe('FIT');
-    expect(report.headlineViolation).toBeNull();
   });
 
-  it('wro.diaspora_buyer.pl (Haiku, "dorosłe dzieci, rodzice albo goście") is served', async () => {
+  it.each([
+    ['en', 'A three-bedroom house with a garden among friendly Catholic neighbours.'],
+    ['pl', 'Dom z trzema sypialniami i ogrodem w dzielnicy głównie katolickiej.'],
+    ['es', 'Casa de tres dormitorios con jardín en un barrio mayoritariamente musulmán.'],
+  ] as const)(
+    "%s: a statement about residents' religion is REFUSED / protected_ground",
+    async (locale, body) => {
+      mockCreate.mockResolvedValueOnce(reply(fit(body)));
+      const report = await generateDescription(event(PLAIN, 'family_buyer', locale));
+      expect(report.outcome).toEqual({ verdict: 'REFUSED', violation: 'protected_ground' });
+      expect(report.claimsValidation).toBeNull();
+    },
+  );
+
+  it('even where the listing itself says it (the seller is no licence)', async () => {
+    const listing: Listing = {
+      original: 'Three-bedroom house in a predominantly Catholic neighbourhood.',
+      context: { listing_title: '3 bed house' },
+    };
+    mockCreate.mockResolvedValueOnce(
+      reply(fit('A three-bedroom house in a predominantly Catholic neighbourhood.')),
+    );
+    const report = await generateDescription(event(listing, 'family_buyer', 'en'));
+    expect(report.outcome).toEqual({ verdict: 'REFUSED', violation: 'protected_ground' });
+  });
+
+  it('a protected-ground headline is suppressed; the body is served', async () => {
     mockCreate
-      .mockResolvedValueOnce(reply(fit(HAIKU_WRO_DIASPORA_PL)))
-      .mockResolvedValueOnce(
-        reply('4 pokoje z ogródkiem, 78,4 m², Wrocław Jagodno, stan deweloperski'),
-      );
-    const report = await generateDescription(event(WRO, 'diaspora_buyer', 'pl'));
+      .mockResolvedValueOnce(reply(fit('A three-bedroom house with a garden.')))
+      .mockResolvedValueOnce(reply('Three-bedroom house among Muslim neighbours'));
+    const report = await generateDescription(event(PLAIN, 'family_buyer', 'en'));
     expect(report.outcome.verdict).toBe('FIT');
-    expect(report.headlineViolation).toBeNull();
+    expect(report.headline).toBeNull();
+    expect(report.headlineViolation).toBe('protected_ground');
   });
 
   it.each([
     'A three-bedroom single-family home on a quiet residential street.',
-    'Dom jednorodzinny przy cichej ulicy.',
-    'Vivienda unifamiliar con jardín.',
     'To adres, który rodzina rozpozna od razu.',
-    'Spokojna, rodzinna okolica z parkiem.',
     'Una dirección reconocible para la familia.',
-  ])('%j is not steering under the shared vocabulary', (text) => {
-    expect(steersByFamilialStatus(text)).toBe(false);
+    'For the diaspora: an address your family back home will recognise.',
+  ])('%j is not a protected-ground statement', (text) => {
+    expect(describesResidentsByProtectedGround(text)).toBe(false);
   });
 });

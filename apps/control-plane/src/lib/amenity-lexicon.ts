@@ -52,6 +52,30 @@ const GARAGE = [
   'garajes?|cocheras?',
 ];
 
+/**
+ * FOLLOW-1411: schools, nurseries and playgrounds near the property — "local amenities" in the
+ * estate-agent sense. ESC-089 (CEO 2026-10-29) lifted the familial-status refusal, so family copy
+ * may name them again, but only as the listing does (§E.7.0, ESC-076): an invented "close to good
+ * schools" is an unsupported amenity like an invented pool. The routine of a school day ("the
+ * school run", "mornings before school", "po szkole", "antes del colegio") names no school and is
+ * not a claim; a school's name in the listing ("Szkoła Podstawowa nr 5") grounds one.
+ */
+const SCHOOL = [
+  '(?<!(?:before|after|nursery)[ \\t]+)schools?(?![ \\t]+(?:runs?|days?|holidays?|years?|age|bags?|uniforms?|mornings?|terms?))|catchments?',
+  '(?<!(?:przed|po)[ \\t]+)(?:szkoł(?:a|y|ę|ą|om|ami|ach)|szkole|szkół)|podstawów(?:ka|ki|kę|ką|ce|ek|kom|kami|kach)',
+  '(?<!(?:antes|después|despues)[ \\t]+del[ \\t]+|ruta[ \\t]+del[ \\t]+)colegios?|escuelas?(?![ \\t]+infantil)',
+];
+const NURSERY = [
+  'kindergartens?|pre-?schools?|nursery[ \\t]+schools?|day[- ]?care(?:[ \\t]+cent(?:re|er)s?)?|cr[eè]ches?',
+  'przedszkol(?:e|a|u|em|i|om|ami|ach)|żłob(?:ek|ka|ku|kiem|ki|ków|kom|kami|kach)',
+  'guarder[ií]as?|escuelas?[ \\t]+infantil(?:es)?',
+];
+const PLAYGROUND = [
+  'playgrounds?|play[ \\t]?parks?|play[ \\t]+areas?',
+  'plac(?:u|em|e|ów|om|ami|ach)?[ \\t]+zabaw',
+  'parques?[ \\t]+infantil(?:es)?|zonas?[ \\t]+infantil(?:es)?|áreas?[ \\t]+de[ \\t]+juegos?|columpios',
+];
+
 const AMENITIES: readonly AmenityDef[] = [
   { names: POOL },
   {
@@ -119,6 +143,10 @@ const AMENITIES: readonly AmenityDef[] = [
     ],
     alsoGroundedBy: GARAGE,
   },
+  // FOLLOW-1411: surroundings a family copy may name only as the listing does.
+  { names: SCHOOL },
+  { names: NURSERY },
+  { names: PLAYGROUND },
 ];
 
 function wordRe(patterns: readonly string[]): RegExp {

@@ -1,62 +1,45 @@
 /**
- * Fair-housing scan of every string a playbook can SERVE to a buyer [FOLLOW-1366].
+ * Protected-characteristics scan of every string a playbook can SERVE to a buyer [FOLLOW-1366],
+ * narrowed by ESC-089 [FOLLOW-1411].
  *
- * The CEO ruling of 2026-05-14 (backlog/ESCALATIONS.md, FOLLOW-034 entry) binds copy and variant
- * strings never to reference protected characteristics explicitly: race, religion, gender,
- * disability, national origin, family status. ESC-088 added that school and "family area" proxies
- * are the same breach. This test makes that a red build instead of a review comment.
+ * The CEO ruling of 2026-05-14 (backlog/ESCALATIONS.md, FOLLOW-034 entry) bound copy and variant
+ * strings never to reference protected characteristics explicitly; ESC-088 added school and
+ * "family area" proxies. ESC-089 (CEO 2026-10-29) supersedes both for familial status: copy must
+ * fit the archetype, family wording included, and buyer nationality or origin ("diaspora") is a
+ * targeting feature. The family-status, school and buyer-origin stems are therefore gone from the
+ * list below; race, ethnic origin, religion, disability, gender and age stay.
  *
  * SCANNED: for all 18 playbooks, every slot (`en`/`pl`/`es`) and every variant in every locale
  * (headline, cta, feature), plus the `listing_rules` flag names (`boost_if` / `suppress_if`),
  * which decide which listing cards are promoted.
  *
- * NOT SCANNED, deliberately: `copy_template` (voice instructions to a model; they contain these
- * words only as prohibitions: "never call an area family-friendly"; since FOLLOW-1400 the
- * last describe block below holds that claim against `steersByFamilialStatus`) and the trait
- * add-ons (pinned by `playbook-traits.test.ts`). NOT SCANNED, KNOWN GAP: `description`, `signals` and
- * `feature_priority`. `description` and `signals` DO reach the LLM prompts
- * (`apps/control-plane/src/lib/llm-gateway.ts`), so this is a gap, not an exemption; a follow-up
- * scrubs and scans them.
+ * NOT SCANNED, deliberately: `copy_template` (voice instructions to a model; the last describe
+ * block holds them against `describesResidentsByProtectedGround`, the runtime guard) and the trait
+ * add-ons (pinned by `playbook-traits.test.ts`). NOT SCANNED, KNOWN GAP: `description`, `signals`
+ * and `feature_priority`. `description` and `signals` DO reach the LLM prompts
+ * (`apps/control-plane/src/lib/llm-gateway.ts`), so this is a gap, not an exemption.
  *
  * NOT IN THE LIST, deliberately (pending a compliance ruling): `expat` (a residence
  * status, not a national origin), `retire*` (a life stage, not an age). The list is stems matched
- * at a word start, diacritics folded, so "children" and "dzieci" are caught but "familiar" is not.
+ * at a word start, diacritics folded.
  */
 
 import { describe, it, expect } from 'vitest';
 import { getAllPlaybooks } from '../playbooks/index.js';
 import type { PlaybookEntry } from '../playbooks/types.js';
-import { steersByFamilialStatus } from '../playbooks/traits.js';
+import { describesResidentsByProtectedGround } from '../playbooks/traits.js';
 
 type Locale = 'en' | 'pl' | 'es';
 
 /** Word-start stems per locale; folded to ASCII lower case. */
 const PROTECTED_STEMS: Record<Locale, readonly string[]> = {
   en: [
-    // family status
-    'family',
-    'families',
-    'familial',
-    'child',
-    'kid',
-    'daughter',
-    'mother',
-    'father',
-    'parent',
-    'husband',
-    'wife',
-    'school',
-    'nursery',
-    // national origin / race / ethnicity
-    'diaspora',
+    // national origin / race / ethnicity (buyer origin — "diaspora", "foreign" — is targeting)
     'ethnic',
     'nationality',
     'national origin',
     'immigrant',
     'migrant',
-    'foreigner',
-    'foreign',
-    'catchment',
     'race',
     'racial',
     // religion
@@ -84,20 +67,9 @@ const PROTECTED_STEMS: Record<Locale, readonly string[]> = {
     'golden years',
   ],
   pl: [
-    'rodzin',
-    'dzieci',
-    'dziec',
-    'matk',
-    'ojciec',
-    'rodzic',
-    'szkol',
-    'przedszkol',
-    'diaspor',
     'etnicz',
     'narodowosc',
     'imigrant',
-    'obcokraj',
-    'cudzoziem',
     'rasa',
     'rasow',
     'religi',
@@ -113,24 +85,9 @@ const PROTECTED_STEMS: Record<Locale, readonly string[]> = {
     'starsz',
   ],
   es: [
-    'familia',
-    'familiar',
-    'hijo',
-    'hija',
-    'nino',
-    'nina',
-    'madre',
-    'padre',
-    'esposa',
-    'marido',
-    'colegio',
-    'escuela',
-    'guarderia',
-    'diaspora',
     'etnic',
     'nacionalidad',
     'inmigrante',
-    'extranjer',
     'raza',
     'racial',
     'religi',
@@ -208,27 +165,28 @@ function servedStrings(p: PlaybookEntry): ServedString[] {
 }
 
 describe('protectedHits — the scanner itself', () => {
-  it('catches the four strings FOLLOW-1366 retired', () => {
-    expect(protectedHits('Get Family Buyer Guide', 'en')).toContain('family');
-    expect(protectedHits('Family Essentials', 'en')).toContain('family');
-    expect(protectedHits('Speak with a Diaspora Specialist', 'en')).toContain('diaspora');
-    expect(protectedHits('good school district', 'en')).toContain('school');
+  it('no longer flags the family and buyer-origin strings FOLLOW-1366 retired (ESC-089)', () => {
+    expect(protectedHits('Get Family Buyer Guide', 'en')).toEqual([]);
+    expect(protectedHits('Family Essentials', 'en')).toEqual([]);
+    expect(protectedHits('Speak with a Diaspora Specialist', 'en')).toEqual([]);
+    expect(protectedHits('good school district', 'en')).toEqual([]);
+    expect(protectedHits('Poradnik dla rodzin', 'pl')).toEqual([]);
+    expect(protectedHits('Ideal para familias con niños', 'es')).toEqual([]);
   });
 
-  it('catches PL and ES equivalents, with diacritics', () => {
-    expect(protectedHits('Poradnik dla rodzin', 'pl')).toContain('rodzin');
-    expect(protectedHits('Blisko szkoły i przedszkola', 'pl')).toContain('szkol');
-    expect(protectedHits('Ideal para familias con niños', 'es')).toEqual(
-      expect.arrayContaining(['familia', 'nino']),
-    );
-    expect(protectedHits('Cerca del colegio', 'es')).toContain('colegio');
+  it('still catches race, ethnicity, religion, disability, gender and age, with diacritics', () => {
+    expect(protectedHits('Near the mosque', 'en')).toContain('mosque');
+    expect(protectedHits('An ethnic enclave', 'en')).toContain('ethnic');
+    expect(protectedHits('Blisko kościoła', 'pl')).toContain('kosciol');
+    expect(protectedHits('Mieszkanie dla seniora', 'pl')).toContain('senior');
+    expect(protectedHits('Cerca de la sinagoga', 'es')).toContain('sinagoga');
+    expect(protectedHits('Ideal para mujeres', 'es')).toContain('mujer');
   });
 
   it('does not flag property facts or look-alike words', () => {
     expect(protectedHits('Single-family house, 4BR', 'en')).toEqual([]);
     expect(protectedHits('Dom jednorodzinny z ogrodem', 'pl')).toEqual([]);
     expect(protectedHits('Chalet unifamiliar con jardín', 'es')).toEqual([]);
-    expect(protectedHits('A familiar address', 'en')).toEqual([]);
     expect(protectedHits('Moving Up — 4BR with Space to Spare', 'en')).toEqual([]);
   });
 });
@@ -271,107 +229,32 @@ describe('every served playbook string is free of protected characteristics', ()
 });
 
 /**
- * FOLLOW-1400: a `copy_template` must never RECOMMEND a phrase the familial-steering refusal
- * refuses — the description path and `/api/adapt` both refuse it, so the template would only
- * produce refusals. The diaspora PL template recommended "zabezpieczenie dla rodziny w kraju" and
- * "adres rozpoznawalny dla rodziny"; Sonnet 5.5 wrote them (FOLLOW-1399). A template may still
- * NAME a steering phrase inside a prohibition ("Never call an area family-friendly", an "Avoid:"
- * list): those sentences are pinned below, so a new matching sentence fails until it is reviewed.
+ * FOLLOW-1411: the runtime guard (`describesResidentsByProtectedGround`, refused on `/api/adapt`
+ * and on the description path) must never be tripped by a `copy_template` — a template that asks
+ * for a statement about residents' race, ethnic origin or religion would only produce refusals.
+ * Replaces FOLLOW-1400's familial-steering template scan and FOLLOW-1407's household/exception and
+ * family-occupant scans, retired with the refusal they backed (ESC-089).
  */
-describe('no copy_template recommends a familial-steering phrase [FOLLOW-1400]', () => {
-  const PROHIBITIONS: readonly string[] = [
-    'yield_hunter en: dream, perfect for, family-friendly',
-    // FOLLOW-1407 retired the yield_hunter pl pin (`nie "miejsce dla dzieci"`): the garden is now
-    // a lettability fact, and the family-occupant framing has its own scan below.
-    'vacation_rental_investor en: family home, retirement',
-    'family_buyer en: Never call an area family-friendly',
-    'family_buyer pl: Nie nazywaj okolicy przyjazną rodzinom',
-    'family_buyer es: Nunca llames a una zona apta para familias',
-    'student_parent en: family home, retirement',
-  ];
-
-  it('every template sentence the scanner matches is a pinned prohibition', () => {
+describe('no copy_template trips the protected-ground guard [FOLLOW-1411]', () => {
+  it('no template sentence, in any locale, matches the guard', () => {
     const matched = [...getAllPlaybooks().values()].flatMap((p) =>
       Object.entries(p.copy_template).flatMap(([locale, text]) =>
         text
           .split(/(?<=[.;:])\s+/)
-          .filter((sentence) => steersByFamilialStatus(sentence))
+          .filter((sentence) => describesResidentsByProtectedGround(sentence))
           .map((sentence) => `${p.archetype} ${locale}: ${sentence}`),
       ),
     );
-    const unpinned = matched.filter((m) => !PROHIBITIONS.some((pin) => m.startsWith(pin)));
-    expect(unpinned).toEqual([]);
-    expect(matched).toHaveLength(PROHIBITIONS.length);
-  });
-});
-
-/**
- * FOLLOW-1407: two templates contradicted the familial-steering refusal that runs on every request
- * (ESC-088, FOLLOW-1400). yield_hunter framed a garden as "family-tenant retention" (en) /
- * "retencję rodzinnego najemcy" (pl) — a feature sold by who will live there; family_buyer allowed
- * the reader's children or household "unless the listing text itself does" (and "unless the
- * reader's profile adds it") — the refusal admits no such exception, whoever wrote the words.
- * Neither was visible to `steersByFamilialStatus`, so these two scans read the templates directly.
- */
-describe('no copy_template contradicts the familial-steering refusal [FOLLOW-1407]', () => {
-  const templateSentences = (): { where: string; sentence: string }[] =>
-    [...getAllPlaybooks().values()].flatMap((p) =>
-      Object.entries(p.copy_template).flatMap(([locale, text]) =>
-        text
-          .split(/(?<=[.;:])\s+/)
-          .map((sentence) => ({ where: `${p.archetype} ${locale}`, sentence })),
-      ),
-    );
-
-  /** The reader's children or household, in the three template languages. */
-  const HOUSEHOLD =
-    /(?<![\p{L}])(?:child|children|kids?|household|dzieci|dziecko|domownik\p{L}*|gospodarstw\p{L}*|hijos?|hogar)(?![\p{L}])/iu;
-  /** An exception clause: the ban would hold only sometimes. */
-  const EXCEPTION =
-    /(?<![\p{L}])(?:unless|except|chyba że|jeśli nie robi|o ile|salvo que|a menos que|excepto)(?![\p{L}])/iu;
-  /** A feature framed by a family occupant (a tenant, a renter, a buyer). */
-  const FAMILY_OCCUPANT =
-    /(?:family[- ](?:tenants?|renters?|occupiers?|retention)|rodzinn\p{L}*\s+najem\p{L}*|najemc\p{L}*\s+z\s+dzie\p{L}*|inquilin\p{L}*\s+familiar\p{L}*|familias?\s+inquilinas?)/iu;
-
-  it('the scans see the wording FOLLOW-1407 retired', () => {
-    expect(
-      HOUSEHOLD.test("never refer to the reader's children or household unless the listing does") &&
-        EXCEPTION.test("never refer to the reader's children or household unless the listing does"),
-    ).toBe(true);
-    expect(EXCEPTION.test('i nie odnoś się do dzieci, jeśli nie robi tego sam opis oferty')).toBe(
-      true,
-    );
-    expect(
-      FAMILY_OCCUPANT.test('a garden is outdoor amenity that supports family-tenant retention'),
-    ).toBe(true);
-    expect(FAMILY_OCCUPANT.test('ogród zwiększający retencję rodzinnego najemcy')).toBe(true);
-    expect(FAMILY_OCCUPANT.test('Single-family house with a garden')).toBe(false);
+    expect(matched).toEqual([]);
   });
 
-  it('no template allows the reader’s children or household under an exception', () => {
-    const hits = templateSentences()
-      .filter(({ sentence }) => HOUSEHOLD.test(sentence) && EXCEPTION.test(sentence))
-      .map(({ where, sentence }) => `${where}: ${sentence}`);
-    expect(hits).toEqual([]);
-  });
-
-  it('no template frames a feature by a family occupant', () => {
-    const hits = templateSentences()
-      .filter(({ sentence }) => FAMILY_OCCUPANT.test(sentence))
-      .map(({ where, sentence }) => `${where}: ${sentence}`);
-    expect(hits).toEqual([]);
-  });
-
-  it('family_buyer bans the reader’s children and household outright, in every locale', () => {
-    const family = getAllPlaybooks().get('family_buyer')!;
-    expect(family.copy_template.en).toContain(
-      "never refer to the reader's children or household composition, even when the listing text does",
+  it('the family templates fit the archetype again (family wording is no longer refused)', () => {
+    const all = getAllPlaybooks();
+    expect(all.get('family_buyer')!.copy_template.en).toMatch(/moving up for their family/i);
+    expect(all.get('diaspora_buyer')!.copy_template.pl).toContain(
+      'zabezpieczenia dla rodziny w kraju',
     );
-    expect(family.copy_template.pl).toContain(
-      'nie odnoś się do dzieci czytelnika ani do składu jego gospodarstwa domowego, nawet jeśli robi to opis oferty',
-    );
-    expect(family.copy_template.es).toContain(
-      'ni hagas referencia a los hijos del lector ni a la composición de su hogar, aunque lo haga el propio anuncio',
-    );
+    expect(all.get('second_home_buyer')!.copy_template.en).toContain('occasional family use');
+    expect(all.get('yield_hunter')!.copy_template.en).toContain('family tenants');
   });
 });

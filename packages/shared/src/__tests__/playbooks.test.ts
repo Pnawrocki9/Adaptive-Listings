@@ -140,14 +140,15 @@ describe('getPlaybook — spot checks for key archetypes', () => {
   // ratings need a third-party dataset nobody in the estate has, and the HARD RULES forbid
   // quoting one. `{bedrooms}` stays: it IS a fact of the listing and resolves server-side.
   //
-  // FOLLOW-1360: `family_buyer` absorbed `upsizer` ("Moving up") and stopped assuming children
-  // (they are the `has_children` trait), so no headline variant names a family or a school.
-  it('family_buyer headlines are moving-up framed and assume no children or schools (ESC-075)', () => {
+  // FOLLOW-1360: `family_buyer` absorbed `upsizer` ("Moving up"). FOLLOW-1411 (ESC-089): family
+  // wording is allowed again, but a headline variant is served without reading the listing, so it
+  // still names no school (a school is grounded only by the listing, §E.7.0).
+  it('family_buyer headlines are moving-up framed and name no school (ESC-075)', () => {
     const playbook = getPlaybook('family_buyer');
     const headlineSlot = playbook.slots.find((s) => s.slot === 'headline');
     expect(headlineSlot?.en).toMatch(/room to grow/i);
     for (const variant of headlineSlot?.variants?.en ?? []) {
-      expect(variant).not.toMatch(/school|famil|child/i);
+      expect(variant).not.toMatch(/school/i);
     }
     expect(headlineSlot?.variants?.en.some((v) => /moving up/i.test(v))).toBe(true);
   });

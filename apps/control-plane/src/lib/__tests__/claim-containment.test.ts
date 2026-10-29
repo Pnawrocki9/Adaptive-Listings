@@ -104,8 +104,10 @@ describe('isTrustedDescriptionHit (legacy admission)', () => {
       JSON.parse(
         readFileSync(path.resolve(__dirname, '../__fixtures__/description-parity', file), 'utf8'),
       ) as { claims_validation_version: string };
-    // The current contract (FOLLOW-1406: corpus v10, a stamp-only re-freeze of v9).
-    expect(manifest('MANIFEST.v10.json').claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    // The current contract (FOLLOW-1411: corpus v12, a prompt-digest re-freeze of v11). v10
+    // (FOLLOW-1406) was the stamp re-freeze that introduced claims-v2; FOLLOW-1411 kept it.
+    expect(manifest('MANIFEST.v12.json').claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(manifest('MANIFEST.v10.json').claims_validation_version).toBe('claims-v2');
     // The Python job the corpus was first frozen from stamped claims-v1; that record never moves.
     expect(manifest('MANIFEST.json').claims_validation_version).toBe('claims-v1');
   });

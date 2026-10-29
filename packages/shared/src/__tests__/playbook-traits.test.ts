@@ -1,6 +1,9 @@
 /**
  * Trait add-ons [FOLLOW-1360]: the rules and the invitation slot exist only when the trait is
- * present, every rule is listing-grounded by construction, and `has_children` never steers.
+ * present, and every rule is listing-grounded by construction. ESC-089 (CEO 2026-10-29) lifted the
+ * familial-status limits: `has_children` now shapes copy towards family wording and the
+ * family-relevant facts the listing states [FOLLOW-1411]; the one protected-ground guard left
+ * (`describesResidentsByProtectedGround`) is pinned below.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -9,7 +12,7 @@ import {
   TRAIT_NOTE_SLOT,
   getTraitAddOns,
   renderTraitRules,
-  steersByFamilialStatus,
+  describesResidentsByProtectedGround,
   traitSlots,
 } from '../playbooks/traits.js';
 import { CANONICAL_TRAIT_IDS } from '../traits.js';
@@ -90,89 +93,105 @@ describe('trait invitation slots', () => {
     expect(slot?.en).toMatch(/^(?:Request|Ask About)\b/);
   });
 
-  it('has_children adds no slot at all (familial status is a protected class)', () => {
+  it('has_children adds no slot: its contribution is emphasis in the copy', () => {
     expect(traitSlots(getTraitAddOns(['has_children']))).toEqual([]);
   });
 });
 
-describe('has_children never steers by familial status', () => {
+describe('has_children shapes copy towards the family [FOLLOW-1411, ESC-089]', () => {
   const [addOn] = getTraitAddOns(['has_children']);
+  const text = addOn?.rules.join(' ') ?? '';
 
-  it('its slot is null and its rules forbid the steering phrases instead of using them', () => {
+  it('its slot is null and its rules write for a household with children', () => {
     expect(addOn?.slot).toBeNull();
-    const text = addOn?.rules.join(' ') ?? '';
-    expect(text).toMatch(/never describe an area or neighbourhood as family-friendly/i);
-    expect(text).toMatch(/fair-housing/i);
+    expect(text).toMatch(/household with children/i);
+    expect(text).toMatch(/a room each/i);
+    // The FOLLOW-1360 fair-housing prohibitions are lifted.
+    expect(text).not.toMatch(/fair-housing|never address the reader as a parent/i);
   });
 
-  it('its rules mention no school or park (a steering proxy under a familial-status signal)', () => {
-    expect(addOn?.rules.join(' ')).not.toMatch(/school|park/i);
+  it('it names schools and playgrounds only as the listing does (grounding, §E.7.0)', () => {
+    expect(text).toMatch(
+      /schools, nurseries, parks or playgrounds only where the listing names them/i,
+    );
+    expect(text).toMatch(/never invent a school, catchment, playground, distance or safety claim/i);
   });
+});
 
+describe('describesResidentsByProtectedGround — race, ethnic origin, religion of residents [FOLLOW-1411]', () => {
   const FLAGGED: Record<string, string[]> = {
     en: [
-      'A family-friendly neighbourhood',
-      'Ideal for families',
-      'Perfect for young families',
-      'A safe neighbourhood for children',
-      'Great location for kids',
-      'Raising a family here',
-      'Your children will love the garden',
-      'A true family home',
-      'Made for your family',
-      'Room for a growing family',
-      'A quiet family neighbourhood',
-      'Fun for the kids',
-      'Space for the little ones',
-      'Families will love it',
+      'Friendly Muslim neighbours on every floor',
+      'A close-knit Catholic community',
+      'White residents only',
+      'A predominantly Jewish neighbourhood',
+      'The area is mostly Christian',
+      'Residents are predominantly Asian',
+      'A street with no immigrants',
+      'Free of minorities',
+      'An ethnically diverse district',
+      'A religiously homogeneous estate',
+      'Mostly Muslims live here',
     ],
     pl: [
-      'Okolica przyjazna rodzinom',
-      'Mieszkanie przyjazne rodzinie',
-      'Idealne dla rodzin',
-      'Dobre dla rodziny',
-      'Dom z dziećmi w sąsiedztwie',
-      'Plac zabaw dla dzieci',
-      'Twoja rodzina to pokocha',
-      'Bezpieczna okolica dla dzieci',
+      'Katolicka społeczność osiedla',
+      'Muzułmańscy sąsiedzi',
+      'Mieszkańcy to głównie katolicy',
+      'Dzielnica głównie żydowska',
+      'Okolica zamieszkana głównie przez muzułmanów',
+      'Osiedle bez imigrantów',
+      'Etnicznie jednorodna okolica',
     ],
     es: [
-      'Ideal para familias',
-      'Una vivienda para las familias',
-      'Barrio con niños',
-      'Zona segura para niños',
-      'Tu familia lo disfrutará',
-      'Un ambiente familiar',
-      'Zona familiar tranquila',
+      'Vecinos musulmanes',
+      'La comunidad judía del edificio',
+      'Un barrio mayoritariamente católico',
+      'Una zona sin inmigrantes',
+      'Un vecindario étnicamente diverso',
+      'Residentes blancos',
     ],
   };
   for (const [locale, values] of Object.entries(FLAGGED)) {
-    it.each(values)(`steersByFamilialStatus flags ${locale} %j`, (value) => {
-      expect(steersByFamilialStatus(value)).toBe(true);
+    it.each(values)(`flags ${locale} %j`, (value) => {
+      expect(describesResidentsByProtectedGround(value)).toBe(true);
     });
   }
 
   it.each([
-    'Four bedrooms and a south-facing garden',
-    'Storage room off the hall',
-    'Detached house with a double garage',
-    '3 bedrooms',
-    'Garden',
+    // Family wording is archetype fit since ESC-089, never refused.
+    'A family-friendly neighbourhood',
+    'Ideal for families, with a garden',
+    'Your children will love the garden',
+    'A true family home with a room each',
+    'Okolica przyjazna rodzinom',
+    'Idealne dla rodzin z dziećmi',
+    'Ideal para familias con niños',
+    // Buyer nationality and origin are targeting, not a statement about residents.
+    'For the diaspora returning home: an address your family will recognise',
+    'An established international community',
+    'A large British community nearby',
+    'Polska diaspora w Wielkiej Brytanii',
+    'Zabezpieczenie dla rodziny w kraju',
+    'Comunidad internacional consolidada',
+    // Place names, buildings, institutions and colours of things.
+    'Steps from the former Jewish Quarter',
+    'W sercu dawnej dzielnicy żydowskiej',
+    'Junto al antiguo barrio judío',
+    'A church and a mosque within walking distance',
+    'Next to the Jewish Community Centre',
+    'Mostly white walls and oak floors',
+    'Mostly white buildings on the seafront',
+    'Białe ściany i dębowa podłoga',
+    'Głównie azjatycka kuchnia w restauracjach obok',
+    'Uno de los pueblos blancos de Cádiz',
+    'Edificio principalmente blanco',
+    'Comunidad Valenciana',
     'A single-family house',
-    'A single-family home designed for steady long-term hold at 385000 USD',
-    'Single-family home with mature garden.',
-    'A multi-family home with four units',
-    'single family home on a quiet street',
-    'Vivienda unifamiliar con jardín',
-    'Casa unifamiliar de tres dormitorios',
-    'Dom jednorodzinny z ogrodem',
-    'Dom z dziedzińcem',
-    'Mieszkanie z balkonem',
-  ])('steersByFamilialStatus passes ordinary copy %j', (value) => {
-    expect(steersByFamilialStatus(value)).toBe(false);
+  ])('passes %j', (value) => {
+    expect(describesResidentsByProtectedGround(value)).toBe(false);
   });
 
-  it('no authored playbook string served on any branch trips the backstop', () => {
+  it('no authored playbook string served on any branch trips the guard', () => {
     const served: string[] = [];
     for (const p of getAllPlaybooks().values()) {
       for (const slot of p.slots) {
@@ -185,7 +204,7 @@ describe('has_children never steers by familial status', () => {
     }
     const strings = served.filter(Boolean);
     expect(strings.length).toBeGreaterThan(100);
-    expect(strings.filter(steersByFamilialStatus)).toEqual([]);
+    expect(strings.filter(describesResidentsByProtectedGround)).toEqual([]);
   });
 });
 
@@ -209,14 +228,17 @@ describe('playbook merges (FOLLOW-1360)', () => {
     expect(pl('premium')?.pl).toBe('Poproś o prywatną prezentację');
   });
 
-  it('family_buyer is the Moving up framing and assumes no children', () => {
+  it('family_buyer is the Moving up framing, family-fitted since ESC-089', () => {
     const p = getPlaybook('family_buyer');
     const headline = p.slots.find((s) => s.slot === 'headline');
     expect(headline?.variants?.en.some((v) => /^Moving Up/i.test(v))).toBe(true);
     for (const locale of ['en', 'pl', 'es'] as const) {
       expect(p.copy_template[locale]).toMatch(/HARD RULES:/);
     }
-    expect(p.copy_template.en).toMatch(/never write about children/i); // FOLLOW-1407
+    // FOLLOW-1411: the FOLLOW-1407 ban on children and household is lifted; schools stay grounded.
+    expect(p.copy_template.en).toMatch(/moving up for their family/i);
+    expect(p.copy_template.en).not.toMatch(/never write about children/i);
+    expect(p.copy_template.en).toMatch(/only where the listing names them/i);
     expect(p.description).toMatch(/has_children/);
   });
 

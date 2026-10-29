@@ -138,11 +138,113 @@ export interface ListingTextFields {
   location?: string;
 }
 
+/** A non-empty, non-blank string, or undefined. */
+const str = (v: unknown): string | undefined =>
+  typeof v === 'string' && v.trim().length > 0 ? v : undefined;
+
+/** A finite number, or undefined. A price served as a STRING is deliberately not accepted here:
+ * normalising `"$385,000"` would be this layer parsing a fact, and parsing guesses. */
+const num = (v: unknown): number | undefined =>
+  typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+
+/**
+ * The listing's price as ONE string carrying its unit (FOLLOW-1317).
+ *
+ * The backend's public detail DTO (`ListingResponseTO.kt:81-91`) carries FOUR price fields, and
+ * any of them can be null on a real listing:
+ *
+ *   - `price` + `currency` — what the agent entered, in the listing's own currency. The source of
+ *     truth (`PropertyDetailsEntity.kt:73-77`). `currency` can be null while `price` is not
+ *     (scraped drafts — the backend documents that on `SimpleListingResponseTO.kt:17-22`).
+ *   - `priceEur` / `priceUsd` — columns DERIVED from the pair by an FX job, kept for cross-currency
+ *     sorting. Second-hand, but each carries its unit in its own name.
+ *
+ * Order of preference, fixed so the same listing always grounds the same figure (a price that
+ * varied between runs would make a measurement series unreadable):
+ *
+ *   1. `price` + `currency` — the entered figure, with the unit the agent chose.
+ *   2. `priceEur`, then 3. `priceUsd` — a derived figure, but one whose unit is known.
+ *   4. `price` alone — the entered figure with NO unit. Last resort, kept because it is still the
+ *      listing's own fact and dropping it would ground less than before FOLLOW-1317; a bare number
+ *      is the weakest of the four, since the model is told to copy figures and units verbatim and
+ *      there is no unit to copy.
+ *
+ * Returns undefined when the listing states no price at all. Nothing substitutes one: no FX
+ * conversion of our own, no price-per-m² multiplied out, no "price on request" label. An absent
+ * price means the prompt gets no `listing_price` line and the fact checker has no price to
+ * validate — which is the whole point (ESC-076 / §E.7.0: a figure not on the listing does not
+ * exist).
+ */
+function readPriceLabel(listing: Record<string, unknown>): string | undefined {
+  const entered = num(listing.price);
+  const currency = str(listing.currency);
+  if (entered !== undefined && currency !== undefined) return `${String(entered)} ${currency}`;
+
+  const eur = num(listing.priceEur);
+  if (eur !== undefined) return `${String(eur)} EUR`;
+  const usd = num(listing.priceUsd);
+  if (usd !== undefined) return `${String(usd)} USD`;
+
+  return entered !== undefined ? String(entered) : undefined;
+}
+
+/**
+ * The listing's location, most specific part first (FOLLOW-1317).
+ *
+ * `publicLocationLabel` is the FIRST choice for the same reason
+ * {@link fetchListingPlaceholderFacts} already gives below: the backend gates address precision
+ * behind `locationDisclosureLevel` and this label is the value it has already decided is safe to
+ * show. It is also where the street lives when the listing discloses one: production answers e.g.
+ * `"1512 N 42ND Street, Fort Pierce, FL 34947"` there. The pre-FOLLOW-1317 reader looked for a
+ * `streetAddress` field instead, which neither the DTO (`ListingResponseTO.kt:36-59`) nor the
+ * production API has, so the street never reached the prompt. The street name itself
+ * (`streetName`) is never on the public DTO; a listing whose label carries no street grounds
+ * none, and nothing here reconstructs one.
+ *
+ * `district` is included because without it the label degrades to "city, region" — the symptom
+ * FOLLOW-1317 was filed for, where every generated description could place the property no more
+ * precisely than its city.
+ *
+ * A part the assembled label already contains as a whole word sequence is skipped: production's
+ * `publicLocationLabel` usually already reads "District, City, Region", and "Palm Coast, FL, Palm
+ * Coast, FL" in the prompt is a fact repeated, which the model is entitled to read as two places.
+ * Whole words only, so a city "Lodz" is not dropped because the label names a "Lodzka" street.
+ */
+function readLocationLabel(listing: Record<string, unknown>): string | undefined {
+  const candidates = [
+    str(listing.publicLocationLabel),
+    str(listing.district),
+    str(listing.city),
+    str(listing.region),
+  ];
+
+  const parts: string[] = [];
+  for (const candidate of candidates) {
+    if (candidate === undefined) continue;
+    if (containsWholeWords(parts.join(', '), candidate.trim())) continue;
+    parts.push(candidate.trim());
+  }
+
+  return parts.length > 0 ? parts.join(', ') : undefined;
+}
+
+/** True when `needle` occurs in `haystack` case-insensitively, bounded by non-letters/digits. */
+function containsWholeWords(haystack: string, needle: string): boolean {
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu').test(haystack);
+}
+
 /**
  * FOLLOW-567: fetch a listing's embed text fields from the Estalara backend, for
  * the Modal embed-seed path that sends only `{ tenant_id, listing_id }` (no
  * text_fields). Maps the backend listing shape to the embed endpoint's
  * `{ title, description, price, location }` contract.
+ *
+ * Since FOLLOW-1022 / FOLLOW-1314 this is ALSO the grounding source for `/api/adapt` and
+ * `/api/adapt/description`, so what it fails to map is a fact the model is forbidden to state and
+ * the fact checker cannot validate. FOLLOW-1317: the price and the location are therefore read
+ * through {@link readPriceLabel} and {@link readLocationLabel}, which accept every shape the
+ * backend's public detail DTO can answer with rather than one of them.
  *
  * Fail-open: returns `null` when the listing cannot be fetched; the caller then
  * returns a 400 (nothing to embed) rather than upserting an empty vector.
@@ -158,11 +260,6 @@ export async function fetchListingTextFields(
   const listing = await fetchListingJson(listingId, locale);
   if (!listing) return null;
 
-  const str = (v: unknown): string | undefined =>
-    typeof v === 'string' && v.trim().length > 0 ? v : undefined;
-  const num = (v: unknown): number | undefined =>
-    typeof v === 'number' && Number.isFinite(v) ? v : undefined;
-
   const fields: ListingTextFields = {};
 
   const title = str(listing.headline);
@@ -171,16 +268,11 @@ export async function fetchListingTextFields(
   const description = str(listing.description);
   if (description) fields.description = description;
 
-  const priceNum = num(listing.price);
-  if (priceNum !== undefined) {
-    const currency = str(listing.currency);
-    fields.price = currency ? `${String(priceNum)} ${currency}` : String(priceNum);
-  }
+  const price = readPriceLabel(listing);
+  if (price !== undefined) fields.price = price;
 
-  const location = [str(listing.streetAddress), str(listing.city), str(listing.region)]
-    .filter((s): s is string => Boolean(s))
-    .join(', ');
-  if (location) fields.location = location;
+  const location = readLocationLabel(listing);
+  if (location !== undefined) fields.location = location;
 
   // Nothing usable on the listing → treat as a fetch miss so the caller 400s.
   return Object.keys(fields).length > 0 ? fields : null;

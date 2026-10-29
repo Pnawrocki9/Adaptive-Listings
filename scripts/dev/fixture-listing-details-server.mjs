@@ -14,7 +14,9 @@
  * `tests/e2e/follow-819/fixture-listing.html`, and nothing else:
  *   - the headline slot's text and the description slot's text (FOLLOW-1225);
  *   - the structured facts the page publishes as `data-estalara-fact="<field>"` elements: `price`,
- *     `currency`, `streetAddress`, `city`, `region` (FOLLOW-1249).
+ *     `currency`, `publicLocationLabel`, `city`, `region` (FOLLOW-1249; `publicLocationLabel`
+ *     replaced `streetAddress` in FOLLOW-1317 — the backend's public detail DTO has no
+ *     `streetAddress`, so serving one was grounding on a field production cannot send).
  *
  * Together those are the whole field set `fetchListingTextFields()` reads into the `/api/adapt`
  * prompt (`listing_title`, `listing_description`, `listing_price`, `listing_location`). CEO ruling
@@ -199,7 +201,7 @@ function readElementText(html, attribute, value) {
 const STRUCTURED_FACTS = /** @type {const} */ ([
   { field: 'price', type: 'number' },
   { field: 'currency', type: 'string' },
-  { field: 'streetAddress', type: 'string' },
+  { field: 'publicLocationLabel', type: 'string' },
   { field: 'city', type: 'string' },
   { field: 'region', type: 'string' },
 ]);
@@ -232,13 +234,13 @@ function readStructuredFact(html, { field, type }) {
  * The facts the fixture page publishes about itself.
  *
  * Key names are the backend's (`ListingResponseTO`), because `fetchListingTextFields()` reads
- * `headline`, `description`, `price`, `currency`, `streetAddress`, `city` and `region` by those
- * names. Every value is read from the page. Nothing the page does not publish is emitted; see the
- * module docblock on why serving more would be fabrication.
+ * `headline`, `description`, `price`, `currency`, `publicLocationLabel`, `city` and `region` by
+ * those names. Every value is read from the page. Nothing the page does not publish is emitted; see
+ * the module docblock on why serving more would be fabrication.
  *
  * @param {string} html - The fixture page source.
  * @returns {{uuid: string, headline: string, description: string, price: number,
- *   currency: string, streetAddress: string, city: string, region: string}}
+ *   currency: string, publicLocationLabel: string, city: string, region: string}}
  * @throws {FixtureUnreadableError}
  */
 export function extractFixtureFacts(html) {

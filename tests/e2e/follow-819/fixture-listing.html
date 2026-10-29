@@ -109,9 +109,16 @@
            `data-estalara-fact` value is a backend `ListingResponseTO` field name that
            `fetchListingTextFields()` (`apps/control-plane/src/lib/listing-details.ts`) reads into
            the `/api/adapt` prompt: `price` + `currency` become `listing_price`, and
-           `streetAddress` + `city` + `region` become `listing_location`.
+           `publicLocationLabel` + `city` + `region` become `listing_location`.
            `grounding-source.test.ts` derives that field set from the production function at run
            time and fails if this block and the reader drift apart.
+
+           FOLLOW-1317: this block published `streetAddress` until 2026-10-16. The backend's public
+           detail DTO has no such field (`ListingResponseTO.kt:36-59`) — address precision is gated
+           behind `locationDisclosureLevel` and published as `publicLocationLabel` — so a fixture
+           serving `streetAddress` grounded runs on a field production can never send, which is
+           exactly what the CEO ruling below forbids. The VALUE is unchanged: the street is what the
+           headline on this page already states, i.e. what this listing discloses publicly.
 
            Values are consistent with what the page already states: the address in the headline,
            and the ~$385k price the yield/income attributes above were computed from
@@ -124,8 +131,8 @@
         <dd data-estalara-fact="price">385000</dd>
         <dt>Currency</dt>
         <dd data-estalara-fact="currency">USD</dd>
-        <dt>Street address</dt>
-        <dd data-estalara-fact="streetAddress">9 Blackberry Pl</dd>
+        <dt>Public location label</dt>
+        <dd data-estalara-fact="publicLocationLabel">9 Blackberry Pl</dd>
         <dt>City</dt>
         <dd data-estalara-fact="city">Palm Coast</dd>
         <dt>State</dt>

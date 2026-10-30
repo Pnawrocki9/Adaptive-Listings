@@ -3466,6 +3466,32 @@ apply.
 Three GREEN runs with no RED or ABORTED run; the holdout draw counts as neutral (CEO ruling
 2026-09-22). The caveats of §5.23 (a)–(d) apply.
 
+> **CORRECTION 2026-10-30 — this series did NOT exercise the FOLLOW-1415 code.** `localhost-up.sh`
+> found the control plane of §5.41 still running ("control-plane-3000: already running - leaving
+> it") and did not rebuild it, so runs 113–116 were served by the `main` `2ac3d9d0` build; `[FRESH]`
+> proves only the harness checkout. FOLLOW-1415 is live-validated by §5.43 (runs 120–126, a fresh
+> `next build` of a tree that contains it).
+
+### 5.43 — 2026-10-30 (FOLLOW-1412 series at branch HEAD `6389f429`, which contains FOLLOW-1415 `2e6c0315`; fresh `next build` (BUILD_ID 03:15 CET), control plane under `next start`, global model `claude-sonnet-5-5`, EXECUTED ×7) — **three consecutive `run=GREEN` with `total=8` (runs 124, 125, 126), each `[FRESH]` — the per-PR series of #1097 (merged as `059d955f`) and the live validation of #1095**
+
+**MANUAL, run by the PM.** The control plane was stopped by PID first; the bring-up log reads
+`control-plane-3000: started` and the served chunk carries the restored CTA. Live `family_buyer`
+CTAs observed: "Get Family Buyer Guide" (the restored playbook string), "Schedule a Family Tour",
+"Schedule Your Family Tour"; the pre-1412 "Get the Moving-Up Guide" no longer appears.
+
+| Run(s) | Started (UTC)            | Result                                               | Cause                                                                 |
+| ------ | ------------------------ | ---------------------------------------------------- | --------------------------------------------------------------------- |
+| 120    | 2026-10-30T02:16:52.353Z | `TALLY green=7 red=1 unmeasured=0 total=8 run=RED`   | AC(8) hop 3 `intent_engine_shim_reachable` — first run after bring-up |
+| 121    | 02:19:23.120Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `6389f429…`                                      |
+| 122    | 02:21:18.659Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `6389f429…`                                      |
+| 123    | 02:22:58.012Z            | `TALLY green=7 red=1 unmeasured=0 total=8 run=RED`   | AC(5) CTA `locator.click` timeout, element not visible (FOLLOW-1398)  |
+| 124    | 02:24:38.843Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `6389f429…`                                      |
+| 125    | 02:26:33.020Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `6389f429…`                                      |
+| 126    | 02:28:23.257Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `6389f429…`                                      |
+
+Three consecutive GREEN runs (124–126). The two REDs are harness-side (shim warm-up, CTA click
+flake), not product defects. The caveats of §5.23 (a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

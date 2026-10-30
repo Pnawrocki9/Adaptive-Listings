@@ -1,0 +1,51 @@
+{
+  "case_count": 98,
+  "change": "FOLLOW-1420 with FOLLOW-1421 (CEO rulings 2026-10-30): CLAIMS_VALIDATION_VERSION is bumped from claims-v6 to claims-v7, so copy cached before the protected-ground guard refused composition stated through a majority (\"Most residents are Catholic\", \"a Muslim-majority neighbourhood\", \"Większość mieszkańców to katolicy\", \"La mayoría de los vecinos son musulmanes\") and before a multiplied price had to equal the listing's exactly (\"1,15 mln\" no longer stands for 1 149 000) is regenerated once instead of served. v20 is a STAMP-ONLY RE-FREEZE of v19: every byte is v19's except the value of expected.claims_validation, which reads claims-v7 in every case where v19 reads claims-v6 (the 63 FIT cases); a null stamp stays null. No input, raw output, verdict, headline, violation or prompt digest changed: no corpus case moved under the tightened checks.",
+  "claims_validation_version": "claims-v7",
+  "corpus": "corpus.v20.jsonl",
+  "corpus_sha256": "fd0da821:69053897:6e6a7845:0d107116:03b91209:f14eb921:db2eb4c0:bbaff300",
+  "delta": [],
+  "derived_from": {
+    "corpus": "corpus.v19.jsonl",
+    "manifest": "MANIFEST.v19.json",
+    "corpus_sha256": "d26a2580:23841eed:97d0082a:b13cedfe:24080832:ac7530e5:9c5830d0:57b14d9a"
+  },
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-10-30",
+  "headline_called": 63,
+  "headline_suppressed": 30,
+  "kind": "stamp_refreeze",
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "FAILED/empty": 2,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/meta_commentary": 1,
+    "FAILED/residual_tag": 3,
+    "FAILED/truncated": 1,
+    "NEUTRAL/with_reason": 8,
+    "NEUTRAL/without_reason": 1,
+    "REFUSED/hallucinated_number": 5,
+    "REFUSED/unit_mismatch": 2,
+    "REFUSED/unsupported_amenity": 6,
+    "REFUSED/unsupported_guarantee": 2
+  },
+  "per_verdict": {
+    "FAILED": 11,
+    "FIT": 63,
+    "NEUTRAL": 9,
+    "REFUSED": 15
+  },
+  "recorded_outputs_predate_prompt": "Every raw_headline in this corpus was produced by an older headline prompt. They are replayed through the unchanged checks, so they pin the checks and the new prompt bytes, NOT what the new prompt makes the model write.",
+  "stamp_refreeze": {
+    "from": "claims-v6",
+    "to": "claims-v7",
+    "cases": 63
+  }
+}

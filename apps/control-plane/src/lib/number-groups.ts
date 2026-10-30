@@ -110,12 +110,24 @@ export function withMultipliedNumbers(grounding: string): string {
 }
 
 /**
+ * What a multiplied number counts when it is not money: people or an area, written directly after
+ * it ("1,78 mln mieszkańców", "2,5 tys. m²"). Only such a number keeps the rounding tolerance; any
+ * other multiplied number — a price, or a number whose unit is not written — must be exact
+ * [FOLLOW-1421].
+ */
+const NON_MONEY_COUNT_RE =
+  /^[ \u00a0\u202f\u2009]*(?:(?:of|de)[ \u00a0]+)?(?:residents?|inhabitants?|people|visitors?|tourists?|passengers?|mieszka[nń]c\p{L}*|os[oó]b|ludzi|turyst\p{L}*|pasa[zż]er\p{L}*|habitantes|personas|visitantes|turistas|pasajeros|m²|m2|sq\.?\s?(?:ft|m)|square|metr\p{L}*|hectares?|hektar\p{L}*|hect[aá]reas?|ha)(?![\p{L}\p{N}])/iu;
+
+/**
  * FOLLOW-1397: blank out every multiplied number of `text` ("1,15 mln PLN", "1.15M", "850 tys.",
  * "850k") that the grounding states, so the digit rule does not read "1.15" as a number of its
- * own. Grounded means: the multiplied value EQUALS an integer of the grounding, or — when the
- * written number has three or more significant digits — differs from one by at most half the unit
- * of its last written digit (the listing value rounded to the precision written). A multiplied
- * number that is not grounded is left in place, and the digit rule refuses it as before.
+ * own. Grounded means the multiplied value EQUALS an integer of the grounding. A price is always
+ * exact (CEO 2026-10-30) [FOLLOW-1421]: "1,15 mln" is grounded by 1 150 000 and refused for
+ * 1 149 000. Only a count of people or an area written right after the number
+ * (`NON_MONEY_COUNT_RE`, "1,78 mln mieszkańców") keeps the #1101 tolerance: with three or more
+ * significant digits it may differ from a listing integer by at most half the unit of its last
+ * written digit. A multiplied number that is not grounded is left in place, and the digit rule
+ * refuses it as before.
  *
  * @param text - A number-normalised text (`normaliseNumberGroups`).
  * @param grounding - A number-normalised grounding.
@@ -125,12 +137,14 @@ export function stripGroundedMultipliedNumbers(text: string, grounding: string):
   const integers = groundedIntegers(grounding);
   return text.replace(
     MULTIPLIED_NUMBER_RE,
-    (match, number: string, word?: string, letter?: string) => {
+    (match, number: string, word: string | undefined, letter: string | undefined, at: number) => {
       const read = readMultiplied(number, word ?? letter ?? '');
       if (read === null) return match;
+      const rounded =
+        read.significant >= 3 && NON_MONEY_COUNT_RE.test(text.slice(at + match.length));
       const grounded = [...integers].some((g) => {
         if (g === read.value) return true;
-        if (read.significant < 3) return false;
+        if (!rounded) return false;
         const diff = g > read.value ? g - read.value : read.value - g;
         return diff * 2n <= read.unit;
       });

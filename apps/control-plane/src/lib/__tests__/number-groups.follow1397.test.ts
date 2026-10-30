@@ -8,12 +8,14 @@
  * (mld, miliard…, bn, billion) — is now read as the multiplied value, with a decimal comma or
  * point ("1,15 mln", "1.15M", "€1,15 mln", "850 tys. zł", "850k").
  *
- * Tolerance, stated: the multiplied value must EQUAL a number of the listing, or — only when the
- * written number has at least three significant digits — equal the listing number rounded to the
- * precision written ("1,15 mln" covers 1 145 000 … 1 155 000). Two significant digits or fewer
- * must be exact: "1,2 mln" is refused for 1 150 000 (rounding 1,15 to one decimal would hide a
- * 4 % change), and so is "1 mln". A multiplied number that is not grounded is refused as before.
- * The listing's own "1,15 mln" grounds 1150000 too (exact only).
+ * A price is always exact (CEO 2026-10-30, "always show the exact price") [FOLLOW-1421]: the
+ * multiplied value must EQUAL a number of the listing. "1,15 mln" is grounded by 1 150 000 and
+ * refused for 1 149 000; "1149 tys." is grounded by 1 149 000 and refused for 1 149 500. The
+ * rounding tolerance #1101 introduced (half the unit of the last written digit, three significant
+ * digits or more) is kept ONLY for a count of people or an area written right after the number
+ * ("1,78 mln mieszkańców", "2,5 tys. m²"); a number with no such unit is read as money. A
+ * multiplied number that is not grounded is refused as before. The listing's own "1,15 mln"
+ * grounds 1150000 too (exact only).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -38,6 +40,8 @@ const { getPlaybook } = await import('@estalara/shared/playbooks');
 const WAW = 'Dwupokojowe mieszkanie na Mokotowie, Warszawa. Balkon.';
 const WAW_CTX = { listing_price: '1150000 PLN', listing_location: 'Warszawa' };
 const ROUNDED_CTX = { listing_price: '1149000 PLN', listing_location: 'Warszawa' };
+const HALF_CTX = { listing_price: '1149500 PLN', listing_location: 'Warszawa' };
+const NEAR_K_CTX = { listing_price: '849600 PLN', listing_location: 'Warszawa' };
 const K_CTX = { listing_price: '850000 PLN', listing_location: 'Warszawa' };
 const ES_CTX = { listing_price: '1150000 EUR', listing_location: 'Sevilla' };
 
@@ -56,8 +60,7 @@ describe('FOLLOW-1397 — the description path', () => {
     ['Price: 850k PLN.', K_CTX],
     ['Price: 850K PLN.', K_CTX],
     ['Precio: 850 mil euros.', K_CTX],
-    // three significant digits: the listing value rounded to the written precision
-    ['Cena: 1,15 mln PLN.', ROUNDED_CTX],
+    // exact [FOLLOW-1421]
     ['Cena: 1149 tys. zł.', ROUNDED_CTX],
   ] as const)('%j is grounded by %j', (text, ctx) => {
     expect(checkBodyClaims(text, WAW, ctx)).toBeNull();
@@ -76,6 +79,14 @@ describe('FOLLOW-1397 — the description path', () => {
     // three digits, but outside half a unit
     ['Cena: 851 tys. zł.', K_CTX],
     ['Cena: 1,14 mln PLN.', WAW_CTX],
+    // CEO 2026-10-30 [FOLLOW-1421]: a price is always exact. Each of these lies within half a
+    // unit of the listing price, so each was grounded under the #1101 tolerance.
+    ['Cena: 1,15 mln PLN.', ROUNDED_CTX],
+    ['Price: 1.15M PLN.', ROUNDED_CTX],
+    ['Precio: 1,15 millones de euros.', ROUNDED_CTX],
+    ['Cena: 1149 tys. zł.', HALF_CTX],
+    ['Cena: 850 tys. zł.', NEAR_K_CTX],
+    ['Price: 850k PLN.', NEAR_K_CTX],
     // the wrong multiplier
     ['Cena: 1,15 mld PLN.', WAW_CTX],
     ['Cena: 1150 mln PLN.', WAW_CTX],
@@ -90,10 +101,22 @@ describe('FOLLOW-1397 — the description path', () => {
     expect(checkBodyClaims('Cena: 1 149 000 zł.', 'Cena 1,15 mln zł.', {})).toBe(
       'hallucinated_number',
     );
-    // CEO 2026-10-30 [FOLLOW-1419]: prices are always exact — a rounded price is refused.
-    expect(checkBodyClaims('Cena: 850 tys. zł.', 'Cena 849 000 zł.', {})).toBe(
+    // CEO 2026-10-30 [FOLLOW-1419, FOLLOW-1421]: prices are always exact. 849 600 lies within
+    // half a unit of "850 tys.", so this pin fails if the #1101 tolerance comes back for prices.
+    expect(checkBodyClaims('Cena: 850 tys. zł.', 'Cena 849 600 zł.', {})).toBe(
       'hallucinated_number',
     );
+    expect(checkBodyClaims('Cena: 1,15 mln zł.', 'Cena 1 149 000 zł.', {})).toBe(
+      'hallucinated_number',
+    );
+  });
+
+  it('a count of people or an area keeps the rounding tolerance; the same figure as money does not', () => {
+    const city = 'Warszawa ma 1 784 000 mieszkańców. Działka 2 480 m².';
+    expect(checkBodyClaims('Miasto ma 1,78 mln mieszkańców.', city, {})).toBeNull();
+    expect(checkBodyClaims('Działka 2,48 tys. m².', city, {})).toBeNull();
+    expect(checkBodyClaims('Cena: 1,78 mln zł.', city, {})).toBe('hallucinated_number');
+    expect(checkBodyClaims('Miasto ma 1,8 mln mieszkańców.', city, {})).toBe('hallucinated_number');
   });
 
   it('a metre is not a million: "64 m" is checked as 64', () => {
@@ -152,5 +175,10 @@ describe('FOLLOW-1397 — /api/adapt', () => {
 
   it('a wrong multiplied price is refused', async () => {
     expect(await servedOnAdapt('Mieszkanie za 1,2 mln zł', WAW_CTX)).toBe(false);
+  });
+
+  it('a rounded price is refused: prices are always exact [FOLLOW-1421]', async () => {
+    expect(await servedOnAdapt('Mieszkanie za 1,15 mln zł', ROUNDED_CTX)).toBe(false);
+    expect(await servedOnAdapt('Mieszkanie za 1149 tys. zł', ROUNDED_CTX)).toBe(true);
   });
 });

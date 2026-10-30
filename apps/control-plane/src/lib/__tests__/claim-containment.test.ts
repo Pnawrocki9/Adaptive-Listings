@@ -90,8 +90,8 @@ describe('isTrustedDescriptionHit (legacy admission)', () => {
     expect(isTrustedDescriptionHit('NEUTRAL', null)).toBe(true);
   });
 
-  it('FOLLOW-1406 / FOLLOW-1411 / FOLLOW-1415 / FOLLOW-1414 / FOLLOW-1419: a claims-v1 … v5 FIT hit is not trusted', () => {
-    expect(CLAIMS_VALIDATION_VERSION).toBe('claims-v6');
+  it('FOLLOW-1406 / FOLLOW-1411 / FOLLOW-1415 / FOLLOW-1414 / FOLLOW-1419 / FOLLOW-1420: a claims-v1 … v6 FIT hit is not trusted', () => {
+    expect(CLAIMS_VALIDATION_VERSION).toBe('claims-v7');
     expect(isTrustedDescriptionHit('FIT', 'claims-v1')).toBe(false);
     expect(isTrustedDescriptionHit(undefined, 'claims-v1')).toBe(false);
     // FOLLOW-1411: a claims-v2 row never passed the protected-ground or school grounding check.
@@ -103,7 +103,10 @@ describe('isTrustedDescriptionHit (legacy admission)', () => {
     // FOLLOW-1419: a claims-v5 row never passed the tightened protected-ground guard (painful
     // history terms; a place named by a group without a historical adjective).
     expect(isTrustedDescriptionHit('FIT', 'claims-v5')).toBe(false);
-    expect(isTrustedDescriptionHit('FIT', 'claims-v6')).toBe(true);
+    // FOLLOW-1420 / FOLLOW-1421: a claims-v6 row never passed the majority composition refusal,
+    // and its multiplied price may have been rounded.
+    expect(isTrustedDescriptionHit('FIT', 'claims-v6')).toBe(false);
+    expect(isTrustedDescriptionHit('FIT', 'claims-v7')).toBe(true);
     expect(isTrustedDescriptionHit('NEUTRAL', 'claims-v1')).toBe(true);
   });
 
@@ -113,10 +116,11 @@ describe('isTrustedDescriptionHit (legacy admission)', () => {
       JSON.parse(
         readFileSync(path.resolve(__dirname, '../__fixtures__/description-parity', file), 'utf8'),
       ) as { claims_validation_version: string };
-    // The current contract (FOLLOW-1419: corpus v19, a stamp-only re-freeze of v18). History pins
+    // The current contract (FOLLOW-1420: corpus v20, a stamp-only re-freeze of v19). History pins
     // its own literal: v10 (FOLLOW-1406) introduced claims-v2, v13 (FOLLOW-1411) claims-v3, v14
-    // (FOLLOW-1415) claims-v4, v18 (FOLLOW-1414) claims-v5.
-    expect(manifest('MANIFEST.v19.json').claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    // (FOLLOW-1415) claims-v4, v18 (FOLLOW-1414) claims-v5, v19 (FOLLOW-1419) claims-v6.
+    expect(manifest('MANIFEST.v20.json').claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(manifest('MANIFEST.v19.json').claims_validation_version).toBe('claims-v6');
     expect(manifest('MANIFEST.v18.json').claims_validation_version).toBe('claims-v5');
     expect(manifest('MANIFEST.v14.json').claims_validation_version).toBe('claims-v4');
     expect(manifest('MANIFEST.v13.json').claims_validation_version).toBe('claims-v3');

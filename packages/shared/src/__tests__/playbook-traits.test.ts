@@ -367,8 +367,8 @@ describe('describesResidentsByProtectedGround — facts pass, discrimination and
  * associations — occupation, the Nazi regime, the camps by name, expulsion, deportation by train,
  * round-ups and forced labour — while ordinary listing words pass; (2) a PLACE named by race,
  * ethnic origin or religion passes only with a historical adjective directly before it, while a
- * building, an institution or a street's name stays allowed; (3) prices stay exact (no code
- * change, the digit rule in `grounding-check`).
+ * building, an institution or a street's name stays allowed; (3) prices stay exact — enforced by
+ * the digit rule (`number-groups.ts`), which until FOLLOW-1421 still rounded a multiplied price.
  */
 describe('describesResidentsByProtectedGround — painful history and places named by a group [FOLLOW-1419]', () => {
   const PAINFUL_REFUSE: Record<string, string[]> = {
@@ -563,6 +563,94 @@ describe('describesResidentsByProtectedGround — painful history and places nam
   };
   for (const [locale, values] of Object.entries(PLACE_PASS)) {
     it.each(values)(`passes a qualified place or an institution ${locale} %j`, (value) => {
+      expect(describesResidentsByProtectedGround(value)).toBe(false);
+    });
+  }
+});
+
+/**
+ * FOLLOW-1420 (RETRO-369 / RETRO-371): rule 2 reads composition through a majority quantifier,
+ * "once" and "remains" no longer open the historical exemption, and rule 3 spares a street's name
+ * in an address. Every REFUSE below was served before this change (red-first); each locale has a
+ * member outside the forms the RETRO named (Rule BC clause 3).
+ */
+describe('describesResidentsByProtectedGround — majority, once / remains, addresses [FOLLOW-1420]', () => {
+  const MAJORITY_REFUSE: Record<string, string[]> = {
+    en: [
+      'Most residents are Catholic.',
+      'Most of the neighbours are Muslim.',
+      'A Muslim-majority neighbourhood.',
+      'The majority of locals are Hindu.',
+      'The majority of residents here are Muslims.',
+      'An area with a Catholic majority.',
+      'A Catholic-dominated estate.',
+    ],
+    pl: [
+      'Większość mieszkańców to katolicy.',
+      'Przeważająca część mieszkańców to muzułmanie.',
+      'Mieszkańcy to w przeważającej mierze katolicy.',
+      'Większość sąsiadów stanowią Żydzi.',
+      'Większość mieszkańców jest katolikami.',
+      'Osiedle z muzułmańską większością.',
+    ],
+    es: [
+      'La mayoría de los vecinos son musulmanes.',
+      'Una zona con mayoría musulmana.',
+      'La mayor parte de los habitantes son católicos.',
+      'Un barrio de mayoría judía.',
+    ],
+  };
+  for (const [locale, values] of Object.entries(MAJORITY_REFUSE)) {
+    it.each(values)(`rule 2 refuses a majority ${locale} %j`, (value) => {
+      expect(describesResidentsByProtectedGround(value)).toBe(true);
+    });
+  }
+
+  it.each([
+    'Once you move in the Jewish community will welcome you.',
+    'Historically home to a Muslim population that remains active.',
+  ])('the historical exemption no longer opens on %j', (value) => {
+    expect(describesResidentsByProtectedGround(value)).toBe(true);
+  });
+
+  it.each([
+    'Residents are mostly Catholic.',
+    'Close to the former ghetto.',
+    'Mieszkanie przy ul. Bohaterów Getta 5, obok dawnego getta.',
+    'Residents were expelled after the war',
+  ])('controls stay refused: %j', (value) => {
+    expect(describesResidentsByProtectedGround(value)).toBe(true);
+  });
+
+  const PASS: Record<string, string[]> = {
+    en: [
+      'Most residents enjoy the park.',
+      'Most of the rooms face south.',
+      'Most of the neighbours are retirees.',
+      'A majority-owned company manages the building.',
+      'Ideal for a growing family, close to good schools.',
+      'Steps from the old Jewish quarter',
+      "Historically home to Kraków's Jewish community",
+      'Once home to a thriving Jewish community, the street is now full of cafés',
+      'Flat on Ghetto Heroes Street.',
+      'The air is expelled through a heat-recovery unit.',
+    ],
+    pl: [
+      'Większość mieszkań ma balkon.',
+      'Większość mieszkańców osiedla to młode rodziny.',
+      'Mieszkanie przy ul. Bohaterów Getta 5.',
+      'Mieszkanie przy ul. Katyńskiej we Wrocławiu.',
+      'Mieszkanie przy ulicy Bohaterów Getta.',
+      'Lokal przy al. Bohaterów Getta 12.',
+    ],
+    es: [
+      'La mayoría de los pisos tienen balcón.',
+      'La mayor parte de la superficie es jardín.',
+      'Expulsión de aire a la fachada.',
+    ],
+  };
+  for (const [locale, values] of Object.entries(PASS)) {
+    it.each(values)(`passes ${locale} %j`, (value) => {
       expect(describesResidentsByProtectedGround(value)).toBe(false);
     });
   }

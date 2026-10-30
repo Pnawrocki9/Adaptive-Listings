@@ -120,8 +120,16 @@ import {
  *   ethnic origin or religion without a historical adjective directly before it ("żydowska
  *   dzielnica", "the Jewish quarter", "la judería"). No `claims-v5` row was checked against
  *   those; it is regenerated once instead of served.
+ * - `claims-v7` — 2026-10-30, FOLLOW-1420 with FOLLOW-1421: the protected-ground guard now also
+ *   refuses composition stated through a majority ("Most residents are Catholic", "a
+ *   Muslim-majority neighbourhood", "Większość mieszkańców to katolicy", "La mayoría de los vecinos
+ *   son musulmanes"), "once" as a conjunction and "remains" no longer excuse a group of residents;
+ *   and a multiplied price must equal the listing's exactly (CEO: "always show the exact price"),
+ *   so "1,15 mln" no longer stands for 1 149 000. No `claims-v6` row was checked against those; it
+ *   is regenerated once instead of served. (The street-address and ventilation relaxations of rule
+ *   3 alone would not need it.)
  */
-export const CLAIMS_VALIDATION_VERSION = 'claims-v6';
+export const CLAIMS_VALIDATION_VERSION = 'claims-v7';
 
 /** G-03: total budget per call (deadline on the whole, retries included). */
 const DESCRIPTION_DEADLINE_MS = 75_000;

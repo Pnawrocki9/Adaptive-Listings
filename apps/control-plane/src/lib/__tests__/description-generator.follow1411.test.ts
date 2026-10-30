@@ -395,3 +395,45 @@ describe('FOLLOW-1419 — painful history and bare places named by a group are r
     expect(report.outcome.verdict).toBe('FIT');
   });
 });
+
+/**
+ * FOLLOW-1420: composition stated through a majority is refused even where the listing says it;
+ * a street's name in an address and a majority of flats or rooms are served.
+ */
+describe('FOLLOW-1420 — a majority of residents by religion is refused; an address is served', () => {
+  beforeEach(() => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'test-key-'.repeat(3));
+    mockCreate.mockReset();
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each([
+    ['en', 'Two-bedroom flat in a building where most residents are Catholic.'],
+    ['pl', 'Mieszkanie z dwiema sypialniami. Większość mieszkańców to katolicy.'],
+    ['es', 'Piso de dos dormitorios. La mayoría de los vecinos son musulmanes.'],
+  ] as const)(
+    '%s: REFUSED / protected_ground even where the listing says it: %j',
+    async (locale, text) => {
+      const listing: Listing = { original: text, context: { listing_title: '2 bed flat' } };
+      mockCreate.mockResolvedValueOnce(reply(fit(text)));
+      const report = await generateDescription(event(listing, 'lifestyle_expat', locale));
+      expect(report.outcome).toEqual({ verdict: 'REFUSED', violation: 'protected_ground' });
+      expect(report.claimsValidation).toBeNull();
+    },
+  );
+
+  it.each([
+    [
+      'pl',
+      'Mieszkanie z dwiema sypialniami przy ul. Bohaterów Getta 5. Większość mieszkań ma balkon.',
+    ],
+    ['pl', 'Mieszkanie z dwiema sypialniami przy ul. Katyńskiej we Wrocławiu.'],
+  ] as const)('%s: an address the listing names is FIT: %j', async (locale, text) => {
+    const listing: Listing = { original: text, context: { listing_title: '2 bed flat' } };
+    mockCreate
+      .mockResolvedValueOnce(reply(fit(text)))
+      .mockResolvedValueOnce(reply('Two-bedroom flat'));
+    const report = await generateDescription(event(listing, 'lifestyle_expat', locale));
+    expect(report.outcome.verdict).toBe('FIT');
+  });
+});

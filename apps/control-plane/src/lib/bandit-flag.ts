@@ -16,7 +16,9 @@
  * `headline`, which §E.7.0 withholds without grounding, so every arm served the same copy
  * (ESC-077, RETRO-317): the bandit was learning a difference no buyer saw.
  *
- * `BANDIT_ENABLED=true` restores the pre-freeze behaviour exactly.
+ * `BANDIT_ENABLED=true` restores the pre-freeze behaviour, except that an arm the served copy
+ * cannot depend on is never credited (FOLLOW-1168; tally on `runDecisionTree` in the adapt route).
+ * On the shipped playbooks that means arms are drawn but every response still records `control`.
  *
  * @module apps/control-plane/src/lib/bandit-flag
  */

@@ -105,6 +105,17 @@ const AdaptPostBodySchema = z.object({
 /**
  * Run the adaptation decision tree (Master Design E.1); branches 3 and 4 call the LLM gateway.
  *
+ * Which branch credits the sampled arm [ESC-077, FOLLOW-1163, FOLLOW-1168]. An arm is credited only
+ * when bytes served depend on it; every other response records `control`:
+ *   - branch 1 (low confidence): nothing served, no credit.
+ *   - branch 2 (playbook) and branch 3's fallback: credit only if a surviving slot carries
+ *     `variants.en`. No shipped playbook has one (only `headline` does, §E.7.0 withholds it), so
+ *     no credit today.
+ *   - branches 3 and 4 success (`llm_tweaked`, `llm_full`): the gateway never receives the arm, so
+ *     the model's copy cannot depend on it. No credit.
+ *   - branch 4's fallback: nothing served, no credit.
+ * Consequence: on the shipped playbooks no response credits v1/v2, whatever BANDIT_ENABLED says.
+ *
  * @param archetypeId    - Archetype matched by the intent engine.
  * @param confidence     - Intent confidence 0–1.
  * @param similarity     - Cosine similarity to the matched archetype 0–1.
@@ -137,8 +148,8 @@ async function runDecisionTree(
   source: AdaptationDirectives['source'];
   /** Set only on a `playbook_fallback_*` result — see `AdaptationDirectives` [FOLLOW-1056]. */
   fallback_reason?: AdaptationDirectives['fallback_reason'];
-  /** No served slot differs between arms, so the arm gets no credit [FOLLOW-1163]. */
-  variant_suppressed?: true;
+  /** Slots whose served copy follows the arm; absent means no arm gets credit [FOLLOW-1168]. */
+  armDependentSlots?: ReadonlySet<string>;
 }> {
   // Branch 1: confidence too low — no adaptation
   if (confidence <= CONFIDENCE_THRESHOLD) {
@@ -155,8 +166,8 @@ async function runDecisionTree(
 
   // Playbook slots → TextDirectives: locale override, then bandit variant, then `s.en` [F-09].
 
-  // Keyed on SERVED slots, so variants on a surviving slot still earn credit [FOLLOW-1163].
-  const variantBearingSlots = new Set(
+  // The template branches' copy follows the arm on exactly these slots [FOLLOW-1163].
+  const armDependentSlots: ReadonlySet<string> = new Set(
     playbook.slots
       .filter((s: SlotDirective) => (s.variants?.en.length ?? 0) > 1)
       .map((s) => s.slot),
@@ -221,10 +232,7 @@ async function runDecisionTree(
     return {
       directives: served,
       source: 'playbook',
-      // ESC-077 option 2 — see `variant_suppressed` on the return type.
-      ...(served.some((d) => variantBearingSlots.has(d.slot))
-        ? {}
-        : { variant_suppressed: true as const }),
+      armDependentSlots,
       // Withhold beats the token signal: no token-bearing slot survives §E.7.0 here [FOLLOW-1163].
       ...(withheldSlots.length > 0
         ? { fallback_reason: 'ungrounded_directives_withheld' as const }
@@ -288,10 +296,7 @@ async function runDecisionTree(
     directives: served,
     source: 'playbook_fallback_llm_unavailable',
     fallback_reason: gatewayFallback.reason,
-    // ESC-077 option 2 — see `variant_suppressed` on the return type.
-    ...(served.some((d) => variantBearingSlots.has(d.slot))
-      ? {}
-      : { variant_suppressed: true as const }),
+    armDependentSlots,
   };
 }
 
@@ -829,7 +834,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     directives: textDirectives,
     source,
     fallback_reason: fallbackReason,
-    variant_suppressed: variantSuppressed,
+    armDependentSlots,
   } = await runDecisionTree(
     archetypeId,
     confidence,
@@ -845,11 +850,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     body.traits,
   );
 
-  // Credited arm: 'control' when the §E.7.0 withhold left nothing variant-bearing [FOLLOW-1163].
-  const recordedVariant = variantSuppressed ? 'control' : selectedVariant;
-
   // No per-listing headline off detail pages [FOLLOW-345].
   const filteredTextDirectives = filterDirectivesByPageType(textDirectives, body.page_type);
+
+  // Credited arm: read off what is actually served; tally on `runDecisionTree` [FOLLOW-1168].
+  const recordedVariant = filteredTextDirectives.some((d) => armDependentSlots?.has(d.slot))
+    ? selectedVariant
+    : 'control';
 
   // Reorder fails CLOSED (`reorderWithheld` says why); text stays fail-open [FOLLOW-1202].
   const allDirectives: (TextDirective | ReorderDirective)[] = [...filteredTextDirectives];

@@ -163,3 +163,43 @@ export function assertsNoWorkClaim(text: string): boolean {
   }
   return false;
 }
+
+/** The global twin of `GUARANTEE_RE`, for `matchAll`. */
+const GUARANTEE_ALL_RE = new RegExp(GUARANTEE_RE.source, 'giu');
+
+/**
+ * FOLLOW-1408: a negator DIRECTLY before a guarantee, with at most three closed filler words
+ * between them — "no guarantee", "is not guaranteed", "aren't guaranteed", "cannot be
+ * guaranteed", "not a guarantee", "without any guarantee", "nie ma żadnej gwarancji", "nie jest
+ * gwarantowany", "no se garantiza", "no está garantizada", "sin ninguna garantía". Anchored at the
+ * end of the text before the match. A content word in between ("No other flat offers guaranteed
+ * rent", "not only guaranteed") breaks it.
+ */
+const GUARANTEE_NEGATED_BEFORE_RE = new RegExp(
+  `(?<![${W}])(?:no|not|never|nothing|without|cannot|neither|nor|\\p{L}+n[’']t|bez|brak|braku|nie|ani|nic|sin|ni|nada|tampoco|nunca)` +
+    `(?:[ \\t]+(?:a|an|any|the|be|been|is|are|was|were|form|kind|of|such|jest|są|ma|daje|można|się|` +
+    `żadnej|żadnych|żadnego|żadna|to|hay|se|es|está|están|existe|ofrece|puede|pueden|ninguna|ningún|ninguno|una|un|la|el)){0,3}` +
+    `[ \\t]+$`,
+  'iu',
+);
+
+/**
+ * Does `text` make an outcome promise — at least one match of `GUARANTEE_RE` that is not
+ * negated [FOLLOW-1408]?
+ *
+ * A match is negated only by `GUARANTEE_NEGATED_BEFORE_RE` (a negator directly before it). A
+ * phrase that is itself negative ("no risk", "bez ryzyka", "sin riesgo") is a claim whatever
+ * precedes it. Used for the generated text AND for the listing's grounding, on both paths: a
+ * listing's own "there is no guarantee of income" no longer grounds "guaranteed income".
+ *
+ * @param text - Generated copy, or the listing's grounding text.
+ * @returns `true` when a non-negated guarantee is present.
+ */
+export function assertsGuarantee(text: string): boolean {
+  for (const m of text.matchAll(GUARANTEE_ALL_RE)) {
+    if (NEGATOR_RE.test(m[0].split(/\s/u)[0] ?? '')) return true;
+    if (GUARANTEE_NEGATED_BEFORE_RE.test(text.slice(0, m.index))) continue;
+    return true;
+  }
+  return false;
+}

@@ -34,7 +34,7 @@ import {
   NEGATOR_RE,
   negatedThroughList,
 } from '@/lib/amenity-lexicon';
-import { CONDITION_FACT_RE, GUARANTEE_RE, assertsNoWorkClaim } from '@/lib/condition-lexicon';
+import { CONDITION_FACT_RE, assertsGuarantee, assertsNoWorkClaim } from '@/lib/condition-lexicon';
 import { normaliseNumberGroups } from '@/lib/number-groups';
 
 /**
@@ -151,7 +151,8 @@ export function checkUnsupportedClaims(
       return 'unsupported_amenity';
     }
   }
-  if (GUARANTEE_RE.test(value) && !GUARANTEE_RE.test(grounding.text)) {
+  // A negated guarantee ("no guarantee of income") is a disclaimer, on both sides [FOLLOW-1408].
+  if (assertsGuarantee(value) && !assertsGuarantee(grounding.text)) {
     return 'unsupported_guarantee';
   }
   // en / pl / es, one list with the description path; a negated condition fact grounds nothing

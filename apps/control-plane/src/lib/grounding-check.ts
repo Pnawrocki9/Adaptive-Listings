@@ -47,7 +47,7 @@ import {
   NEGATOR_RE,
   negatedThroughList,
 } from '@/lib/amenity-lexicon';
-import { CONDITION_FACT_RE, GUARANTEE_RE, assertsNoWorkClaim } from '@/lib/condition-lexicon';
+import { CONDITION_FACT_RE, assertsGuarantee, assertsNoWorkClaim } from '@/lib/condition-lexicon';
 import { hasMetaCommentary } from '@/lib/meta-commentary';
 import { hasModelControlTag } from '@/lib/model-control-tags';
 import { normaliseNumberGroups } from '@/lib/number-groups';
@@ -382,7 +382,8 @@ function checkUnsupportedClaimsPy(
   }
   // FOLLOW-1393: one guarantee / no-work / condition list across en / pl / es
   // (`lib/condition-lexicon.ts`); a condition fact counts only when it is not negated.
-  if (GUARANTEE_RE.test(text) && !GUARANTEE_RE.test(grounding)) return 'unsupported_guarantee';
+  // FOLLOW-1408: a negated guarantee ("no guarantee of income") is a disclaimer, on both sides.
+  if (assertsGuarantee(text) && !assertsGuarantee(grounding)) return 'unsupported_guarantee';
   if (
     assertsNoWorkClaim(text) &&
     !(assertsNoWorkClaim(grounding) || asserted(CONDITION_FACT_RE, grounding))

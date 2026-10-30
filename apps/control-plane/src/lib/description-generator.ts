@@ -141,8 +141,9 @@ const ARCHETYPE_GUIDANCE: Readonly<Record<string, string>> = {
     'amenities. ' +
     'Relocation practicalities matter (utilities, local support).',
   first_time_buyer:
-    'Lead with affordability, mortgage eligibility, move-in readiness, and Help-to-Buy ' +
-    'eligibility where applicable. Simplify jargon. Reassure on condition/surveys.',
+    'Lead with affordability, mortgage eligibility, a manageable layout and running costs, and ' +
+    'Help-to-Buy eligibility where applicable. Simplify jargon. Reassure on condition and ' +
+    'surveys only as the listing states them.',
   luxury_buyer:
     'Emphasise premium finishes, brand-name appliances, views, exclusivity, concierge ' +
     'services, and prestige address. Avoid yield or budget language.',

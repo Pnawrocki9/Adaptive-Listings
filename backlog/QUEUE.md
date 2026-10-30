@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 180 (2026-10-19) — **Checkpoint K3 GREEN at `main` `434b2513` (`docs/checkpoints/K3.md`, README §5.31, tag `k3-green` on this ledger's merge): Phase 3 M1 #1042, M2 #1044, M3 #1041, M5 #1043, N2 full #1045 DONE; N1 `--final` reads 0. A RED pair at `3952ac29` was bisected by a read-only forensic (not a Phase 3 regression) → FOLLOW-1352 #1046 (harness predicate) + FOLLOW-1351 #1047 (SDK single-flight chat refresh). **CEO ruling 2026-10-19: Faza Q — the quiz must identify one archetype with ≥ 90 % accuracy (buyer self-confirmation as ground truth, EN + PL mandatory, buyer-side language switcher, 12 results + neutral + traits) and the backoffice must manage the quiz end to end — is INSERTED between K3 and Phase 4.** Plan approved in plan mode (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, copied to `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` by the Q0 PR); packages Q0 docs → Q1 shared → Q2 SDK ∥ Q3 recording ∥ Q7 editor → Q4 fold → Q5 traits → Q6 harness (AC(10), TALLY 8) → Q8 report; checkpoints KQ1 (localhost 3× GREEN 8/8), KQ2 (CEO walkthrough — absorbs the K3 'moment CEO'), KQ3 (production, CTO: ≥ 400 decided runs, pre-registered Wilson bound). Phase 4 (P1–P7) follows KQ2. New stubs: FOLLOW-1353 (Sentry drizzle params, P2), FOLLOW-1354 (SDK adapt fetch timeout, P2); amendments 1307, 1233/1246, 1350. Retro batch owed (weekly): #1042, #1043, #1044, #1047. Next free: FOLLOW-1416, RETRO-368, ESC-090.**
+## ▶️ START HERE — session 180 (2026-10-19) — **Checkpoint K3 GREEN at `main` `434b2513` (`docs/checkpoints/K3.md`, README §5.31, tag `k3-green` on this ledger's merge): Phase 3 M1 #1042, M2 #1044, M3 #1041, M5 #1043, N2 full #1045 DONE; N1 `--final` reads 0. A RED pair at `3952ac29` was bisected by a read-only forensic (not a Phase 3 regression) → FOLLOW-1352 #1046 (harness predicate) + FOLLOW-1351 #1047 (SDK single-flight chat refresh). **CEO ruling 2026-10-19: Faza Q — the quiz must identify one archetype with ≥ 90 % accuracy (buyer self-confirmation as ground truth, EN + PL mandatory, buyer-side language switcher, 12 results + neutral + traits) and the backoffice must manage the quiz end to end — is INSERTED between K3 and Phase 4.** Plan approved in plan mode (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, copied to `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` by the Q0 PR); packages Q0 docs → Q1 shared → Q2 SDK ∥ Q3 recording ∥ Q7 editor → Q4 fold → Q5 traits → Q6 harness (AC(10), TALLY 8) → Q8 report; checkpoints KQ1 (localhost 3× GREEN 8/8), KQ2 (CEO walkthrough — absorbs the K3 'moment CEO'), KQ3 (production, CTO: ≥ 400 decided runs, pre-registered Wilson bound). Phase 4 (P1–P7) follows KQ2. New stubs: FOLLOW-1353 (Sentry drizzle params, P2), FOLLOW-1354 (SDK adapt fetch timeout, P2); amendments 1307, 1233/1246, 1350. Retro batch owed (weekly): #1042, #1043, #1044, #1047. Next free: FOLLOW-1420, RETRO-368, ESC-090.**
 
 ### Dispatch record (session 180)
 
@@ -56,12 +56,13 @@
 - **FOLLOW-1391** — status: BACKLOG # P3. Local ClickHouse container keeps `system.trace_log` /
   `asynchronous_metric_log` / `text_log` unbounded (~1 bn rows, ~2 cores of merges): disable or TTL
   them in `scripts/dev/localhost-up.sh`.
-- **FOLLOW-1396** — status: IN_REVIEW (branch ml-engineer/FOLLOW-1413-claim-false-refusals) # P3.
-  Headline check refuses exonyms ("Warsaw" for "Warszawa"): the main Haiku 5.5 EN headline refusal
-  after FOLLOW-1395.
-- **FOLLOW-1397** — status: IN_REVIEW (branch ml-engineer/FOLLOW-1413-claim-false-refusals) # P3.
-  Number words ("1,15 mln PLN" vs 1150000) refused as `hallucinated_number`; read mln/tys./k/M as
-  multipliers. Also: ADR-0023 dated note for `meta_commentary`.
+- **FOLLOW-1396** — status: DONE # PR #1101, merged as `17cede38`; README §5.45; stamp `claims-v5`;
+  was IN_REVIEW (branch ml-engineer/FOLLOW-1413-claim-false-refusals) # P3. Headline check refuses
+  exonyms ("Warsaw" for "Warszawa"): the main Haiku 5.5 EN headline refusal after FOLLOW-1395.
+- **FOLLOW-1397** — status: DONE # PR #1101, merged as `17cede38`; README §5.45; stamp `claims-v5`;
+  was IN_REVIEW (branch ml-engineer/FOLLOW-1413-claim-false-refusals) # P3. Number words ("1,15 mln
+  PLN" vs 1150000) refused as `hallucinated_number`; read mln/tys./k/M as multipliers. Also:
+  ADR-0023 dated note for `meta_commentary`.
 - **FOLLOW-1398** — status: DONE # PR #1099, merged as `1cc11f58`; README §5.44; was IN_REVIEW
   (branch qa-engineer/FOLLOW-1398-cta-click-stable) # P3. Harness AC(5): the CTA `locator.click` can
   time out (5000 ms, "element is not stable") when the CTA re-renders after adaptation (README §5.39
@@ -80,12 +81,33 @@
   and present-day resident composition by race, ethnic origin or religion stay refused; (3)
   sensitive or traumatic history is refused (Holocaust, ghetto, deportations, pogroms, massacres,
   ethnic cleansing, war crimes). Report passing and refused examples; own PR, CI, series.
-- **FOLLOW-1413** — status: IN_REVIEW (branch ml-engineer/FOLLOW-1413-claim-false-refusals) # P3.
-  Negation over a comma list ("nie wymienia szkół, przedszkoli ani placów zabaw") reads the middle
-  items as asserted: fail-closed false refusal for every amenity group.
-- **FOLLOW-1414** — status: IN_REVIEW (branch ml-engineer/FOLLOW-1413-claim-false-refusals) # P3.
-  Seen live in FOLLOW-1411: headline typo "dwuipokojowe"; a body saying "The listing says the home
-  is close to schools" (talks about the listing, not the home) — tighten the prompt.
+- **FOLLOW-1413** — status: DONE # PR #1101, merged as `17cede38`; README §5.45; stamp `claims-v5`;
+  was IN_REVIEW (branch ml-engineer/FOLLOW-1413-claim-false-refusals) # P3. Negation over a comma
+  list ("nie wymienia szkół, przedszkoli ani placów zabaw") reads the middle items as asserted:
+  fail-closed false refusal for every amenity group.
+- **FOLLOW-1414** — status: DONE # PR #1101, merged as `17cede38`; README §5.45; stamp `claims-v5`;
+  was IN_REVIEW (branch ml-engineer/FOLLOW-1413-claim-false-refusals) # P3. Seen live in
+  FOLLOW-1411: headline typo "dwuipokojowe"; a body saying "The listing says the home is close to
+  schools" (talks about the listing, not the home) — tighten the prompt.
+- **FOLLOW-1416** — status: BACKLOG # P3. Follow-up of FOLLOW-1396 (#1101): the exonym table
+  ("Warsaw" ↔ "Warszawa") is wired into the headline check only; `/api/adapt` slot copy still
+  refuses an exonym. Share the table with the `/api/adapt` claim path.
+- **FOLLOW-1417** — status: BACKLOG # P3. Follow-up of FOLLOW-1413 (#1101): list negation carries
+  only through or/nor connectors; Polish "o" between list items is not read as a connector.
+- **FOLLOW-1418** — status: BACKLOG # P3. Follow-up of FOLLOW-1413 (#1101): "not only a pool but
+  also a garden" is an affirmation, not a negation; pin it so a later negation change cannot flip
+  it.
+- **FOLLOW-1419** — status: READY # P1, CEO decisions 2026-10-30 (ESC-089 follow-up, after
+  FOLLOW-1415). In `describesResidentsByProtectedGround`
+  (`packages/shared/src/playbooks/traits.ts`): (1) refuse more terms that can evoke painful
+  associations, en/pl/es — Nazi or German occupation, Auschwitz and the other camps, expulsions
+  ("wysiedlenia"), deportations by train ("wywózki") and similar — without refusing ordinary listing
+  words ("przedwojenna kamienica", "pre-war", a town name such as Oświęcim, the Kraków district
+  Płaszów); (2) a place named by race, ethnic origin or religion ("żydowska dzielnica", "the Jewish
+  quarter", "barrio judío") passes ONLY with a historical qualifier ("dawna", "former", "old",
+  "antiguo"); bare present tense is refused. Tightening: bump the claims stamp. Decision (3), no
+  code change: prices are always exact — "850 tys." for 849 000 stays refused
+  (`hallucinated_number`).
 - **FOLLOW-1411** — status: DONE # PR #1093, merged as `2ac3d9d0` (2026-10-29); post-merge
   FOLLOW-819 series GREEN ×3 on `main` (README §5.41, runs 110–112). P1, ESC-089 (CEO 2026-10-29):
   familial-steering refusal lifted on `/api/adapt` and the description path; one guard kept on every
@@ -115,9 +137,10 @@
   upsizer template still frames copy by children ("the next child has their own room"),
   lifestyle_expat cites "international families", and the family_buyer `description` still says
   children are assumed with the has_children trait.
-- **FOLLOW-1408** — status: IN_REVIEW (branch ml-engineer/FOLLOW-1413-claim-false-refusals) # P3. No
-  negation guard for guarantees ("no guarantee of income" refused); first_time_buyer headline
-  persona still says "move-in readiness".
+- **FOLLOW-1408** — status: DONE # PR #1101, merged as `17cede38`; README §5.45; stamp `claims-v5`;
+  was IN_REVIEW (branch ml-engineer/FOLLOW-1413-claim-false-refusals) # P3. No negation guard for
+  guarantees ("no guarantee of income" refused); first_time_buyer headline persona still says
+  "move-in readiness".
 - **FOLLOW-1400** — status: DONE # #1089 `6e4fd350`, 2026-10-26. Series §5.40. P1 compliance. The
   description path does not run the familial-steering check: Sonnet 5.5 wrote "dla rodziny" for the
   diaspora profile 4× in the FOLLOW-1399 study, 2 served. Run the same steering guard as

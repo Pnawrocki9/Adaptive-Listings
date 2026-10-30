@@ -3505,6 +3505,21 @@ flake), not product defects. The caveats of §5.23 (a)–(d) apply.
 
 Three consecutive GREEN runs, no RED or ABORTED run. The caveats of §5.23 (a)–(d) apply.
 
+### 5.45 — 2026-10-30 (FOLLOW-1413/1408/1396/1397/1414 series at branch HEAD `c64e7666`; fresh `next build` (BUILD_ID 05:24 CET), control plane under `next start`, global model `claude-sonnet-5-5`, EXECUTED ×4) — **three consecutive `run=GREEN` with `total=8` (runs 131, 132, 133) and one holdout draw (run 130, UNMEASURED, neutral), each `[FRESH]` — the per-PR series of #1101 (merged as `17cede38`)**
+
+**MANUAL, run by the PM.** The control plane was stopped by PID and rebuilt before the series (log:
+`control-plane-3000: started`). The branch's last commit `177dd1e1` only un-exports `GUARANTEE_RE`
+(Rule I) and changes no output; it was not re-run.
+
+| Run(s) | Started (UTC)            | Result                                                    | Cause                            |
+| ------ | ------------------------ | --------------------------------------------------------- | -------------------------------- |
+| 130    | 2026-10-30T04:25:38.934Z | `TALLY green=7 red=0 unmeasured=1 total=8 run=UNMEASURED` | `[FRESH]` harnessSha `c64e7666…` |
+| 131    | 04:26:52.009Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `c64e7666…` |
+| 132    | 04:28:52.185Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `c64e7666…` |
+| 133    | 04:30:52.225Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `c64e7666…` |
+
+Three consecutive GREEN runs, no RED or ABORTED run. The caveats of §5.23 (a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

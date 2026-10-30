@@ -209,6 +209,20 @@ const LIST_MAX_ITEMS = 8;
 const ARTICLE_RE = /^(?:a|an|the|un|una)$/iu;
 
 /**
+ * The connectors that let a negation carry to the END of a list — disjunctive or negative only:
+ * or / nor, ani / lub / albo / czy, ni / o [FOLLOW-1413, PM ruling: fail-closed]. A list closed by
+ * and / i / oraz / y ("No garage, gym and pool included") does not carry the negation.
+ */
+const CARRYING_CONNECTOR_RE = /^(?:or|nor|ani|lub|albo|czy|ni|o)$/iu;
+const LIST_CONNECTOR_WORD_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}_])(?:${LIST_COORDINATORS})(?![\\p{L}\\p{N}_])`,
+  'giu',
+);
+/** Where a list's clause ends: a sentence or clause mark, or a contrast. */
+const LIST_CLAUSE_END_RE =
+  /[.;:!?\n]|(?<![\p{L}\p{N}_])(?:but|however|yet|although|whereas|ale|lecz|jednak|natomiast|pero|sino|aunque)(?![\p{L}\p{N}_])/iu;
+
+/**
  * FOLLOW-1413: is the match at `start` an item of a coordinated list whose first item is negated
  * ("no schools, nurseries or playgrounds", "nie wymienia szkół, przedszkoli ani placów zabaw",
  * "no menciona colegios, guarderías ni parques infantiles")?
@@ -217,7 +231,9 @@ const ARTICLE_RE = /^(?:a|an|the|un|una)$/iu;
  * three words, then either another separator (keep walking) or the first item, which must be
  * negated by the caller's own window rule (`directlyNegated`). Never crosses a sentence end, a
  * semicolon or colon, a contrast or a new statement (`LIST_BREAK_WORD_RE`), and never an article
- * ("no garage, a garden" stays a claim): fail-closed, the list must be bare.
+ * ("no garage, a garden" stays a claim). The list's FINAL connector (the last one before the
+ * clause ends) must be disjunctive or negative (`CARRYING_CONNECTOR_RE`): "no pool, garage or
+ * garden" carries, "no garage, gym and pool" and a comma-only list do not. Fail-closed.
  *
  * @param text - The text the match was found in.
  * @param start - The match's UTF-16 start index.
@@ -229,10 +245,11 @@ export function negatedThroughList(
   start: number,
   directlyNegated: (text: string, start: number) => boolean,
 ): boolean {
-  const walk = (end: number, items: number): boolean => {
-    if (items >= LIST_MAX_ITEMS) return false;
+  // The start of the negated first item, or -1.
+  const walk = (end: number, items: number): number => {
+    if (items >= LIST_MAX_ITEMS) return -1;
     const sep = LIST_SEPARATOR_END_RE.exec(text.slice(0, end));
-    if (sep === null) return false;
+    if (sep === null) return -1;
     // Grow the item one word at a time, leftwards from the separator: 1, 2, then 3 words.
     let itemStart = sep.index;
     for (let words = 0; words < LIST_ITEM_MAX_WORDS; words += 1) {
@@ -241,9 +258,19 @@ export function negatedThroughList(
       const word = LIST_WORD_END_RE.exec(head);
       if (word === null || LIST_BREAK_WORD_RE.test(word[0]) || ARTICLE_RE.test(word[0])) break;
       itemStart = word.index;
-      if (directlyNegated(text, itemStart) || walk(itemStart, items + 1)) return true;
+      if (directlyNegated(text, itemStart)) return itemStart;
+      const first = walk(itemStart, items + 1);
+      if (first >= 0) return first;
     }
-    return false;
+    return -1;
   };
-  return walk(start, 0);
+  const first = walk(start, 0);
+  if (first < 0) return false;
+  // The list's final connector, between its first item and the end of its clause.
+  let clause = text.slice(first);
+  const end = LIST_CLAUSE_END_RE.exec(clause);
+  if (end !== null) clause = clause.slice(0, end.index);
+  const connectors = Array.from(clause.matchAll(LIST_CONNECTOR_WORD_RE), (m) => m[0]);
+  const last = connectors.at(-1);
+  return last !== undefined && CARRYING_CONNECTOR_RE.test(last);
 }

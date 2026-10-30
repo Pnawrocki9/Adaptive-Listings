@@ -653,3 +653,21 @@ the invoking command.
   relaxation alone would not have needed it. · **Guardrail I'd add:** every exemption in a refusal
   guard gets at least one "the exemption word used in its other sense" refusal test ("old" = aged,
   "once" = when) before it ships.
+
+- **2026-10-30 / FOLLOW-1419** · **Built:** the CEO's 2026-10-30 tightening of
+  `describesResidentsByProtectedGround`: rule 3 now also refuses painful-association terms (Nazi /
+  German / Soviet occupation, Nazis, Gestapo, SS, Third Reich, camp names, expulsions, wysiedlenia,
+  wywózki, łapanka, forced labour, death trains) en/pl/es; a PLACE named by race, ethnic origin or
+  religion ("żydowska dzielnica", "the Jewish quarter", "la judería") passes only with a historical
+  adjective directly before it. `claims-v6` + corpus v19 stamp-only re-freeze (no corpus verdict
+  moved). · **Real vs placeholder judgment calls:** (1) camp names that are also towns (Oświęcim,
+  Brzezinka, Płaszów, Dachau, Mauthausen, Sachsenhausen, Chełmno, Terezín) refuse only beside a camp
+  word; names no town carries (Auschwitz, Birkenau, Stutthof …) refuse bare, but Treblinka, Sobibór,
+  Bełżec, Majdanek are also villages/places and refuse bare because the CEO named them; (2) words
+  whose ordinary listing sense collides were scoped by context, not dropped: "wywózka" unless
+  followed by śmieci/odpadów/gruzu…, Polish "okupacja" only with a perpetrator adjective or "w
+  czasie / podczas / okresie", Spanish "ocupación" only with nazi/alemana ("ocupación inmediata" is
+  a listing term), Spanish "expulsión" only of judíos/moriscos; (3) streets and buildings were kept
+  out of the place rule ("ul. Żydowska" is an address, "a Catholic school" an institution). ·
+  **Guardrail I'd add:** for every new refusal term, pin at least one real-listing sentence that
+  uses the same string in its ordinary sense as a PASS test before it ships.

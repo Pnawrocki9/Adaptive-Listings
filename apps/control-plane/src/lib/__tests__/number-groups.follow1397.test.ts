@@ -90,6 +90,10 @@ describe('FOLLOW-1397 — the description path', () => {
     expect(checkBodyClaims('Cena: 1 149 000 zł.', 'Cena 1,15 mln zł.', {})).toBe(
       'hallucinated_number',
     );
+    // CEO 2026-10-30 [FOLLOW-1419]: prices are always exact — a rounded price is refused.
+    expect(checkBodyClaims('Cena: 850 tys. zł.', 'Cena 849 000 zł.', {})).toBe(
+      'hallucinated_number',
+    );
   });
 
   it('a metre is not a million: "64 m" is checked as 64', () => {

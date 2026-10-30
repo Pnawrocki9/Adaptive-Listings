@@ -212,6 +212,26 @@ export function traitSlots(addOns: readonly TraitAddOn[]): SlotDirective[] {
  *      historical qualifier or not.
  *   3. REFUSE — sensitive or traumatic history, even as a fact ({@link SENSITIVE_HISTORY}).
  *
+ * The CEO's decisions of 2026-10-30 [FOLLOW-1419] tighten rules 1 and 3, never the family wording
+ * ESC-089 allowed:
+ *   - Rule 3 also refuses terms that can evoke painful associations: Nazi / German / Soviet
+ *     occupation, the Nazis, the Gestapo, the SS, the Third Reich; the camps by name (Auschwitz,
+ *     Birkenau, Treblinka, Majdanek, Sobibór, Bełżec, Stutthof, …); expulsions and displacement
+ *     ("wysiedlenia", "expelled", "la expulsión de los judíos"); deportations by train
+ *     ("wywózki", "wywiezieni", "death trains"); round-ups ("łapanka") and forced labour. A town
+ *     that shares a camp's name (Oświęcim, Brzezinka, Dachau, Kraków's Płaszów district) passes;
+ *     only "obóz Płaszów", "KL Plaszow", "Dachau camp" refuse. Ordinary listing words stay out:
+ *     "przedwojenna / powojenna kamienica", "pre-war", "ready for occupation", "transport links",
+ *     "wywózka śmieci", "ocupación inmediata".
+ *   - Rule 1 narrows for a PLACE named by race, ethnic origin or religion ("dzielnica żydowska",
+ *     "the Jewish quarter", "the Muslim neighbourhood", "barrio judío", "la judería"): it passes
+ *     ONLY with a historical adjective directly before it ("dawna", "stara", "former", "old",
+ *     "historic", "antiguo / antigua"), {@link PLACE_GROUND_PATTERNS}. A building or institution
+ *     ("a synagogue nearby", "a Catholic school", "a church") and a street's name ("ul.
+ *     Żydowska") stay allowed.
+ * Prices are untouched: a figure is only ever the listing's exact figure (the digit rule in
+ * `grounding-check`), so "850 tys." for 849 000 stays refused.
+ *
  * A NARROW, closed en / pl / es phrase list, not a classifier: the gateway and the description
  * path refuse a text that matches, whoever wrote the words. What it is NOT: a buyer's nationality
  * or origin ("diaspora", "returning home", "an international / British community" — buyer
@@ -234,6 +254,13 @@ const EN_PEOPLE =
   'residents?|neighbou?rs?|community|communities|population|families|people|locals|' +
   'households?|enclaves?|ghettos?';
 const EN_PLACE = String.raw`areas?|neighbou?rhoods?|districts?|streets?|estates?|buildings?|blocks?`;
+/**
+ * en: an area a group could be said to live in — no building or street, whose naming by a group is
+ * an institution or an address ("a Catholic school", "Jewish Street") [FOLLOW-1419].
+ */
+const EN_AREA = String.raw`areas?|neighbou?rhoods?|districts?|quarters?|enclaves?|towns?|villages?`;
+/** en: what makes an area named by a group a building's or an institution's name instead. */
+const EN_INSTITUTION = String.raw`cent(?:re|er)s?|halls?|museums?|cemeter(?:y|ies)|schools?`;
 const EN_MOSTLY = String.raw`predominantly|mostly|largely|mainly|overwhelmingly|exclusively|almost\s+exclusively|almost\s+entirely|entirely`;
 const EN_GROUP_NOUN =
   'muslims|jews|christians|catholics|hindus|sikhs|arabs|asians|hispanics|latinos';
@@ -249,6 +276,10 @@ const PL_GROUP_NOUN =
   'katolicy|katolików|muzułmanie|muzułmanów|żydzi|żydów|chrześcijanie|chrześcijan|romowie|' +
   'romów|cyganie|cyganów|arabowie|arabów|azjaci|azjatów|hindusi|hindusów';
 const PL_PLACE = String.raw`(?:dzielnic|okolic|osiedl|ulic|kamienic|budyn)\p{L}*`;
+/** pl: an area (see {@link EN_AREA}); no "ulica", "kamienica" or "budynek" [FOLLOW-1419]. */
+const PL_AREA = String.raw`(?:dzielnic|okolic|osiedl|kwarta[lł]|miasteczk|rejon)\p{L}*`;
+/** pl: an institution after the adjective ("w okolicy katolickiego kościoła"). */
+const PL_INSTITUTION = String.raw`(?:kości|synagog|cerkw|meczet|szkoł|szkol|cmentarz|muze|świątyn|parafi|gmin|przedszkol)\p{L}*`;
 const PL_PEOPLE = String.raw`(?:mieszkańc|sąsiad|sąsiedz|społecznoś|ludnoś|rodzin|enklaw|gett)\p{L}*`;
 const PL_MOSTLY = String.raw`głównie|przeważnie|w\s+większości|wyłącznie|niemal\s+wyłącznie|prawie\s+wyłącznie|sami|tylko`;
 const PL_EXCLUDED = String.raw`(?:imigrant|migrant|uchodźc|uchodźców|mniejszoś|romów|cyganów)\p{L}*`;
@@ -258,6 +289,8 @@ const ES_GROUND = String.raw`(?:${ES_GROUND_NO_COLOUR}|(?:blanc|negr)\p{L}*)`;
 const ES_PEOPLE =
   'vecinos|vecindario|residentes|comunidad|población|poblacion|familias|habitantes|enclave|gueto';
 const ES_PLACE = 'barrio|zona|distrito|calle|urbanización|urbanizacion|edificio';
+/** es: an area (see {@link EN_AREA}) [FOLLOW-1419]. */
+const ES_AREA = 'barrios?|zonas?|distritos?|vecindarios?';
 const ES_MOSTLY =
   'mayoritariamente|predominantemente|principalmente|exclusivamente|casi\\s+exclusivamente|sobre\\s+todo';
 const ES_EXCLUDED = String.raw`(?:inmigrantes|migrantes|refugiados|minor[ií]as|gitanos)`;
@@ -279,6 +312,23 @@ const RESIDENT_GROUND_PATTERNS: readonly string[] = [
   String.raw`zamieszkan\p{L}*\s+przez\s+(?:${PL_GROUP_NOUN}|${PL_GROUND})`,
   // es — "vecinos musulmanes", "comunidad judía"
   String.raw`(?:${ES_PEOPLE})\s+${ES_GROUND}`,
+];
+
+/**
+ * Rule 1 narrowed (CEO 2026-10-30) [FOLLOW-1419]: a PLACE named by race, ethnic origin or
+ * religion. Refused unless a historical adjective stands directly before it ("the former Jewish
+ * quarter", "dawna dzielnica żydowska", "la antigua judería") — "the Jewish quarter" or
+ * "żydowska dzielnica" alone reads as who lives there now.
+ */
+const PLACE_GROUND_PATTERNS: readonly string[] = [
+  // en — "the Jewish quarter", "a Muslim neighbourhood" (not "the Jewish district school")
+  String.raw`(?:${EN_GROUND_NO_COLOUR})\s+(?:${EN_AREA})(?!\s+(?:${EN_INSTITUTION}))`,
+  // pl — "żydowska dzielnica", "dzielnica żydowska" (not "w okolicy katolickiego kościoła")
+  String.raw`${PL_GROUND}\s+${PL_AREA}`,
+  String.raw`${PL_AREA}\s+${PL_GROUND}(?!\s+${PL_INSTITUTION})`,
+  // es — "barrio judío", and the quarter that names its group: "la judería", "la morería"
+  String.raw`(?:${ES_AREA})\s+${ES_GROUND_NO_COLOUR}`,
+  String.raw`juder[ií]as?|morer[ií]as?`,
 ];
 
 /**
@@ -321,6 +371,14 @@ const COMPOSITION_PATTERNS: readonly string[] = [
  * listed by form, not by stem, so "Gettysburg" stays out; Spanish "deport-" only as
  * "deportación", so "polideportivo" stays out.
  */
+/**
+ * A town that shares a camp's name; refused only beside a camp word [FOLLOW-1419]. Oświęcim and
+ * Brzezinka are towns, Płaszów a Kraków district with a railway station, Dachau, Mauthausen and
+ * Sachsenhausen (a Frankfurt district) towns with listings, Chełmno a town on the Vistula.
+ */
+const CAMP_TOWN = String.raw`(?:o[sś]wi[eę]cim\p{L}*|brzezink\p{L}*|p[lł]asz[oó]w\p{L}*|dachau|mauthausen|sachsenhausen|che[lł]mn\p{L}*|terez[ií]n\p{L}*)`;
+/** pl: what is hauled away in a listing ("wywózka śmieci"), so the word is not a deportation. */
+const PL_HAULED = String.raw`śmieci|odpad\p{L}*|gruz\p{L}*|nieczystoś\p{L}*|szamb\p{L}*|gabaryt\p{L}*|mebli|liści|śniegu|ziemi|fekali\p{L}*`;
 const SENSITIVE_HISTORY: readonly string[] = [
   // en
   String.raw`holo[ck]aust\p{L}*|sho[aá]h?|ghettos?|ghettoes|deportations?|deported|deportees?|pogroms?`,
@@ -333,6 +391,43 @@ const SENSITIVE_HISTORY: readonly string[] = [
   // es
   String.raw`guetos?|deportaci[oó]n|deportaciones|pogromos?|masacres?|limpiezas?\s+[eé]tnicas?`,
   String.raw`genocidios?|cr[ií]men(?:es)?\s+de\s+guerra|campos?\s+de\s+(?:concentraci[oó]n|exterminio|la\s+muerte)`,
+  // CEO 2026-10-30 [FOLLOW-1419] — every locale: the Nazi regime and its forces, and the camps by
+  // a name no town carries
+  String.raw`nazi(?:s|sm|smo|zm\p{L}*|st\p{L}*)?|hitler\p{L}*|gestap\p{L}*|wehrmacht\p{L}*|esesman\p{L}*`,
+  String.raw`third\s+reich|tercer\s+reich|(?:iii|trzeci\p{L}*)\s+rzesz\p{L}*|ss[-\s]+(?:camps?|guards?|officers?|men|barracks)`,
+  String.raw`auschwitz\p{L}*|birkenau|monowitz|treblin(?:ka|ki|ce|kę|ką)|majdan(?:ek|ka|ku|kiem)|sobib[oó]r\p{L}*`,
+  String.raw`be[lł][zż](?:ec|ca|cu|cem)|stutthof\p{L}*|gross-rosen|buchenwald|bergen-belsen|ravensbr[uü]ck`,
+  String.raw`theresienstadt|kulmhof|umschlagplatz\p{L}*|pawiak\p{L}*|katy[nń]sk\p{L}*`,
+  // a camp at a town that shares its name — only with the camp word ("KL Plaszow", "obóz w
+  // Płaszowie", "Dachau camp", "campo de Mauthausen"); the town itself passes (Oświęcim)
+  String.raw`(?:kl|kz|konzentrationslager)\s+${CAMP_TOWN}`,
+  String.raw`${CAMP_TOWN}\s+(?:(?:concentration|labou?r|death)\s+)?camps?`,
+  String.raw`camps?\s+(?:at|in|of)\s+${CAMP_TOWN}`,
+  String.raw`ob(?:óz|oz\p{L}*)\s+(?:(?:koncentracyjn\p{L}*|pracy|zagłady)\s+)?(?:(?:w|we|na)\s+)?${CAMP_TOWN}`,
+  String.raw`campos?\s+(?:de\s+(?:concentraci[oó]n|exterminio|trabajo)\s+)?(?:de|en)\s+${CAMP_TOWN}`,
+  // en — occupation, expulsion, deportation by train, forced labour
+  String.raw`(?:german|nazi|soviet|wartime|enemy)\s+occupation|german-occupied`,
+  String.raw`expulsions?|expelled|forced(?:ly)?\s+(?:displace\p{L}*|resettle\p{L}*|removals?)|displaced\s+persons`,
+  String.raw`(?:death|deportation|prisoner|cattle)\s+(?:transports?|trains?|wagons?|cars?)|transports?\s+to\s+(?:the\s+)?(?:camps?|ghettos?)`,
+  String.raw`(?:forced|slave)\s+labou?r\p{L}*|(?:labou?r|internment|transit|prison|pow|prisoner[- ]of[- ]war)\s+camps?`,
+  // pl — "okupacja niemiecka", "w czasie okupacji" (Polish "okupacja" is never occupancy)
+  String.raw`(?:niemieck|hitlerowsk|nazistowsk|sowieck|radzieck)\p{L}*\s+okupacj\p{L}*`,
+  String.raw`okupacj\p{L}*\s+(?:niemieck|hitlerowsk|nazistowsk|sowieck|radzieck)\p{L}*`,
+  String.raw`(?:podczas|czas\p{L}*|okres\p{L}*|lat\p{L}*)\s+okupacji`,
+  // "wysiedlenia", "wysiedleni", "wypędzeni", "zsyłki", "łapanka"
+  String.raw`wysiedl\p{L}*|wypędz\p{L}*|zsyłk\p{L}*|łapank\p{L}*`,
+  // "wywózki" — not the rubbish collection ("wywózka śmieci")
+  String.raw`wyw[oó]zk\p{L}*(?!\s+(?:${PL_HAULED}))|wywiezieni`,
+  String.raw`wywiez\p{L}*\s+(?:do|na)\s+(?:obozu|obozów|obozow|sybir|syberi\p{L}*|niemiec|kazachstan\p{L}*|rosj\p{L}*|zsrr|roboty)`,
+  String.raw`transport\p{L}*\s+(?:do\s+(?:obozu|obozów|obozow|getta)|więźniów|deportowanych|żydów|śmierci)`,
+  String.raw`(?:pociąg|wagon)\p{L}*\s+(?:śmierci|bydlęc\p{L}*)`,
+  String.raw`(?:robot|robót|prac)\p{L}*\s+przymusow\p{L}*|przymusow\p{L}*\s+(?:robot|robót|prac)\p{L}*`,
+  String.raw`ob(?:óz|oz\p{L}*)\s+(?:pracy|jeniec\p{L}*|internowan\p{L}*|przejściow\p{L}*)`,
+  // es — "ocupación nazi" (not "ocupación inmediata"), the historical "expulsión" only
+  String.raw`ocupaci[oó]n\s+(?:nazi|alemana|sovi[eé]tica)`,
+  String.raw`expulsi[oó]n(?:es)?\s+de\s+(?:los\s+)?(?:jud[ií]os|moriscos|musulmanes|sefard[ií]es)`,
+  String.raw`(?:jud[ií]os|moriscos|sefard[ií]es)\s+expulsados|deportad[oa]s|desplaza(?:miento|mientos|dos)\s+forz\p{L}*`,
+  String.raw`(?:trenes?|transportes?|vagones?)\s+de\s+(?:deportados|prisioneros|la\s+muerte)|trabajos?\s+forzad\p{L}*`,
 ];
 
 const anyOf = (patterns: readonly string[], flags: string): RegExp =>
@@ -340,6 +435,7 @@ const anyOf = (patterns: readonly string[], flags: string): RegExp =>
 const SENSITIVE_HISTORY_RE = anyOf(SENSITIVE_HISTORY, 'iu');
 const COMPOSITION_RE = anyOf(COMPOSITION_PATTERNS, 'iu');
 const RESIDENT_GROUND_RE = anyOf(RESIDENT_GROUND_PATTERNS, 'giu');
+const PLACE_GROUND_RE = anyOf(PLACE_GROUND_PATTERNS, 'giu');
 
 /**
  * A qualifier that puts a group of residents in the past. An adjective must directly precede the
@@ -372,11 +468,16 @@ const HISTORICAL_SUBJECT_RE = new RegExp(
   'iu',
 );
 
+/** `text`'s clause before `start`, back to the last sentence or clause stop. */
+function clauseBefore(text: string, start: number): string {
+  const before = text.slice(0, start);
+  return before.slice(before.search(/[^.;:!?\n]*$/u));
+}
+
 /** Is the resident-group phrase at `[start, end)` a statement about the past only (rule 1)? */
 function isHistoricalMention(text: string, start: number, end: number): boolean {
   if (!HISTORICAL_SUBJECT_RE.test(text.slice(start, end))) return false;
-  const before = text.slice(0, start);
-  const clause = before.slice(before.search(/[^.;:!?\n]*$/u));
+  const clause = clauseBefore(text, start);
   const rest = text.slice(end);
   const tail = rest.slice(0, rest.search(/[,.;:!?\n—–]|$/u));
   if (PRESENT_MARKER_RE.test(tail)) return false;
@@ -395,13 +496,18 @@ function isHistoricalMention(text: string, start: number, end: number): boolean 
  *
  * @param value - Copy as the model wrote it (a directive, a description body or a headline).
  * @returns `true` when it matches a phrase of the closed en / pl / es list: a sensitive-history
- *          term (rule 3), a composition or exclusion statement (rule 2), or a group of residents
- *          not put in the past by a historical qualifier (rules 1 and 2).
+ *          term (rule 3), a composition or exclusion statement (rule 2), a group of residents not
+ *          put in the past by a historical qualifier (rules 1 and 2), or a place named by a group
+ *          with no historical adjective directly before it [FOLLOW-1419].
  */
 export function describesResidentsByProtectedGround(value: string): boolean {
   if (SENSITIVE_HISTORY_RE.test(value) || COMPOSITION_RE.test(value)) return true;
   for (const m of value.matchAll(RESIDENT_GROUND_RE)) {
     if (!isHistoricalMention(value, m.index, m.index + m[0].length)) return true;
+  }
+  // A place named by a group passes only with a historical adjective directly before it.
+  for (const m of value.matchAll(PLACE_GROUND_RE)) {
+    if (!HISTORICAL_ADJECTIVE_RE.test(clauseBefore(value, m.index))) return true;
   }
   return false;
 }

@@ -362,6 +362,212 @@ describe('describesResidentsByProtectedGround — facts pass, discrimination and
   }
 });
 
+/**
+ * CEO decisions 2026-10-30 [FOLLOW-1419]: (1) rule 3 refuses more terms that can evoke painful
+ * associations — occupation, the Nazi regime, the camps by name, expulsion, deportation by train,
+ * round-ups and forced labour — while ordinary listing words pass; (2) a PLACE named by race,
+ * ethnic origin or religion passes only with a historical adjective directly before it, while a
+ * building, an institution or a street's name stays allowed; (3) prices stay exact (no code
+ * change, the digit rule in `grounding-check`).
+ */
+describe('describesResidentsByProtectedGround — painful history and places named by a group [FOLLOW-1419]', () => {
+  const PAINFUL_REFUSE: Record<string, string[]> = {
+    en: [
+      'Built under Nazi occupation',
+      'A villa requisitioned during the German occupation',
+      'Survived the Soviet occupation intact',
+      'A former Gestapo headquarters',
+      'A Nazi-era villa',
+      'The Nazis used the cellar',
+      'Built in the Third Reich',
+      'Near the former SS barracks',
+      'A short drive from Auschwitz',
+      'Near Auschwitz-Birkenau',
+      'Close to Treblinka',
+      'Overlooking Majdanek',
+      'Twenty minutes from Sobibor',
+      'The Belzec memorial nearby',
+      'Near the former Plaszow camp',
+      'A short walk to KL Plaszow',
+      'Close to the Dachau concentration camp',
+      'Twenty minutes from the camp at Mauthausen',
+      'The expulsion of the town’s families in 1945',
+      'Residents were expelled after the war',
+      'Built for displaced persons',
+      'The station where the death trains left',
+      'Deportation trains left from this square',
+      'Prisoners were taken to forced labour',
+      'A former labour camp nearby',
+      'Near the Umschlagplatz',
+    ],
+    pl: [
+      'Kamienica z okresu okupacji niemieckiej',
+      'W czasie okupacji mieścił się tu urząd',
+      'Podczas okupacji kamienica była zajęta',
+      'Pod sowiecką okupacją',
+      'Dawna siedziba gestapo',
+      'Okupowana przez nazistów kamienica',
+      'Willa z czasów III Rzeszy',
+      'Hitlerowcy zajęli budynek',
+      'Kilka minut od Auschwitz',
+      'Blisko Muzeum Auschwitz-Birkenau w Oświęcimiu',
+      'Blisko Treblinki',
+      'Widok na Majdanek',
+      'W pobliżu Sobiboru',
+      'Niedaleko Bełżca',
+      'Teren dawnego obozu Płaszów',
+      'Obok byłego obozu w Płaszowie',
+      'Wysiedlenia mieszkańców w 1940 roku',
+      'Wysiedleni mieszkańcy nie wrócili',
+      'Wypędzeni z tej kamienicy',
+      'Pamiątka po wywózkach na Sybir',
+      'Wywózki z tego dworca trwały do 1943 roku',
+      'Wywiezieni do obozu mieszkańcy kamienicy',
+      'Mieszkańców wywieziono na roboty do Niemiec',
+      'Tu odbyła się łapanka',
+      'Robotnicy przymusowi mieszkali w budynku',
+      'Transporty do obozu odjeżdżały stąd',
+      'Pociągi śmierci odjeżdżały z tej stacji',
+      'Dawny obóz pracy obok osiedla',
+      'Muzeum Więzienia Pawiak',
+      'Pomnik Ofiar Zbrodni Katyńskiej',
+    ],
+    es: [
+      'Construido durante la ocupación nazi',
+      'Bajo la ocupación alemana',
+      'Antigua sede de la Gestapo',
+      'Una villa de la época nazi',
+      'A una hora de Auschwitz',
+      'Cerca del campo de Mauthausen',
+      'Tras la expulsión de los judíos en 1492',
+      'Los judíos expulsados vivían en esta calle',
+      'Los deportados salieron de esta estación',
+      'Trenes de deportados partían de aquí',
+      'Antiguo campo de trabajos forzados',
+    ],
+  };
+  for (const [locale, values] of Object.entries(PAINFUL_REFUSE)) {
+    it.each(values)(`refuses painful history ${locale} %j`, (value) => {
+      expect(describesResidentsByProtectedGround(value)).toBe(true);
+    });
+  }
+
+  /** Ordinary listing words the new terms sit next to — each was checked and must stay served. */
+  const ORDINARY_PASS: Record<string, string[]> = {
+    en: [
+      'A pre-war tenement with high ceilings',
+      'A post-war block, fully renovated',
+      'Ready for occupation in June',
+      'Occupation date: immediate',
+      'Occupancy from September',
+      'Excellent transport links',
+      'Public transport on the doorstep',
+      'The terrace transports you to Tuscany',
+      'A two-bedroom flat in Oświęcim, close to the market square',
+      'Next to Kraków Płaszów railway station',
+      'A flat in Płaszów, Kraków',
+      'A house in Dachau, 20 minutes from Munich',
+      'A loft in Frankfurt-Sachsenhausen',
+      'A summer camp for children nearby',
+      'Stainless-steel (SS) appliances',
+      'Near the Warsaw Rising Museum',
+      'Close to the Galicia Jewish Museum',
+    ],
+    pl: [
+      'Przedwojenna kamienica po remoncie',
+      'Powojenna kamienica w centrum',
+      'Kamienica z okresu międzywojennego',
+      'Mieszkanie w Oświęcimiu z balkonem',
+      'Dom w Brzezince z ogrodem',
+      'Blisko dworca Kraków Płaszów',
+      'Mieszkanie na Płaszowie',
+      'Wywózka śmieci raz w tygodniu',
+      'Wywózki odpadów wliczone w czynsz',
+      'Gruz wywieziony po remoncie',
+      'Dobra komunikacja i transport publiczny',
+      'Osiedle Majdan Tatarski w Lublinie',
+      'Blisko Muzeum Powstania Warszawskiego',
+      'Przeprowadzka możliwa od zaraz',
+      'Obóz harcerski nad jeziorem',
+    ],
+    es: [
+      'Ocupación inmediata',
+      'Libre de ocupación',
+      'Vivienda sin okupas',
+      'Buena conexión de transporte público',
+      'Expulsión de aire a la fachada',
+      'Junto al polideportivo',
+      'Construcción de posguerra reformada',
+    ],
+  };
+  for (const [locale, values] of Object.entries(ORDINARY_PASS)) {
+    it.each(values)(`passes ordinary listing words ${locale} %j`, (value) => {
+      expect(describesResidentsByProtectedGround(value)).toBe(false);
+    });
+  }
+
+  const PLACE_REFUSE: Record<string, string[]> = {
+    en: [
+      'Steps from the Jewish quarter',
+      'In the Muslim neighbourhood',
+      'In the heart of the Jewish Quarter',
+      'A Catholic district close to the river',
+      'The old and lively Jewish quarter',
+    ],
+    pl: [
+      'W sercu dzielnicy żydowskiej',
+      'Żydowska dzielnica Krakowa za rogiem',
+      'Muzułmańska dzielnica miasta',
+      'Osiedle katolickie przy parku',
+    ],
+    es: [
+      'Junto al barrio judío',
+      'En pleno corazón de la judería',
+      'En la judería de Córdoba',
+      'Una zona musulmana tranquila',
+      'Cerca de la morería',
+    ],
+  };
+  for (const [locale, values] of Object.entries(PLACE_REFUSE)) {
+    it.each(values)(`refuses a bare place named by a group ${locale} %j`, (value) => {
+      expect(describesResidentsByProtectedGround(value)).toBe(true);
+    });
+  }
+
+  const PLACE_PASS: Record<string, string[]> = {
+    en: [
+      'Steps from the former Jewish Quarter',
+      'In the old Jewish quarter, now full of cafés',
+      'The historic Jewish district of Kazimierz',
+      'A synagogue nearby',
+      'A Catholic school and a church within walking distance',
+      'Next to the Jewish Community Centre',
+      'Close to the Jewish district museum',
+    ],
+    pl: [
+      'Dawna dzielnica żydowska Kazimierz',
+      'W sercu dawnej dzielnicy żydowskiej',
+      'Stara żydowska dzielnica za rogiem',
+      'W okolicy katolickiego kościoła',
+      'Blisko synagogi i kościoła',
+      'Mieszkanie przy ul. Żydowskiej',
+      'Przy ulicy Żydowskiej w Lublinie',
+    ],
+    es: [
+      'En el antiguo barrio judío',
+      'En la antigua judería de Toledo',
+      'Junto a la antigua morería',
+      'Un colegio católico cerca',
+      'Cerca de la sinagoga',
+    ],
+  };
+  for (const [locale, values] of Object.entries(PLACE_PASS)) {
+    it.each(values)(`passes a qualified place or an institution ${locale} %j`, (value) => {
+      expect(describesResidentsByProtectedGround(value)).toBe(false);
+    });
+  }
+});
+
 describe('playbook merges (FOLLOW-1360)', () => {
   it('keeps the playbooks of the five de-assigned ids', () => {
     for (const id of [

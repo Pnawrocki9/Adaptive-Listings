@@ -16,7 +16,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { getAllPlaybooks } from '@estalara/shared/playbooks';
-import { GUARANTEE_RE, assertsNoWorkClaim } from '@/lib/condition-lexicon';
+import { assertsGuarantee, assertsNoWorkClaim } from '@/lib/condition-lexicon';
 
 const PROHIBITIONS: readonly string[] = [
   'golden_visa_buyer en: loophole, easy, fast-track, guaranteed approval',
@@ -29,7 +29,7 @@ describe('FOLLOW-1401 — copy templates and the no-work / guarantee vocabulary'
     Object.entries(p.copy_template).flatMap(([locale, text]) =>
       text
         .split(/(?<=[.;:])\s+/)
-        .filter((sentence) => assertsNoWorkClaim(sentence) || GUARANTEE_RE.test(sentence))
+        .filter((sentence) => assertsNoWorkClaim(sentence) || assertsGuarantee(sentence))
         .map((sentence) => `${p.archetype} ${locale}: ${sentence}`),
     ),
   );

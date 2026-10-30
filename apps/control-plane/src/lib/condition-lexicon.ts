@@ -34,7 +34,7 @@ function wordRe(patterns: readonly string[], flags: string): RegExp {
 }
 
 /** An outcome promise. Not global: callers `test` it. */
-export const GUARANTEE_RE = wordRe(
+const GUARANTEE_RE = wordRe(
   [
     // en
     'guarantee(?:d|s)?',

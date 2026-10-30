@@ -56,11 +56,12 @@
 - **FOLLOW-1391** — status: BACKLOG # P3. Local ClickHouse container keeps `system.trace_log` /
   `asynchronous_metric_log` / `text_log` unbounded (~1 bn rows, ~2 cores of merges): disable or TTL
   them in `scripts/dev/localhost-up.sh`.
-- **FOLLOW-1396** — status: BACKLOG # P3. Headline check refuses exonyms ("Warsaw" for "Warszawa"):
-  the main Haiku 5.5 EN headline refusal after FOLLOW-1395.
-- **FOLLOW-1397** — status: BACKLOG # P3. Number words ("1,15 mln PLN" vs 1150000) refused as
-  `hallucinated_number`; read mln/tys./k/M as multipliers. Also: ADR-0023 dated note for
-  `meta_commentary`.
+- **FOLLOW-1396** — status: IN_REVIEW (branch ml-engineer/FOLLOW-1413-claim-false-refusals) # P3.
+  Headline check refuses exonyms ("Warsaw" for "Warszawa"): the main Haiku 5.5 EN headline refusal
+  after FOLLOW-1395.
+- **FOLLOW-1397** — status: IN_REVIEW (branch ml-engineer/FOLLOW-1413-claim-false-refusals) # P3.
+  Number words ("1,15 mln PLN" vs 1150000) refused as `hallucinated_number`; read mln/tys./k/M as
+  multipliers. Also: ADR-0023 dated note for `meta_commentary`.
 - **FOLLOW-1398** — status: DONE # PR #1099, merged as `1cc11f58`; README §5.44; was IN_REVIEW
   (branch qa-engineer/FOLLOW-1398-cta-click-stable) # P3. Harness AC(5): the CTA `locator.click` can
   time out (5000 ms, "element is not stable") when the CTA re-renders after adaptation (README §5.39
@@ -79,12 +80,12 @@
   and present-day resident composition by race, ethnic origin or religion stay refused; (3)
   sensitive or traumatic history is refused (Holocaust, ghetto, deportations, pogroms, massacres,
   ethnic cleansing, war crimes). Report passing and refused examples; own PR, CI, series.
-- **FOLLOW-1413** — status: BACKLOG # P3. Negation over a comma list ("nie wymienia szkół,
-  przedszkoli ani placów zabaw") reads the middle items as asserted: fail-closed false refusal for
-  every amenity group.
-- **FOLLOW-1414** — status: BACKLOG # P3. Seen live in FOLLOW-1411: headline typo "dwuipokojowe"; a
-  body saying "The listing says the home is close to schools" (talks about the listing, not the
-  home) — tighten the prompt.
+- **FOLLOW-1413** — status: IN_REVIEW (branch ml-engineer/FOLLOW-1413-claim-false-refusals) # P3.
+  Negation over a comma list ("nie wymienia szkół, przedszkoli ani placów zabaw") reads the middle
+  items as asserted: fail-closed false refusal for every amenity group.
+- **FOLLOW-1414** — status: IN_REVIEW (branch ml-engineer/FOLLOW-1413-claim-false-refusals) # P3.
+  Seen live in FOLLOW-1411: headline typo "dwuipokojowe"; a body saying "The listing says the home
+  is close to schools" (talks about the listing, not the home) — tighten the prompt.
 - **FOLLOW-1411** — status: DONE # PR #1093, merged as `2ac3d9d0` (2026-10-29); post-merge
   FOLLOW-819 series GREEN ×3 on `main` (README §5.41, runs 110–112). P1, ESC-089 (CEO 2026-10-29):
   familial-steering refusal lifted on `/api/adapt` and the description path; one guard kept on every
@@ -114,8 +115,9 @@
   upsizer template still frames copy by children ("the next child has their own room"),
   lifestyle_expat cites "international families", and the family_buyer `description` still says
   children are assumed with the has_children trait.
-- **FOLLOW-1408** — status: BACKLOG # P3. No negation guard for guarantees ("no guarantee of income"
-  refused); first_time_buyer headline persona still says "move-in readiness".
+- **FOLLOW-1408** — status: IN_REVIEW (branch ml-engineer/FOLLOW-1413-claim-false-refusals) # P3. No
+  negation guard for guarantees ("no guarantee of income" refused); first_time_buyer headline
+  persona still says "move-in readiness".
 - **FOLLOW-1400** — status: DONE # #1089 `6e4fd350`, 2026-10-26. Series §5.40. P1 compliance. The
   description path does not run the familial-steering check: Sonnet 5.5 wrote "dla rodziny" for the
   diaspora profile 4× in the FOLLOW-1399 study, 2 served. Run the same steering guard as

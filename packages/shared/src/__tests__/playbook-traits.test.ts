@@ -208,6 +208,160 @@ describe('describesResidentsByProtectedGround — race, ethnic origin, religion 
   });
 });
 
+/**
+ * ESC-089 follow-up (CEO 2026-10-30) [FOLLOW-1415]: the race and religion guard is about
+ * discrimination, not about describing facts — on one condition, that the copy stirs no
+ * controversy. Three rules, each pinned per locale:
+ *   1. PASS — a historical fact or a place ("the old Jewish quarter", "historically home to
+ *      Kraków's Jewish community") and a building or institution ("a synagogue nearby").
+ *   2. REFUSE — a discriminatory or exclusionary statement, or present-day residents described by
+ *      race, ethnic origin or religion; a historical qualifier does not excuse it once the copy
+ *      says the group is still there ("historically and still predominantly Muslim residents").
+ *   3. REFUSE — sensitive or traumatic history, even as a fact and whatever the qualifier
+ *      (Holocaust / Shoah, ghetto, deportations, pogroms, massacres, ethnic cleansing, genocide,
+ *      war crimes, concentration or extermination camps).
+ * Calls made for the tricky cases: a "Catholic school", the "Jewish Community Centre" and "Asian
+ * cuisine" are institutions or things, not residents (rule 1, PASS); an adjectival qualifier
+ * ("old", "dawna", "antigua") excuses only the phrase it directly modifies, so "an old building
+ * with Muslim neighbours" still refuses.
+ */
+describe('describesResidentsByProtectedGround — facts pass, discrimination and sensitive history refuse [FOLLOW-1415]', () => {
+  const RULE_1_PASS: Record<string, string[]> = {
+    en: [
+      'In Kazimierz, the historic Jewish district',
+      'Steps from the old Jewish quarter',
+      "Historically home to Kraków's Jewish community",
+      'Once home to a thriving Jewish community, the street is now full of cafés',
+      'The former Jewish community of the town built the synagogue',
+      'Close to the old Jewish cemetery',
+      'A synagogue, a church and a mosque within walking distance',
+      'Overlooking the cathedral',
+      'Next to the Jewish Community Centre',
+      'A Catholic school nearby',
+      'Asian cuisine on the corner',
+    ],
+    pl: [
+      'W sercu dawnej dzielnicy żydowskiej',
+      'Stara żydowska dzielnica Krakowa za rogiem',
+      'Kazimierz, historyczna dzielnica żydowska',
+      'Niegdyś dom społeczności żydowskiej Krakowa',
+      'Dawna społeczność żydowska zbudowała tu synagogę',
+      'Dzielnica dawniej zamieszkana przez Żydów',
+      'Blisko synagogi i kościoła Mariackiego',
+      'Katolicka szkoła w pobliżu',
+      'Głównie azjatycka kuchnia w restauracjach obok',
+      'Rzeźba w ogrodzie, starannie wykończone wnętrza',
+    ],
+    es: [
+      'Junto al antiguo barrio judío',
+      'En la antigua judería de Toledo',
+      'Históricamente hogar de la comunidad judía de Toledo',
+      'La antigua comunidad judía construyó la sinagoga',
+      'Cerca de la catedral y de la mezquita',
+      'Un colegio católico cerca',
+      'Cocina asiática en la esquina',
+      'Polideportivo y club deportivo a dos calles',
+    ],
+  };
+  for (const [locale, values] of Object.entries(RULE_1_PASS)) {
+    it.each(values)(`rule 1 passes ${locale} %j`, (value) => {
+      expect(describesResidentsByProtectedGround(value)).toBe(false);
+    });
+  }
+
+  const RULE_2_REFUSE: Record<string, string[]> = {
+    en: [
+      'Muslim neighbours',
+      'A predominantly Catholic neighbourhood',
+      'Residents are mostly Asian',
+      'A street with no immigrants',
+      'An ethnically homogeneous estate',
+      'A welcoming Jewish community',
+      'Historically and still predominantly Muslim residents',
+      'Historically and still Muslim residents',
+      'An old building with Muslim neighbours',
+      'The old Jewish community still lives here',
+      'Once inside, you will meet friendly Muslim neighbours',
+      'Friendly old Muslim neighbours',
+      'Formerly a warehouse, now with Catholic families on every floor',
+    ],
+    pl: [
+      'Mieszkańcy to głównie katolicy',
+      'Osiedle bez imigrantów',
+      'Muzułmańscy sąsiedzi',
+      'Społeczność muzułmańska osiedla',
+      'Mieszkańcy żydowscy kamienicy',
+      'Dawna kamienica z muzułmańskimi sąsiadami',
+      'Dzielnica zamieszkana przez Żydów',
+      'Dawniej i nadal zamieszkana przez katolików',
+      'Okolica zamieszkana głównie przez muzułmanów',
+      'Starzy muzułmańscy sąsiedzi',
+    ],
+    es: [
+      'Vecinos musulmanes',
+      'Una zona sin inmigrantes',
+      'Un barrio mayoritariamente católico',
+      'Residentes mayoritariamente asiáticos',
+      'La antigua comunidad judía sigue viviendo aquí',
+      'Históricamente y todavía vecinos musulmanes',
+      'Un vecindario étnicamente homogéneo',
+      'Antiguos vecinos musulmanes',
+    ],
+  };
+  for (const [locale, values] of Object.entries(RULE_2_REFUSE)) {
+    it.each(values)(`rule 2 refuses ${locale} %j`, (value) => {
+      expect(describesResidentsByProtectedGround(value)).toBe(true);
+    });
+  }
+
+  const RULE_3_REFUSE: Record<string, string[]> = {
+    en: [
+      'Near the former Jewish ghetto',
+      'A short walk from the Holocaust memorial',
+      'A street that remembers the Shoah',
+      'The square where the deportations began',
+      'Site of the 1903 pogrom',
+      'Scene of a wartime massacre',
+      'A valley once marked by ethnic cleansing',
+      'Opposite the genocide museum',
+      'A town tried for war crimes',
+      'A short drive from a former concentration camp',
+      'Near the old extermination camp',
+    ],
+    pl: [
+      'Obok dawnego getta',
+      'W dawnym getcie, dziś pełnym kawiarni',
+      'Pomnik ofiar Zagłady za rogiem',
+      'Blisko Muzeum Holokaustu',
+      'Miejsce pogromu kieleckiego',
+      'Stąd ruszały deportacje w 1942 roku',
+      'Dawny obóz koncentracyjny w pobliżu',
+      'Teren byłego obozu zagłady',
+      'Region dotknięty czystkami etnicznymi',
+      'Pomnik ofiar ludobójstwa',
+      'Ślady zbrodni wojennych',
+    ],
+    es: [
+      'Junto al antiguo gueto',
+      'Cerca del Museo del Holocausto',
+      'Memoria de la Shoá',
+      'Las deportaciones de 1942 salieron de esta plaza',
+      'Escenario de un pogromo',
+      'Lugar de una masacre',
+      'Una región marcada por la limpieza étnica',
+      'Memorial del genocidio',
+      'Juzgados por crímenes de guerra',
+      'A pocos minutos de un antiguo campo de concentración',
+      'Cerca del campo de exterminio',
+    ],
+  };
+  for (const [locale, values] of Object.entries(RULE_3_REFUSE)) {
+    it.each(values)(`rule 3 refuses ${locale} %j`, (value) => {
+      expect(describesResidentsByProtectedGround(value)).toBe(true);
+    });
+  }
+});
+
 describe('playbook merges (FOLLOW-1360)', () => {
   it('keeps the playbooks of the five de-assigned ids', () => {
     for (const id of [

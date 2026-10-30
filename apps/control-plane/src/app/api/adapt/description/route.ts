@@ -50,7 +50,8 @@
  * miss costs one regeneration per legacy row, once. The warm/backfill writers below copy the
  * stamp, so neither can launder a legacy entry into a trusted one. A hit stamped with an OLDER
  * version is legacy in the same way (FOLLOW-1406: `claims-v1` rows after the bump to `claims-v2`;
- * FOLLOW-1411: `claims-v2` rows after the bump to `claims-v3`).
+ * FOLLOW-1411: `claims-v2` rows after the bump to `claims-v3`; FOLLOW-1415: `claims-v3` rows after
+ * the bump to `claims-v4`).
  *
  * FOLLOW-1291 (revision fence, Codex F-03/F-17): every layer is fenced by the listing's revision
  * (`listing_revisions`, advanced by the listing.updated webhook — a LOCAL revision, see

@@ -635,3 +635,21 @@ the invoking command.
   asserted; fixed in the prompt (omit, do not narrate absence), not in the window. · **Guardrail I'd
   add:** before removing a refusal, list every claim class it was incidentally catching and name the
   check that still catches each one — or ship that check with the removal.
+
+- **2026-10-30 / FOLLOW-1415** · **Built:** the CEO's facts-vs-discrimination ruling on
+  `describesResidentsByProtectedGround`, as three closed lists: resident-group phrases (refused
+  unless a historical qualifier puts a COLLECTIVE noun in the past), composition/exclusion phrases
+  (always refused), sensitive history (Holocaust/Shoah, ghetto, deportations, pogroms, massacres,
+  ethnic cleansing, genocide, war crimes, camps — always refused, en/pl/es). Added the noun-first
+  Polish phrasing ("społeczność muzułmańska") the old list missed. `claims-v4` + corpus v14
+  stamp-only re-freeze. · **Real vs placeholder judgment calls:** (1) the historical exemption first
+  covered every resident noun, and the red-first tests caught "friendly old Muslim neighbours" and
+  "Once inside, Muslim neighbours" passing ("old" = age, "once" = conjunction), so it now covers
+  collective nouns only (community/population/społeczność/comunidad + "zamieszkana przez"), with
+  adjectives directly before the phrase and adverbs ≤6 words before it, no comma or present marker
+  in between or after; (2) stem lists are written by form where a stem collides ("getto" not "gett*"
+  → Gettysburg; "deportación" not "deport*" → polideportivo); (3) the bump was needed because
+  sensitive history is a new refusal class and cache hits are not re-checked on read; the rule-1
+  relaxation alone would not have needed it. · **Guardrail I'd add:** every exemption in a refusal
+  guard gets at least one "the exemption word used in its other sense" refusal test ("old" = aged,
+  "once" = when) before it ships.

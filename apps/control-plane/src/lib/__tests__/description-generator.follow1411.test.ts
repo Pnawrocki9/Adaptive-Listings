@@ -293,3 +293,60 @@ describe('FOLLOW-1411 — what stays refused', () => {
     expect(describesResidentsByProtectedGround(text)).toBe(false);
   });
 });
+
+/**
+ * FOLLOW-1415 (CEO 2026-10-30): the guard is about discrimination, not facts — a historical place
+ * the listing names is served, sensitive history is refused even where the listing states it.
+ */
+describe('FOLLOW-1415 — historical facts are served, sensitive history is refused', () => {
+  beforeEach(() => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'test-key-'.repeat(3));
+    mockCreate.mockReset();
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each([
+    [
+      'en',
+      "Two-bedroom flat in Kazimierz, historically home to Kraków's Jewish community, steps from the old Jewish quarter.",
+    ],
+    ['pl', 'Mieszkanie z dwiema sypialniami w Kazimierzu, dawnej dzielnicy żydowskiej Krakowa.'],
+    ['es', 'Piso de dos dormitorios junto al antiguo barrio judío de Toledo.'],
+  ] as const)('%s: a historical place the listing names is FIT', async (locale, text) => {
+    const listing: Listing = { original: text, context: { listing_title: '2 bed flat' } };
+    mockCreate
+      .mockResolvedValueOnce(reply(fit(text)))
+      .mockResolvedValueOnce(reply('Two-bedroom flat'));
+    const report = await generateDescription(event(listing, 'lifestyle_expat', locale));
+    expect(report.outcome.verdict).toBe('FIT');
+  });
+
+  it.each([
+    ['en', 'Two-bedroom flat on the edge of the former Jewish ghetto.'],
+    ['pl', 'Mieszkanie z dwiema sypialniami obok pomnika ofiar Zagłady.'],
+    ['es', 'Piso de dos dormitorios cerca del antiguo campo de concentración.'],
+  ] as const)(
+    '%s: sensitive history is REFUSED / protected_ground even where the listing says it',
+    async (locale, text) => {
+      const listing: Listing = { original: text, context: { listing_title: '2 bed flat' } };
+      mockCreate.mockResolvedValueOnce(reply(fit(text)));
+      const report = await generateDescription(event(listing, 'lifestyle_expat', locale));
+      expect(report.outcome).toEqual({ verdict: 'REFUSED', violation: 'protected_ground' });
+      expect(report.claimsValidation).toBeNull();
+    },
+  );
+
+  it('a sensitive-history headline is suppressed; the body is served', async () => {
+    const listing: Listing = {
+      original: 'Two-bedroom flat with a balcony.',
+      context: { listing_title: '2 bed flat' },
+    };
+    mockCreate
+      .mockResolvedValueOnce(reply(fit('A two-bedroom flat with a balcony.')))
+      .mockResolvedValueOnce(reply('Two-bedroom flat near the Holocaust memorial'));
+    const report = await generateDescription(event(listing, 'lifestyle_expat', 'en'));
+    expect(report.outcome.verdict).toBe('FIT');
+    expect(report.headline).toBeNull();
+    expect(report.headlineViolation).toBe('protected_ground');
+  });
+});

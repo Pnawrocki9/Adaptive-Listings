@@ -952,7 +952,7 @@ describe('FOLLOW-1367 — AC(5) closes the quiz card before its CTA click, never
     const close = at(
       'const quizOverlayBeforeCta = ctaButtonFound ? await closeQuizCardBeforeCta(page)',
     );
-    const click = at('await ctaButton.click({ timeout: 5000 });');
+    const click = at('await clickCtaWhenReady(page);');
     expect(close).toBeGreaterThan(0);
     expect(click).toBeGreaterThan(close);
     expect(harnessSrc).toContain('          quizOverlayBeforeCta,');

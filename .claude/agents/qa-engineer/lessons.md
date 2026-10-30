@@ -451,3 +451,8 @@ SDK sends in the same task as the fold.
 
 **A guardrail I'd add:** a selection helper must be tested with a fixture where the "right-looking"
 request is NOT the selected one — if selection and grading read the same field, the RED row is dead.
+
+- **2026-10-30 / FOLLOW-1398** · Made AC(5)'s CTA click re-resolve + bounded-retry
+  (`clickCtaWhenReady`), fake-page unit pins · A fake page proves the retry logic only; the real
+  race (SDK DOM swap) is verified only by a live run · Guardrail: harness helpers that wrap
+  Playwright actions should be exported and pinned with a fake page, not source-grepped.

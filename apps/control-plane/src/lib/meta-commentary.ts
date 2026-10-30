@@ -23,6 +23,10 @@
  *     ("(120 words)", "120 słów"), a bracketed placeholder ("[insert agent name]", "[wstaw …]",
  *     "[añadir …]") and a self-correction in flight ("A two-bedroom... no, a two-room flat").
  *
+ * FOLLOW-1414 adds a POSITIVE attribution to the listing ("The listing says the home is close to
+ * schools", "according to the listing", "ogłoszenie podaje", "według ogłoszenia", "el anuncio
+ * indica", "según el anuncio"): the copy reports the advert instead of describing the home.
+ *
  * What is deliberately NOT here: "the listing" on its own ("The listing names two items" talks
  * to the buyer about the advert), a statement of what the listing leaves out ("Nie podano danych
  * o rentowności", "the information given in the listing", "los datos proporcionados por el
@@ -96,7 +100,43 @@ const TEXT_WORDS_ES =
   '(?:descripci[oó]n|texto|versi[oó]n|titular|anuncio|propuesta|borrador|p[aá]rrafo)' +
   '(?: (?:revisad|adaptad|corregid|actualizad|nuev)[oa])?';
 
+/**
+ * FOLLOW-1414: a POSITIVE attribution to the listing ("The listing says the home is close to
+ * schools") — the copy reports the advert instead of describing the home. Not a statement of what
+ * the listing leaves out: a verb followed by nothing / no / none / little ("The listing states no
+ * rent or yield figure", the system prompt's own example) or a negated verb ("does not mention",
+ * "nie wymienia", "no menciona") is a disclosure and passes.
+ */
+const LISTING_EN = `(?:the|this) (?:listing|advert|advertisement|ad|description|particulars|seller[’']s description)`;
+const REPORT_EN =
+  '(?:says|said|states|stated|mentions|mentioned|notes|noted|indicates|claims|describes|' +
+  'confirms|reports|suggests|specifies|highlights|points out|lists|tells us)';
+const REPORT_PL =
+  '(?:mówi|podaje|wspomina|wymienia|informuje|wskazuje|opisuje|zaznacza|stwierdza|sugeruje|' +
+  'potwierdza|deklaruje|określa)';
+const REPORT_ES =
+  '(?:dice|indica|menciona|señala|describe|afirma|especifica|destaca|asegura|recoge|informa|detalla)';
+const LISTING_ATTRIBUTION = [
+  // en
+  `${LISTING_EN}(?: (?:also|clearly|explicitly|itself))? ${REPORT_EN}(?! (?:nothing|no|none|little|neither|not)${B_END})`,
+  'according to (?:the )?(?:listing|advert|advertisement|ad|description|particulars)',
+  // pl
+  `(?:ogłoszeni[eu]|opis(?: ogłoszenia)?)(?: (?:też|również|wyraźnie|także))? ${REPORT_PL}`,
+  `${REPORT_PL} (?:to )?ogłoszenie`,
+  'według (?:ogłoszenia|opisu)',
+  'zgodnie z (?:ogłoszeniem|opisem)',
+  'w ogłoszeniu (?:podano|napisano|wspomniano|zaznaczono|wskazano|czytamy|(?:jest )?mowa)',
+  '(?:z ogłoszenia wynika|wynika z ogłoszenia)',
+  // es
+  `(?:el anuncio|la descripci[oó]n|la ficha)(?: (?:también|claramente))? ${REPORT_ES}(?! (?:nada|ningún|ninguna|ninguno|no)${B_END})`,
+  'seg[uú]n (?:el anuncio|la descripci[oó]n|la ficha)',
+  `en el anuncio (?:se )?${REPORT_ES}`,
+  `como ${REPORT_ES} el anuncio`,
+];
+
 const PHRASES = [
+  // ── en / pl / es: reporting the listing instead of describing the home [FOLLOW-1414] ──
+  ...LISTING_ATTRIBUTION,
   // ── en: the model speaking as itself ──
   'as an ai',
   'as a language model',

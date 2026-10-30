@@ -527,6 +527,26 @@ function descriptionLanguageInstruction(locale: DescriptionRequestedEvent['local
   );
 }
 
+/** FOLLOW-1414: Polish room-count adjectives, spelled (live typo: "dwuipokojowe"). */
+const POLISH_ROOM_COUNTS =
+  'Polish room counts are one word: jednopokojowe, dwupokojowe, trzypokojowe, czteropokojowe, ' +
+  'pięciopokojowe (for example "mieszkanie dwupokojowe", "dwupokojowe mieszkanie").';
+
+/**
+ * FOLLOW-1414: the paragraph after the language paragraph of the description user prompt. Seen
+ * live (FOLLOW-1411): "The listing says the home is close to schools." — copy about the advert,
+ * not the home (now refused as `meta_commentary`). On a Polish page it also spells the room-count
+ * adjectives.
+ */
+function descriptionAboutTheHomeInstruction(locale: DescriptionRequestedEvent['locale']): string {
+  return (
+    'WRITE ABOUT THE HOME, NOT THE LISTING: state each fact the sources give as a fact about the ' +
+    'property ("The flat has a balcony."), never as something the listing reports ("the ' +
+    'listing says", "according to the description", "ogłoszenie podaje", "el anuncio indica").' +
+    (locale === 'pl' ? ` ${POLISH_ROOM_COUNTS}` : '')
+  );
+}
+
 // ─── Types (ADR-0023 §3) ──────────────────────────────────────────────────────
 
 /**
@@ -653,6 +673,9 @@ function renderDescriptionPrompt(
     '',
     // FOLLOW-1402 (corpus v9): the output language, named.
     descriptionLanguageInstruction(e.locale),
+    '',
+    // FOLLOW-1414 (corpus v17): copy about the home, not the listing; Polish room counts.
+    descriptionAboutTheHomeInstruction(e.locale),
   ].join('\n');
   const { maxTokens, extras } = generationRequestFor(model, maxTokensFor(e.original_description));
   return { system, user, maxTokens, extras };
@@ -690,7 +713,9 @@ function renderHeadlinePrompt(
     `superlatives) the sources do not state. Sentence case: capitalise only the first word and ` +
     `true proper names. Return ONLY the headline text.\n\n` +
     factsBlock +
-    `\n\n${headlineLanguageInstruction(e.locale)}`;
+    `\n\n${headlineLanguageInstruction(e.locale)}` +
+    // FOLLOW-1414 (corpus v17): the Polish room-count adjectives, spelled.
+    (e.locale === 'pl' ? `\n\n${POLISH_ROOM_COUNTS}` : '');
   const { maxTokens, extras } = generationRequestFor(model, HEADLINE_MAX_TOKENS);
   return { system: HEADLINE_SYSTEM_PROMPT, user, maxTokens, extras };
 }

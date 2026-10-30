@@ -5,7 +5,8 @@
  * between them); FOLLOW-1406 — corpus v10 (a stamp-only re-freeze); FOLLOW-1411 — corpus v11 (a
  * verdict delta), v12 (a headline prompt re-freeze) and v13 (a stamp-only re-freeze); FOLLOW-1415
  * — corpus v14 (a stamp-only re-freeze); FOLLOW-1408 — corpus v15 (a headline persona re-freeze);
- * FOLLOW-1397 — corpus v16 (a verdict delta, the current contract).
+ * FOLLOW-1397 — corpus v16 (a verdict delta); FOLLOW-1414 — corpus v17 (a description and Polish
+ * headline prompt re-freeze, the current contract).
  *
  * Drives `generateDescription` — the production entry point — with the Anthropic SDK mocked to
  * return the RAW model outputs recorded in the frozen corpus, and demands, for every case,
@@ -77,6 +78,11 @@
  *   - `corpus.v16.jsonl` + `MANIFEST.v16.json` — FOLLOW-1397 (multiplied numbers: "€750K", "1,15
  *     mln") is a verdict delta of v15 in `VERDICT_DELTAS`; the v9–v15 guards stop replaying the
  *     case it changed.
+ *   - `corpus.v17.jsonl` + `MANIFEST.v17.json` — FOLLOW-1414 appended a paragraph to the
+ *     description USER prompt (write about the home, not the listing; Polish room counts) and, on a
+ *     Polish page, to the headline USER prompt, so v17 is a prompt-digest re-freeze of v16 (like
+ *     v9 and v5 together). Every guard replays with the CURRENT description user and headline
+ *     digests (v17's).
  *
  * No other I/O happens: the test env configures no Redis, ClickHouse, Postgres or Sentry, so the
  * spend gate reads 0, every write reports `not_configured` and no row is written.
@@ -201,8 +207,13 @@ const MANIFEST_V9 = JSON.parse(
  * The CURRENT description user prompt digests, by case id (FOLLOW-1402 re-froze them as v9; its
  * guard asserts they were that corpus's only change).
  */
+const CASES_V17: Case[] = readCorpus('corpus.v17.jsonl');
+const MANIFEST_V17 = JSON.parse(
+  readFileSync(join(FIXTURE_DIR, 'MANIFEST.v17.json'), 'utf8'),
+) as ManifestV3 & { headline_refrozen: string[] };
+/** FOLLOW-1414 (v17) re-froze them again; its guard asserts that was v17's only change. */
 const DESCRIPTION_USER_SHA = new Map(
-  CASES_V9.map((c) => [c.id, c.expected.prompt_sha256.description_user] as const),
+  CASES_V17.map((c) => [c.id, c.expected.prompt_sha256.description_user] as const),
 );
 /** The claims-validation stamp every corpus v1–v9 was frozen with (the manifests keep it). */
 const FROZEN_STAMP = 'claims-v1';
@@ -245,10 +256,10 @@ const MANIFEST_V15 = JSON.parse(
 };
 /**
  * The CURRENT headline prompt digests, by case id (FOLLOW-1315 re-froze them as v3, FOLLOW-1382
- * as v5, FOLLOW-1411 as v12, FOLLOW-1408 as v15; each of those guards asserts they were that
- * corpus's only change).
+ * as v5, FOLLOW-1411 as v12, FOLLOW-1408 as v15, FOLLOW-1414 as v17 for a Polish page; each of
+ * those guards asserts they were that corpus's only change).
  */
-const HEADLINE_SHA = new Map(CASES_V15.map((c) => [c.id, c.expected.prompt_sha256] as const));
+const HEADLINE_SHA = new Map(CASES_V17.map((c) => [c.id, c.expected.prompt_sha256] as const));
 
 /**
  * The verdict deltas after v5, oldest first, each derived from the corpus before it (v6 from v5).
@@ -726,7 +737,10 @@ describe('description parity corpus v5 (FOLLOW-1382 — the current contract: he
       // FOLLOW-1411 (v12) swapped four personas, FOLLOW-1408 (v15) one more; read the prompt as
       // it was before v12.
       const user = beforeV12Persona(
-        beforeV15Persona((mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content, c),
+        beforeV15Persona(
+          beforeV17Headline((mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content, c),
+          c,
+        ),
         c,
       );
       const paragraph = languageParagraph(c.input.locale);
@@ -903,6 +917,40 @@ function descriptionLanguageParagraph(locale: string): string {
   );
 }
 
+/** FOLLOW-1414: the Polish room-count paragraph (v17), as the generator writes it. */
+const POLISH_ROOM_COUNTS =
+  'Polish room counts are one word: jednopokojowe, dwupokojowe, trzypokojowe, czteropokojowe, ' +
+  'pięciopokojowe (for example "mieszkanie dwupokojowe", "dwupokojowe mieszkanie").';
+
+/** FOLLOW-1414: the paragraph the description user prompt ends with since v17, per locale. */
+function aboutTheHomeParagraph(locale: string): string {
+  return (
+    '\n\nWRITE ABOUT THE HOME, NOT THE LISTING: state each fact the sources give as a fact about ' +
+    'the property ("The flat has a balcony."), never as something the listing reports ("the ' +
+    'listing says", "according to the description", "ogłoszenie podaje", "el anuncio indica").' +
+    (locale === 'pl' ? ` ${POLISH_ROOM_COUNTS}` : '')
+  );
+}
+
+/** FOLLOW-1414: the paragraph a Polish headline user prompt ends with since v17. */
+function headlineRoomCountParagraph(locale: string): string {
+  return locale === 'pl' ? `\n\n${POLISH_ROOM_COUNTS}` : '';
+}
+
+/** The description user prompt as before v17 (FOLLOW-1414). */
+function beforeV17Description(user: string, c: Case): string {
+  const paragraph = aboutTheHomeParagraph(c.input.locale);
+  expect(user.endsWith(paragraph), c.id).toBe(true);
+  return user.slice(0, user.length - paragraph.length);
+}
+
+/** The headline user prompt as before v17 (FOLLOW-1414): a Polish page lost its last paragraph. */
+function beforeV17Headline(user: string, c: Case): string {
+  const paragraph = headlineRoomCountParagraph(c.input.locale);
+  expect(user.endsWith(paragraph), c.id).toBe(true);
+  return user.slice(0, user.length - paragraph.length);
+}
+
 describe('description parity corpus v9 (FOLLOW-1402 — description language, prompt re-freeze)', () => {
   const v8 = VERDICT_DELTAS.find((d) => d.version === 8)!;
 
@@ -951,7 +999,11 @@ describe('description parity corpus v9 (FOLLOW-1402 — description language, pr
         .mockResolvedValueOnce(response(c.raw_description.text, c.raw_description.stop_reason))
         .mockResolvedValueOnce(response(c.raw_headline ?? '', 'end_turn'));
       await generateDescription(c.input);
-      const user = (mockCreate.mock.calls[0]![0] as CreateParams).messages[0]!.content;
+      // FOLLOW-1414 (v17) appended one more paragraph; read the prompt as it was before v17.
+      const user = beforeV17Description(
+        (mockCreate.mock.calls[0]![0] as CreateParams).messages[0]!.content,
+        c,
+      );
       const paragraph = descriptionLanguageParagraph(c.input.locale);
       expect(user.endsWith(paragraph), c.id).toBe(true);
       expect(sha(user.slice(0, user.length - paragraph.length)), c.id).toBe(
@@ -1398,5 +1450,91 @@ describe('description parity corpus v16 (FOLLOW-1397 — a multiplied number is 
     expect(v16.expected.headline_violation).toBe('hallucinated_proper_name');
     expect(v16.expected.headline).toBeNull();
     expect(v16.expected.outcome).toEqual(v15.expected.outcome);
+  });
+});
+
+describe('description parity corpus v17 (FOLLOW-1414 — write about the home, Polish room counts; the current contract)', () => {
+  const HEADLINE_REFROZEN = new Set(MANIFEST_V17.headline_refrozen);
+  const v16 = VERDICT_DELTAS.find((d) => d.version === 16)!;
+  const V17_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v17.jsonl'), 'utf8');
+
+  beforeEach(() => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'parity-'.repeat(4));
+    mockCreate.mockReset();
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('v17 is v16 with ONLY the description user digests and the Polish headline user digests changed', () => {
+    expect(MANIFEST_V17.corpus).toBe('corpus.v17.jsonl');
+    expect(MANIFEST_V17.kind).toBe('prompt_digest_refreeze');
+    expect(MANIFEST_V17.derived_from.corpus).toBe('corpus.v16.jsonl');
+    expect(MANIFEST_V17.derived_from.manifest).toBe('MANIFEST.v16.json');
+    expect(MANIFEST_V17.derived_from.corpus_sha256).toBe(v16.manifest.corpus_sha256);
+    expect(sha(V17_TEXT)).toBe(MANIFEST_V17.corpus_sha256);
+    expect(MANIFEST_V17.case_count).toBe(CASES_V17.length);
+    expect(MANIFEST_V17.claims_validation_version).toBe(v16.manifest.claims_validation_version);
+    expect(MANIFEST_V17.delta).toEqual([]);
+    expect(MANIFEST_V17.per_verdict).toEqual(v16.manifest.per_verdict);
+    expect(MANIFEST_V17.per_reason).toEqual(v16.manifest.per_reason);
+    expect(MANIFEST_V17.headline_suppressed).toBe(v16.manifest.headline_suppressed);
+    expect(CASES_V17.map((c) => c.id)).toEqual(v16.cases.map((c) => c.id));
+    for (const [i, v17] of CASES_V17.entries()) {
+      const prev = v16.cases[i]!;
+      const { prompt_sha256: p17, ...rest17 } = v17.expected;
+      const { prompt_sha256: p16, ...rest16 } = prev.expected;
+      expect({ ...v17, expected: rest17 }, v17.id).toEqual({ ...prev, expected: rest16 });
+      expect(p17.description_system, v17.id).toBe(p16.description_system);
+      expect(p17.headline_system, v17.id).toBe(p16.headline_system);
+      expect(p17.description_user, v17.id).not.toBe(p16.description_user);
+      if (HEADLINE_REFROZEN.has(v17.id))
+        expect(p17.headline_user, v17.id).not.toBe(p16.headline_user);
+      else expect(p17.headline_user, v17.id).toBe(p16.headline_user);
+    }
+  });
+
+  it('every headline-calling Polish case is re-frozen, and none other', () => {
+    expect(
+      CASES_V17.filter((c) => c.expected.headline_called && c.input.locale === 'pl')
+        .map((c) => c.id)
+        .sort(),
+    ).toEqual([...HEADLINE_REFROZEN].sort());
+    expect(HEADLINE_REFROZEN.size).toBeGreaterThan(0);
+  });
+
+  it('every new prompt is the v16 prompt plus the FOLLOW-1414 paragraph, byte for byte', async () => {
+    const locales = new Set<string>();
+    for (const c of CASES_V17) {
+      const prev = v16.cases.find((x) => x.id === c.id)!;
+      mockCreate.mockReset();
+      mockCreate
+        .mockResolvedValueOnce(response(c.raw_description.text, c.raw_description.stop_reason))
+        .mockResolvedValueOnce(response(c.raw_headline ?? '', 'end_turn'));
+      await generateDescription(c.input);
+      const desc = (mockCreate.mock.calls[0]![0] as CreateParams).messages[0]!.content;
+      expect(sha(desc), c.id).toBe(c.expected.prompt_sha256.description_user);
+      expect(sha(beforeV17Description(desc, c)), c.id).toBe(
+        prev.expected.prompt_sha256.description_user,
+      );
+      if (c.expected.headline_called) {
+        const head = (mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content;
+        expect(sha(head), c.id).toBe(c.expected.prompt_sha256.headline_user);
+        expect(sha(beforeV17Headline(head, c)), c.id).toBe(
+          prev.expected.prompt_sha256.headline_user,
+        );
+      }
+      locales.add(c.input.locale);
+    }
+    expect([...locales].sort()).toEqual(['en', 'es', 'pl']);
+  });
+
+  it('the Polish paragraph spells the room counts and never the live typo', () => {
+    expect(POLISH_ROOM_COUNTS).toMatch(/dwupokojowe/u);
+    expect(POLISH_ROOM_COUNTS).not.toMatch(/dwuipokojowe/u);
+  });
+
+  describe.each(CASES_V17.map((c) => [c.id, c] as const))('%s', (_id, c) => {
+    it('generates identically to the v17 record', async () => {
+      await expectIdentical(c);
+    });
   });
 });

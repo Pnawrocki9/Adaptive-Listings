@@ -396,6 +396,13 @@ B), `docs/INTERFACES.md` (description event becomes in-process; seed route), Mod
   `FAILED / meta_commentary` — refused, never stripped. Closed en / pl / es lists in
   `lib/meta-commentary.ts`, checked by `bodyViolatesContract` after the leak markers. It is a
   refusal class, so adding it bumped the parity corpus (v6, a verdict delta).
+- **2026-10-30 — `meta_commentary` extended (FOLLOW-1414).** A positive attribution to the listing
+  ("The listing says the home is close to schools", "according to the listing", "ogłoszenie podaje",
+  "według ogłoszenia", "el anuncio indica", "según el anuncio") is also refused: the copy reports
+  the advert instead of describing the home. A statement of what the listing leaves out ("The
+  listing states no rent or yield figure", "ogłoszenie nie wymienia szkół") still passes. A
+  tightening, so `CLAIMS_VALIDATION_VERSION` moves to `claims-v5` (cached rows were never checked
+  against it); the description and Polish headline prompts gained a paragraph (corpus v17).
 
 ## References
 

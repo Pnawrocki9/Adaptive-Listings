@@ -6,7 +6,7 @@
  * verdict delta), v12 (a headline prompt re-freeze) and v13 (a stamp-only re-freeze); FOLLOW-1415
  * — corpus v14 (a stamp-only re-freeze); FOLLOW-1408 — corpus v15 (a headline persona re-freeze);
  * FOLLOW-1397 — corpus v16 (a verdict delta); FOLLOW-1414 — corpus v17 (a description and Polish
- * headline prompt re-freeze, the current contract).
+ * headline prompt re-freeze) and v18 (a stamp-only re-freeze, the current contract).
  *
  * Drives `generateDescription` — the production entry point — with the Anthropic SDK mocked to
  * return the RAW model outputs recorded in the frozen corpus, and demands, for every case,
@@ -83,6 +83,10 @@
  *     Polish page, to the headline USER prompt, so v17 is a prompt-digest re-freeze of v16 (like
  *     v9 and v5 together). Every guard replays with the CURRENT description user and headline
  *     digests (v17's).
+ *   - `corpus.v18.jsonl` + `MANIFEST.v18.json` — FOLLOW-1414 bumped `CLAIMS_VALIDATION_VERSION` to
+ *     `claims-v5` (a `claims-v4` row never passed the listing-attribution refusal), so v18 is a
+ *     stamp-only re-freeze of v17 like v14 of v13. Every guard replays with the CURRENT stamp
+ *     (v18's).
  *
  * No other I/O happens: the test env configures no Redis, ClickHouse, Postgres or Sentry, so the
  * spend gate reads 0, every write reports `not_configured` and no row is written.
@@ -242,9 +246,14 @@ const MANIFEST_V14 = JSON.parse(
 ) as ManifestV3 & { stamp_refreeze: { from: string; to: string; cases: number } };
 /**
  * The CURRENT claims-validation stamp, by case id (FOLLOW-1406 re-froze it as v10, FOLLOW-1411 as
- * v13, FOLLOW-1415 as v14; each of those guards asserts it was that corpus's only change).
+ * v13, FOLLOW-1415 as v14, FOLLOW-1414 as v18; each of those guards asserts it was that corpus's
+ * only change).
  */
-const STAMP = new Map(CASES_V14.map((c) => [c.id, c.expected.claims_validation] as const));
+const CASES_V18: Case[] = readCorpus('corpus.v18.jsonl');
+const MANIFEST_V18 = JSON.parse(
+  readFileSync(join(FIXTURE_DIR, 'MANIFEST.v18.json'), 'utf8'),
+) as ManifestV3 & { stamp_refreeze: { from: string; to: string; cases: number } };
+const STAMP = new Map(CASES_V18.map((c) => [c.id, c.expected.claims_validation] as const));
 /** The stamp v14 introduced (FOLLOW-1415); the corpora after it are frozen with it. */
 const V14_STAMP = 'claims-v4';
 const CASES_V15: Case[] = readCorpus('corpus.v15.jsonl');
@@ -1303,7 +1312,7 @@ describe('description parity corpus v14 (FOLLOW-1415 — claims-v4, stamp-only r
   const V13_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v13.jsonl'), 'utf8');
   const V14_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v14.jsonl'), 'utf8');
   const OLD = `"claims_validation": "${V13_STAMP}"`;
-  const NEW = `"claims_validation": "${CLAIMS_VALIDATION_VERSION}"`;
+  const NEW = `"claims_validation": "${V14_STAMP}"`;
 
   beforeEach(() => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'parity-'.repeat(4));
@@ -1311,8 +1320,8 @@ describe('description parity corpus v14 (FOLLOW-1415 — claims-v4, stamp-only r
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it('the manifest describes v14 as a stamp re-freeze of v13 under the current constant', () => {
-    expect(CLAIMS_VALIDATION_VERSION).toBe('claims-v4');
+  // History pins its own literal: v14's stamp is claims-v4, the constant moved on (FOLLOW-1414).
+  it('the manifest describes v14 as a stamp re-freeze of v13 under claims-v4', () => {
     expect(MANIFEST_V14.corpus).toBe('corpus.v14.jsonl');
     expect(MANIFEST_V14.kind).toBe('stamp_refreeze');
     expect(MANIFEST_V14.derived_from.corpus).toBe('corpus.v13.jsonl');
@@ -1320,10 +1329,10 @@ describe('description parity corpus v14 (FOLLOW-1415 — claims-v4, stamp-only r
     expect(MANIFEST_V14.derived_from.corpus_sha256).toBe(MANIFEST_V13.corpus_sha256);
     expect(sha(V13_TEXT)).toBe(MANIFEST_V14.derived_from.corpus_sha256);
     expect(sha(V14_TEXT)).toBe(MANIFEST_V14.corpus_sha256);
-    expect(MANIFEST_V14.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(MANIFEST_V14.claims_validation_version).toBe(V14_STAMP);
     expect(MANIFEST_V14.stamp_refreeze).toEqual({
       from: V13_STAMP,
-      to: CLAIMS_VALIDATION_VERSION,
+      to: V14_STAMP,
       cases: MANIFEST_V13.per_verdict.FIT,
     });
     expect(MANIFEST_V14.delta).toEqual([]);
@@ -1453,7 +1462,7 @@ describe('description parity corpus v16 (FOLLOW-1397 — a multiplied number is 
   });
 });
 
-describe('description parity corpus v17 (FOLLOW-1414 — write about the home, Polish room counts; the current contract)', () => {
+describe('description parity corpus v17 (FOLLOW-1414 — write about the home, Polish room counts)', () => {
   const HEADLINE_REFROZEN = new Set(MANIFEST_V17.headline_refrozen);
   const v16 = VERDICT_DELTAS.find((d) => d.version === 16)!;
   const V17_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v17.jsonl'), 'utf8');
@@ -1534,6 +1543,67 @@ describe('description parity corpus v17 (FOLLOW-1414 — write about the home, P
 
   describe.each(CASES_V17.map((c) => [c.id, c] as const))('%s', (_id, c) => {
     it('generates identically to the v17 record', async () => {
+      await expectIdentical(c);
+    });
+  });
+});
+
+describe('description parity corpus v18 (FOLLOW-1414 — claims-v5, stamp-only re-freeze, the current contract)', () => {
+  const V17_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v17.jsonl'), 'utf8');
+  const V18_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v18.jsonl'), 'utf8');
+  const OLD = `"claims_validation": "${V14_STAMP}"`;
+  const NEW = `"claims_validation": "${CLAIMS_VALIDATION_VERSION}"`;
+
+  beforeEach(() => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'parity-'.repeat(4));
+    mockCreate.mockReset();
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('the manifest describes v18 as a stamp re-freeze of v17 under the current constant', () => {
+    expect(CLAIMS_VALIDATION_VERSION).toBe('claims-v5');
+    expect(MANIFEST_V18.corpus).toBe('corpus.v18.jsonl');
+    expect(MANIFEST_V18.kind).toBe('stamp_refreeze');
+    expect(MANIFEST_V18.derived_from.corpus).toBe('corpus.v17.jsonl');
+    expect(MANIFEST_V18.derived_from.manifest).toBe('MANIFEST.v17.json');
+    expect(MANIFEST_V18.derived_from.corpus_sha256).toBe(MANIFEST_V17.corpus_sha256);
+    expect(sha(V17_TEXT)).toBe(MANIFEST_V18.derived_from.corpus_sha256);
+    expect(sha(V18_TEXT)).toBe(MANIFEST_V18.corpus_sha256);
+    expect(MANIFEST_V18.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(MANIFEST_V18.stamp_refreeze).toEqual({
+      from: V14_STAMP,
+      to: CLAIMS_VALIDATION_VERSION,
+      cases: MANIFEST_V17.per_verdict.FIT,
+    });
+    expect(MANIFEST_V18.delta).toEqual([]);
+    expect(MANIFEST_V18.case_count).toBe(CASES_V18.length);
+    const m18 = MANIFEST_V18 as unknown as Record<string, unknown>;
+    const m17 = MANIFEST_V17 as unknown as Record<string, unknown>;
+    // Every field but the stamp record, the kind and the provenance is v17's; the prompt record
+    // only v17 carries.
+    const own = ['change', 'corpus', 'corpus_sha256', 'derived_from', 'frozen_at', 'kind'];
+    own.push('claims_validation_version', 'stamp_refreeze');
+    const v17Only = ['headline_refrozen'];
+    expect(Object.keys(m18).sort()).toEqual(
+      [...new Set([...Object.keys(m17).filter((k) => !v17Only.includes(k)), ...own])].sort(),
+    );
+    for (const key of Object.keys(m17)) {
+      if (own.includes(key) || v17Only.includes(key)) continue;
+      expect(m18[key], key).toEqual(m17[key]);
+    }
+  });
+
+  it('v18 is v17 byte for byte except the stamp value, in every FIT case and nowhere else', () => {
+    expect(V17_TEXT.split(OLD).length - 1).toBe(MANIFEST_V17.per_verdict.FIT);
+    expect(V18_TEXT.split(NEW).length - 1).toBe(MANIFEST_V17.per_verdict.FIT);
+    expect(V17_TEXT.includes(NEW)).toBe(false);
+    expect(V18_TEXT.includes(V14_STAMP)).toBe(false);
+    expect(V18_TEXT).toBe(V17_TEXT.split(OLD).join(NEW));
+    expect(V18_TEXT.length).toBe(V17_TEXT.length); // same-length value: no byte shifted
+  });
+
+  describe.each(CASES_V18.map((c) => [c.id, c] as const))('%s', (_id, c) => {
+    it('generates identically to the v18 record', async () => {
       await expectIdentical(c);
     });
   });

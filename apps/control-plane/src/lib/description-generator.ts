@@ -108,8 +108,14 @@ import {
  *   the noun-first Polish phrasing ("społeczność muzułmańska"), which no `claims-v3` row was
  *   checked against; it is regenerated once instead of served. (The rule-1 relaxation alone would
  *   not need it: a refused body was never cached.)
+ * - `claims-v5` — 2026-10-30, FOLLOW-1414 (with FOLLOW-1413 and FOLLOW-1408): `meta_commentary`
+ *   now also refuses a body that reports the listing ("The listing says…", "według ogłoszenia",
+ *   "según el anuncio"), and a listing's negated list ("nie ma basenu, garażu ani ogrodu") or
+ *   negated guarantee ("no guarantee of income") no longer grounds the claim it denies. No
+ *   `claims-v4` row was checked against those; it is regenerated once instead of served. (The
+ *   loosenings of FOLLOW-1396 / 1397 alone would not need it.)
  */
-export const CLAIMS_VALIDATION_VERSION = 'claims-v4';
+export const CLAIMS_VALIDATION_VERSION = 'claims-v5';
 
 /** G-03: total budget per call (deadline on the whole, retries included). */
 const DESCRIPTION_DEADLINE_MS = 75_000;

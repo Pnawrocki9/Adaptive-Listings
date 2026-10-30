@@ -61,9 +61,9 @@
 - **FOLLOW-1397** — status: BACKLOG # P3. Number words ("1,15 mln PLN" vs 1150000) refused as
   `hallucinated_number`; read mln/tys./k/M as multipliers. Also: ADR-0023 dated note for
   `meta_commentary`.
-- **FOLLOW-1398** — status: BACKLOG # P3. Harness AC(5): the CTA `locator.click` can time out (5000
-  ms, "element is not stable") when the CTA re-renders after adaptation (README §5.39 run 33); wait
-  for a stable CTA before clicking.
+- **FOLLOW-1398** — status: IN_REVIEW (branch qa-engineer/FOLLOW-1398-cta-click-stable) # P3.
+  Harness AC(5): the CTA `locator.click` can time out (5000 ms, "element is not stable") when the
+  CTA re-renders after adaptation (README §5.39 run 33); wait for a stable CTA before clicking.
 - **FOLLOW-1412** — status: DONE # PR #1097, merged as `059d955f`; README §5.43; branch
   `ml-engineer/FOLLOW-1412-family-slot-variants`; P2, ESC-089. Restore family-fitted served slot
   variants (pre-FOLLOW-1366 headline/CTA/feature-label strings for family_buyer and upsizer, e.g.

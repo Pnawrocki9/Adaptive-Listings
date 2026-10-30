@@ -2322,6 +2322,54 @@ async function closeQuizCardBeforeCta(page) {
   return { visibleBefore: true, screen, action: 'closed_with_x', cleared: await gone(10000) };
 }
 
+// ─── FOLLOW-1398: AC(5)'s CTA click must survive the SDK re-rendering the CTA ───────────────
+
+/** Total budget for AC(5)'s CTA click, across all attempts (FOLLOW-1398). */
+export const CTA_CLICK_BUDGET_MS = 15000;
+
+/**
+ * Click the fixture CTA once it is attached, visible, scrolled into view and stable (FOLLOW-1398).
+ *
+ * Two observed failures were one race: the SDK swaps the CTA's text/node after adaptation, so a
+ * locator resolved earlier points at a detached or momentarily hidden node (`element is not
+ * stable`, README §5.39 run 33; `waiting for element to be visible` on the very `<button
+ * data-estalara-cta="tour_request">`, §5.43 run 123). Each attempt therefore RE-RESOLVES the
+ * locator (only a visible match), waits for visible, scrolls it into view, and clicks with
+ * Playwright's own actionability checks. Failures are retried until `budgetMs` is spent; the last
+ * error is returned so `ctaClickError` keeps its meaning on a final failure.
+ * Never forced (FOLLOW-1075): a forced click lands on whatever covers the target.
+ *
+ * @param {import('playwright').Page} page
+ * @param {{selector?: string, budgetMs?: number, now?: () => number,
+ *   sleepFn?: (ms: number) => Promise<void>}} [opts]
+ * @returns {Promise<{clicked: boolean, attempts: number, error: string|null, errors: string[]}>}
+ */
+export async function clickCtaWhenReady(page, opts = {}) {
+  const {
+    selector = '[data-estalara-cta]',
+    budgetMs = CTA_CLICK_BUDGET_MS,
+    now = Date.now,
+    sleepFn = (ms) => new Promise((r) => setTimeout(r, ms)),
+  } = opts;
+  const deadline = now() + budgetMs;
+  const errors = [];
+  let attempts = 0;
+  do {
+    attempts += 1;
+    try {
+      const cta = page.locator(`${selector}:visible`).first();
+      await cta.waitFor({ state: 'visible', timeout: 2000 });
+      await cta.scrollIntoViewIfNeeded({ timeout: 2000 });
+      await cta.click({ timeout: 3000 });
+      return { clicked: true, attempts, error: null, errors };
+    } catch (err) {
+      errors.push(String(err).split('\n')[0]);
+    }
+    if (now() < deadline) await sleepFn(250);
+  } while (now() < deadline);
+  return { clicked: false, attempts, error: errors[errors.length - 1] ?? null, errors };
+}
+
 // ─── FOLLOW-1361: AC(10), the quiz confirmation path (Faza Q package Q6, MASTER_DESIGN §E.4.10) ──
 //
 // Three sub-sessions, each in its own fresh browser context, walk the SERVED quiz tree to its result
@@ -5845,21 +5893,23 @@ async function main() {
   // the AC(1) loop's confirm click is best-effort, and a late-config card opens after its wait.
   // It is closed deterministically first, never clicked through with `force: true`.
   const quizOverlayBeforeCta = ctaButtonFound ? await closeQuizCardBeforeCta(page) : null;
+  let adaptedCtaClickAttempts = 0;
   if (ctaButtonFound) {
-    try {
-      // Deliberately NOT force:true. FOUND BY EXECUTION (FOLLOW-1075): `force: true` skips
-      // Playwright's scroll-into-view/actionability checks, and the button sits below the
-      // fold on this fixture — a forced click landed on whatever WAS in the (unscrolled)
-      // viewport instead, dispatched no error (`.catch(() => {})` swallowed nothing because
-      // Playwright itself reported success), and produced a boolean `adaptedCtaClicked: true`
-      // over zero real `cta.clicked` rows — the exact "green over a dead wire" shape this
-      // guardrail exists to prevent. A plain `.click()` (Playwright scrolls the element into
-      // view first) reproduced a real row on the same fixture; verified by direct ClickHouse
-      // query before and after, not by trusting the click call's return.
-      await ctaButton.click({ timeout: 5000 });
-      adaptedCtaClicked = true;
-    } catch (err) {
-      adaptedCtaClickError = String(err);
+    // Deliberately NOT force:true. FOUND BY EXECUTION (FOLLOW-1075): `force: true` skips
+    // Playwright's scroll-into-view/actionability checks, and the button sits below the
+    // fold on this fixture — a forced click landed on whatever WAS in the (unscrolled)
+    // viewport instead, and produced a boolean `adaptedCtaClicked: true` over zero real
+    // `cta.clicked` rows — the exact "green over a dead wire" shape this guardrail exists to
+    // prevent. FOLLOW-1398: the click re-resolves the CTA and retries (bounded) because the SDK
+    // re-renders it after adaptation.
+    const clickResult = await clickCtaWhenReady(page);
+    adaptedCtaClicked = clickResult.clicked;
+    adaptedCtaClickError = clickResult.error;
+    adaptedCtaClickAttempts = clickResult.attempts;
+    if (clickResult.attempts > 1) {
+      console.log(
+        `[FOLLOW-1398] CTA click took ${String(clickResult.attempts)} attempts: ${clickResult.errors.join(' | ')}`,
+      );
     }
   }
   // FOLLOW-1252: poll for the row instead of reading once at a fixed offset. The budget is the
@@ -6341,6 +6391,7 @@ async function main() {
           ctaButtonFound,
           ctaClicked: adaptedCtaClicked,
           ctaClickError: adaptedCtaClickError,
+          ctaClickAttempts: adaptedCtaClickAttempts,
           // FOLLOW-1367: whether a quiz card was open over the page before the click, and how it
           // was closed (`waited` for its own unmount, or `closed_with_x`).
           quizOverlayBeforeCta,

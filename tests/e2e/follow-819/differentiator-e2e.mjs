@@ -4216,7 +4216,13 @@ export const CP_DIST_PACKAGES = Object.freeze(['db', 'auth', 'shared']);
  * Is the code the control plane loads older than the source it should have been built from? Pure.
  * Unknown (no `dist`, unreadable git) is stale, never a silent pass.
  *
- * @param {{packages: Array<{name: string, distMtimeMs: number|null, srcCommitMs: number|null}>,
+ * A package whose `dist/.estalara-src-tree` stamp (written by `localhost-up.sh` after its build) is
+ * readable is graded by CONTENT: the stamp must equal the git tree hash of its `src/` at HEAD. Time
+ * is only the fallback for a dist built without the stamp, because a commit time moves when a PR is
+ * merged although the source bytes do not (the #1107 series was refused on exactly that).
+ *
+ * @param {{packages: Array<{name: string, distMtimeMs: number|null, srcCommitMs: number|null,
+ *   distSrcTree?: string|null, headSrcTree?: string|null}>,
  *   served?: {mode: string|null, buildIdMtimeMs: number|null, sourceCommitMs: number|null}|null}} facts
  * @returns {{ok: boolean, verdict: 'FRESH-BUILD'|'STALE-BUILD', stale: string[], reason: string}}
  */
@@ -4224,6 +4230,15 @@ export function evaluateBuildFreshness({ packages, served = null }) {
   const stale = [];
   const fmt = (ms) => new Date(ms).toISOString();
   for (const p of packages) {
+    if (typeof p.distSrcTree === 'string') {
+      if (p.distSrcTree !== p.headSrcTree) {
+        stale.push(
+          `@estalara/${p.name}: dist was built from src tree ${p.distSrcTree.slice(0, 12)}, ` +
+            `HEAD has ${p.headSrcTree ? p.headSrcTree.slice(0, 12) : 'an unreadable tree'}`,
+        );
+      }
+      continue;
+    }
     if (p.distMtimeMs === null || p.distMtimeMs === undefined) {
       stale.push(
         `@estalara/${p.name}: no readable dist (never built, or the link does not resolve)`,
@@ -4237,7 +4252,8 @@ export function evaluateBuildFreshness({ packages, served = null }) {
       );
     }
   }
-  if (served?.mode === 'prod') {
+  // BUILD_ID age is the fallback when the served build carries no sha (identity supersedes time).
+  if (served?.mode === 'prod' && typeof served.buildSha !== 'string') {
     if (served.buildIdMtimeMs === null || served.buildIdMtimeMs === undefined) {
       stale.push('control plane: CP_MODE=prod but apps/control-plane/.next/BUILD_ID is unreadable');
     } else if (served.sourceCommitMs === null || served.sourceCommitMs === undefined) {
@@ -4293,6 +4309,27 @@ async function newestEntryMtimeMs(dir) {
   }
 }
 
+/** The `dist/.estalara-src-tree` stamp (a 40-hex git tree hash), or `null` if absent/malformed. */
+async function readSrcTreeStamp(distDir) {
+  try {
+    const raw = (await readFile(nodePath.join(distDir, '.estalara-src-tree'), 'utf8')).trim();
+    return /^[0-9a-f]{40}$/.test(raw) ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+/** `git rev-parse <rev>` under `cwd`, or `null`. */
+async function gitRevParse(cwd, rev) {
+  try {
+    const { stdout } = await execFileAsync('git', ['rev-parse', rev], { cwd });
+    const out = stdout.trim();
+    return /^[0-9a-f]{40}$/.test(out) ? out : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Committer time (ms) of the last commit touching `paths` under git dir `cwd`, or `null`. */
 async function lastCommitMs(cwd, paths) {
   try {
@@ -4331,6 +4368,8 @@ export async function readBuildFreshnessFacts({
       name,
       distMtimeMs: real === null ? null : await newestEntryMtimeMs(nodePath.join(real, 'dist')),
       srcCommitMs: real === null ? null : await lastCommitMs(real, ['src']),
+      distSrcTree: real === null ? null : await readSrcTreeStamp(nodePath.join(real, 'dist')),
+      headSrcTree: real === null ? null : await gitRevParse(real, 'HEAD:./src'),
     });
   }
   let served = null;

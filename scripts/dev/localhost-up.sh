@@ -181,6 +181,15 @@ for f in packages/db/dist packages/auth/dist packages/shared/dist packages/sdk/d
   [ -e "$f" ] || die "expected build output missing in THIS checkout: $f"
 done
 log "dist present in this checkout for db, auth, shared, sdk"
+# FOLLOW-1246: stamp each dist with the git tree hash of the src/ it was built from; the harness
+# preflight compares it with HEAD by content (a merge moves commit times, not bytes). Turbo may
+# replay a cache hit without touching the files, so the stamp is written after every build step.
+if [ "${SKIP_BUILD:-0}" != "1" ]; then
+  for p in shared db auth; do
+    git rev-parse "HEAD:packages/$p/src" >"packages/$p/dist/.estalara-src-tree" ||
+      die "could not stamp packages/$p/dist"
+  done
+fi
 
 # Local-only dev container credentials (README 3.1), not a secret. Kept in variables so a
 # literal `user:pass` never appears on a curl line (gitleaks curl-auth-user).

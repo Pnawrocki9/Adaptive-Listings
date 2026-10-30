@@ -29,6 +29,8 @@ interface PkgFacts {
   name: string;
   distMtimeMs: number | null;
   srcCommitMs: number | null;
+  distSrcTree?: string | null;
+  headSrcTree?: string | null;
 }
 interface ServedFacts {
   mode: string | null;
@@ -90,6 +92,18 @@ describe('evaluateBuildFreshness — the pure predicate', () => {
     expect(v.verdict).toBe('STALE-BUILD');
     expect(v.stale).toHaveLength(1);
     expect(v.stale[0]).toContain('@estalara/db');
+  });
+
+  it('a src-tree stamp grades by content: equal passes even when the dist looks older', () => {
+    const tree = 'a'.repeat(40);
+    const same = pkgs({ db: { distMtimeMs: T0 - 1000, distSrcTree: tree, headSrcTree: tree } });
+    expect(evaluateBuildFreshness({ packages: same }).ok).toBe(true);
+    const moved = pkgs({ db: { distSrcTree: tree, headSrcTree: 'b'.repeat(40) } });
+    const v = evaluateBuildFreshness({ packages: moved });
+    expect(v.ok).toBe(false);
+    expect(v.stale[0]).toContain('@estalara/db');
+    const unreadable = pkgs({ db: { distSrcTree: tree, headSrcTree: null } });
+    expect(evaluateBuildFreshness({ packages: unreadable }).ok).toBe(false);
   });
 
   it('a missing dist, or an unreadable commit time, is stale — never a silent pass', () => {
@@ -262,6 +276,27 @@ describe('readBuildFreshnessFacts — real files, real git, a symlinked package'
     await utimes(nested, old, old);
     const v = evaluateBuildFreshness(await readBuildFreshnessFacts({ repoRoot: wt }));
     expect(v).toMatchObject({ ok: true, verdict: 'FRESH-BUILD' });
+  });
+
+  it('a stamped dist survives later commits that leave the src bytes unchanged', async () => {
+    // #1107's series: the squash merge of #1103 dated the last src commit after the build.
+    const { stdout } = await git(main, '2026-10-05T00:00:00Z', 'rev-parse', 'HEAD:packages/db/src');
+    const tree = stdout.trim();
+    const stamp = path.join(main, 'packages/db/dist/.estalara-src-tree');
+    await writeFile(stamp, tree);
+    const built = new Date('2026-10-05T00:00:00Z');
+    await utimes(stamp, built, built);
+    const src = path.join(main, 'packages/db/src/index.ts');
+    await writeFile(src, 'export const z = 1;\n');
+    await git(main, '2026-10-06T00:00:00Z', 'commit', '-q', '-am', 'change');
+    await writeFile(src, 'export {};\n');
+    await git(main, '2026-10-07T00:00:00Z', 'commit', '-q', '-am', 'revert');
+    const facts = await readBuildFreshnessFacts({ repoRoot: wt });
+    const db = facts.packages.find((p) => p.name === 'db')!;
+    expect(db.srcCommitMs).toBeGreaterThan(db.distMtimeMs!); // the time rule alone would refuse
+    expect(db.distSrcTree).toBe(tree);
+    expect(db.headSrcTree).toBe(tree);
+    expect(evaluateBuildFreshness(facts).stale.some((x) => x.includes('@estalara/db'))).toBe(false);
   });
 
   it('a link that does not resolve is stale, not a crash', async () => {

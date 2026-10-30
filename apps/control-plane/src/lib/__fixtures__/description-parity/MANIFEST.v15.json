@@ -1,0 +1,56 @@
+{
+  "case_count": 98,
+  "change": "FOLLOW-1408: the first_time_buyer headline persona (ARCHETYPE_GUIDANCE) no longer asks for \"move-in readiness\", a condition claim the listing rarely makes and the headline check refuses; it asks for a manageable layout and running costs, and condition and surveys \"only as the listing states them\". v15 is a PROMPT-DIGEST RE-FREEZE of v14: every byte is v14's except prompt_sha256.headline_user of the cases listed under refrozen (the headline-calling first_time_buyer cases), and each new prompt is the v14 prompt with the persona text in persona_change swapped, byte for byte. No verdict, headline, violation or stamp moved; the FOLLOW-1408 negated-guarantee guard and the FOLLOW-1413 list negation changed no verdict of this corpus.",
+  "claims_validation_version": "claims-v4",
+  "corpus": "corpus.v15.jsonl",
+  "corpus_sha256": "370e3a6c:27f47fd6:d2faebee:7e62cd08:c22f39d5:bf006bd1:ab1390a8:8e5c287a",
+  "delta": [],
+  "derived_from": {
+    "corpus": "corpus.v14.jsonl",
+    "manifest": "MANIFEST.v14.json",
+    "corpus_sha256": "6cb771ed:625d67bd:1efc1607:7fa7bf7e:1619615f:0230bbdf:a0ee1f23:4edfcf23"
+  },
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-10-30",
+  "headline_called": 63,
+  "headline_suppressed": 30,
+  "kind": "prompt_digest_refreeze",
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "FAILED/empty": 2,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/meta_commentary": 1,
+    "FAILED/residual_tag": 3,
+    "FAILED/truncated": 1,
+    "NEUTRAL/with_reason": 8,
+    "NEUTRAL/without_reason": 1,
+    "REFUSED/hallucinated_number": 5,
+    "REFUSED/unit_mismatch": 2,
+    "REFUSED/unsupported_amenity": 6,
+    "REFUSED/unsupported_guarantee": 2
+  },
+  "per_verdict": {
+    "FAILED": 11,
+    "FIT": 63,
+    "NEUTRAL": 9,
+    "REFUSED": 15
+  },
+  "persona_change": {
+    "first_time_buyer": {
+      "from": "Lead with affordability, mortgage eligibility, move-in readiness, and Help-to-Buy eligibility where applicable. Simplify jargon. Reassure on condition/surveys.",
+      "to": "Lead with affordability, mortgage eligibility, a manageable layout and running costs, and Help-to-Buy eligibility where applicable. Simplify jargon. Reassure on condition and surveys only as the listing states them."
+    }
+  },
+  "recorded_outputs_predate_prompt": "Every raw_headline in this corpus was produced by an older headline prompt. They are replayed through the unchanged checks, so they pin the checks and the new prompt bytes, NOT what the new prompt makes the model write.",
+  "refrozen": [
+    "live.004.listing-002.first_time_buyer.en",
+    "live.030.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.first_time_buyer.en"
+  ]
+}

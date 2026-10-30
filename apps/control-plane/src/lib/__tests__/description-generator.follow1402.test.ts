@@ -64,18 +64,26 @@ describe('FOLLOW-1402 — the description prompt names the output language', () 
     ['en', 'English'],
     ['pl', 'Polish'],
     ['es', 'Spanish'],
-  ] as const)('%s: the user prompt ends with the %s paragraph', async (locale, language) => {
-    const body = await descriptionRequest({ ...EVENT, locale });
-    const user = body.messages[0]!.content;
-    const last = user.split('\n').at(-1)!;
-    expect(
-      last.startsWith(`LANGUAGE: write the description body in ${language} (locale: ${locale}).`),
-    ).toBe(true);
-    expect(last).toContain('may be in another language');
-    expect(last).toContain(`compose the body natively in ${language}`);
-    // The start is unchanged.
-    expect(user.startsWith(`archetype: yield_hunter\nlocale: ${locale}\n`)).toBe(true);
-  });
+  ] as const)(
+    '%s: the user prompt names the %s language in its paragraph',
+    async (locale, language) => {
+      const body = await descriptionRequest({ ...EVENT, locale });
+      const user = body.messages[0]!.content;
+      // FOLLOW-1414 appended one paragraph after it (write about the home): the language paragraph
+      // is now the second-to-last line.
+      const lines = user.split('\n');
+      expect(lines.at(-1)).toMatch(/^WRITE ABOUT THE HOME, NOT THE LISTING:/u);
+      expect(lines.at(-2)).toBe('');
+      const last = lines.at(-3)!;
+      expect(
+        last.startsWith(`LANGUAGE: write the description body in ${language} (locale: ${locale}).`),
+      ).toBe(true);
+      expect(last).toContain('may be in another language');
+      expect(last).toContain(`compose the body natively in ${language}`);
+      // The start is unchanged.
+      expect(user.startsWith(`archetype: yield_hunter\nlocale: ${locale}\n`)).toBe(true);
+    },
+  );
 
   it.each(['claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'claude-sonnet-5-5'])(
     '%s gets the same instruction (one prompt for every model)',

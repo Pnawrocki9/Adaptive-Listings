@@ -108,8 +108,14 @@ import {
  *   the noun-first Polish phrasing ("społeczność muzułmańska"), which no `claims-v3` row was
  *   checked against; it is regenerated once instead of served. (The rule-1 relaxation alone would
  *   not need it: a refused body was never cached.)
+ * - `claims-v5` — 2026-10-30, FOLLOW-1414 (with FOLLOW-1413 and FOLLOW-1408): `meta_commentary`
+ *   now also refuses a body that reports the listing ("The listing says…", "według ogłoszenia",
+ *   "según el anuncio"), and a listing's negated list ("nie ma basenu, garażu ani ogrodu") or
+ *   negated guarantee ("no guarantee of income") no longer grounds the claim it denies. No
+ *   `claims-v4` row was checked against those; it is regenerated once instead of served. (The
+ *   loosenings of FOLLOW-1396 / 1397 alone would not need it.)
  */
-export const CLAIMS_VALIDATION_VERSION = 'claims-v4';
+export const CLAIMS_VALIDATION_VERSION = 'claims-v5';
 
 /** G-03: total budget per call (deadline on the whole, retries included). */
 const DESCRIPTION_DEADLINE_MS = 75_000;
@@ -141,8 +147,9 @@ const ARCHETYPE_GUIDANCE: Readonly<Record<string, string>> = {
     'amenities. ' +
     'Relocation practicalities matter (utilities, local support).',
   first_time_buyer:
-    'Lead with affordability, mortgage eligibility, move-in readiness, and Help-to-Buy ' +
-    'eligibility where applicable. Simplify jargon. Reassure on condition/surveys.',
+    'Lead with affordability, mortgage eligibility, a manageable layout and running costs, and ' +
+    'Help-to-Buy eligibility where applicable. Simplify jargon. Reassure on condition and ' +
+    'surveys only as the listing states them.',
   luxury_buyer:
     'Emphasise premium finishes, brand-name appliances, views, exclusivity, concierge ' +
     'services, and prestige address. Avoid yield or budget language.',
@@ -526,6 +533,26 @@ function descriptionLanguageInstruction(locale: DescriptionRequestedEvent['local
   );
 }
 
+/** FOLLOW-1414: Polish room-count adjectives, spelled (live typo: "dwuipokojowe"). */
+const POLISH_ROOM_COUNTS =
+  'Polish room counts are one word: jednopokojowe, dwupokojowe, trzypokojowe, czteropokojowe, ' +
+  'pięciopokojowe (for example "mieszkanie dwupokojowe", "dwupokojowe mieszkanie").';
+
+/**
+ * FOLLOW-1414: the paragraph after the language paragraph of the description user prompt. Seen
+ * live (FOLLOW-1411): "The listing says the home is close to schools." — copy about the advert,
+ * not the home (now refused as `meta_commentary`). On a Polish page it also spells the room-count
+ * adjectives.
+ */
+function descriptionAboutTheHomeInstruction(locale: DescriptionRequestedEvent['locale']): string {
+  return (
+    'WRITE ABOUT THE HOME, NOT THE LISTING: state each fact the sources give as a fact about the ' +
+    'property ("The flat has a balcony."), never as something the listing reports ("the ' +
+    'listing says", "according to the description", "ogłoszenie podaje", "el anuncio indica").' +
+    (locale === 'pl' ? ` ${POLISH_ROOM_COUNTS}` : '')
+  );
+}
+
 // ─── Types (ADR-0023 §3) ──────────────────────────────────────────────────────
 
 /**
@@ -652,6 +679,9 @@ function renderDescriptionPrompt(
     '',
     // FOLLOW-1402 (corpus v9): the output language, named.
     descriptionLanguageInstruction(e.locale),
+    '',
+    // FOLLOW-1414 (corpus v17): copy about the home, not the listing; Polish room counts.
+    descriptionAboutTheHomeInstruction(e.locale),
   ].join('\n');
   const { maxTokens, extras } = generationRequestFor(model, maxTokensFor(e.original_description));
   return { system, user, maxTokens, extras };
@@ -689,7 +719,9 @@ function renderHeadlinePrompt(
     `superlatives) the sources do not state. Sentence case: capitalise only the first word and ` +
     `true proper names. Return ONLY the headline text.\n\n` +
     factsBlock +
-    `\n\n${headlineLanguageInstruction(e.locale)}`;
+    `\n\n${headlineLanguageInstruction(e.locale)}` +
+    // FOLLOW-1414 (corpus v17): the Polish room-count adjectives, spelled.
+    (e.locale === 'pl' ? `\n\n${POLISH_ROOM_COUNTS}` : '');
   const { maxTokens, extras } = generationRequestFor(model, HEADLINE_MAX_TOKENS);
   return { system: HEADLINE_SYSTEM_PROMPT, user, maxTokens, extras };
 }

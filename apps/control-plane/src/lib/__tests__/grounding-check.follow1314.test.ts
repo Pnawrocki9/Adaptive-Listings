@@ -72,7 +72,8 @@ const WITH_FIELDS: Record<string, string | null> = {
   'live.015.listing-006.luxury_buyer.en': 'hallucinated_proper_name', // "Expansive Private Estate"
   'live.018.listing-008.family_buyer.en': null, // "Jávea" IS the listing's location
   'live.019.listing-008.upsizer.es': 'hallucinated_proper_name', // "More Space, More Life"
-  'live.020.listing-009.yield_hunter.en': 'hallucinated_number', // "€750K"
+  // "€750K" is grounded by "€750,000" since FOLLOW-1397; "High-Demand", "Waterfront" still refused.
+  'live.020.listing-009.yield_hunter.en': 'hallucinated_proper_name',
   'live.021.listing-009.portfolio_builder.en': 'hallucinated_proper_name', // "Scalable Portfolio Potential"
   'live.024.listing-010.second_home_buyer.en': 'hallucinated_proper_name', // "Rental Income Potential"
   'live.025.listing-011.remote_worker.en': 'hallucinated_proper_name', // "Home Office Potential"

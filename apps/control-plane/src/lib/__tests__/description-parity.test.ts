@@ -4,7 +4,9 @@
  * corpus v6+ (verdict deltas, see `VERDICT_DELTAS`); FOLLOW-1402 — corpus v9 (a prompt re-freeze
  * between them); FOLLOW-1406 — corpus v10 (a stamp-only re-freeze); FOLLOW-1411 — corpus v11 (a
  * verdict delta), v12 (a headline prompt re-freeze) and v13 (a stamp-only re-freeze); FOLLOW-1415
- * — corpus v14 (a stamp-only re-freeze, the current contract).
+ * — corpus v14 (a stamp-only re-freeze); FOLLOW-1408 — corpus v15 (a headline persona re-freeze);
+ * FOLLOW-1397 — corpus v16 (a verdict delta); FOLLOW-1414 — corpus v17 (a description and Polish
+ * headline prompt re-freeze) and v18 (a stamp-only re-freeze, the current contract).
  *
  * Drives `generateDescription` — the production entry point — with the Anthropic SDK mocked to
  * return the RAW model outputs recorded in the frozen corpus, and demands, for every case,
@@ -68,6 +70,23 @@
  *     stamp-only re-freeze of v13 like v13 of v12: `"claims-v3"` read as `"claims-v4"` in every FIT
  *     case, nothing else (no corpus verdict moved under the FOLLOW-1415 guard). Every guard replays
  *     with the CURRENT stamp (v14's).
+ *   - `corpus.v15.jsonl` + `MANIFEST.v15.json` — FOLLOW-1408 rewrote the first_time_buyer headline
+ *     persona (no more "move-in readiness"), so v15 is a prompt-digest re-freeze of v14 like v12:
+ *     only `prompt_sha256.headline_user` of the listed cases differs, and each new prompt is the v14
+ *     prompt with the persona swapped. Every guard replays with the CURRENT headline digests
+ *     (v15's).
+ *   - `corpus.v16.jsonl` + `MANIFEST.v16.json` — FOLLOW-1397 (multiplied numbers: "€750K", "1,15
+ *     mln") is a verdict delta of v15 in `VERDICT_DELTAS`; the v9–v15 guards stop replaying the
+ *     case it changed.
+ *   - `corpus.v17.jsonl` + `MANIFEST.v17.json` — FOLLOW-1414 appended a paragraph to the
+ *     description USER prompt (write about the home, not the listing; Polish room counts) and, on a
+ *     Polish page, to the headline USER prompt, so v17 is a prompt-digest re-freeze of v16 (like
+ *     v9 and v5 together). Every guard replays with the CURRENT description user and headline
+ *     digests (v17's).
+ *   - `corpus.v18.jsonl` + `MANIFEST.v18.json` — FOLLOW-1414 bumped `CLAIMS_VALIDATION_VERSION` to
+ *     `claims-v5` (a `claims-v4` row never passed the listing-attribution refusal), so v18 is a
+ *     stamp-only re-freeze of v17 like v14 of v13. Every guard replays with the CURRENT stamp
+ *     (v18's).
  *
  * No other I/O happens: the test env configures no Redis, ClickHouse, Postgres or Sentry, so the
  * spend gate reads 0, every write reports `not_configured` and no row is written.
@@ -192,8 +211,13 @@ const MANIFEST_V9 = JSON.parse(
  * The CURRENT description user prompt digests, by case id (FOLLOW-1402 re-froze them as v9; its
  * guard asserts they were that corpus's only change).
  */
+const CASES_V17: Case[] = readCorpus('corpus.v17.jsonl');
+const MANIFEST_V17 = JSON.parse(
+  readFileSync(join(FIXTURE_DIR, 'MANIFEST.v17.json'), 'utf8'),
+) as ManifestV3 & { headline_refrozen: string[] };
+/** FOLLOW-1414 (v17) re-froze them again; its guard asserts that was v17's only change. */
 const DESCRIPTION_USER_SHA = new Map(
-  CASES_V9.map((c) => [c.id, c.expected.prompt_sha256.description_user] as const),
+  CASES_V17.map((c) => [c.id, c.expected.prompt_sha256.description_user] as const),
 );
 /** The claims-validation stamp every corpus v1–v9 was frozen with (the manifests keep it). */
 const FROZEN_STAMP = 'claims-v1';
@@ -210,11 +234,6 @@ const MANIFEST_V12 = JSON.parse(
   persona_change: Record<string, { from: string; to: string }>;
   refrozen: string[];
 };
-/**
- * The CURRENT headline prompt digests, by case id (FOLLOW-1315 re-froze them as v3, FOLLOW-1382
- * as v5, FOLLOW-1411 as v12; each of those guards asserts they were that corpus's only change).
- */
-const HEADLINE_SHA = new Map(CASES_V12.map((c) => [c.id, c.expected.prompt_sha256] as const));
 const CASES_V13: Case[] = readCorpus('corpus.v13.jsonl');
 const MANIFEST_V13 = JSON.parse(
   readFileSync(join(FIXTURE_DIR, 'MANIFEST.v13.json'), 'utf8'),
@@ -227,15 +246,35 @@ const MANIFEST_V14 = JSON.parse(
 ) as ManifestV3 & { stamp_refreeze: { from: string; to: string; cases: number } };
 /**
  * The CURRENT claims-validation stamp, by case id (FOLLOW-1406 re-froze it as v10, FOLLOW-1411 as
- * v13, FOLLOW-1415 as v14; each of those guards asserts it was that corpus's only change).
+ * v13, FOLLOW-1415 as v14, FOLLOW-1414 as v18; each of those guards asserts it was that corpus's
+ * only change).
  */
-const STAMP = new Map(CASES_V14.map((c) => [c.id, c.expected.claims_validation] as const));
+const CASES_V18: Case[] = readCorpus('corpus.v18.jsonl');
+const MANIFEST_V18 = JSON.parse(
+  readFileSync(join(FIXTURE_DIR, 'MANIFEST.v18.json'), 'utf8'),
+) as ManifestV3 & { stamp_refreeze: { from: string; to: string; cases: number } };
+const STAMP = new Map(CASES_V18.map((c) => [c.id, c.expected.claims_validation] as const));
+/** The stamp v14 introduced (FOLLOW-1415); the corpora after it are frozen with it. */
+const V14_STAMP = 'claims-v4';
+const CASES_V15: Case[] = readCorpus('corpus.v15.jsonl');
+const MANIFEST_V15 = JSON.parse(
+  readFileSync(join(FIXTURE_DIR, 'MANIFEST.v15.json'), 'utf8'),
+) as ManifestV3 & {
+  persona_change: Record<string, { from: string; to: string }>;
+  refrozen: string[];
+};
+/**
+ * The CURRENT headline prompt digests, by case id (FOLLOW-1315 re-froze them as v3, FOLLOW-1382
+ * as v5, FOLLOW-1411 as v12, FOLLOW-1408 as v15, FOLLOW-1414 as v17 for a Polish page; each of
+ * those guards asserts they were that corpus's only change).
+ */
+const HEADLINE_SHA = new Map(CASES_V17.map((c) => [c.id, c.expected.prompt_sha256] as const));
 
 /**
  * The verdict deltas after v5, oldest first, each derived from the corpus before it (v6 from v5).
  * FOLLOW-1392 — v6 (meta-commentary); FOLLOW-1394 — v7 (a pool of people, views of the sea);
  * FOLLOW-1400 — v8 (familial steering, refused as on `/api/adapt`); FOLLOW-1411 — v11 (ESC-089 lifts
- * it: the four v8 cases go back to their v7 outcome).
+ * it: the four v8 cases go back to their v7 outcome); FOLLOW-1397 — v16 (a multiplied number).
  */
 const VERDICT_DELTAS: {
   version: number;
@@ -266,6 +305,7 @@ const VERDICT_DELTAS: {
       'live.032.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.neutral.en',
     ],
   },
+  { version: 16, ticket: 'FOLLOW-1397', ids: ['live.020.listing-009.yield_hunter.en'] },
 ].map((d) => ({
   ...d,
   cases: readCorpus(`corpus.v${String(d.version)}.jsonl`),
@@ -279,12 +319,17 @@ const LATER_DELTA_IDS = new Set(VERDICT_DELTAS.flatMap((d) => d.manifest.delta.m
 const AFTER_V9_DELTA_IDS = new Set(
   VERDICT_DELTAS.filter((d) => d.version > 9).flatMap((d) => d.manifest.delta.map((x) => x.id)),
 );
+/** Every case a verdict delta after v15 changed: the v12–v15 guards no longer replay it. */
+const AFTER_V15_DELTA_IDS = new Set(
+  VERDICT_DELTAS.filter((d) => d.version > 15).flatMap((d) => d.manifest.delta.map((x) => x.id)),
+);
 
 /** The corpus a verdict delta is derived from: the one numbered just before it. */
 function corpusBefore(version: number): { cases: Case[]; manifest: ManifestV3 } {
   if (version - 1 === 5) return { cases: CASES_V5, manifest: MANIFEST_V5 };
   if (version - 1 === 9) return { cases: CASES_V9, manifest: MANIFEST_V9 };
   if (version - 1 === 10) return { cases: CASES_V10, manifest: MANIFEST_V10 };
+  if (version - 1 === 15) return { cases: CASES_V15, manifest: MANIFEST_V15 };
   const d = VERDICT_DELTAS.find((x) => x.version === version - 1);
   if (d === undefined) throw new Error(`no corpus v${String(version - 1)}`);
   return d;
@@ -605,7 +650,20 @@ describe('description parity corpus v4 (FOLLOW-1381 — grouped numbers)', () =>
 
 /** FOLLOW-1411: a headline user prompt with its v12 persona swapped back to the one before v12. */
 function beforeV12Persona(user: string, c: Case): string {
-  const change = MANIFEST_V12.persona_change[c.input.archetype];
+  return beforePersona(MANIFEST_V12.persona_change, user, c);
+}
+
+/** FOLLOW-1408 (v15): the headline user prompt with the first_time_buyer persona as before v15. */
+function beforeV15Persona(user: string, c: Case): string {
+  return beforePersona(MANIFEST_V15.persona_change, user, c);
+}
+
+function beforePersona(
+  personaChange: Record<string, { from: string; to: string }>,
+  user: string,
+  c: Case,
+): string {
+  const change = personaChange[c.input.archetype];
   if (change === undefined) return user;
   const marker = `Persona guidance (tone only — it adds no facts): `;
   expect(user, c.id).toContain(`${marker}${change.to}\n`);
@@ -685,9 +743,13 @@ describe('description parity corpus v5 (FOLLOW-1382 — the current contract: he
         .mockResolvedValueOnce(response(c.raw_description.text, c.raw_description.stop_reason))
         .mockResolvedValueOnce(response(c.raw_headline ?? '', 'end_turn'));
       await generateDescription(c.input);
-      // FOLLOW-1411 (v12) swapped four personas; read the prompt as it was before v12.
+      // FOLLOW-1411 (v12) swapped four personas, FOLLOW-1408 (v15) one more; read the prompt as
+      // it was before v12.
       const user = beforeV12Persona(
-        (mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content,
+        beforeV15Persona(
+          beforeV17Headline((mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content, c),
+          c,
+        ),
         c,
       );
       const paragraph = languageParagraph(c.input.locale);
@@ -739,8 +801,11 @@ describe.each(VERDICT_DELTAS.map((d, i) => [d.version, d.ticket, d, i] as const)
         d.manifest.corpus_sha256,
       );
       expect(d.manifest.case_count).toBe(d.cases.length);
-      // Frozen before v10 with claims-v1; after it with the stamp v10 introduced [FOLLOW-1411].
-      expect(d.manifest.claims_validation_version).toBe(d.version > 10 ? V10_STAMP : FROZEN_STAMP);
+      // Frozen before v10 with claims-v1; after it with the stamp v10 introduced [FOLLOW-1411];
+      // after v14 with v14's [FOLLOW-1397].
+      expect(d.manifest.claims_validation_version).toBe(
+        d.version > 14 ? V14_STAMP : d.version > 10 ? V10_STAMP : FROZEN_STAMP,
+      );
       expect(d.cases.map((c) => c.id)).toEqual(prevCases.map((c) => c.id));
       expect([...ids].sort()).toEqual([...d.ids].sort());
       for (const [j, cur] of d.cases.entries()) {
@@ -861,6 +926,40 @@ function descriptionLanguageParagraph(locale: string): string {
   );
 }
 
+/** FOLLOW-1414: the Polish room-count paragraph (v17), as the generator writes it. */
+const POLISH_ROOM_COUNTS =
+  'Polish room counts are one word: jednopokojowe, dwupokojowe, trzypokojowe, czteropokojowe, ' +
+  'pięciopokojowe (for example "mieszkanie dwupokojowe", "dwupokojowe mieszkanie").';
+
+/** FOLLOW-1414: the paragraph the description user prompt ends with since v17, per locale. */
+function aboutTheHomeParagraph(locale: string): string {
+  return (
+    '\n\nWRITE ABOUT THE HOME, NOT THE LISTING: state each fact the sources give as a fact about ' +
+    'the property ("The flat has a balcony."), never as something the listing reports ("the ' +
+    'listing says", "according to the description", "ogłoszenie podaje", "el anuncio indica").' +
+    (locale === 'pl' ? ` ${POLISH_ROOM_COUNTS}` : '')
+  );
+}
+
+/** FOLLOW-1414: the paragraph a Polish headline user prompt ends with since v17. */
+function headlineRoomCountParagraph(locale: string): string {
+  return locale === 'pl' ? `\n\n${POLISH_ROOM_COUNTS}` : '';
+}
+
+/** The description user prompt as before v17 (FOLLOW-1414). */
+function beforeV17Description(user: string, c: Case): string {
+  const paragraph = aboutTheHomeParagraph(c.input.locale);
+  expect(user.endsWith(paragraph), c.id).toBe(true);
+  return user.slice(0, user.length - paragraph.length);
+}
+
+/** The headline user prompt as before v17 (FOLLOW-1414): a Polish page lost its last paragraph. */
+function beforeV17Headline(user: string, c: Case): string {
+  const paragraph = headlineRoomCountParagraph(c.input.locale);
+  expect(user.endsWith(paragraph), c.id).toBe(true);
+  return user.slice(0, user.length - paragraph.length);
+}
+
 describe('description parity corpus v9 (FOLLOW-1402 — description language, prompt re-freeze)', () => {
   const v8 = VERDICT_DELTAS.find((d) => d.version === 8)!;
 
@@ -909,7 +1008,11 @@ describe('description parity corpus v9 (FOLLOW-1402 — description language, pr
         .mockResolvedValueOnce(response(c.raw_description.text, c.raw_description.stop_reason))
         .mockResolvedValueOnce(response(c.raw_headline ?? '', 'end_turn'));
       await generateDescription(c.input);
-      const user = (mockCreate.mock.calls[0]![0] as CreateParams).messages[0]!.content;
+      // FOLLOW-1414 (v17) appended one more paragraph; read the prompt as it was before v17.
+      const user = beforeV17Description(
+        (mockCreate.mock.calls[0]![0] as CreateParams).messages[0]!.content,
+        c,
+      );
       const paragraph = descriptionLanguageParagraph(c.input.locale);
       expect(user.endsWith(paragraph), c.id).toBe(true);
       expect(sha(user.slice(0, user.length - paragraph.length)), c.id).toBe(
@@ -1055,7 +1158,7 @@ describe('description parity corpus v11 (FOLLOW-1411 — ESC-089 lifts familial 
   });
 });
 
-describe('description parity corpus v12 (FOLLOW-1411 — headline persona re-freeze, the current contract)', () => {
+describe('description parity corpus v12 (FOLLOW-1411 — headline persona re-freeze)', () => {
   const v11 = VERDICT_DELTAS.find((d) => d.version === 11)!;
   const REFROZEN = new Set(MANIFEST_V12.refrozen);
 
@@ -1134,7 +1237,9 @@ describe('description parity corpus v12 (FOLLOW-1411 — headline persona re-fre
     expect(MANIFEST_V12.persona_change.family_buyer!.to).toMatch(/family/i);
   });
 
-  describe.each(CASES_V12.map((c) => [c.id, c] as const))('%s', (_id, c) => {
+  describe.each(
+    CASES_V12.filter((c) => !AFTER_V15_DELTA_IDS.has(c.id)).map((c) => [c.id, c] as const),
+  )('%s', (_id, c) => {
     it('generates identically to the v12 record', async () => {
       await expectIdentical(c);
     });
@@ -1194,18 +1299,20 @@ describe('description parity corpus v13 (FOLLOW-1411 — claims-v3, stamp-only r
     expect(V13_TEXT.length).toBe(V12_TEXT.length); // same-length value: no byte shifted
   });
 
-  describe.each(CASES_V13.map((c) => [c.id, c] as const))('%s', (_id, c) => {
+  describe.each(
+    CASES_V13.filter((c) => !AFTER_V15_DELTA_IDS.has(c.id)).map((c) => [c.id, c] as const),
+  )('%s', (_id, c) => {
     it('generates identically to the v13 record', async () => {
       await expectIdentical(c);
     });
   });
 });
 
-describe('description parity corpus v14 (FOLLOW-1415 — claims-v4, stamp-only re-freeze, the current contract)', () => {
+describe('description parity corpus v14 (FOLLOW-1415 — claims-v4, stamp-only re-freeze)', () => {
   const V13_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v13.jsonl'), 'utf8');
   const V14_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v14.jsonl'), 'utf8');
   const OLD = `"claims_validation": "${V13_STAMP}"`;
-  const NEW = `"claims_validation": "${CLAIMS_VALIDATION_VERSION}"`;
+  const NEW = `"claims_validation": "${V14_STAMP}"`;
 
   beforeEach(() => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'parity-'.repeat(4));
@@ -1213,8 +1320,8 @@ describe('description parity corpus v14 (FOLLOW-1415 — claims-v4, stamp-only r
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it('the manifest describes v14 as a stamp re-freeze of v13 under the current constant', () => {
-    expect(CLAIMS_VALIDATION_VERSION).toBe('claims-v4');
+  // History pins its own literal: v14's stamp is claims-v4, the constant moved on (FOLLOW-1414).
+  it('the manifest describes v14 as a stamp re-freeze of v13 under claims-v4', () => {
     expect(MANIFEST_V14.corpus).toBe('corpus.v14.jsonl');
     expect(MANIFEST_V14.kind).toBe('stamp_refreeze');
     expect(MANIFEST_V14.derived_from.corpus).toBe('corpus.v13.jsonl');
@@ -1222,10 +1329,10 @@ describe('description parity corpus v14 (FOLLOW-1415 — claims-v4, stamp-only r
     expect(MANIFEST_V14.derived_from.corpus_sha256).toBe(MANIFEST_V13.corpus_sha256);
     expect(sha(V13_TEXT)).toBe(MANIFEST_V14.derived_from.corpus_sha256);
     expect(sha(V14_TEXT)).toBe(MANIFEST_V14.corpus_sha256);
-    expect(MANIFEST_V14.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(MANIFEST_V14.claims_validation_version).toBe(V14_STAMP);
     expect(MANIFEST_V14.stamp_refreeze).toEqual({
       from: V13_STAMP,
-      to: CLAIMS_VALIDATION_VERSION,
+      to: V14_STAMP,
       cases: MANIFEST_V13.per_verdict.FIT,
     });
     expect(MANIFEST_V14.delta).toEqual([]);
@@ -1251,8 +1358,252 @@ describe('description parity corpus v14 (FOLLOW-1415 — claims-v4, stamp-only r
     expect(V14_TEXT.length).toBe(V13_TEXT.length); // same-length value: no byte shifted
   });
 
-  describe.each(CASES_V14.map((c) => [c.id, c] as const))('%s', (_id, c) => {
+  describe.each(
+    CASES_V14.filter((c) => !AFTER_V15_DELTA_IDS.has(c.id)).map((c) => [c.id, c] as const),
+  )('%s', (_id, c) => {
     it('generates identically to the v14 record', async () => {
+      await expectIdentical(c);
+    });
+  });
+});
+
+describe('description parity corpus v15 (FOLLOW-1408 — first_time_buyer persona re-freeze)', () => {
+  const REFROZEN = new Set(MANIFEST_V15.refrozen);
+  const V14_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v14.jsonl'), 'utf8');
+  const V15_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v15.jsonl'), 'utf8');
+
+  beforeEach(() => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'parity-'.repeat(4));
+    mockCreate.mockReset();
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('v15 is v14 with ONLY the headline USER prompt digests of the listed cases changed', () => {
+    expect(MANIFEST_V15.corpus).toBe('corpus.v15.jsonl');
+    expect(MANIFEST_V15.kind).toBe('prompt_digest_refreeze');
+    expect(MANIFEST_V15.derived_from.corpus).toBe('corpus.v14.jsonl');
+    expect(MANIFEST_V15.derived_from.manifest).toBe('MANIFEST.v14.json');
+    expect(MANIFEST_V15.derived_from.corpus_sha256).toBe(MANIFEST_V14.corpus_sha256);
+    expect(sha(V14_TEXT)).toBe(MANIFEST_V15.derived_from.corpus_sha256);
+    expect(sha(V15_TEXT)).toBe(MANIFEST_V15.corpus_sha256);
+    expect(MANIFEST_V15.case_count).toBe(CASES_V15.length);
+    expect(MANIFEST_V15.claims_validation_version).toBe(MANIFEST_V14.claims_validation_version);
+    expect(MANIFEST_V15.delta).toEqual([]);
+    expect(MANIFEST_V15.per_verdict).toEqual(MANIFEST_V14.per_verdict);
+    expect(MANIFEST_V15.per_reason).toEqual(MANIFEST_V14.per_reason);
+    expect(MANIFEST_V15.headline_suppressed).toBe(MANIFEST_V14.headline_suppressed);
+    expect(Object.keys(MANIFEST_V15.persona_change)).toEqual(['first_time_buyer']);
+    expect(CASES_V15.map((c) => c.id)).toEqual(CASES_V14.map((c) => c.id));
+    for (const [i, v15] of CASES_V15.entries()) {
+      const prev = CASES_V14[i]!;
+      const { prompt_sha256: p15, ...rest15 } = v15.expected;
+      const { prompt_sha256: p14, ...rest14 } = prev.expected;
+      expect({ ...v15, expected: rest15 }, v15.id).toEqual({ ...prev, expected: rest14 });
+      expect(p15.description_system, v15.id).toBe(p14.description_system);
+      expect(p15.description_user, v15.id).toBe(p14.description_user);
+      expect(p15.headline_system, v15.id).toBe(p14.headline_system);
+      if (REFROZEN.has(v15.id)) expect(p15.headline_user, v15.id).not.toBe(p14.headline_user);
+      else expect(p15.headline_user, v15.id).toBe(p14.headline_user);
+    }
+  });
+
+  it('every headline-calling first_time_buyer case is re-frozen, and none other', () => {
+    expect(
+      CASES_V15.filter(
+        (c) => c.expected.headline_called && c.input.archetype === 'first_time_buyer',
+      )
+        .map((c) => c.id)
+        .sort(),
+    ).toEqual([...REFROZEN].sort());
+    expect(REFROZEN.size).toBeGreaterThan(0);
+  });
+
+  it('every new headline user prompt is the v14 prompt with the persona swapped, byte for byte', async () => {
+    for (const c of CASES_V15.filter((x) => REFROZEN.has(x.id))) {
+      const prev = CASES_V14.find((x) => x.id === c.id)!;
+      mockCreate.mockReset();
+      mockCreate
+        .mockResolvedValueOnce(response(c.raw_description.text, c.raw_description.stop_reason))
+        .mockResolvedValueOnce(response(c.raw_headline ?? '', 'end_turn'));
+      await generateDescription(c.input);
+      const user = (mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content;
+      expect(sha(user), c.id).toBe(c.expected.prompt_sha256.headline_user);
+      expect(sha(beforeV15Persona(user, c)), c.id).toBe(prev.expected.prompt_sha256.headline_user);
+    }
+  });
+
+  it('the new persona asks for no condition claim', () => {
+    const { from, to } = MANIFEST_V15.persona_change.first_time_buyer!;
+    expect(from).toMatch(/move-in readiness/u);
+    expect(to).not.toMatch(/move-in|readiness|turn-?key/iu);
+    expect(to).toMatch(/only as the listing states them/u);
+  });
+
+  describe.each(
+    CASES_V15.filter((c) => !AFTER_V15_DELTA_IDS.has(c.id)).map((c) => [c.id, c] as const),
+  )('%s', (_id, c) => {
+    it('generates identically to the v15 record', async () => {
+      await expectIdentical(c);
+    });
+  });
+});
+
+describe('description parity corpus v16 (FOLLOW-1397 — a multiplied number is the number it names)', () => {
+  it('the one v16 delta is "€750K" grounded by "€750,000": the headline is refused for its next word', () => {
+    const id = 'live.020.listing-009.yield_hunter.en';
+    const v15 = CASES_V15.find((c) => c.id === id)!;
+    const v16 = VERDICT_DELTAS.find((d) => d.version === 16)!.cases.find((c) => c.id === id)!;
+    expect(v15.raw_headline).toContain('€750K');
+    expect(v15.input.listing_context.price).toBe('€750,000');
+    expect(v15.expected.headline_violation).toBe('hallucinated_number');
+    expect(v16.expected.headline_violation).toBe('hallucinated_proper_name');
+    expect(v16.expected.headline).toBeNull();
+    expect(v16.expected.outcome).toEqual(v15.expected.outcome);
+  });
+});
+
+describe('description parity corpus v17 (FOLLOW-1414 — write about the home, Polish room counts)', () => {
+  const HEADLINE_REFROZEN = new Set(MANIFEST_V17.headline_refrozen);
+  const v16 = VERDICT_DELTAS.find((d) => d.version === 16)!;
+  const V17_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v17.jsonl'), 'utf8');
+
+  beforeEach(() => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'parity-'.repeat(4));
+    mockCreate.mockReset();
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('v17 is v16 with ONLY the description user digests and the Polish headline user digests changed', () => {
+    expect(MANIFEST_V17.corpus).toBe('corpus.v17.jsonl');
+    expect(MANIFEST_V17.kind).toBe('prompt_digest_refreeze');
+    expect(MANIFEST_V17.derived_from.corpus).toBe('corpus.v16.jsonl');
+    expect(MANIFEST_V17.derived_from.manifest).toBe('MANIFEST.v16.json');
+    expect(MANIFEST_V17.derived_from.corpus_sha256).toBe(v16.manifest.corpus_sha256);
+    expect(sha(V17_TEXT)).toBe(MANIFEST_V17.corpus_sha256);
+    expect(MANIFEST_V17.case_count).toBe(CASES_V17.length);
+    expect(MANIFEST_V17.claims_validation_version).toBe(v16.manifest.claims_validation_version);
+    expect(MANIFEST_V17.delta).toEqual([]);
+    expect(MANIFEST_V17.per_verdict).toEqual(v16.manifest.per_verdict);
+    expect(MANIFEST_V17.per_reason).toEqual(v16.manifest.per_reason);
+    expect(MANIFEST_V17.headline_suppressed).toBe(v16.manifest.headline_suppressed);
+    expect(CASES_V17.map((c) => c.id)).toEqual(v16.cases.map((c) => c.id));
+    for (const [i, v17] of CASES_V17.entries()) {
+      const prev = v16.cases[i]!;
+      const { prompt_sha256: p17, ...rest17 } = v17.expected;
+      const { prompt_sha256: p16, ...rest16 } = prev.expected;
+      expect({ ...v17, expected: rest17 }, v17.id).toEqual({ ...prev, expected: rest16 });
+      expect(p17.description_system, v17.id).toBe(p16.description_system);
+      expect(p17.headline_system, v17.id).toBe(p16.headline_system);
+      expect(p17.description_user, v17.id).not.toBe(p16.description_user);
+      if (HEADLINE_REFROZEN.has(v17.id))
+        expect(p17.headline_user, v17.id).not.toBe(p16.headline_user);
+      else expect(p17.headline_user, v17.id).toBe(p16.headline_user);
+    }
+  });
+
+  it('every headline-calling Polish case is re-frozen, and none other', () => {
+    expect(
+      CASES_V17.filter((c) => c.expected.headline_called && c.input.locale === 'pl')
+        .map((c) => c.id)
+        .sort(),
+    ).toEqual([...HEADLINE_REFROZEN].sort());
+    expect(HEADLINE_REFROZEN.size).toBeGreaterThan(0);
+  });
+
+  it('every new prompt is the v16 prompt plus the FOLLOW-1414 paragraph, byte for byte', async () => {
+    const locales = new Set<string>();
+    for (const c of CASES_V17) {
+      const prev = v16.cases.find((x) => x.id === c.id)!;
+      mockCreate.mockReset();
+      mockCreate
+        .mockResolvedValueOnce(response(c.raw_description.text, c.raw_description.stop_reason))
+        .mockResolvedValueOnce(response(c.raw_headline ?? '', 'end_turn'));
+      await generateDescription(c.input);
+      const desc = (mockCreate.mock.calls[0]![0] as CreateParams).messages[0]!.content;
+      expect(sha(desc), c.id).toBe(c.expected.prompt_sha256.description_user);
+      expect(sha(beforeV17Description(desc, c)), c.id).toBe(
+        prev.expected.prompt_sha256.description_user,
+      );
+      if (c.expected.headline_called) {
+        const head = (mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content;
+        expect(sha(head), c.id).toBe(c.expected.prompt_sha256.headline_user);
+        expect(sha(beforeV17Headline(head, c)), c.id).toBe(
+          prev.expected.prompt_sha256.headline_user,
+        );
+      }
+      locales.add(c.input.locale);
+    }
+    expect([...locales].sort()).toEqual(['en', 'es', 'pl']);
+  });
+
+  it('the Polish paragraph spells the room counts and never the live typo', () => {
+    expect(POLISH_ROOM_COUNTS).toMatch(/dwupokojowe/u);
+    expect(POLISH_ROOM_COUNTS).not.toMatch(/dwuipokojowe/u);
+  });
+
+  describe.each(CASES_V17.map((c) => [c.id, c] as const))('%s', (_id, c) => {
+    it('generates identically to the v17 record', async () => {
+      await expectIdentical(c);
+    });
+  });
+});
+
+describe('description parity corpus v18 (FOLLOW-1414 — claims-v5, stamp-only re-freeze, the current contract)', () => {
+  const V17_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v17.jsonl'), 'utf8');
+  const V18_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v18.jsonl'), 'utf8');
+  const OLD = `"claims_validation": "${V14_STAMP}"`;
+  const NEW = `"claims_validation": "${CLAIMS_VALIDATION_VERSION}"`;
+
+  beforeEach(() => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'parity-'.repeat(4));
+    mockCreate.mockReset();
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('the manifest describes v18 as a stamp re-freeze of v17 under the current constant', () => {
+    expect(CLAIMS_VALIDATION_VERSION).toBe('claims-v5');
+    expect(MANIFEST_V18.corpus).toBe('corpus.v18.jsonl');
+    expect(MANIFEST_V18.kind).toBe('stamp_refreeze');
+    expect(MANIFEST_V18.derived_from.corpus).toBe('corpus.v17.jsonl');
+    expect(MANIFEST_V18.derived_from.manifest).toBe('MANIFEST.v17.json');
+    expect(MANIFEST_V18.derived_from.corpus_sha256).toBe(MANIFEST_V17.corpus_sha256);
+    expect(sha(V17_TEXT)).toBe(MANIFEST_V18.derived_from.corpus_sha256);
+    expect(sha(V18_TEXT)).toBe(MANIFEST_V18.corpus_sha256);
+    expect(MANIFEST_V18.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(MANIFEST_V18.stamp_refreeze).toEqual({
+      from: V14_STAMP,
+      to: CLAIMS_VALIDATION_VERSION,
+      cases: MANIFEST_V17.per_verdict.FIT,
+    });
+    expect(MANIFEST_V18.delta).toEqual([]);
+    expect(MANIFEST_V18.case_count).toBe(CASES_V18.length);
+    const m18 = MANIFEST_V18 as unknown as Record<string, unknown>;
+    const m17 = MANIFEST_V17 as unknown as Record<string, unknown>;
+    // Every field but the stamp record, the kind and the provenance is v17's; the prompt record
+    // only v17 carries.
+    const own = ['change', 'corpus', 'corpus_sha256', 'derived_from', 'frozen_at', 'kind'];
+    own.push('claims_validation_version', 'stamp_refreeze');
+    const v17Only = ['headline_refrozen'];
+    expect(Object.keys(m18).sort()).toEqual(
+      [...new Set([...Object.keys(m17).filter((k) => !v17Only.includes(k)), ...own])].sort(),
+    );
+    for (const key of Object.keys(m17)) {
+      if (own.includes(key) || v17Only.includes(key)) continue;
+      expect(m18[key], key).toEqual(m17[key]);
+    }
+  });
+
+  it('v18 is v17 byte for byte except the stamp value, in every FIT case and nowhere else', () => {
+    expect(V17_TEXT.split(OLD).length - 1).toBe(MANIFEST_V17.per_verdict.FIT);
+    expect(V18_TEXT.split(NEW).length - 1).toBe(MANIFEST_V17.per_verdict.FIT);
+    expect(V17_TEXT.includes(NEW)).toBe(false);
+    expect(V18_TEXT.includes(V14_STAMP)).toBe(false);
+    expect(V18_TEXT).toBe(V17_TEXT.split(OLD).join(NEW));
+    expect(V18_TEXT.length).toBe(V17_TEXT.length); // same-length value: no byte shifted
+  });
+
+  describe.each(CASES_V18.map((c) => [c.id, c] as const))('%s', (_id, c) => {
+    it('generates identically to the v18 record', async () => {
       await expectIdentical(c);
     });
   });

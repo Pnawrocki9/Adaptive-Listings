@@ -90,15 +90,17 @@ describe('isTrustedDescriptionHit (legacy admission)', () => {
     expect(isTrustedDescriptionHit('NEUTRAL', null)).toBe(true);
   });
 
-  it('FOLLOW-1406 / FOLLOW-1411 / FOLLOW-1415: a claims-v1, v2 or v3 FIT hit is not trusted', () => {
-    expect(CLAIMS_VALIDATION_VERSION).toBe('claims-v4');
+  it('FOLLOW-1406 / FOLLOW-1411 / FOLLOW-1415 / FOLLOW-1414: a claims-v1 … v4 FIT hit is not trusted', () => {
+    expect(CLAIMS_VALIDATION_VERSION).toBe('claims-v5');
     expect(isTrustedDescriptionHit('FIT', 'claims-v1')).toBe(false);
     expect(isTrustedDescriptionHit(undefined, 'claims-v1')).toBe(false);
     // FOLLOW-1411: a claims-v2 row never passed the protected-ground or school grounding check.
     expect(isTrustedDescriptionHit('FIT', 'claims-v2')).toBe(false);
     // FOLLOW-1415: a claims-v3 row never passed the sensitive-history refusal.
     expect(isTrustedDescriptionHit('FIT', 'claims-v3')).toBe(false);
-    expect(isTrustedDescriptionHit('FIT', 'claims-v4')).toBe(true);
+    // FOLLOW-1414: a claims-v4 row never passed the listing-attribution refusal (meta_commentary).
+    expect(isTrustedDescriptionHit('FIT', 'claims-v4')).toBe(false);
+    expect(isTrustedDescriptionHit('FIT', 'claims-v5')).toBe(true);
     expect(isTrustedDescriptionHit('NEUTRAL', 'claims-v1')).toBe(true);
   });
 
@@ -108,9 +110,11 @@ describe('isTrustedDescriptionHit (legacy admission)', () => {
       JSON.parse(
         readFileSync(path.resolve(__dirname, '../__fixtures__/description-parity', file), 'utf8'),
       ) as { claims_validation_version: string };
-    // The current contract (FOLLOW-1415: corpus v14, a stamp-only re-freeze of v13). History pins
-    // its own literal: v10 (FOLLOW-1406) introduced claims-v2, v13 (FOLLOW-1411) claims-v3.
-    expect(manifest('MANIFEST.v14.json').claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    // The current contract (FOLLOW-1414: corpus v18, a stamp-only re-freeze of v17). History pins
+    // its own literal: v10 (FOLLOW-1406) introduced claims-v2, v13 (FOLLOW-1411) claims-v3, v14
+    // (FOLLOW-1415) claims-v4.
+    expect(manifest('MANIFEST.v18.json').claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(manifest('MANIFEST.v14.json').claims_validation_version).toBe('claims-v4');
     expect(manifest('MANIFEST.v13.json').claims_validation_version).toBe('claims-v3');
     expect(manifest('MANIFEST.v10.json').claims_validation_version).toBe('claims-v2');
     // The Python job the corpus was first frozen from stamped claims-v1; that record never moves.

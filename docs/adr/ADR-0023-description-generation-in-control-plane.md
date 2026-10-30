@@ -386,6 +386,24 @@ B), `docs/INTERFACES.md` (description event becomes in-process; seed route), Mod
   the revision fence plus regenerate-on-miss already make a lost job self-healing on the next
   request.
 
+## 11. Dated notes
+
+- **2026-10-30 — `meta_commentary` (FOLLOW-1392, noted by FOLLOW-1397).** §3 lists three
+  `ContractViolation` codes; since FOLLOW-1392 there is a fourth, `meta_commentary`. A body,
+  headline or `/api/adapt` directive value that talks about itself, its inputs or its writer instead
+  of the property ("Correction: the first sentence above…", "Here is the description", "the facts
+  provided", "As an AI", a word count, a bracketed placeholder) is refused as
+  `FAILED / meta_commentary` — refused, never stripped. Closed en / pl / es lists in
+  `lib/meta-commentary.ts`, checked by `bodyViolatesContract` after the leak markers. It is a
+  refusal class, so adding it bumped the parity corpus (v6, a verdict delta).
+- **2026-10-30 — `meta_commentary` extended (FOLLOW-1414).** A positive attribution to the listing
+  ("The listing says the home is close to schools", "according to the listing", "ogłoszenie podaje",
+  "według ogłoszenia", "el anuncio indica", "según el anuncio") is also refused: the copy reports
+  the advert instead of describing the home. A statement of what the listing leaves out ("The
+  listing states no rent or yield figure", "ogłoszenie nie wymienia szkół") still passes. A
+  tightening, so `CLAIMS_VALIDATION_VERSION` moves to `claims-v5` (cached rows were never checked
+  against it); the description and Polish headline prompts gained a paragraph (corpus v17).
+
 ## References
 
 `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` §A D5, WP-2.11 · `backlog/FOLLOW_UPS.md` FOLLOW-1297 and

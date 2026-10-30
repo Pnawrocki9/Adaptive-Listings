@@ -41,11 +41,20 @@
  * @module apps/control-plane/src/lib/grounding-check
  */
 
-import { AMENITY_RES, NEGATED_AFTER_RE, NEGATOR_RE } from '@/lib/amenity-lexicon';
-import { CONDITION_FACT_RE, GUARANTEE_RE, assertsNoWorkClaim } from '@/lib/condition-lexicon';
+import {
+  AMENITY_RES,
+  NEGATED_AFTER_RE,
+  NEGATOR_RE,
+  negatedThroughList,
+} from '@/lib/amenity-lexicon';
+import { CONDITION_FACT_RE, assertsGuarantee, assertsNoWorkClaim } from '@/lib/condition-lexicon';
 import { hasMetaCommentary } from '@/lib/meta-commentary';
 import { hasModelControlTag } from '@/lib/model-control-tags';
-import { normaliseNumberGroups } from '@/lib/number-groups';
+import {
+  normaliseNumberGroups,
+  stripGroundedMultipliedNumbers,
+  withMultipliedNumbers,
+} from '@/lib/number-groups';
 import { stripGroundedDecades } from '@/lib/decade-expressions';
 
 // ─── Violation codes (ADR-0023 §3) ────────────────────────────────────────────
@@ -245,11 +254,14 @@ export function stemLoose(word: string): string {
  * (FOLLOW-1405, `lib/decade-expressions.ts`).
  */
 function checkNumbers(rawText: string, rawGrounding: string): NumberViolation | null {
-  const grounding = normaliseNumberGroups(rawGrounding);
+  const normalised = normaliseNumberGroups(rawGrounding);
+  // The listing's "1,15 mln" also grounds "1150000" [FOLLOW-1397] (not a decade: "2 tys." is no year).
+  const grounding = withMultipliedNumbers(normalised);
   // A decade is checked as a decade, then kept out of the digit rule [FOLLOW-1405].
-  const withoutDecades = stripGroundedDecades(normaliseNumberGroups(rawText), grounding);
+  const withoutDecades = stripGroundedDecades(normaliseNumberGroups(rawText), normalised);
   if (withoutDecades === null) return 'hallucinated_number';
-  const text = withoutDecades;
+  // A grounded "1,15 mln" / "850 tys." / "1.15M" is the number it names [FOLLOW-1397].
+  const text = stripGroundedMultipliedNumbers(withoutDecades, grounding);
   const grounded = new Set<string>();
   for (const m of grounding.matchAll(FACT_CHECK_DIGIT_RE)) {
     const canon = canonNumber(m[0]);
@@ -331,11 +343,12 @@ function isNegated(text: string, startUtf16: number): boolean {
 
 /**
  * `_asserted`: at least one NON-negated match. FOLLOW-1383: a match followed by a spec-line
- * negation ("Basen: brak") is negated too.
+ * negation ("Basen: brak") is negated too. FOLLOW-1413: so is an item of a negated list ("no
+ * schools, nurseries or playgrounds").
  */
 function asserted(pattern: RegExp, text: string): boolean {
   for (const m of text.matchAll(pattern)) {
-    if (isNegated(text, m.index)) continue;
+    if (isNegated(text, m.index) || negatedThroughList(text, m.index, isNegated)) continue;
     if (NEGATED_AFTER_RE.test(text.slice(m.index + m[0].length))) continue;
     return true;
   }
@@ -376,7 +389,8 @@ function checkUnsupportedClaimsPy(
   }
   // FOLLOW-1393: one guarantee / no-work / condition list across en / pl / es
   // (`lib/condition-lexicon.ts`); a condition fact counts only when it is not negated.
-  if (GUARANTEE_RE.test(text) && !GUARANTEE_RE.test(grounding)) return 'unsupported_guarantee';
+  // FOLLOW-1408: a negated guarantee ("no guarantee of income") is a disclaimer, on both sides.
+  if (assertsGuarantee(text) && !assertsGuarantee(grounding)) return 'unsupported_guarantee';
   if (
     assertsNoWorkClaim(text) &&
     !(assertsNoWorkClaim(grounding) || asserted(CONDITION_FACT_RE, grounding))
@@ -590,13 +604,88 @@ function isPolishCaseFormOfFact(
   return false;
 }
 
+/** FOLLOW-1396: a name with its diacritics folded ("Kraków" → "Krakow", "Łódź" → "Lodz"). */
+function foldDiacritics(s: string): string {
+  return s.normalize('NFD').replace(/\p{M}/gu, '').replaceAll('ł', 'l').replaceAll('Ł', 'L');
+}
+
+/**
+ * FOLLOW-1396: the CLOSED table of places with more than one name across en / pl / es (and the
+ * local form): each row is one place. A headline may use any name of a row when the listing uses
+ * another name of the SAME row ("Warsaw" for "Warszawa", "Sewilla" for "Sevilla"). Single words
+ * only (the rule checks word by word); no names that are also another place or a common word
+ * ("Praga" is a Warsaw district, "Galicja" another region), and no historical German names. A
+ * name differing only by diacritics needs no row (`foldDiacritics`).
+ */
+const PLACE_EXONYMS: readonly (readonly string[])[] = [
+  // Poland
+  ['Warszawa', 'Warsaw', 'Varsovia'],
+  ['Kraków', 'Cracow', 'Cracovia'],
+  ['Wrocław', 'Breslavia'],
+  ['Poznań', 'Posnania'],
+  ['Śląsk', 'Silesia'],
+  ['Pomorze', 'Pomerania'],
+  ['Mazury', 'Masuria'],
+  ['Mazowsze', 'Masovia', 'Mazovia'],
+  ['Kaszuby', 'Kashubia'],
+  ['Tatry', 'Tatras'],
+  // Spain
+  ['Sevilla', 'Seville', 'Sewilla'],
+  ['Zaragoza', 'Saragossa'],
+  ['Madrid', 'Madryt'],
+  ['Valencia', 'València', 'Walencja'],
+  ['Córdoba', 'Cordova', 'Kordoba'],
+  ['Cádiz', 'Kadyks'],
+  ['Mallorca', 'Majorca', 'Majorka'],
+  ['Menorca', 'Minorca', 'Minorka'],
+  ['Ibiza', 'Eivissa'],
+  ['Tenerife', 'Teneryfa'],
+  ['Andalucía', 'Andalusia', 'Andaluzja'],
+  ['Cataluña', 'Catalunya', 'Catalonia', 'Katalonia'],
+  ['Alicante', 'Alacant'],
+  ['Jávea', 'Xàbia'],
+  ['Castellón', 'Castelló'],
+  ['Gerona', 'Girona'],
+  ['Lérida', 'Lleida'],
+  ['Navarra', 'Navarre'],
+  ['Vizcaya', 'Biscay', 'Bizkaia'],
+  // Portugal
+  ['Lisboa', 'Lisbon', 'Lizbona'],
+  ['Porto', 'Oporto'],
+];
+
+/**
+ * FOLLOW-1396: is a capitalised headline word the listing's own place under another name — the
+ * same name with diacritics folded, or another name of the same `PLACE_EXONYMS` row (on a Polish
+ * page, also an inflected form of one: "w Warszawie" for "Warsaw")?
+ */
+function isOtherNameOfListingPlace(
+  word: string,
+  grounding: string,
+  locale: 'en' | 'pl' | 'es' | undefined,
+): boolean {
+  const foldedGrounding = foldDiacritics(grounding);
+  if (pyWordBoundarySearch(foldDiacritics(word), foldedGrounding)) return true;
+  const folded = foldDiacritics(word).toLowerCase();
+  for (const row of PLACE_EXONYMS) {
+    const names =
+      row.some((n) => foldDiacritics(n).toLowerCase() === folded) ||
+      (locale === 'pl' && row.some((n) => polishCaseForms(word, n)));
+    if (names && row.some((n) => pyWordBoundarySearch(foldDiacritics(n), foldedGrounding))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * `_check_headline_facts`: digits, then the claim classes, then every capitalised word (first word
  * included) that is not a stop-cap must appear in the grounding whole (Unicode `\b`) or by loose
  * stem. FOLLOW-1389: with the page's `locale`, a first word in that language's
  * `HEADLINE_OPENING_WORDS` is not checked (without one, nothing is exempt — the Python behaviour).
  * FOLLOW-1395: on a Polish page, a word that is a Polish case form of a capitalised word of the
- * listing (`POLISH_CASE_ENDINGS`) is the listing's own name.
+ * listing (`POLISH_CASE_ENDINGS`) is the listing's own name. FOLLOW-1396: so is the listing's own
+ * place name without its diacritics, or under another name from the closed `PLACE_EXONYMS` table.
  */
 export function checkHeadlineFacts(
   headline: string,
@@ -623,7 +712,8 @@ export function checkHeadlineFacts(
       if (
         !pyWordBoundarySearch(clean, grounding) &&
         !groundingStems.has(stemLoose(clean)) &&
-        !(locale === 'pl' && isPolishCaseFormOfFact(clean, original, ctx))
+        !(locale === 'pl' && isPolishCaseFormOfFact(clean, original, ctx)) &&
+        !isOtherNameOfListingPlace(clean, grounding, locale)
       ) {
         return 'hallucinated_proper_name';
       }

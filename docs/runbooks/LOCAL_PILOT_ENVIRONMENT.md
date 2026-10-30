@@ -445,6 +445,19 @@ pnpm db:migrate           # applies 0001…HEAD → "Migrations applied: 38 … 
 pnpm seed:local-tenant    # optional: the local-e2e tenant + API key the SDK path uses
 ```
 
+**Cosine inputs (FOLLOW-1233) — the block above does NOT make the adapt route rank by cosine.** It
+also needs `archetype_embeddings` and `listing_embeddings` (for the `local-e2e` tenant) populated in
+this same database; without them `/api/adapt` serves `djb2_fallback` and no reorder. The one-command
+way is `scripts/dev/localhost-up.sh` (its step 9b): it asks `pnpm db:assert:cosine` first and embeds
+only the half that is missing, so a seeded database costs nothing and needs no OpenAI key, while a
+fresh one needs `OPENAI_API_KEY` from Doppler `dev` once. By hand, the four ordered steps (build
+precondition, loopback archetype half, a plane with a matching `INTERNAL_API_SECRET`, listing half,
+`pnpm db:assert:cosine`) are in the root `README.md` "Local development setup" §2/§3 — not repeated
+here. The FOLLOW-819 harness preflight aborts with `archetype_embeddings_missing` /
+`listing_embeddings_missing` / `listing_embeddings_wrong_tenant` /
+`fixture_listing_embedding_missing` when they are absent. The production analogue of the listing
+half is FOLLOW-1035.
+
 **Why a bootstrap step exists at all** (both reasons are invisible on hosted Supabase, which is why
 neither was written down before FOLLOW-818):
 

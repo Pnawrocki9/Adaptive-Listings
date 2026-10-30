@@ -484,6 +484,7 @@ start_bg control-plane-3000 3000 "$REPO_ROOT/apps/control-plane" \
   "DEMO_MODE=$CP_DEMO_MODE" \
   "ADAPT_API_KEY=$ADAPT_API_KEY" \
   "ADMIN_API_SECRET=$ADMIN_API_SECRET" \
+  "INTERNAL_API_SECRET=$INTERNAL_API_SECRET" \
   "OPS_TENANT_ID=$OPS_TENANT_ID" \
   "NEXT_PUBLIC_ESTALARA_TENANT_ID=$OPS_TENANT_ID" \
   "DATABASE_URL_ADMIN=$DATABASE_URL_ADMIN" \
@@ -497,6 +498,61 @@ start_bg control-plane-3000 3000 "$REPO_ROOT/apps/control-plane" \
   "${CP_CMD[@]}"
 # curl exits 0 on ANY HTTP answer (even a 404/500) and non-zero only when nothing answers.
 wait_for "control plane :3000" "$CP_WAIT" curl -s -o /dev/null -m 60 http://localhost:3000/
+
+# ---- 9b. cosine inputs (FOLLOW-1233; README "Local development setup" 2-3) ------------------------
+# `affinityScore()` ranks by cosine only when archetype_embeddings AND listing_embeddings (this tenant)
+# are populated in the database the plane serves; otherwise `djb2_fallback` and, since FOLLOW-1202, no
+# reorder. Nothing seeded them before this step; the one green cosine run rested on a hand-seeded DB.
+# Embedding costs money (OpenAI, key from Doppler dev), so: ask first (`pnpm db:assert:cosine`, no
+# network), embed only the missing half, and never re-embed rows that exist (seed:listings upserts
+# EVERY manifest entry, so it runs only while the listing half is absent). Seeder output goes to a log;
+# the key is never read here, only its presence in Doppler is tested.
+step "9b/11 cosine inputs: archetype_embeddings + listing_embeddings for the fixture tenant (FOLLOW-1233)"
+COSINE_LOG="$LOG_DIR/cosine-seed.log"
+COSINE_LAST="$LOG_DIR/cosine-assert.last"
+: >"$COSINE_LOG"
+# 0 = both halves present (18 archetype rows; >= 13 listing rows incl. the fixture); output of the
+# LAST call stays in $COSINE_LAST so the caller can tell which half failed.
+cosine_assert() {
+  local rc=0
+  DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" pnpm db:assert:cosine \
+    --tenant "$OPS_TENANT_ID" --min-rows 13 --require-listing "$LISTING_ID" >"$COSINE_LAST" 2>&1 || rc=$?
+  cat "$COSINE_LAST" >>"$COSINE_LOG"
+  return "$rc"
+}
+need_openai_key() {
+  doppler secrets get OPENAI_API_KEY -p estalara-adaptive-listings -c dev --plain >/dev/null 2>&1 ||
+    die "cosine inputs are missing and OPENAI_API_KEY is not readable from Doppler dev (needed once to
+embed the archetypes/listings; rows that exist are never re-embedded). Fix the Doppler login/key, or
+seed by hand (README section 3) and re-run."
+}
+if cosine_assert; then
+  log "cosine inputs already present (18 archetype rows, >= 13 listing rows incl. the fixture): no OpenAI call"
+else
+  if grep -q 'archetype half FAIL' "$COSINE_LAST"; then
+    need_openai_key
+    log "seeding archetype embeddings against the loopback database (only rows without a vector)"
+    # The `env` form keeps the loopback URL because `doppler run` overrides values set ahead of it.
+    timeout 600 doppler run -p estalara-adaptive-listings -c dev -- env \
+      "DATABASE_URL_ADMIN=$DATABASE_URL_ADMIN" pnpm seed:archetypes >>"$COSINE_LOG" 2>&1 ||
+      die "pnpm seed:archetypes failed - see $COSINE_LOG:
+$(tail -n 20 "$COSINE_LOG")"
+    cosine_assert || true # refresh $COSINE_LAST: only the listing half may still be missing
+  fi
+  if grep -q 'listing half FAIL' "$COSINE_LAST"; then
+    need_openai_key
+    log "seeding listing embeddings through the control plane at :3000 (same database as step 4)"
+    INTERNAL_API_SECRET="$INTERNAL_API_SECRET" DEMO_TENANT_ID="$OPS_TENANT_ID" \
+      NEXT_PUBLIC_APP_URL=http://localhost:3000 timeout 600 pnpm seed:listings >>"$COSINE_LOG" 2>&1 ||
+      die "pnpm seed:listings failed - see $COSINE_LOG (a 401 means the running control plane predates
+this step and has no INTERNAL_API_SECRET: re-run with RESTART_CP=1):
+$(tail -n 20 "$COSINE_LOG")"
+  fi
+  cosine_assert ||
+    die "cosine inputs still missing after seeding - see $COSINE_LOG:
+$(tail -n 20 "$COSINE_LOG")"
+  log "cosine inputs seeded and verified in ONE database (pnpm db:assert:cosine PASS)"
+fi
 
 # ---- 10. warm the routes (README 6.6: cold compile > the preflight's 8 s timeout) --------------
 step "10/11 warm /api/adapt, the admin rollup route and the quiz public config (README 6.6, FOLLOW-1367)"
@@ -530,7 +586,7 @@ LISTING_URL=http://localhost:5173/fixture-listing.html \
   ' || die "GET /api/quiz/public-config does not serve the quiz tree (see the message above)"
 
 # ---- 11. preflight: the harness's OWN probes, imported from the harness (not re-implemented) ----
-step "11/11 preflight: assertRealControlPlane + assertDemoModeOn + assertGroundingSource + assertIngestReachable + assertConversionEmitter"
+step "11/11 preflight: assertRealControlPlane + assertDemoModeOn + assertGroundingSource + assertIngestReachable + assertConversionEmitter + assertCosinePrecondition"
 DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" ADAPT_API_KEY="$ADAPT_API_KEY" \
   ADMIN_API_SECRET="$ADMIN_API_SECRET" OPS_TENANT_ID="$OPS_TENANT_ID" \
   ESTALARA_BACKEND_URL="$ESTALARA_BACKEND_URL" \
@@ -548,6 +604,8 @@ DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" ADAPT_API_KEY="$ADAPT_API_KEY" \
     console.log("    ingest:", JSON.stringify(ig).slice(0, 160));
     const ce = await h.assertConversionEmitter();
     console.log("    conversion emitter:", JSON.stringify(ce).slice(0, 160));
+    const co = await h.assertCosinePrecondition(gs.listingId);
+    console.log("    cosine inputs:", co.reason);
   ' || die "the harness preflight rejected this substrate (see the message above and README section 3.6)"
 
 # ---- [pg_cache_off] (FOLLOW-1313): the description route's Postgres cache layer is ON, locally -----

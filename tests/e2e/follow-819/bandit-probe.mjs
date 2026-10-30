@@ -96,3 +96,41 @@ export async function readQuizRunsForSession(databaseUrl, sessionId) {
     await sql.end({ timeout: 5 });
   }
 }
+
+/**
+ * FOLLOW-1233 — what the cosine path's two inputs look like in ONE database.
+ *
+ * Counts only rows whose `embedding` is non-NULL (a row with a NULL vector serves djb2 just like a
+ * missing one). Raw SQL on one connection, closed on every path, like `readBanditArm()`; reads only,
+ * writes nothing, and never returns or logs the connection string.
+ *
+ * @param {string} databaseUrl - `DATABASE_URL_ADMIN` for the LOCAL Postgres (:5433).
+ * @param {string} tenantId    - The tenant the control plane serves (`OPS_TENANT_ID`).
+ * @param {string} listingId   - The fixture listing the page declares.
+ * @returns {Promise<{archetypeRows: number, listingRows: number, fixtureListingPresent: boolean,
+ *   otherTenantListingRows: number}>}
+ */
+export async function readCosinePreconditionFacts(databaseUrl, tenantId, listingId) {
+  const sql = postgres(databaseUrl, { max: 1, idle_timeout: 5, connect_timeout: 10 });
+  try {
+    const [row] = await sql`
+      SELECT
+        (SELECT count(*) FROM archetype_embeddings WHERE embedding IS NOT NULL)::int AS archetype_rows,
+        (SELECT count(*) FROM listing_embeddings
+           WHERE tenant_id = ${tenantId}::uuid AND embedding IS NOT NULL)::int AS listing_rows,
+        (SELECT count(*) FROM listing_embeddings
+           WHERE tenant_id <> ${tenantId}::uuid AND embedding IS NOT NULL)::int AS other_rows,
+        EXISTS (SELECT 1 FROM listing_embeddings
+           WHERE tenant_id = ${tenantId}::uuid AND listing_id = ${listingId}
+             AND embedding IS NOT NULL) AS fixture_present
+    `;
+    return {
+      archetypeRows: Number(row.archetype_rows),
+      listingRows: Number(row.listing_rows),
+      fixtureListingPresent: row.fixture_present === true,
+      otherTenantListingRows: Number(row.other_rows),
+    };
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}

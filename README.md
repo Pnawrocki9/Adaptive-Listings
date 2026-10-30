@@ -208,6 +208,11 @@ land in whatever database **that server** was started with. It has no database o
 is the whole hazard: a plane started with a bare `doppler run -c dev` resolves the **hosted**
 Supabase `dev` project even when §2 seeded your local `:5433` container.
 
+**On localhost, `scripts/dev/localhost-up.sh` runs all of this for you (its step 9b, FOLLOW-1233).**
+It asks `pnpm db:assert:cosine` first and embeds only the half that is missing, so a seeded database
+makes no OpenAI call and a fresh one needs `OPENAI_API_KEY` from Doppler `dev` once. The FOLLOW-819
+harness preflight aborts with a named reason when either half is absent. The manual form follows.
+
 Run these four steps **in order**, in three shells. Set the shared values once and reuse them as
 variables — do not paste literals into a second command, where they drift:
 

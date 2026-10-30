@@ -88019,3 +88019,468 @@ HALF_WIRE_C, now load-bearing and confirmed by this PR:**
   memory `project_sdk_reports_all_zero_tenant_id`.
 
 <!-- Analyst lessons for RETRO-359..367 are in .claude/agents/retrospective-analyst/lessons.d/RETRO-359-367.md (Rule AG). -->
+
+## RETRO-368 — #1093 (FOLLOW-1411, ESC-089: familial-steering refusal lifted, one race / ethnic origin / religion guard kept, school / nursery / playground grounding) — a faithful transcription of the CEO's ruling. Family copy is restored on both paths, and the grounding rule stays intact: a school the listing does not name is now `unsupported_amenity` on both paths, which is a tightening. The one guard left (`describesResidentsByProtectedGround`) has exactly two consumers, and both apply it. Three findings. (1) The PR merged before its per-PR FOLLOW-819 series, which ran on `main` afterwards (README §5.41). (2) The guard it shipped had a Polish noun-first blind spot ("społeczność muzułmańska"), closed six hours later by #1095. (3) ADR-0023's refusal-code record never gained `protected_ground`, although the same ADR now records `meta_commentary` — 2026-10-30
+
+### 1. Summary of change
+
+- **PR:** #1093 (merged 2026-10-29 22:22 UTC, commit 2ac3d9d)
+- **Files changed:** 30 (+1573 / -455); product source about 300 lines across 11 files, the rest
+  tests, fixtures (corpus / MANIFEST v11–v13) and docs
+- **Modules touched:** shared (`traits.ts`, six archetype playbooks), control-plane
+  (`llm-gateway.ts`, `description-generator.ts`, `amenity-lexicon.ts`, the description route
+  comment), docs (MASTER_DESIGN dated notes, ESCALATIONS ESC-089, QUEUE)
+- **Key contracts changed:**
+  - `steersByFamilialStatus` → `describesResidentsByProtectedGround` (shared export, renamed and
+    re-scoped). Breaking: no. `grep -rn steersByFamilialStatus apps packages` → test files only.
+  - Violation code `familial_steering` → `protected_ground` on `/api/adapt` (`SlotViolation`) and on
+    the description path (`DescriptionOutcome.REFUSED`, headline violation). Breaking: no. No
+    analytics reader enumerates violation codes: `grep -rln` for the two codes outside `__tests__`
+    finds only the five producer modules.
+  - `CLAIMS_VALIDATION_VERSION` `claims-v2` → `claims-v3`, so every cached FIT row is a miss and is
+    regenerated once.
+  - `AMENITY_RES` gains SCHOOL / NURSERY / PLAYGROUND (en / pl / es).
+
+### 2. Verification done in PR
+
+- Test files changed: 8 (`playbook-traits`, `playbooks.protected-characteristics`,
+  `claim-containment`, `description-parity`, `llm-gateway.follow1360`, the 1411 generator test
+  renamed from 1400, a new `copy-template-surroundings.follow1411` test, and the route test). Live:
+  Sonnet 5.5, 28 cases, 26 FIT, USD 0.73 (QUEUE row).
+- CI: green at merge (PM). **FOLLOW-819:** the per-PR series was NOT run before the merge. #1093
+  merged with CI green, and the series ran on `main` at `2ac3d9d0` after it (README §5.41, runs
+  110–112, GREEN ×3). §5.41 does not record `control-plane-3000: started` or a stop by PID. It
+  records a `next build` that failed twice on a stale `@estalara/shared` and was then rebuilt, so
+  the build was very likely fresh. That is inferred, not recorded (see RETRO-369 §5a).
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. CHECK A: the renamed export has two non-test importers
+(`llm-gateway.ts:13`, `description-generator.ts:59`), and the three lexicon arrays are module-local.
+CHECK B: no new event, env var, column or topic. The new violation code is a string carried in the
+existing outcome / log fields, and no consumer filters on the old one.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **The shipped guard read Polish adjective-first only.** The PR's pl pattern was
+  `${PL_GROUND}\s+${PL_PEOPLE}` ("muzułmańscy sąsiedzi"), but Polish usually puts the adjective
+  after the noun ("społeczność muzułmańska", "mieszkańcy żydowscy"). Those passed for about six
+  hours. #1095 added `${PL_PEOPLE}\s+${PL_GROUND}` (RESIDENT_GROUND_PATTERNS). **Closed. Traced:**
+  the probe "Społeczność muzułmańska jest aktywna." returns `true` at HEAD. This is the locale axis
+  of step 8. en and es had their noun-first forms (es noun-first only) from the start.
+- **`roma` is an English ground word without context** (`traits.ts:249`). "Flat in the Roma
+  neighbourhood" (Mexico City's Colonia Roma, Rome's Italian name) is refused at HEAD (probe). It
+  fails closed (one lost adaptation, no harm). P3, observation only.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A at this PR's scope. The two P1 gaps of the guard's later rules are attributed where they were
+  introduced (RETRO-369, RETRO-371).
+
+#### 4c. Test coverage gaps
+
+- No test ran the guard on a noun-first Polish phrase. This is the gap above, now covered by #1095's
+  tests.
+
+#### 4d. Documentation gaps
+
+- **ADR-0023 has no `protected_ground`** (`grep -c protected_ground` on the ADR → 0). It still
+  documents `CLAIMS_VALIDATION_VERSION = "claims-v1"` in its table (`:36`, `:107`) with no dated
+  note for v2–v6. The same ADR received dated notes for `meta_commentary` from #1101 (`:391`,
+  `:399`). The description path's refusal codes are ADR-0023's contract (§3). → FOLLOW-1422.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1375 (P2, confirmed results that change only the CTA): the SCHOOL / NURSERY / PLAYGROUND
+  grounding added here is a new refusal source for family slots on the fixture listing, which names
+  none of them. Whoever picks up FOLLOW-1375 should count `unsupported_amenity` refusals on the
+  family archetypes before blaming the prompt.
+- **Merge-before-series.** #1093 is a P1 compliance change on the slots a buyer sees, and it merged
+  on CI alone. The series came later and was GREEN, so nothing was lost. But the order inverts the
+  per-PR series contract that #1095–#1103 then followed. The PM should state which order holds for
+  product PRs on the FOLLOW-820 path.
+
+#### 5b. Future sprint tickets affected
+
+- CTO handover: one lazy regeneration of every cached description per stamp bump. Bumps between two
+  production deploys collapse into one (only the last stamp matters), so v3–v6 cost one regeneration
+  in production, not four.
+
+#### 5c. Contracts changed others rely on
+
+- N/A beyond §1 (no external reader of the violation codes).
+
+#### 5d. Architectural assumptions affected
+
+- §E.7.0 grounding is unchanged in kind. Family wording moved from "refused" to "grounded like any
+  other amenity", as the CEO intended (ESC-089: family wording is not re-tightened without the CEO).
+  #1095 and #1103 respected that: none of their patterns matches family wording without a race /
+  ethnic origin / religion word (probe: "Ideal for a growing family, close to good schools." → pass
+  at HEAD).
+
+### 6. New lesson candidates
+
+- Pattern: "a closed phrase list for a Slavic language written in English word order (adjective
+  first)" — seen in: RETRO-368 — count 1.
+
+### 7. Follow-ups
+
+- FOLLOW-1422 (docs, P2): ADR-0023 refusal codes and stamp history, plus the SoT record of the CEO's
+  2026-10-30 guard rulings (shared with RETRO-371).
+- Observations, not filed: P3 `roma` false refusal (§4a).
+
+### 8. Cross-references
+
+- RETRO-369 / RETRO-371: the guard's later rules and their gaps. ESC-089. FOLLOW-1360 / FOLLOW-1400
+  (the lifted refusal). Rule BC: the guard is a closed list applied to model output, an unbounded
+  population, and its docblock says so ("A NARROW, closed … phrase list, not a classifier"). That
+  satisfies Rule BC clause 2's "different and unbounded" outcome.
+
+## RETRO-369 — #1095 (FOLLOW-1415: the guard narrowed to discrimination, not facts; three rules; `claims-v4`) — the rules are coded as the CEO stated them, and the historical-qualifier machinery is careful (adjective directly before, adverb within six words, no comma, no present marker). Two findings. (1) **Rule 2 ("every composition statement, qualifier or not") is not implemented for the most common way to state composition, a majority quantifier.** "Most residents are Catholic", "a Muslim-majority neighbourhood", "Większość mieszkańców to katolicy" and "La mayoría de los vecinos son musulmanes" all pass at HEAD, in all three locales (FOLLOW-1420, P1). (2) The PR's per-PR series (README §5.42) ran on the stale `main` build of #1093. The PR merged on that void evidence and was validated only afterwards by #1097's series (§5.43) — 2026-10-30
+
+### 1. Summary of change
+
+- **PR:** #1095 (merged 2026-10-30 01:35 UTC, commit 2e6c031)
+- **Files changed:** 12 (+620 / -43); product source: `traits.ts` (+138/-17), the
+  `description-generator.ts` stamp, and a route comment
+- **Modules touched:** shared, control-plane, QUEUE
+- **Key contracts changed:** `describesResidentsByProtectedGround` semantics (same name, same code
+  `protected_ground`). Rule 1 PASS: history and places with a qualifier, and institutions. Rule 2
+  REFUSE: present-day residents and composition / exclusion. Rule 3 REFUSE: sensitive history.
+  `claims-v3` → `claims-v4`. Breaking: no.
+
+### 2. Verification done in PR
+
+- `playbook-traits.test.ts` +154 lines, the 1411 generator test +57, parity corpus v14 (stamp only,
+  no verdict moved). CI green.
+- **FOLLOW-819: void.** README §5.42 runs 113–116 were served by the `2ac3d9d0` control plane.
+  `localhost-up.sh:114` logs "already running … - leaving it" and does not rebuild, and `[FRESH]`
+  grades only the harness checkout. The PM corrected §5.42 the same day. The code was exercised live
+  first by §5.43 (runs 124–126 at `6389f429`, after a stop by PID and a fresh `next build`), that
+  is, after the merge.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅ (no new export; the new regexes and `isHistoricalMention` are module-local
+and reached from the one exported function, which has two consumers).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — rule 2 does not cover majority / most quantifiers.** `COMPOSITION_PATTERNS`
+  (`traits.ts:338`) reads composition through `EN_MOSTLY` / `PL_MOSTLY` / `ES_MOSTLY` (`:264`,
+  `:284`, `:294`): adverbs only (predominantly, mostly, głównie, w większości, mayoritariamente …).
+  There is no "most", "majority", "-majority", "większość", "mayoría". Probe at HEAD (`tsx` on
+  `traits.ts`, 27 sentences), each returns `false` (passes):
+  - "Most residents are Catholic." / "Most of the neighbours are Muslim."
+  - "A Muslim-majority neighbourhood."
+  - "Większość mieszkańców to katolicy."
+  - "La mayoría de los vecinos son musulmanes." / "Una zona con mayoría musulmana." The CEO's rule
+    2, as the PR's own docblock records it, refuses "every exclusionary or composition statement …
+    historical qualifier or not". These sentences are that statement in its plainest form. Controls
+    refused correctly: "Residents are mostly Catholic.", "The neighbourhood is largely Muslim.",
+    "Sąsiedzi to głównie katolicy." → FOLLOW-1420.
+- **LG-2 (P1, folded into FOLLOW-1420) — two holes in the historical exemption.**
+  - "once" is listed as a historical adverb (`:451`), but in English it is also the conjunction
+    "when". "Once you move in the Jewish community will welcome you." passes: no comma, no present
+    marker, and "will" is not a marker.
+  - "remains" is not a present marker (`:457`). "Historically home to a Muslim population that
+    remains active." passes. Both are fail-open on rule 2.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- P1: LG-1 / LG-2 → FOLLOW-1420.
+
+#### 4c. Test coverage gaps
+
+- `grep -n -i "majority\|większoś\|mayor[ií]a" playbook-traits.test.ts` → 0. The rule-2 tests
+  enumerate the adverb forms the list already holds. There is no adversarial member outside the
+  list, which Rule BC clause 3 requires for an unbounded population ("the member you would be
+  embarrassed to ship").
+
+#### 4d. Documentation gaps
+
+- The CEO's 2026-10-30 ruling (rules 1–3) is recorded only in the code docblock, the commit body and
+  the QUEUE row. `grep -c FOLLOW-1415` → 0 in MASTER_DESIGN, ESCALATIONS and ADR-0023.
+  MASTER_DESIGN's #1093 notes (`:2940`, `:3438`, `:4168`, `:6681`) still describe the guard as
+  "residents' race, ethnic origin or religion" only. → FOLLOW-1422.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **Process incident (severity for the PM: medium; the merge was right, but by luck).** The per-PR
+  series is the localhost evidence that a product PR on the FOLLOW-820 path does what it claims. For
+  #1095 that evidence was void at merge time, because the series exercised #1093's code. Rule AA
+  amendment 1 clause 5 already names this ("the harness's freshness verdict … grades the git tree").
+  Its negative case assumes `next dev` compiles `apps/control-plane/src` from source. Under
+  `CP_MODE=prod` (`next build && next start`, FOLLOW-1376) that assumption is false, and a
+  control-plane change needs the build-and-restart step.
+- **FOLLOW-1246 (P1, in progress; not duplicated).** Its AC as filed reads package `dist` freshness
+  only (`@estalara/db|auth|shared`). This incident is a second axis: the running Next server's build
+  against the checked-out HEAD. **Recommended AC amendment for the PM:**
+  - the preflight reads an identity the build bakes in (a commit sha, or the
+    `CLAIMS_VALIDATION_VERSION` marker the PM already grepped in §5.46's served chunks) and refuses
+    a series whose served identity is not the branch HEAD;
+  - `localhost-up.sh` gains a mode that refuses "already running - leaving it" for a per-PR series.
+- **Unrecorded build identity in earlier series.** README §5.37–§5.41 (#1089 and earlier, and #1093)
+  say `CP_MODE=prod … localhost-up.sh at <sha>` but record neither `control-plane-3000: started` nor
+  a stop by PID. §5.43–§5.46 do. Whether those five series served their own SHA cannot be shown from
+  the record. They are not FOLLOW-820 condition-1 citations today, but if any is cited later, it
+  needs that caveat.
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1420 bumps the stamp again (`claims-v7`), because it is a tightening.
+
+#### 5c. Contracts changed others rely on
+
+- N/A (same function, same code).
+
+#### 5d. Architectural assumptions affected
+
+- A closed-list guard enforcing a CEO rule phrased with "every" will lag the rule. The list is
+  honest about being narrow, but the CEO is told the rule, not the list. The PR body should say
+  which composition forms the list does NOT cover.
+
+### 6. New lesson candidates
+
+- Pattern: "a categorical CEO rule ('every composition statement') implemented as a closed list
+  whose tests enumerate only the list" — seen in: RETRO-369 — count 1. Rule BC clause 3 already asks
+  for the adversarial member, so this is an application failure, not a new rule.
+- Pattern: "per-PR harness series ran against a stale running build while `[FRESH]`" — an existing
+  Rule (AA amendment 1 clause 5); sightings: RETRO-341 (`dist`), RETRO-369 (`next start`), RETRO-371
+  (#1103 runs 134–136). No promotion. Clause 5's negative case needs a `CP_MODE=prod` caveat, which
+  is for FOLLOW-1246 to record.
+
+### 7. Follow-ups
+
+- FOLLOW-1420: protected-ground rule 2 misses majority quantifiers and two exemption holes
+  (ml-engineer, Opus, 3h, priority P1, product).
+- FOLLOW-1246 (existing, P1): AC amendment above. Not a new stub.
+
+### 8. Cross-references
+
+- RETRO-368 (the guard's first version), RETRO-371 (rule 1 / 3 tightened again), RETRO-341 (Rule AA
+  amendment 1, the `[FRESH]`-grades-the-tree finding), README §5.42's correction note.
+
+## RETRO-370 — #1101 (FOLLOW-1413 / 1408 / 1396 / 1397 / 1414: claim-check false refusals — negated lists, negated guarantees, exonyms, multiplied numbers, listing attribution; `claims-v5`) — five fixes, each shared by both paths where the rule exists on both, each red-first pinned, and one PM fail-closed ruling (list negation carries only through or/nor) applied before merge. The per-PR series (README §5.45) was fresh: the control plane was stopped by PID and rebuilt, and the one later commit changes no output (`git diff --stat c64e7666 177dd1e1` → 2 files, 3 lines, an un-export). One finding with a delayed fuse. FOLLOW-1397's rounding tolerance (a written number of three or more significant digits may round the listing's price) was a reasoned design choice here. Five hours later the CEO ruled "prices are always exact" (FOLLOW-1419, decision 3, "no code change"), and this tolerance contradicts that ruling (FOLLOW-1421, filed from RETRO-371) — 2026-10-30
+
+### 1. Summary of change
+
+- **PR:** #1101 (merged 2026-10-30 10:28 UTC, commit 17cede3)
+- **Files changed:** 30 (+2148 / -92); product source about 470 lines across 9 files
+- **Modules touched:** control-plane (`amenity-lexicon`, `condition-lexicon`, `claim-containment`,
+  `grounding-check`, `number-groups`, `meta-commentary`, `llm-gateway`, `description-generator`),
+  ADR-0023 dated note, parity corpus v15–v18
+- **Key contracts changed (all additive, breaking: no):**
+  - new exports `negatedThroughList`, `assertsGuarantee`, `withMultipliedNumbers`,
+    `stripGroundedMultipliedNumbers`;
+  - `meta_commentary` widened to a positive attribution of the listing;
+  - `claims-v4` → `claims-v5`.
+
+### 2. Verification done in PR
+
+- Six new or extended test files (amenity, condition, grounding exonyms, meta-commentary, number
+  groups, parity +403). CI green. FOLLOW-819 §5.45 runs 131–133 GREEN, fresh build at `c64e7666`.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. CHECK A: each new export has non-test importers on both paths where its
+rule exists (`grounding-check.ts` lines 50, 259, 264, 351, 393; `claim-containment.ts:37,130,155`,
+`llm-gateway.ts:523,532`). CHECK B: no new signal.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **The price-rounding tolerance** (`number-groups.ts:131-135`). A written multiplied number with
+  three or more significant digits is grounded when it lies within half a unit of a listing number.
+  "1,15 mln" is grounded by 1,149,000, and the test pins it as grounded
+  (`number-groups.follow1397.test.ts:60`, `ROUNDED_CTX`). At #1101 this was a stated, bounded design
+  choice. It became a contradiction at #1103 (see RETRO-371 LG-1, FOLLOW-1421).
+- **Exonyms are a description-path table only.** `/api/adapt`'s `checkDirectiveFacts` still flags
+  "Warsaw" for "Warszawa" as `hallucinated_proper_name` (`llm-gateway.ts:563`) and relies on the LLM
+  name judge (`judgeNameGrounding`) to clear it. Each such headline costs a judge call that a
+  `PLACE_EXONYMS` lookup would avoid. P3, observation only. The asymmetry is deliberate per the
+  commit ("Description path only").
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A at this PR's scope (the tolerance was in scope and documented when merged).
+
+#### 4c. Test coverage gaps
+
+- None material. The PR filed its own edge follow-ups (FOLLOW-1416..1418, P3).
+
+#### 4d. Documentation gaps
+
+- ADR-0023 got a `meta_commentary` note but no stamp-history note (v2–v5). See RETRO-368 §4d,
+  FOLLOW-1422.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1421 (filed from RETRO-371) edits `number-groups.ts`, the shared rule on both digit paths.
+
+#### 5b. Future sprint tickets affected
+
+- **Stamp churn.** Four `CLAIMS_VALIDATION_VERSION` bumps in this batch (v3 at #1093, v4 #1095, v5
+  #1101, v6 #1103), each with a stamp-only parity re-freeze: corpus v13, v14, v18 and v19, 98 lines
+  each plus a manifest, nine corpus copies in one day. Two of the bumps (#1095, #1103) were driven
+  only by `describesResidentsByProtectedGround`. That guard is a pure function of the cached text
+  (it does not need the listing), so it could run on cache read. The guard-only tightenings would
+  then need no regeneration of rows that still pass. P2, observation only. This is the design
+  question for whoever owns ADR-0023 next.
+
+#### 5c. Contracts changed others rely on
+
+- N/A.
+
+#### 5d. Architectural assumptions affected
+
+- N/A.
+
+### 6. New lesson candidates
+
+- Pattern: "a stamp-only fixture re-freeze per version bump" — seen in: RETRO-370 — count 1.
+
+### 7. Follow-ups
+
+- N/A as new stubs. FOLLOW-1421 (from RETRO-371) covers this PR's tolerance.
+- Observations, not filed: P3 exonym judge cost on `/api/adapt`; P2 re-check-on-read for
+  listing-independent guards (§5b).
+
+### 8. Cross-references
+
+- RETRO-371 (the CEO ruling the tolerance now contradicts), FOLLOW-1416..1418 (this PR's own P3s).
+
+## RETRO-371 — #1103 (FOLLOW-1419: painful-history terms, camp names, places named by a group only with a historical adjective; `claims-v6`) — the CEO's three decisions of 2026-10-30 are coded with care: the camp-town carve-out (Oświęcim, Płaszów, Dachau only beside a camp word), the rubbish-collection carve-out for "wywózka", and "ocupación inmediata". Two findings. (1) **Decision 3, "prices are always exact" (recorded as "no code change"), is false at HEAD.** #1101's tolerance still grounds "1,15 mln" for a listing priced 1,149,000. The pin this PR added ("850 tys." for 849 000 refused) was already refused under #1101's half-unit rule, so it cannot fail and tests nothing new (FOLLOW-1421, P1). (2) Rule 3 refuses two real Polish street names (ul. Katyńska, ul. Bohaterów Getta), a museum, and a ventilation sentence ("expelled"). The docblock says street names stay allowed. That is a CEO-scope question, recorded as an observation. Runs 134–136 were void (a failed `git checkout` inside an `&&` chain). The re-run at `8e5efbea` is sound — 2026-10-30
+
+### 1. Summary of change
+
+- **PR:** #1103 (merged 2026-10-30 11:58 UTC, commit a76f629)
+- **Files changed:** 12 (+646 / -25); product source: `traits.ts` (+114/-4) and the
+  `description-generator.ts` stamp
+- **Modules touched:** shared, control-plane, ml-engineer lessons
+- **Key contracts changed:** `describesResidentsByProtectedGround` tightened. Rule 3: the Nazi
+  regime, camps by name, occupation, expulsion, deportation by train, forced labour. Rule 1: a PLACE
+  named by a group passes only after a historical adjective. `claims-v5` → `claims-v6`. Breaking:
+  no.
+
+### 2. Verification done in PR
+
+- `playbook-traits.test.ts` +206, the 1411 generator test +45, the number-groups test +4 (the price
+  pin), corpus v19 (stamp only). CI green.
+- FOLLOW-819 §5.46 runs 137–139 GREEN at `8e5efbea`: detached checkout, `set -e`, asserted
+  `control-plane-3000: started`, and the served chunks carry `claims-v6`. With §5.43 (the served
+  CTA), it is one of two series in the record that show the served build's identity, not just the
+  harness tree's freshness. **Runs 134–136 VOID:** `git checkout <branch>` failed because an agent
+  worktree held the branch. Inside an `&&` chain, the restart did not run, the harness still ran,
+  and the series exercised `ced57fe4`. The PM caught it and the record says so.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅ (module-local patterns; the same exported function and two consumers).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P1) — CEO decision 3 is not what the code does.** QUEUE FOLLOW-1419: "Decision (3), no
+  code change: prices are always exact". The `traits.ts:232` docblock says "a figure is only ever
+  the listing's exact figure (the digit rule in `grounding-check`)". At HEAD:
+  - `number-groups.ts:131-135` grounds a multiplied number within half a unit of a listing integer
+    whenever it has three or more significant digits;
+  - `number-groups.follow1397.test.ts:60` pins `'Cena: 1,15 mln PLN.'` as GROUNDED for
+    `listing_price: '1149000 PLN'`, a rounded price passing;
+  - the pin this PR added (`:93-96`, "850 tys." for 849 000 → `hallucinated_number`) has three
+    significant digits and is 1000 away against a half-unit of 500. #1101's rule already refused it,
+    so the pin would have passed before this PR and asserts nothing about the decision. The "no code
+    change" premise was not re-derived from `number-groups.ts`, which is Rule AI amendment 4 (the
+    implementer re-derives a consequence claim from the producing code before encoding it). Both
+    digit paths share the function (`grounding-check.ts:264`, `llm-gateway.ts:532`), so `/api/adapt`
+    serves the same rounding. → FOLLOW-1421. Its first AC is to put the contradiction to the CEO
+    through the PM, because the tolerance was a deliberate #1101 design and the ruling may not have
+    meant to remove it.
+- **LG-2 (P2, observation) — rule 3 refuses ordinary street and building names.** Probe at HEAD:
+  - "Mieszkanie przy ul. Katyńskiej we Wrocławiu." → refused (`katy[nń]sk\p{L}*`, `:400`);
+  - "Mieszkanie przy ul. Bohaterów Getta." → refused (`getta`, `:388`);
+  - "Close to the Pawiak museum." → refused;
+  - "The air is expelled through a heat-recovery unit." → refused (`expelled`, `:410`). The docblock
+    (`:230`) says a street's name stays allowed (written for rule 1: "ul. Żydowska" passes). Rule 3
+    has no such carve-out. These fail closed (the copy is refused, nothing harmful is served), and
+    whether a sensitive-history street name may be named is the CEO's call. The PM should put it to
+    the CEO with the next guard question. Not filed (stub budget kept for the P1s).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- P1: LG-1 → FOLLOW-1421.
+
+#### 4c. Test coverage gaps
+
+- The decision-3 pin is vacuous (LG-1): it does not fail on the pre-PR tree. A pin encoding a ruling
+  must use a case the ruling changes, here "1,15 mln" for 1,149,000.
+- No rule-3 test checks a street address or a building-services sentence.
+
+#### 4d. Documentation gaps
+
+- The CEO decisions of 2026-10-30 (camp names, place names, prices) are recorded only in the QUEUE
+  row, the docblock and the commit (`grep -c FOLLOW-1419` → 0 in MASTER_DESIGN, ESCALATIONS and
+  ADR-0023). → FOLLOW-1422.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1246 (P1, in progress): the void runs 134–136 are a third failure mode of the same axis:
+  the restart step silently skipped by a failed command earlier in the chain. The identity check
+  recommended in RETRO-369 §5a (refuse a series whose served build is not the branch HEAD) catches
+  this one too. `set -e` alone does not, if the operator's chain is typed interactively.
+- FOLLOW-1420 and FOLLOW-1421 both bump the stamp. If they land in one PR, that is one bump.
+
+#### 5b. Future sprint tickets affected
+
+- N/A.
+
+#### 5c. Contracts changed others rely on
+
+- N/A.
+
+#### 5d. Architectural assumptions affected
+
+- The guard is now about 100 lines of closed en / pl / es lists across four rules, and every CEO
+  answer adds lines. It still fits "a narrow backstop, not a classifier", but the false-refusal
+  surface (LG-2) grows with each rule-3 term. Measuring how often live copy hits `protected_ground`
+  (a count from the CH llm-call log) before the next tightening would tell the CEO what each term
+  costs. P3, observation only.
+
+### 6. New lesson candidates
+
+- Pattern: "a pin that encodes a ruling picks a case that was already refused, so it cannot fail" —
+  seen in: RETRO-371 — count 1.
+- Pattern: "a docblock asserts a property owned by another module (`traits.ts` on
+  `number-groups.ts`)". Rule AI amendment 4 covers it, so this is an application, not a new rule.
+  The "script header asserts idempotency" pattern of RETRO-363 / RETRO-367 (count 2) is related in
+  shape but a different wire. **Not promoted:** an existing rule (AI amendment 4) already governs
+  the sighting, and the two priors were about idempotency of scripts, not a cross-module claim.
+
+### 7. Follow-ups
+
+- FOLLOW-1421: decision 3 vs the price-rounding tolerance (ml-engineer, Opus, 2h, priority P1,
+  product).
+- FOLLOW-1422: SoT record of the CEO's 2026-10-29 / 30 guard rulings plus ADR-0023 codes and stamp
+  history (architect, Sonnet, 2h, priority P2, docs).
+- Observations, not filed: P2 rule-3 street / building names (LG-2, CEO question), P3
+  `protected_ground` hit-rate measurement (§5d).
+
+### 8. Cross-references
+
+- RETRO-370 (the tolerance's origin), RETRO-369 (rule 2 gap, FOLLOW-1246 amendment), RETRO-368
+  (ADR-0023 codes), Rule AI amendment 4, Rule AA amendment 1, Rule BC.

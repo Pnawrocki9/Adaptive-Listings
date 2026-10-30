@@ -56955,3 +56955,99 @@ AC:
       grounding forbids it for the fixture listing.
 
 cross_ref: [FOLLOW-1368, ESC-076 / §E.7.0]
+
+## FOLLOW-1420 — protected-ground rule 2 misses majority quantifiers ("most residents are", "Muslim-majority", "większość mieszkańców", "la mayoría de los vecinos"), and two holes in the historical exemption
+
+source_retro: RETRO-369 source_ticket: FOLLOW-1415 recommended_sprint: next recommended_agent:
+ml-engineer (Opus: compliance-sensitive guard, CEO rule) priority: P1 estimated_hours: 3 tag:
+product depends_on: [] blocks: [] promoted_to_queue: false
+
+**What.** The CEO's rule 2 (2026-10-30, FOLLOW-1415) refuses "every exclusionary or composition
+statement … historical qualifier or not". `COMPOSITION_PATTERNS` in `traits.ts`
+(`packages/shared/src/playbooks/`) reads composition only through adverbs (`EN_MOSTLY` / `PL_MOSTLY`
+/ `ES_MOSTLY`). Probed at `e26a53c3`, each of these returns `false` (served):
+
+- "Most residents are Catholic." / "Most of the neighbours are Muslim."
+- "A Muslim-majority neighbourhood."
+- "Większość mieszkańców to katolicy."
+- "La mayoría de los vecinos son musulmanes." / "Una zona con mayoría musulmana."
+
+Two exemption holes, also fail-open:
+
+- "once" is a historical adverb, but in English it is also the conjunction "when". "Once you move in
+  the Jewish community will welcome you." passes.
+- "remains" is not a present marker. "Historically home to a Muslim population that remains active."
+  passes.
+
+AC:
+
+- [ ] Red-first: the six sentences above, and the two exemption sentences, are refused
+      (`protected_ground`) and fail on the pre-fix tree. Use at least one adversarial member per
+      locale outside the current lists (Rule BC clause 3).
+- [ ] Controls stay as they are: "Residents are mostly Catholic." refused; "the old Jewish quarter",
+      "historically home to Kraków's Jewish community", family wording ("Ideal for a growing family,
+      close to good schools.") pass; "most of the rooms face south" passes.
+- [ ] Both paths: one `/api/adapt` directive test and one description-path test.
+- [ ] Tightening: `CLAIMS_VALIDATION_VERSION` bump (one bump if it lands with FOLLOW-1421); the PR
+      body lists the composition forms the closed list still does not cover.
+
+cross_ref: [RETRO-369, FOLLOW-1415, FOLLOW-1411, ESC-089, Rule BC]
+
+## FOLLOW-1421 — CEO decision "prices are always exact" (FOLLOW-1419, decision 3, "no code change") is false at HEAD: the FOLLOW-1397 tolerance grounds "1,15 mln" for a listing priced 1 149 000, and #1103's pin cannot fail
+
+source_retro: RETRO-371 source_ticket: FOLLOW-1419 recommended_sprint: next recommended_agent:
+ml-engineer (Opus: a CEO ruling vs a deliberate design, both digit paths) priority: P1
+estimated_hours: 2 tag: product depends_on: [] blocks: [] promoted_to_queue: false
+
+**What.**
+
+- `stripGroundedMultipliedNumbers` (`number-groups.ts:131-135`, #1101) grounds a multiplied number
+  that has three or more significant digits when it lies within half a unit of a listing integer.
+- `number-groups.follow1397.test.ts:60` pins `'Cena: 1,15 mln PLN.'` as grounded for
+  `listing_price: '1149000 PLN'`.
+- The CEO ruled on 2026-10-30 that prices are always exact (QUEUE FOLLOW-1419, decision 3, "no code
+  change"), and `traits.ts:232` says "a figure is only ever the listing's exact figure".
+- #1103's pin ("850 tys." for 849 000 → `hallucinated_number`, test `:93-96`) was already refused by
+  the half-unit rule, so it does not test the ruling.
+- Both digit paths share the function (`grounding-check.ts:264`, `llm-gateway.ts:532`).
+
+AC:
+
+- [ ] The PM puts the contradiction to the CEO in one line: "#1101 lets '1,15 mln' stand for 1 149
+      000 (rounding within the written precision); keep or remove?". The answer is recorded on the
+      ticket.
+- [ ] If removed: the tolerance branch goes. The two `ROUNDED_CTX` pass cases (`:60`, and any other
+      inexact case) move to the refused table, with a red-first case the ruling changes ("1,15 mln"
+      for 1 149 000). Exact cases ("1,15 mln" for 1 150 000, "850 tys." for 850 000) still pass. The
+      stamp moves (a tightening).
+- [ ] If kept: `traits.ts:232` and the FOLLOW-1419 QUEUE note are corrected to state the tolerance,
+      and the vacuous pin is replaced or annotated.
+- [ ] Both paths covered (description and `/api/adapt` `checkDirectiveFacts`).
+
+cross_ref: [RETRO-371, RETRO-370, FOLLOW-1397, FOLLOW-1419, Rule AI amendment 4]
+
+## FOLLOW-1422 — record the CEO's 2026-10-29/30 copy-guard rulings in the SoT; ADR-0023 lacks `protected_ground` and the claims-stamp history
+
+source_retro: RETRO-371 source_ticket: FOLLOW-1419 recommended_sprint: next recommended_agent:
+architect (Sonnet: docs re-sync, no decision) priority: P2 estimated_hours: 2 tag: docs depends_on:
+[] blocks: [] promoted_to_queue: false
+
+**What.**
+
+- The FOLLOW-1415 rules 1–3 and the FOLLOW-1419 decisions (camps by name, camp towns, places named
+  by a group, prices exact) exist only in the code docblock, the commits and QUEUE rows: `grep -c`
+  of FOLLOW-1415 or FOLLOW-1419 → 0 in MASTER_DESIGN, ESCALATIONS and ADR-0023.
+- MASTER_DESIGN's #1093 dated notes still describe the guard as residents' race, ethnic origin or
+  religion only.
+- ADR-0023 never gained `protected_ground` (count 0). It still shows `claims-v1` in its table, yet
+  it carries dated notes for `meta_commentary`.
+
+AC:
+
+- [ ] ESCALATIONS ESC-089 gains a dated addendum with the 2026-10-30 rulings, quoted as given.
+- [ ] MASTER_DESIGN gets one dated note at §E.7.0 / §O.4 pointing to it (no rewrite), with the
+      version bump per §Y.2.
+- [ ] ADR-0023 gets a dated note: `familial_steering` → `protected_ground` (FOLLOW-1411), and the
+      stamp history `claims-v2` … current, one line per bump with its reason.
+
+cross_ref: [RETRO-368, RETRO-369, RETRO-371, ESC-089, FOLLOW-1411, FOLLOW-1415, FOLLOW-1419]

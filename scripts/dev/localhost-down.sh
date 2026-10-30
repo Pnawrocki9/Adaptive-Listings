@@ -56,6 +56,33 @@ if [ -d "$PID_DIR" ]; then
   done
 fi
 
+# FOLLOW-1246: wrangler's workerd survives the process-tree kill above (it re-parents out of the PID
+# file's session) and keeps :8787 answering 404 (README 6.8). Find it by COMMAND LINE: only a process
+# named exactly `workerd` whose cmdline runs a binary under THIS repo's node_modules (the checkout's own
+# path or what its node_modules symlink resolves to) is killed; a workerd of another repo is left alone.
+printf '=== stopping orphan workerd under this repo\n'
+NM_ROOTS=("$REPO_ROOT/node_modules/")
+if NM_REAL="$(readlink -f "$REPO_ROOT/node_modules" 2>/dev/null)" && [ -n "$NM_REAL" ]; then
+  NM_ROOTS+=("$NM_REAL/")
+fi
+found=0
+for pid in $(pgrep -x workerd 2>/dev/null || true); do
+  cmd="$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null || true)"
+  for root in "${NM_ROOTS[@]}"; do
+    case "$cmd" in
+    *"$root"*)
+      kill -TERM "$pid" 2>/dev/null || true
+      sleep 1
+      kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null || true
+      log "workerd (pid $pid) under $root: stopped"
+      found=1
+      break
+      ;;
+    esac
+  done
+done
+[ "$found" -eq 1 ] || log "none"
+
 printf '=== stopping containers started by localhost-up.sh\n'
 if [ -s "$STARTED_CONTAINERS" ]; then
   sort -u "$STARTED_CONTAINERS" | while read -r c; do

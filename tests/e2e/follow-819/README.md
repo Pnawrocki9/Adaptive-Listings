@@ -411,6 +411,16 @@ resolves outside this checkout). It ends by importing the harness and running it
 `assertIngestReachable()` and (FOLLOW-1203) `assertConversionEmitter()`. It is inside
 `HARNESS_TREE_PATHSPEC`.
 
+**Stop a running control plane before a per-PR series (FOLLOW-1246).** `localhost-up.sh` leaves an
+already-running process in place (`<name>: already running (pid N) - leaving it`). A control plane
+left up from an older build therefore keeps serving that build while the new `dist` sits on disk,
+and the artefact still reads `[FRESH]` (freshness grades the git tree). Run
+`scripts/dev/localhost-down.sh` (or kill `:3000` by PID) first. The harness refuses with
+`[STALE-BUILD]` when a dist is older than its `src` and, under `CP_MODE=prod`, when
+`apps/control-plane/.next/BUILD_ID` is older than the last commit touching `apps/control-plane` or
+the three packages; `ALLOW_STALE_BUILD=1` records the run instead, and the artefact then reads
+`STALE-BUILD`. A dev-mode control plane's age cannot be read from disk.
+
 **The server-confirmed conversion needs four things the script wires (FOLLOW-1203, §3.3c):**
 migration 0024 on the local ClickHouse (step 3, `migrate.sh`); `CALLER_SIGNED_COLUMN_ENABLED=true`
 on BOTH the ingest Worker (it writes `events.caller_signed`) and the control plane (its lift readers
@@ -514,7 +524,12 @@ deliberately not widened to accommodate a test port** — that call is right and
 re-litigated here; serve the fixture on `:5173` instead:
 
 ```bash
-pnpm --filter @estalara/shared build && pnpm --filter @estalara/sdk build
+# FOLLOW-1246: ONE build step for EVERY checkout (main included, not only a worktree), before §3.4.
+# `@estalara/db|auth|shared` export `dist/`; nothing else on this path rebuilds them, and the main
+# checkout's dist can be months old. The harness refuses with `[STALE-BUILD]` when a dist is older
+# than the last commit touching its `src/` (§6.9), so skipping this is caught, not graded.
+pnpm exec turbo run build --concurrency=1 \
+  --filter=@estalara/shared --filter=@estalara/db --filter=@estalara/auth --filter=@estalara/sdk
 doppler run -p estalara-adaptive-listings -c dev -- node scripts/dev/mock-decision-server.mjs  # serves the bundle on :9100
 npx serve -l 5173 tests/e2e/follow-819    # serves fixture-listing.html — NOT :9200, see §6.2
 ```
@@ -3664,7 +3679,7 @@ that produces no error message anywhere. Check the owner before trusting the por
 ss -ltnp | grep :8787   # confirm the workerd PID is the one you just started
 ```
 
-### 6.9 In a git worktree with symlinked `node_modules`, the control plane runs the MAIN checkout's `packages/*/dist`
+### 6.9 In ANY checkout (a worktree with symlinked `node_modules` is the worst case), the control plane runs whatever `packages/*/dist` is on disk
 
 **Found 2026-09-21 (§5.13), before the run, not by it.** The usual worktree shortcut symlinks
 `node_modules` and `apps/*/node_modules` to the main checkout. pnpm's workspace links inside them
@@ -3674,6 +3689,10 @@ two months before [FOLLOW-1241]. `transpilePackages` does not help, because it t
 the exports resolve to. A run done that way would have graded a worktree's `packages/*` fix while
 executing code that predates it, and a leak measurement taken on it would have looked like "the fix
 did not work". Nothing logs which copy loaded.
+
+FOLLOW-1246 widened this from "worktree" to "any checkout": the main checkout's `dist` was also
+dated 2026-07-28 and lacked #915 and #921. Build once per checkout (§3.3) and the harness now checks
+it (`[STALE-BUILD]`, resolved through this same symlink).
 
 Check before starting the control plane from a worktree:
 

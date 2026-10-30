@@ -48,7 +48,8 @@
  */
 
 import { createRequire } from 'node:module';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, readdir, realpath, stat } from 'node:fs/promises';
+import nodePath from 'node:path';
 import { createHmac, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -172,6 +173,8 @@ let startedAt = null;
 let harnessSha = null;
 /** FOLLOW-1205: `{dirty, dirtyPaths}` at run start — see `readHarnessTreeState()`. */
 let harnessTree = null;
+/** FOLLOW-1246: `evaluateBuildFreshness()` result at run start. */
+let buildFreshness = null;
 /**
  * FOLLOW-1225: what the preflight found at the grounding origin, so `last-run.json` records WHICH
  * facts the LLM branch could see. A reader of §5.10's artefact could not tell a run with grounding
@@ -4198,6 +4201,135 @@ async function readMeasuredPathDiff(sha) {
   }
 }
 
+// ─── FOLLOW-1246: stale build ────────────────────────────────────────────────────────────
+//
+// `@estalara/db|auth|shared` export `./dist/*`; nothing on the run path rebuilds them, and the
+// artefact's `[FRESH]` grades the git tree, not the bytes the control plane loaded. A series ran on a
+// control plane left up from an older build and still read `[FRESH]`. The functions below close
+// that: `evaluateBuildFreshness()` is the pure predicate, `readBuildFreshnessFacts()` resolves the
+// facts (symlink-safe: the package the control plane really loads, not the one in this checkout).
+
+/** The workspace packages `apps/control-plane` imports through `dist/`. */
+export const CP_DIST_PACKAGES = Object.freeze(['db', 'auth', 'shared']);
+
+/**
+ * Is the code the control plane loads older than the source it should have been built from? Pure.
+ * Unknown (no `dist`, unreadable git) is stale, never a silent pass.
+ *
+ * @param {{packages: Array<{name: string, distMtimeMs: number|null, srcCommitMs: number|null}>,
+ *   served?: {mode: string|null, buildIdMtimeMs: number|null, sourceCommitMs: number|null}|null}} facts
+ * @returns {{ok: boolean, verdict: 'FRESH-BUILD'|'STALE-BUILD', stale: string[], reason: string}}
+ */
+export function evaluateBuildFreshness({ packages, served = null }) {
+  const stale = [];
+  const fmt = (ms) => new Date(ms).toISOString();
+  for (const p of packages) {
+    if (p.distMtimeMs === null || p.distMtimeMs === undefined) {
+      stale.push(
+        `@estalara/${p.name}: no readable dist (never built, or the link does not resolve)`,
+      );
+    } else if (p.srcCommitMs === null || p.srcCommitMs === undefined) {
+      stale.push(`@estalara/${p.name}: last commit touching src/ unreadable (git unavailable)`);
+    } else if (p.distMtimeMs < p.srcCommitMs) {
+      stale.push(
+        `@estalara/${p.name}: dist ${fmt(p.distMtimeMs)} is older than the last commit touching ` +
+          `src/ ${fmt(p.srcCommitMs)}`,
+      );
+    }
+  }
+  if (served?.mode === 'prod') {
+    if (served.buildIdMtimeMs === null || served.buildIdMtimeMs === undefined) {
+      stale.push('control plane: CP_MODE=prod but apps/control-plane/.next/BUILD_ID is unreadable');
+    } else if (served.sourceCommitMs === null || served.sourceCommitMs === undefined) {
+      stale.push('control plane: last commit touching its sources unreadable (git unavailable)');
+    } else if (served.buildIdMtimeMs < served.sourceCommitMs) {
+      stale.push(
+        `control plane: .next/BUILD_ID ${fmt(served.buildIdMtimeMs)} is older than the last commit ` +
+          `touching apps/control-plane or the packages it imports ${fmt(served.sourceCommitMs)}`,
+      );
+    }
+  }
+  return stale.length === 0
+    ? { ok: true, verdict: 'FRESH-BUILD', stale, reason: 'every dist is newer than its src' }
+    : { ok: false, verdict: 'STALE-BUILD', stale, reason: stale.join('; ') };
+}
+
+/** Newest mtime (ms) among the entries directly under `dir`, or `null` if unreadable/empty. */
+async function newestEntryMtimeMs(dir) {
+  try {
+    const names = await readdir(dir);
+    let newest = null;
+    for (const n of names) {
+      const { mtimeMs } = await stat(nodePath.join(dir, n));
+      if (newest === null || mtimeMs > newest) newest = mtimeMs;
+    }
+    return newest;
+  } catch {
+    return null;
+  }
+}
+
+/** Committer time (ms) of the last commit touching `paths` under git dir `cwd`, or `null`. */
+async function lastCommitMs(cwd, paths) {
+  try {
+    const { stdout } = await execFileAsync('git', ['log', '-1', '--format=%ct', '--', ...paths], {
+      cwd,
+    });
+    const sec = Number.parseInt(stdout.trim(), 10);
+    return Number.isInteger(sec) ? sec * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the facts `evaluateBuildFreshness()` needs. Each package is read through
+ * `apps/control-plane/node_modules/@estalara/<name>` and `realpath`ed, so a worktree whose link
+ * points at another checkout is graded on THAT checkout's dist and git history (README 6.9).
+ *
+ * @param {{repoRoot?: string, cpMode?: string|undefined}} [options]
+ */
+export async function readBuildFreshnessFacts({
+  repoRoot = REPO_ROOT,
+  cpMode = process.env.CP_MODE,
+} = {}) {
+  const packages = [];
+  for (const name of CP_DIST_PACKAGES) {
+    let real = null;
+    try {
+      real = await realpath(
+        nodePath.join(repoRoot, 'apps/control-plane/node_modules/@estalara', name),
+      );
+    } catch {
+      /* unresolved: reported as "no readable dist" */
+    }
+    packages.push({
+      name,
+      distMtimeMs: real === null ? null : await newestEntryMtimeMs(nodePath.join(real, 'dist')),
+      srcCommitMs: real === null ? null : await lastCommitMs(real, ['src']),
+    });
+  }
+  let served = null;
+  if (cpMode === 'prod') {
+    let buildIdMtimeMs = null;
+    try {
+      buildIdMtimeMs = (await stat(nodePath.join(repoRoot, 'apps/control-plane/.next/BUILD_ID')))
+        .mtimeMs;
+    } catch {
+      /* unreadable: stale */
+    }
+    served = {
+      mode: 'prod',
+      buildIdMtimeMs,
+      sourceCommitMs: await lastCommitMs(repoRoot, [
+        'apps/control-plane',
+        ...CP_DIST_PACKAGES.map((n) => `packages/${n}/src`),
+      ]),
+    };
+  }
+  return { packages, served };
+}
+
 /**
  * Evaluate artefact freshness, as a pure function. Every git fact is passed in already resolved, so
  * this stays a predicate over data rather than a live git call.
@@ -4249,6 +4381,7 @@ export function evaluateArtefactStaleness(
     measuredPaths = null,
     aborted = false,
     harnessTree = null,
+    buildFreshness = null,
   },
   { allowStale = false } = {},
 ) {
@@ -4298,6 +4431,15 @@ export function evaluateArtefactStaleness(
       `artefact at harnessSha ${harnessSha} records no working-tree state ` +
         `(harnessTree=${JSON.stringify(harnessTree)}) — cannot verify the SHA names the bytes ` +
         'that ran; STALE',
+    );
+  }
+  // FOLLOW-1246, axis 5 (BUILD): a run made against a stale dist / left-over build is not a result
+  // of the bytes at harnessSha. Absent (an artefact written before FOLLOW-1246) is not graded here.
+  if (buildFreshness?.ok === false) {
+    return refuse(
+      'STALE-BUILD',
+      `run at harnessSha ${harnessSha} used a stale build (${String(buildFreshness.reason)}) — the ` +
+        'SHA does not name the bytes the control plane loaded; refusing to grade',
     );
   }
   // Where the SHA sits relative to HEAD, worded so a non-ancestor's rev-list count is never
@@ -4395,6 +4537,7 @@ async function checkArtefactStaleness(path, { allowStale = false } = {}) {
       measuredPaths: await readMeasuredPathDiff(sha),
       aborted: artefact.aborted === true,
       harnessTree: artefact.harnessTree ?? null,
+      buildFreshness: artefact.buildFreshness ?? null,
     },
     { allowStale },
   );
@@ -5362,6 +5505,20 @@ async function main() {
         `${harnessTree.dirty === null ? 'STALE' : 'DIRTY'} under --check-staleness, because ` +
         `harnessSha ${String(harnessSha)} does not name the bytes that run.`,
     );
+  }
+
+  // FOLLOW-1246: refuse (or, with ALLOW_STALE_BUILD=1, record) a run whose control plane loads a
+  // dist older than its src, or whose CP_MODE=prod build predates HEAD's last relevant commit.
+  buildFreshness = evaluateBuildFreshness(await readBuildFreshnessFacts());
+  if (!buildFreshness.ok) {
+    console.error(`[STALE-BUILD] ${buildFreshness.reason}`);
+    if (process.env.ALLOW_STALE_BUILD !== '1') {
+      throw new Error(
+        `[STALE-BUILD] refusing to run: ${buildFreshness.reason}. Rebuild (README 3: pnpm exec ` +
+          'turbo run build --filter=@estalara/shared --filter=@estalara/db --filter=@estalara/auth) ' +
+          'and restart the control plane, or set ALLOW_STALE_BUILD=1 to record the run as STALE-BUILD.',
+      );
+    }
   }
 
   const controlArmCredential = evaluateControlArmCredential(ADAPT_API_KEY);
@@ -6652,6 +6809,8 @@ async function main() {
     harnessSha,
     // FOLLOW-1205: the tree-state axis of `evaluateArtefactStaleness()`.
     harnessTree,
+    // FOLLOW-1246: the build axis of `evaluateArtefactStaleness()`.
+    buildFreshness,
     listingUrl: LISTING_URL,
     ingestOrigin: INGEST_ORIGIN,
     decisionOrigin: DECISION_ORIGIN,
@@ -6810,6 +6969,7 @@ if (globalThis.FOLLOW1186_IMPORT_ONLY !== true) {
             startedAt,
             harnessSha,
             harnessTree,
+            buildFreshness,
             error: String(err),
             results,
             note:

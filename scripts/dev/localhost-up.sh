@@ -204,6 +204,18 @@ if ! docker exec estalara_ch_local cat "$CH_LOGS_DEST" 2>/dev/null | cmp -s - "$
   wait_for "ClickHouse (after log-config restart)" 90 curl -sf http://localhost:8123/ping
   log "ClickHouse: system-log retention override installed (restarted)"
 fi
+# FOLLOW-1246: the container's default date_time_input_format must be `basic` (the ClickHouse default,
+# and what the ingest integration suite's negative control assumes). A volume that once ran with
+# `best_effort` persisted in the default profile fails that control locally (K3 finding 4). Warn, with
+# the fix; never recreate a container here (it holds the local events data).
+CH_DTIF="$(curl -sf -u "$CH_LOCAL_USER:$CH_LOCAL_PASSWORD" http://localhost:8123/ \
+  --data-binary "SELECT value FROM system.settings WHERE name = 'date_time_input_format'" || true)"
+if [ "$CH_DTIF" != "basic" ]; then
+  log "WARNING: estalara_ch_local date_time_input_format='${CH_DTIF:-unreadable}', expected 'basic'. The ingest
+    integration suite's negative control (AC2-B) will fail locally. Fix: docker rm -f estalara_ch_local and
+    re-run this script (README 3.1 recreate; data is rebuilt by migrate.sh), then verify with
+    SELECT value FROM system.settings WHERE name='date_time_input_format'."
+fi
 # Idempotent cleanup: the disabled logs and any *_N leftovers a schema change renames aside hold only
 # diagnostics; truncating a table that no longer exists or is already empty is a no-op.
 for t in trace_log text_log asynchronous_metric_log $(curl -sf -u "$CH_LOCAL_USER:$CH_LOCAL_PASSWORD" http://localhost:8123/ \
@@ -331,6 +343,9 @@ $(tail -n 20 "$LOG_DIR/shim-pip.log")"
   # FastAPI answers a bodyless POST with 422 before the bearer check runs.
   wait_for "shim :8090 (401 without bearer)" 60 \
     bash -c '[ "$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "content-type: application/json" -d "{}" http://localhost:8090/chat_nlp_endpoint)" = 401 ]'
+  # FOLLOW-1246 (amendment 2026-10-19): a cold shim made run 1 RED at K1, K2b and K3. Do not print "Run the
+  # harness" until /health answers too (ingest's /health is waited in step 8).
+  wait_for "shim :8090 /health" 60 curl -sf -m 5 http://localhost:8090/health
 
   # FOLLOW-1299 (README 6.11): the control plane reads Redis with Upstash's URL-path REST form, which
   # SRH answers 404. Without this adapter (and UPSTASH_REDIS_URL in step 9) the shadow key the shim

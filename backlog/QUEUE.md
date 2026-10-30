@@ -64,10 +64,10 @@
 - **FOLLOW-1398** — status: BACKLOG # P3. Harness AC(5): the CTA `locator.click` can time out (5000
   ms, "element is not stable") when the CTA re-renders after adaptation (README §5.39 run 33); wait
   for a stable CTA before clicking.
-- **FOLLOW-1412** — status: BACKLOG # P2, ESC-089. Restore family-fitted served slot variants
-  (pre-FOLLOW-1366 headline/CTA/feature-label strings for family_buyer and upsizer, e.g. "Room to
-  Grow" family wording); boosts `good_school_district` / `family_area` have no producer (inert) —
-  wire or drop.
+- **FOLLOW-1412** — status: IN_REVIEW # branch `ml-engineer/FOLLOW-1412-family-slot-variants`; P2,
+  ESC-089. Restore family-fitted served slot variants (pre-FOLLOW-1366 headline/CTA/feature-label
+  strings for family_buyer and upsizer, e.g. "Room to Grow" family wording); boosts
+  `good_school_district` / `family_area` have no producer (inert) — wire or drop.
 - **FOLLOW-1415** — status: DONE # PR #1095, merged as `2e6c0315`; series GREEN (README §5.42);
   stamp `claims-v4`, parity corpus v14 (stamp only, no verdict delta). P1, ESC-089 follow-up (CEO
   2026-10-29: race and religion guard targets discrimination, not facts; no controversial copy).

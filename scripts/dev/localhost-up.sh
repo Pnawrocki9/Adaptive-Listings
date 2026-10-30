@@ -409,7 +409,9 @@ dev) CP_CMD=(pnpm dev) CP_WAIT=240 ;;
 # server env is identical to the dev mode at run time.
 # `next start` forces NODE_ENV=production, whose origin list refuses the localhost pages;
 # ESTALARA_LOCAL_ORIGINS=1 keeps the local list (ignored on Vercel, origin-policy.ts).
-prod) CP_CMD=(env ESTALARA_LOCAL_ORIGINS=1 bash -c 'pnpm build && exec pnpm start') CP_WAIT=1500 ;;
+# FOLLOW-1246: the git sha the build was made from goes next to BUILD_ID (gitignored build output); the
+# harness preflight compares it with HEAD (`[STALE-BUILD]`). Written only after `pnpm build` succeeded.
+prod) CP_CMD=(env ESTALARA_LOCAL_ORIGINS=1 bash -c 'pnpm build && git rev-parse HEAD >.next/ESTALARA_BUILD_SHA && exec pnpm start') CP_WAIT=1500 ;;
 *) die "CP_MODE must be dev or prod, got '$CP_MODE'" ;;
 esac
 step "9/11 control plane :3000 - apps/control-plane 'next $CP_MODE' under doppler, NOT root 'pnpm dev' (README 6.5)"
@@ -437,6 +439,34 @@ fi
 LISTING_UPDATED_WEBHOOK_SECRET="$(cat "$LISTING_UPDATED_WEBHOOK_SECRET_FILE")"
 [[ "$LISTING_UPDATED_WEBHOOK_SECRET" =~ ^[0-9a-f]{64}$ ]] ||
   die "$LISTING_UPDATED_WEBHOOK_SECRET_FILE does not hold 32 hex bytes - delete it and re-run"
+# FOLLOW-1246: RESTART_CP=1 stops an already-running control plane (this script's pid file: wrapper,
+# children, the next-server on :3000) instead of "already running - leaving it", which kept serving an
+# older build while the artefact read [FRESH]. Opt-in; a :3000 held by a foreign process still dies below.
+stop_tree() {
+  local pid="$1" child
+  pgrep -s "$pid" 2>/dev/null || true
+  for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+    echo "$child"
+    stop_tree "$child"
+  done
+}
+if [ "${RESTART_CP:-0}" = "1" ] && pid_alive control-plane-3000; then
+  cp_pid="$(cat "$PID_DIR/control-plane-3000.pid")"
+  mapfile -t cp_tree < <({ echo "$cp_pid"; stop_tree "$cp_pid"; } | sort -un)
+  log "RESTART_CP=1: stopping control plane pid $cp_pid (+${#cp_tree[@]} in tree)"
+  kill -TERM "${cp_tree[@]}" 2>/dev/null || true
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    [ -z "$(port_owner 3000)" ] && break
+    sleep 1
+  done
+  if [ -n "$(port_owner 3000)" ]; then
+    kill -KILL "${cp_tree[@]}" 2>/dev/null || true
+    sleep 2
+  fi
+  [ -z "$(port_owner 3000)" ] || die "RESTART_CP=1: :3000 is still bound after stopping the control plane:
+$(port_owner 3000)"
+  rm -f "$PID_DIR/control-plane-3000.pid"
+fi
 start_bg control-plane-3000 3000 "$REPO_ROOT/apps/control-plane" \
   doppler run -c dev -- env \
   "${CP_REDIS_ENV[@]}" \

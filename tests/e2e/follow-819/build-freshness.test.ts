@@ -34,6 +34,8 @@ interface ServedFacts {
   mode: string | null;
   buildIdMtimeMs: number | null;
   sourceCommitMs: number | null;
+  buildSha?: string | null;
+  changedSinceBuild?: boolean | null;
 }
 interface BuildVerdict {
   ok: boolean;
@@ -41,7 +43,10 @@ interface BuildVerdict {
   stale: string[];
   reason: string;
 }
-interface Facts { packages: PkgFacts[]; served?: ServedFacts | null }
+interface Facts {
+  packages: PkgFacts[];
+  served?: ServedFacts | null;
+}
 
 let evaluateBuildFreshness: (facts: Facts) => BuildVerdict;
 let readBuildFreshnessFacts: (o?: { repoRoot?: string; cpMode?: string }) => Promise<Facts>;
@@ -108,6 +113,38 @@ describe('evaluateBuildFreshness — the pure predicate', () => {
     expect(
       evaluateBuildFreshness({ packages: pkgs(), served: { ...served, buildIdMtimeMs: null } }).ok,
     ).toBe(false);
+  });
+
+  describe('served build identity (ESTALARA_BUILD_SHA)', () => {
+    const served = (o: Partial<ServedFacts>): ServedFacts => ({
+      mode: 'prod',
+      buildIdMtimeMs: T0 + 5,
+      sourceCommitMs: T0,
+      ...o,
+    });
+    const sha = 'a'.repeat(40);
+    it('no sha file is stale; a sha whose build inputs changed (or are unknowable) is stale', () => {
+      expect(
+        evaluateBuildFreshness({ packages: pkgs(), served: served({ buildSha: null }) }).ok,
+      ).toBe(false);
+      for (const changedSinceBuild of [true, null]) {
+        const v = evaluateBuildFreshness({
+          packages: pkgs(),
+          served: served({ buildSha: sha, changedSinceBuild }),
+        });
+        expect(v.ok).toBe(false);
+        expect(v.reason).toContain(sha);
+      }
+    });
+    it('a sha with unchanged build inputs passes; an unread sha (undefined) is not graded', () => {
+      expect(
+        evaluateBuildFreshness({
+          packages: pkgs(),
+          served: served({ buildSha: sha, changedSinceBuild: false }),
+        }).ok,
+      ).toBe(true);
+      expect(evaluateBuildFreshness({ packages: pkgs(), served: served({}) }).ok).toBe(true);
+    });
   });
 
   it('dev mode does not grade BUILD_ID', () => {
@@ -221,5 +258,63 @@ describe('readBuildFreshnessFacts — real files, real git, a symlinked package'
     } finally {
       await rm(empty, { recursive: true, force: true });
     }
+  });
+});
+
+describe('readBuildFreshnessFacts - CP_MODE=prod reads .next/ESTALARA_BUILD_SHA against HEAD', () => {
+  let repo: string;
+  const run = (...args: string[]) =>
+    execFileP('git', ['-c', 'commit.gpgsign=false', ...args], {
+      cwd: repo,
+      env: {
+        PATH: process.env.PATH ?? '',
+        HOME: repo,
+        GIT_AUTHOR_NAME: 't',
+        GIT_AUTHOR_EMAIL: 't@t',
+        GIT_COMMITTER_NAME: 't',
+        GIT_COMMITTER_EMAIL: 't@t',
+      },
+    }).then((r) => r.stdout.trim());
+
+  beforeAll(async () => {
+    repo = await mkdtemp(path.join(tmpdir(), 'follow-1246-prod-'));
+    await run('init', '-q', '-b', 'main');
+    await mkdir(path.join(repo, 'apps/control-plane/.next'), { recursive: true });
+    await writeFile(path.join(repo, 'apps/control-plane/page.ts'), 'v1\n');
+    await writeFile(path.join(repo, 'README.md'), 'v1\n');
+    await run('add', '-A');
+    await run('commit', '-q', '-m', 'base');
+  });
+
+  afterAll(async () => {
+    await rm(repo, { recursive: true, force: true });
+  });
+
+  const served = async () =>
+    (await readBuildFreshnessFacts({ repoRoot: repo, cpMode: 'prod' })).served!;
+
+  it('no sha file gives buildSha null (stale)', async () => {
+    expect((await served()).buildSha).toBeNull();
+  });
+
+  it('sha = HEAD unchanged; a docs-only commit after it still unchanged; a control-plane commit changed', async () => {
+    const built = await run('rev-parse', 'HEAD');
+    await writeFile(path.join(repo, 'apps/control-plane/.next/ESTALARA_BUILD_SHA'), `${built}\n`);
+    expect(await served()).toMatchObject({ buildSha: built, changedSinceBuild: false });
+
+    await writeFile(path.join(repo, 'README.md'), 'v2\n');
+    await run('commit', '-q', '-am', 'docs');
+    expect(await served()).toMatchObject({ buildSha: built, changedSinceBuild: false });
+
+    await writeFile(path.join(repo, 'apps/control-plane/page.ts'), 'v2\n');
+    await run('commit', '-q', '-am', 'cp');
+    const s = await served();
+    expect(s).toMatchObject({ buildSha: built, changedSinceBuild: true });
+    expect(evaluateBuildFreshness({ packages: [], served: s }).ok).toBe(false);
+  });
+
+  it('a sha the repository does not know is unknown (null), stale', async () => {
+    await writeFile(path.join(repo, 'apps/control-plane/.next/ESTALARA_BUILD_SHA'), 'b'.repeat(40));
+    expect((await served()).changedSinceBuild).toBeNull();
   });
 });

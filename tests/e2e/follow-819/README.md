@@ -419,7 +419,17 @@ and the artefact still reads `[FRESH]` (freshness grades the git tree). Run
 `[STALE-BUILD]` when a dist is older than its `src` and, under `CP_MODE=prod`, when
 `apps/control-plane/.next/BUILD_ID` is older than the last commit touching `apps/control-plane` or
 the three packages; `ALLOW_STALE_BUILD=1` records the run instead, and the artefact then reads
-`STALE-BUILD`. A dev-mode control plane's age cannot be read from disk.
+`STALE-BUILD`. A dev-mode control plane's age cannot be read from disk. Under `CP_MODE=prod` the
+bring-up writes `apps/control-plane/.next/ESTALARA_BUILD_SHA` (the git sha the served build was made
+from) after `pnpm build`; the preflight compares it with HEAD and records `[STALE-BUILD]` when
+`apps/control-plane` or a package it imports changed between them (a docs-only commit after the
+build does not refuse). To replace a running control plane use
+`RESTART_CP=1 CP_MODE=prod scripts/dev/localhost-up.sh`: it stops the pid-file control plane
+(wrapper, children, the next-server on `:3000`) instead of "already running - leaving it". **Under
+`CP_MODE=prod` the control plane HAS a build step of its own (`pnpm build` inside the start
+command), so the "no build step needed" example in Rule AA amendment 1 clause 5 does not hold for
+it:** a fix to `apps/control-plane` or its `dist` packages takes effect only after that build, and
+the sha file is the fail-loud proof clause 5(b) asks for.
 
 **The server-confirmed conversion needs four things the script wires (FOLLOW-1203, §3.3c):**
 migration 0024 on the local ClickHouse (step 3, `migrate.sh`); `CALLER_SIGNED_COLUMN_ENABLED=true`

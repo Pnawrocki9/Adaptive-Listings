@@ -4249,6 +4249,24 @@ export function evaluateBuildFreshness({ packages, served = null }) {
       );
     }
   }
+  // Identity of the SERVED build (localhost-up.sh CP_MODE=prod writes `.next/ESTALARA_BUILD_SHA`).
+  // `buildSha` undefined = the caller did not read it (not graded); null = unreadable (stale).
+  // A sha other than HEAD is stale only if a path the build contains changed since it
+  // (`changedSinceBuild`; unknown counts as changed), so a docs-only commit does not refuse a run.
+  if (served?.mode === 'prod' && served.buildSha !== undefined) {
+    if (served.buildSha === null) {
+      stale.push(
+        'control plane: apps/control-plane/.next/ESTALARA_BUILD_SHA is unreadable (built outside ' +
+          'localhost-up.sh CP_MODE=prod, or before FOLLOW-1246)',
+      );
+    } else if (served.changedSinceBuild !== false) {
+      stale.push(
+        `control plane: served build was made from ${served.buildSha}, and ` +
+          `${served.changedSinceBuild === true ? 'apps/control-plane or a package it imports changed' : 'whether they changed could not be read'} ` +
+          'between it and HEAD (restart with RESTART_CP=1 CP_MODE=prod scripts/dev/localhost-up.sh)',
+      );
+    }
+  }
   return stale.length === 0
     ? { ok: true, verdict: 'FRESH-BUILD', stale, reason: 'every dist is newer than its src' }
     : { ok: false, verdict: 'STALE-BUILD', stale, reason: stale.join('; ') };
@@ -4318,8 +4336,44 @@ export async function readBuildFreshnessFacts({
     } catch {
       /* unreadable: stale */
     }
+    let buildSha = null;
+    try {
+      const raw = (
+        await readFile(
+          nodePath.join(repoRoot, 'apps/control-plane/.next/ESTALARA_BUILD_SHA'),
+          'utf8',
+        )
+      ).trim();
+      buildSha = /^[0-9a-f]{40}$/.test(raw) ? raw : null;
+    } catch {
+      /* unreadable: stale */
+    }
+    let changedSinceBuild = null;
+    if (buildSha !== null) {
+      try {
+        // exit 0 = no difference at all in the build's inputs; exit 1 = a difference; else unknown.
+        await execFileAsync(
+          'git',
+          [
+            'diff',
+            '--quiet',
+            buildSha,
+            'HEAD',
+            '--',
+            'apps/control-plane',
+            ...CP_DIST_PACKAGES.map((n) => `packages/${n}/src`),
+          ],
+          { cwd: repoRoot },
+        );
+        changedSinceBuild = false;
+      } catch (err) {
+        changedSinceBuild = err && err.code === 1 ? true : null;
+      }
+    }
     served = {
       mode: 'prod',
+      buildSha,
+      changedSinceBuild,
       buildIdMtimeMs,
       sourceCommitMs: await lastCommitMs(repoRoot, [
         'apps/control-plane',

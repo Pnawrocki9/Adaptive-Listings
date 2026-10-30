@@ -4,8 +4,8 @@
  * corpus v6+ (verdict deltas, see `VERDICT_DELTAS`); FOLLOW-1402 — corpus v9 (a prompt re-freeze
  * between them); FOLLOW-1406 — corpus v10 (a stamp-only re-freeze); FOLLOW-1411 — corpus v11 (a
  * verdict delta), v12 (a headline prompt re-freeze) and v13 (a stamp-only re-freeze); FOLLOW-1415
- * — corpus v14 (a stamp-only re-freeze); FOLLOW-1408 — corpus v15 (a headline persona re-freeze, the
- * current contract).
+ * — corpus v14 (a stamp-only re-freeze); FOLLOW-1408 — corpus v15 (a headline persona re-freeze);
+ * FOLLOW-1397 — corpus v16 (a verdict delta, the current contract).
  *
  * Drives `generateDescription` — the production entry point — with the Anthropic SDK mocked to
  * return the RAW model outputs recorded in the frozen corpus, and demands, for every case,
@@ -74,6 +74,9 @@
  *     only `prompt_sha256.headline_user` of the listed cases differs, and each new prompt is the v14
  *     prompt with the persona swapped. Every guard replays with the CURRENT headline digests
  *     (v15's).
+ *   - `corpus.v16.jsonl` + `MANIFEST.v16.json` — FOLLOW-1397 (multiplied numbers: "€750K", "1,15
+ *     mln") is a verdict delta of v15 in `VERDICT_DELTAS`; the v9–v15 guards stop replaying the
+ *     case it changed.
  *
  * No other I/O happens: the test env configures no Redis, ClickHouse, Postgres or Sentry, so the
  * spend gate reads 0, every write reports `not_configured` and no row is written.
@@ -231,6 +234,8 @@ const MANIFEST_V14 = JSON.parse(
  * v13, FOLLOW-1415 as v14; each of those guards asserts it was that corpus's only change).
  */
 const STAMP = new Map(CASES_V14.map((c) => [c.id, c.expected.claims_validation] as const));
+/** The stamp v14 introduced (FOLLOW-1415); the corpora after it are frozen with it. */
+const V14_STAMP = 'claims-v4';
 const CASES_V15: Case[] = readCorpus('corpus.v15.jsonl');
 const MANIFEST_V15 = JSON.parse(
   readFileSync(join(FIXTURE_DIR, 'MANIFEST.v15.json'), 'utf8'),
@@ -249,7 +254,7 @@ const HEADLINE_SHA = new Map(CASES_V15.map((c) => [c.id, c.expected.prompt_sha25
  * The verdict deltas after v5, oldest first, each derived from the corpus before it (v6 from v5).
  * FOLLOW-1392 — v6 (meta-commentary); FOLLOW-1394 — v7 (a pool of people, views of the sea);
  * FOLLOW-1400 — v8 (familial steering, refused as on `/api/adapt`); FOLLOW-1411 — v11 (ESC-089 lifts
- * it: the four v8 cases go back to their v7 outcome).
+ * it: the four v8 cases go back to their v7 outcome); FOLLOW-1397 — v16 (a multiplied number).
  */
 const VERDICT_DELTAS: {
   version: number;
@@ -280,6 +285,7 @@ const VERDICT_DELTAS: {
       'live.032.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.neutral.en',
     ],
   },
+  { version: 16, ticket: 'FOLLOW-1397', ids: ['live.020.listing-009.yield_hunter.en'] },
 ].map((d) => ({
   ...d,
   cases: readCorpus(`corpus.v${String(d.version)}.jsonl`),
@@ -293,12 +299,17 @@ const LATER_DELTA_IDS = new Set(VERDICT_DELTAS.flatMap((d) => d.manifest.delta.m
 const AFTER_V9_DELTA_IDS = new Set(
   VERDICT_DELTAS.filter((d) => d.version > 9).flatMap((d) => d.manifest.delta.map((x) => x.id)),
 );
+/** Every case a verdict delta after v15 changed: the v12–v15 guards no longer replay it. */
+const AFTER_V15_DELTA_IDS = new Set(
+  VERDICT_DELTAS.filter((d) => d.version > 15).flatMap((d) => d.manifest.delta.map((x) => x.id)),
+);
 
 /** The corpus a verdict delta is derived from: the one numbered just before it. */
 function corpusBefore(version: number): { cases: Case[]; manifest: ManifestV3 } {
   if (version - 1 === 5) return { cases: CASES_V5, manifest: MANIFEST_V5 };
   if (version - 1 === 9) return { cases: CASES_V9, manifest: MANIFEST_V9 };
   if (version - 1 === 10) return { cases: CASES_V10, manifest: MANIFEST_V10 };
+  if (version - 1 === 15) return { cases: CASES_V15, manifest: MANIFEST_V15 };
   const d = VERDICT_DELTAS.find((x) => x.version === version - 1);
   if (d === undefined) throw new Error(`no corpus v${String(version - 1)}`);
   return d;
@@ -767,8 +778,11 @@ describe.each(VERDICT_DELTAS.map((d, i) => [d.version, d.ticket, d, i] as const)
         d.manifest.corpus_sha256,
       );
       expect(d.manifest.case_count).toBe(d.cases.length);
-      // Frozen before v10 with claims-v1; after it with the stamp v10 introduced [FOLLOW-1411].
-      expect(d.manifest.claims_validation_version).toBe(d.version > 10 ? V10_STAMP : FROZEN_STAMP);
+      // Frozen before v10 with claims-v1; after it with the stamp v10 introduced [FOLLOW-1411];
+      // after v14 with v14's [FOLLOW-1397].
+      expect(d.manifest.claims_validation_version).toBe(
+        d.version > 14 ? V14_STAMP : d.version > 10 ? V10_STAMP : FROZEN_STAMP,
+      );
       expect(d.cases.map((c) => c.id)).toEqual(prevCases.map((c) => c.id));
       expect([...ids].sort()).toEqual([...d.ids].sort());
       for (const [j, cur] of d.cases.entries()) {
@@ -1162,7 +1176,9 @@ describe('description parity corpus v12 (FOLLOW-1411 — headline persona re-fre
     expect(MANIFEST_V12.persona_change.family_buyer!.to).toMatch(/family/i);
   });
 
-  describe.each(CASES_V12.map((c) => [c.id, c] as const))('%s', (_id, c) => {
+  describe.each(
+    CASES_V12.filter((c) => !AFTER_V15_DELTA_IDS.has(c.id)).map((c) => [c.id, c] as const),
+  )('%s', (_id, c) => {
     it('generates identically to the v12 record', async () => {
       await expectIdentical(c);
     });
@@ -1222,7 +1238,9 @@ describe('description parity corpus v13 (FOLLOW-1411 — claims-v3, stamp-only r
     expect(V13_TEXT.length).toBe(V12_TEXT.length); // same-length value: no byte shifted
   });
 
-  describe.each(CASES_V13.map((c) => [c.id, c] as const))('%s', (_id, c) => {
+  describe.each(
+    CASES_V13.filter((c) => !AFTER_V15_DELTA_IDS.has(c.id)).map((c) => [c.id, c] as const),
+  )('%s', (_id, c) => {
     it('generates identically to the v13 record', async () => {
       await expectIdentical(c);
     });
@@ -1279,14 +1297,16 @@ describe('description parity corpus v14 (FOLLOW-1415 — claims-v4, stamp-only r
     expect(V14_TEXT.length).toBe(V13_TEXT.length); // same-length value: no byte shifted
   });
 
-  describe.each(CASES_V14.map((c) => [c.id, c] as const))('%s', (_id, c) => {
+  describe.each(
+    CASES_V14.filter((c) => !AFTER_V15_DELTA_IDS.has(c.id)).map((c) => [c.id, c] as const),
+  )('%s', (_id, c) => {
     it('generates identically to the v14 record', async () => {
       await expectIdentical(c);
     });
   });
 });
 
-describe('description parity corpus v15 (FOLLOW-1408 — first_time_buyer persona re-freeze, the current contract)', () => {
+describe('description parity corpus v15 (FOLLOW-1408 — first_time_buyer persona re-freeze)', () => {
   const REFROZEN = new Set(MANIFEST_V15.refrozen);
   const V14_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v14.jsonl'), 'utf8');
   const V15_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v15.jsonl'), 'utf8');
@@ -1358,9 +1378,25 @@ describe('description parity corpus v15 (FOLLOW-1408 — first_time_buyer person
     expect(to).toMatch(/only as the listing states them/u);
   });
 
-  describe.each(CASES_V15.map((c) => [c.id, c] as const))('%s', (_id, c) => {
+  describe.each(
+    CASES_V15.filter((c) => !AFTER_V15_DELTA_IDS.has(c.id)).map((c) => [c.id, c] as const),
+  )('%s', (_id, c) => {
     it('generates identically to the v15 record', async () => {
       await expectIdentical(c);
     });
+  });
+});
+
+describe('description parity corpus v16 (FOLLOW-1397 — a multiplied number is the number it names)', () => {
+  it('the one v16 delta is "€750K" grounded by "€750,000": the headline is refused for its next word', () => {
+    const id = 'live.020.listing-009.yield_hunter.en';
+    const v15 = CASES_V15.find((c) => c.id === id)!;
+    const v16 = VERDICT_DELTAS.find((d) => d.version === 16)!.cases.find((c) => c.id === id)!;
+    expect(v15.raw_headline).toContain('€750K');
+    expect(v15.input.listing_context.price).toBe('€750,000');
+    expect(v15.expected.headline_violation).toBe('hallucinated_number');
+    expect(v16.expected.headline_violation).toBe('hallucinated_proper_name');
+    expect(v16.expected.headline).toBeNull();
+    expect(v16.expected.outcome).toEqual(v15.expected.outcome);
   });
 });

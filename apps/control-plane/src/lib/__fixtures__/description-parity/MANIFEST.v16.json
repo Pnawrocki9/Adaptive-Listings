@@ -1,0 +1,58 @@
+{
+  "case_count": 98,
+  "change": "FOLLOW-1397: the digit rules read a number followed by a multiplier word (tys./k/K/thousand/mil, mln/M/m/million/millones/milion…, mld/miliard/bn/billion) as the multiplied value, so \"1,15 mln PLN\" is grounded by 1150000 and \"€750K\" by \"€750,000\". The value must equal a number of the listing, or (with three or more significant digits written) equal it rounded to the precision written. Inputs, raw outputs and prompt digests are v15's byte for byte; only the expected record below differs.",
+  "claims_validation_version": "claims-v4",
+  "corpus": "corpus.v16.jsonl",
+  "corpus_sha256": "150f2aa1:09c4582b:0d369a6c:16cdfa12:c135968c:012b2726:fc31cb4d:1582386f",
+  "delta": [
+    {
+      "id": "live.020.listing-009.yield_hunter.en",
+      "kind": "live",
+      "changed": {
+        "headline_violation": {
+          "v15": "hallucinated_number",
+          "v16": "hallucinated_proper_name"
+        }
+      },
+      "reason": "The raw headline \"Freehold Dubai Marina 2-Bed | High-Demand Waterfront Zone | €750K\" was refused at its first violation, \"€750K\", which the listing's \"€750,000\" now grounds. It is still refused, for the next one: \"High-Demand\", \"Waterfront\" and \"Zone\" are not the listing's words (an outcome claim written as a proper name). The headline stays suppressed; no body verdict moved."
+    }
+  ],
+  "derived_from": {
+    "corpus": "corpus.v15.jsonl",
+    "manifest": "MANIFEST.v15.json",
+    "corpus_sha256": "370e3a6c:27f47fd6:d2faebee:7e62cd08:c22f39d5:bf006bd1:ab1390a8:8e5c287a"
+  },
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-10-30",
+  "headline_called": 63,
+  "headline_suppressed": 30,
+  "kind": "verdict_delta",
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "FAILED/empty": 2,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/meta_commentary": 1,
+    "FAILED/residual_tag": 3,
+    "FAILED/truncated": 1,
+    "NEUTRAL/with_reason": 8,
+    "NEUTRAL/without_reason": 1,
+    "REFUSED/hallucinated_number": 5,
+    "REFUSED/unit_mismatch": 2,
+    "REFUSED/unsupported_amenity": 6,
+    "REFUSED/unsupported_guarantee": 2
+  },
+  "per_verdict": {
+    "FAILED": 11,
+    "FIT": 63,
+    "NEUTRAL": 9,
+    "REFUSED": 15
+  },
+  "recorded_outputs_predate_prompt": "Every raw_headline in this corpus was produced by an older headline prompt. They are replayed through the unchanged checks, so they pin the checks and the new prompt bytes, NOT what the new prompt makes the model write."
+}

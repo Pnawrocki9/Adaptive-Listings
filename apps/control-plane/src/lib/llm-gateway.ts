@@ -17,7 +17,11 @@ import { DAILY_SPEND_CAP_USD, getDailySpend } from '@/lib/llm-spend-counter';
 // FOLLOW-1297: one price table for the adapt and description paths (ADR-0023 §3).
 import { computeCost } from '@/lib/llm-pricing';
 import { generationRequestFor } from '@/lib/generation-models';
-import { normaliseNumberGroups } from '@/lib/number-groups';
+import {
+  normaliseNumberGroups,
+  stripGroundedMultipliedNumbers,
+  withMultipliedNumbers,
+} from '@/lib/number-groups';
 import { stripGroundedDecades } from '@/lib/decade-expressions';
 import { hasMetaCommentary } from '@/lib/meta-commentary';
 import { hasModelControlTag } from '@/lib/model-control-tags';
@@ -513,19 +517,20 @@ function isTemplateAuthoredValue(playbook: PlaybookEntry, slot: string, value: s
 function checkDirectiveFacts(value: string, grounding: string): DirectiveFactViolation | null {
   // Same regex both sides: "5" never matches inside "425000" [FOLLOW-457]. Both sides are
   // number-normalised first, as on the description path: "949 000" is one number [FOLLOW-1388].
+  // The listing's "1,15 mln" also grounds "1150000", as on the description path [FOLLOW-1397]
+  // (not a decade: "2 tys." is no year).
+  const normalisedGrounding = normaliseNumberGroups(grounding);
+  const withMultiplied = withMultipliedNumbers(normalisedGrounding);
   const groundingNumbers = new Set(
-    Array.from(normaliseNumberGroups(grounding).matchAll(FACT_CHECK_DIGIT_RE), (m) =>
-      canonNumber(m[0]),
-    ),
+    Array.from(withMultiplied.matchAll(FACT_CHECK_DIGIT_RE), (m) => canonNumber(m[0])),
   );
   // A decade is checked as a decade, then kept out of the digit rule, as on the description path
   // [FOLLOW-1405].
-  const withoutDecades = stripGroundedDecades(
-    normaliseNumberGroups(value),
-    normaliseNumberGroups(grounding),
-  );
+  const withoutDecades = stripGroundedDecades(normaliseNumberGroups(value), normalisedGrounding);
   if (withoutDecades === null) return 'hallucinated_number';
-  for (const match of withoutDecades.matchAll(FACT_CHECK_DIGIT_RE)) {
+  // A grounded "1,15 mln" / "850 tys." is the number it names [FOLLOW-1397].
+  const withoutMultiplied = stripGroundedMultipliedNumbers(withoutDecades, withMultiplied);
+  for (const match of withoutMultiplied.matchAll(FACT_CHECK_DIGIT_RE)) {
     const canon = canonNumber(match[0]);
     if (canon !== '' && !groundingNumbers.has(canon)) {
       return 'hallucinated_number';

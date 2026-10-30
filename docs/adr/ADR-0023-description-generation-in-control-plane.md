@@ -386,6 +386,17 @@ B), `docs/INTERFACES.md` (description event becomes in-process; seed route), Mod
   the revision fence plus regenerate-on-miss already make a lost job self-healing on the next
   request.
 
+## 11. Dated notes
+
+- **2026-10-30 — `meta_commentary` (FOLLOW-1392, noted by FOLLOW-1397).** §3 lists three
+  `ContractViolation` codes; since FOLLOW-1392 there is a fourth, `meta_commentary`. A body,
+  headline or `/api/adapt` directive value that talks about itself, its inputs or its writer instead
+  of the property ("Correction: the first sentence above…", "Here is the description", "the facts
+  provided", "As an AI", a word count, a bracketed placeholder) is refused as
+  `FAILED / meta_commentary` — refused, never stripped. Closed en / pl / es lists in
+  `lib/meta-commentary.ts`, checked by `bodyViolatesContract` after the leak markers. It is a
+  refusal class, so adding it bumped the parity corpus (v6, a verdict delta).
+
 ## References
 
 `docs/PLAN-AUDIT-REMEDIATION-2026-09-24.md` §A D5, WP-2.11 · `backlog/FOLLOW_UPS.md` FOLLOW-1297 and

@@ -38,3 +38,103 @@ export function normaliseNumberGroups(s: string): string {
     .replace(DIGIT_GROUPS_RE, (m) => m.replace(GROUP_SEPARATOR_RE, ''))
     .replace(DECIMAL_COMMA_RE, '.');
 }
+
+/**
+ * FOLLOW-1397: a number followed by a multiplier word, on a number-normalised text (decimal point,
+ * groups joined). Group 1 is the number; group 2 a spaced or attached multiplier WORD; group 3 an
+ * attached one-letter multiplier ("850k", "1.15M", "1.15m" — attached only, so "64 m" stays
+ * metres). "mil" followed by "millones" is the Spanish billion and is not read.
+ */
+const MULTIPLIED_NUMBER_RE =
+  /(?<![\p{Nd}.])(\p{Nd}+(?:\.\p{Nd}+)?)(?:[ \u00a0\u202f\u2009]?(tys\.?|tysi[ąę]c\p{L}*|thousands?|mil(?![ \t]+millones)|mln\.?|millions?|millones|mill[oó]n|milion\p{L}*|mld\.?|miliard\p{L}*|billions?|bn)|(k|K|M|m))(?![\p{L}\p{N}_])/gu;
+
+/** The power of ten of a multiplier (group 2 or 3 of `MULTIPLIED_NUMBER_RE`). */
+function multiplierExponent(word: string): number {
+  const w = word.toLowerCase();
+  if (/^(?:tys|tysi|thousand|mil$|k$)/u.test(w)) return 3;
+  if (/^(?:mld|miliard|billion|bn)/u.test(w)) return 9;
+  return 6;
+}
+
+/** A multiplied number: its exact value, the unit of its last written digit, its significant digits. */
+interface MultipliedNumber {
+  readonly value: bigint;
+  readonly unit: bigint;
+  readonly significant: number;
+}
+
+function readMultiplied(number: string, multiplier: string): MultipliedNumber | null {
+  const [whole = '', fraction = ''] = number.split('.');
+  const exponent = multiplierExponent(multiplier);
+  if (fraction.length > exponent) return null;
+  const digits = `${whole}${fraction}`;
+  const unit = 10n ** BigInt(exponent - fraction.length);
+  return {
+    value: BigInt(digits) * unit,
+    unit,
+    significant: digits.replace(/^0+/u, '').length,
+  };
+}
+
+/** The integers a number-normalised grounding states, plus its multiplied numbers (exact). */
+function groundedIntegers(grounding: string): Set<bigint> {
+  const integers = new Set<bigint>();
+  for (const m of grounding.matchAll(/(?<![\p{Nd}.])\p{Nd}+(?![\p{Nd}]|\.\p{Nd})/gu)) {
+    if (/^[0-9]+$/u.test(m[0])) integers.add(BigInt(m[0]));
+  }
+  for (const m of grounding.matchAll(MULTIPLIED_NUMBER_RE)) {
+    // "m" / "M" in the listing may be metres: only the unambiguous words ground a value.
+    if (m[2] === undefined) continue;
+    const read = readMultiplied(m[1] ?? '', m[2]);
+    if (read) integers.add(read.value);
+  }
+  return integers;
+}
+
+/**
+ * FOLLOW-1397: the listing's multiplied numbers ("1,15 mln zł", "850 tys.") written out as plain
+ * digits after `grounding`, so the digit rules ground "1 150 000" by them. Exact values only; a
+ * one-letter "m" / "M" is never read here (it may be metres).
+ *
+ * @param grounding - A number-normalised grounding (`normaliseNumberGroups`).
+ * @returns `grounding` plus one plain integer per multiplied number it states.
+ */
+export function withMultipliedNumbers(grounding: string): string {
+  const extra: string[] = [];
+  for (const m of grounding.matchAll(MULTIPLIED_NUMBER_RE)) {
+    if (m[2] === undefined) continue;
+    const read = readMultiplied(m[1] ?? '', m[2]);
+    if (read) extra.push(read.value.toString());
+  }
+  return extra.length === 0 ? grounding : `${grounding} ${extra.join(' ')}`;
+}
+
+/**
+ * FOLLOW-1397: blank out every multiplied number of `text` ("1,15 mln PLN", "1.15M", "850 tys.",
+ * "850k") that the grounding states, so the digit rule does not read "1.15" as a number of its
+ * own. Grounded means: the multiplied value EQUALS an integer of the grounding, or — when the
+ * written number has three or more significant digits — differs from one by at most half the unit
+ * of its last written digit (the listing value rounded to the precision written). A multiplied
+ * number that is not grounded is left in place, and the digit rule refuses it as before.
+ *
+ * @param text - A number-normalised text (`normaliseNumberGroups`).
+ * @param grounding - A number-normalised grounding.
+ * @returns `text` with each grounded multiplied number replaced by spaces of the same length.
+ */
+export function stripGroundedMultipliedNumbers(text: string, grounding: string): string {
+  const integers = groundedIntegers(grounding);
+  return text.replace(
+    MULTIPLIED_NUMBER_RE,
+    (match, number: string, word?: string, letter?: string) => {
+      const read = readMultiplied(number, word ?? letter ?? '');
+      if (read === null) return match;
+      const grounded = [...integers].some((g) => {
+        if (g === read.value) return true;
+        if (read.significant < 3) return false;
+        const diff = g > read.value ? g - read.value : read.value - g;
+        return diff * 2n <= read.unit;
+      });
+      return grounded ? ' '.repeat(match.length) : match;
+    },
+  );
+}

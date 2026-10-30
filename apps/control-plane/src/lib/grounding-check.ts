@@ -50,7 +50,11 @@ import {
 import { CONDITION_FACT_RE, assertsGuarantee, assertsNoWorkClaim } from '@/lib/condition-lexicon';
 import { hasMetaCommentary } from '@/lib/meta-commentary';
 import { hasModelControlTag } from '@/lib/model-control-tags';
-import { normaliseNumberGroups } from '@/lib/number-groups';
+import {
+  normaliseNumberGroups,
+  stripGroundedMultipliedNumbers,
+  withMultipliedNumbers,
+} from '@/lib/number-groups';
 import { stripGroundedDecades } from '@/lib/decade-expressions';
 
 // ─── Violation codes (ADR-0023 §3) ────────────────────────────────────────────
@@ -250,11 +254,14 @@ export function stemLoose(word: string): string {
  * (FOLLOW-1405, `lib/decade-expressions.ts`).
  */
 function checkNumbers(rawText: string, rawGrounding: string): NumberViolation | null {
-  const grounding = normaliseNumberGroups(rawGrounding);
+  const normalised = normaliseNumberGroups(rawGrounding);
+  // The listing's "1,15 mln" also grounds "1150000" [FOLLOW-1397] (not a decade: "2 tys." is no year).
+  const grounding = withMultipliedNumbers(normalised);
   // A decade is checked as a decade, then kept out of the digit rule [FOLLOW-1405].
-  const withoutDecades = stripGroundedDecades(normaliseNumberGroups(rawText), grounding);
+  const withoutDecades = stripGroundedDecades(normaliseNumberGroups(rawText), normalised);
   if (withoutDecades === null) return 'hallucinated_number';
-  const text = withoutDecades;
+  // A grounded "1,15 mln" / "850 tys." / "1.15M" is the number it names [FOLLOW-1397].
+  const text = stripGroundedMultipliedNumbers(withoutDecades, grounding);
   const grounded = new Set<string>();
   for (const m of grounding.matchAll(FACT_CHECK_DIGIT_RE)) {
     const canon = canonNumber(m[0]);

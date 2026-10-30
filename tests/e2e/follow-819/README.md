@@ -3451,6 +3451,21 @@ on `main` after the merge. `CP_MODE=prod scripts/dev/localhost-up.sh` at `2ac3d9
 Three consecutive GREEN runs, no RED or ABORTED run in the series. The caveats of §5.23 (a)–(d)
 apply.
 
+### 5.42 — 2026-10-30 (FOLLOW-1415 series at branch HEAD `d8a08b38`, control plane under `next start`, global model `claude-sonnet-5-5`, EXECUTED ×4) — **three `run=GREEN` with `total=8` (runs 113, 115, 116) and one holdout draw (run 114, UNMEASURED, neutral), each `[FRESH]` — the per-PR series of #1095 (merged as `2e6c0315`)**
+
+**MANUAL, run by the PM.** `CP_MODE=prod scripts/dev/localhost-up.sh` at `d8a08b38`; the local
+`app_config.generation_model` set to `claude-sonnet-5-5`, as in §5.37.
+
+| Run(s) | Started (UTC)            | Result                                                    | Cause                                                       |
+| ------ | ------------------------ | --------------------------------------------------------- | ----------------------------------------------------------- |
+| 113    | 2026-10-30T01:28:11.709Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `d8a08b38…`                            |
+| 114    | 01:30:00.136Z            | `TALLY green=3 red=0 unmeasured=5 total=8 run=UNMEASURED` | adapted arm drew HOLDOUT (`holdout_group: true`); not a RED |
+| 115    | 01:31:43.674Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `d8a08b38…`                            |
+| 116    | 01:33:33.822Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `d8a08b38…`                            |
+
+Three GREEN runs with no RED or ABORTED run; the holdout draw counts as neutral (CEO ruling
+2026-09-22). The caveats of §5.23 (a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

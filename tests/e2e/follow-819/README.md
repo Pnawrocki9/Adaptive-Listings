@@ -3492,6 +3492,19 @@ CTAs observed: "Get Family Buyer Guide" (the restored playbook string), "Schedul
 Three consecutive GREEN runs (124–126). The two REDs are harness-side (shim warm-up, CTA click
 flake), not product defects. The caveats of §5.23 (a)–(d) apply.
 
+### 5.44 — 2026-10-30 (FOLLOW-1398 series at branch HEAD `45b470db`, harness-only change; control plane = the fresh build of §5.43, product code under `apps/` and `packages/` identical (`git diff 6389f429 45b470db -- apps packages` empty), global model `claude-sonnet-5-5`, EXECUTED ×3) — **three consecutive `run=GREEN` with `total=8` (runs 127, 128, 129), each `[FRESH]` — the per-PR series of #1099 (merged as `1cc11f58`)**
+
+**MANUAL, run by the PM.** AC(5) now clicks through `clickCtaWhenReady()`; every run recorded
+`ctaClickAttempts: 1` (no retry needed in this series).
+
+| Run(s) | Started (UTC)            | Result                                               | Cause                            |
+| ------ | ------------------------ | ---------------------------------------------------- | -------------------------------- |
+| 127    | 2026-10-30T03:03:34.254Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `45b470db…` |
+| 128    | 03:05:59.583Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `45b470db…` |
+| 129    | 03:08:13.869Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `45b470db…` |
+
+Three consecutive GREEN runs, no RED or ABORTED run. The caveats of §5.23 (a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

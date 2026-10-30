@@ -97,8 +97,11 @@
 - **FOLLOW-1418** — status: BACKLOG # P3. Follow-up of FOLLOW-1413 (#1101): "not only a pool but
   also a garden" is an affirmation, not a negation; pin it so a later negation change cannot flip
   it.
-- **FOLLOW-1419** — status: READY # P1, CEO decisions 2026-10-30 (ESC-089 follow-up, after
-  FOLLOW-1415). In `describesResidentsByProtectedGround`
+- **FOLLOW-1419** — status: DONE # PR #1103, merged as `a76f6291`; README §5.46; stamp `claims-v6`,
+  parity corpus v19 (stamp only). CEO 2026-10-30: Treblinka, Sobibór, Bełżec and Majdanek stay
+  refused on their own (listings from those villages are near zero); town names shared with a camp
+  (Oświęcim, Płaszów, Brzezinka, Dachau) only next to a camp word. Was READY # P1, CEO decisions
+  2026-10-30 (ESC-089 follow-up, after FOLLOW-1415). In `describesResidentsByProtectedGround`
   (`packages/shared/src/playbooks/traits.ts`): (1) refuse more terms that can evoke painful
   associations, en/pl/es — Nazi or German occupation, Auschwitz and the other camps, expulsions
   ("wysiedlenia"), deportations by train ("wywózki") and similar — without refusing ordinary listing

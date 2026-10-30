@@ -103,8 +103,13 @@ import {
  *   added (a statement about residents' race, ethnic origin or religion; a school, nursery or
  *   playground the listing does not name), and was written under templates that ESC-089 replaced
  *   with family-fitted ones; it is regenerated once instead of served.
+ * - `claims-v4` — 2026-10-30, FOLLOW-1415: the protected-ground guard now also refuses sensitive
+ *   history (Holocaust, ghetto, deportations, pogroms, massacres, genocide, war crimes, camps) and
+ *   the noun-first Polish phrasing ("społeczność muzułmańska"), which no `claims-v3` row was
+ *   checked against; it is regenerated once instead of served. (The rule-1 relaxation alone would
+ *   not need it: a refused body was never cached.)
  */
-export const CLAIMS_VALIDATION_VERSION = 'claims-v3';
+export const CLAIMS_VALIDATION_VERSION = 'claims-v4';
 
 /** G-03: total budget per call (deadline on the whole, retries included). */
 const DESCRIPTION_DEADLINE_MS = 75_000;

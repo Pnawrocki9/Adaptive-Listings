@@ -203,14 +203,24 @@ export function traitSlots(addOns: readonly TraitAddOn[]): SlotDirective[] {
  * the PL Act of 3 Dec 2010 on equal treatment cover access to housing on racial or ethnic origin,
  * and the PL act religion; familial status is not a ground there, so family wording is allowed.
  *
+ * The CEO's follow-up ruling (2026-10-30) [FOLLOW-1415] narrows it to discrimination, not facts,
+ * on one condition — the copy must stir no controversy — as three rules:
+ *   1. PASS — a historical fact or place ("the old Jewish quarter", "historically home to
+ *      Kraków's Jewish community", "dawna dzielnica żydowska") and a building or institution.
+ *   2. REFUSE — present-day residents described by race, ethnic origin or religion, and every
+ *      exclusionary or composition statement ("predominantly Catholic", "no immigrants"),
+ *      historical qualifier or not.
+ *   3. REFUSE — sensitive or traumatic history, even as a fact ({@link SENSITIVE_HISTORY}).
+ *
  * A NARROW, closed en / pl / es phrase list, not a classifier: the gateway and the description
  * path refuse a text that matches, whoever wrote the words. What it is NOT: a buyer's nationality
  * or origin ("diaspora", "returning home", "an international / British community" — buyer
  * targeting is a product feature, ESC-089); a place's name ("the former Jewish Quarter", "dawna
  * dzielnica żydowska", "el antiguo barrio judío"); a building or institution ("a church nearby",
- * "the Jewish Community Centre"). Colour words count in English only and only before a word for
- * people ("white residents"), because "mostly white walls", "Białe ściany" and the Andalusian
- * "pueblos blancos" are not about anyone. Boundaries are Unicode-aware (`\b` is ASCII-only).
+ * "the Jewish Community Centre", "a Catholic school"). Colour words count in English only and only
+ * before a word for people ("white residents"), because "mostly white walls", "Białe ściany" and
+ * the Andalusian "pueblos blancos" are not about anyone. Boundaries are Unicode-aware (`\b` is
+ * ASCII-only).
  */
 const B = String.raw`(?<![\p{L}\p{N}])`;
 const E = String.raw`(?![\p{L}\p{N}])`;
@@ -252,10 +262,31 @@ const ES_MOSTLY =
   'mayoritariamente|predominantemente|principalmente|exclusivamente|casi\\s+exclusivamente|sobre\\s+todo';
 const ES_EXCLUDED = String.raw`(?:inmigrantes|migrantes|refugiados|minor[ií]as|gitanos)`;
 
-const PROTECTED_GROUND_PATTERNS: readonly string[] = [
+/**
+ * Rule 1 / 2 boundary: a group of residents named by race, ethnic origin or religion, with no
+ * claim about how many there are. Refused unless {@link isHistoricalMention} — "the former Jewish
+ * community" is a fact about a place's past, "a welcoming Jewish community" is about who lives
+ * there now [FOLLOW-1415].
+ */
+const RESIDENT_GROUND_PATTERNS: readonly string[] = [
   // en — "Muslim neighbours", "a white community" (not "the Jewish Community Centre")
   String.raw`(?:${EN_GROUND})\s+(?:${EN_PEOPLE})(?!\s+(?:cent(?:re|er)s?|halls?|museums?|cemeter(?:y|ies)|schools?))`,
-  // "a predominantly Catholic neighbourhood", "mostly Muslims"
+  // pl — "katolicka społeczność", "muzułmańscy sąsiedzi", and the noun first: "społeczność
+  // muzułmańska", "mieszkańcy żydowscy"
+  String.raw`${PL_GROUND}\s+${PL_PEOPLE}`,
+  String.raw`${PL_PEOPLE}\s+${PL_GROUND}`,
+  // "zamieszkana przez katolików"
+  String.raw`zamieszkan\p{L}*\s+przez\s+(?:${PL_GROUP_NOUN}|${PL_GROUND})`,
+  // es — "vecinos musulmanes", "comunidad judía"
+  String.raw`(?:${ES_PEOPLE})\s+${ES_GROUND}`,
+];
+
+/**
+ * Rule 2: how many residents belong to a group, or that a group is absent — refused whatever the
+ * tense or qualifier ("historically and still predominantly Muslim residents") [FOLLOW-1415].
+ */
+const COMPOSITION_PATTERNS: readonly string[] = [
+  // en — "a predominantly Catholic neighbourhood", "mostly Muslims"
   String.raw`(?:${EN_MOSTLY})\s+(?:${EN_GROUND})\s+(?:${EN_PEOPLE})`,
   String.raw`(?:${EN_MOSTLY})\s+(?:${EN_GROUND_NO_COLOUR})\s+(?:${EN_PLACE})`,
   String.raw`(?:${EN_MOSTLY})\s+(?:${EN_GROUP_NOUN})`,
@@ -266,34 +297,111 @@ const PROTECTED_GROUND_PATTERNS: readonly string[] = [
   String.raw`(?:no|few|without|free\s+of|zero)\s+(?:${EN_EXCLUDED})`,
   // "ethnically diverse", "religiously homogeneous"
   String.raw`(?:ethnically|racially|religiously)\s+(?:diverse|homogen(?:e|o)ous|mixed|uniform)`,
-  // pl — "katolicka społeczność", "muzułmańscy sąsiedzi"
-  String.raw`${PL_GROUND}\s+${PL_PEOPLE}`,
-  // "mieszkańcy to głównie katolicy", "w większości muzułmanie" (not "głównie azjatycka kuchnia")
+  // pl — "mieszkańcy to głównie katolicy", "w większości muzułmanie" (not "głównie azjatycka kuchnia")
   String.raw`(?:${PL_MOSTLY})\s+(?:${PL_GROUP_NOUN})`,
   // "dzielnica głównie katolicka"
   String.raw`${PL_PLACE}\s+(?:${PL_MOSTLY})\s+${PL_GROUND}`,
   // "zamieszkana głównie przez katolików"
-  String.raw`zamieszkan\p{L}*\s+(?:(?:${PL_MOSTLY})\s+)?przez\s+(?:${PL_GROUP_NOUN}|${PL_GROUND})`,
+  String.raw`zamieszkan\p{L}*\s+(?:${PL_MOSTLY})\s+przez\s+(?:${PL_GROUP_NOUN}|${PL_GROUND})`,
   // "bez imigrantów", "mało mniejszości"
   String.raw`(?:bez|mało|niewielu|brak)\s+${PL_EXCLUDED}`,
   String.raw`(?:etnicznie|rasowo|religijnie)\s+(?:jednorodn|zróżnicowan|mieszan|jednolit)\p{L}*`,
-  // es — "vecinos musulmanes", "comunidad judía"
-  String.raw`(?:${ES_PEOPLE})\s+(?:(?:${ES_MOSTLY})\s+)?${ES_GROUND}`,
+  // es — "vecinos mayoritariamente musulmanes"
+  String.raw`(?:${ES_PEOPLE})\s+(?:${ES_MOSTLY})\s+${ES_GROUND}`,
   // "un barrio mayoritariamente musulmán" (not "el antiguo barrio judío")
   String.raw`(?:${ES_PLACE})\s+(?:${ES_MOSTLY})\s+${ES_GROUND_NO_COLOUR}`,
   // "sin inmigrantes", "pocos gitanos"
   String.raw`(?:sin|pocos|pocas|libre\s+de)\s+${ES_EXCLUDED}`,
   String.raw`(?:étnica|etnica|racial|religiosa)mente\s+(?:divers|homog[eé]ne|mixt|uniform)\p{L}*`,
 ];
-const PROTECTED_GROUND_RE = new RegExp(`${B}(?:${PROTECTED_GROUND_PATTERNS.join('|')})${E}`, 'iu');
+
+/**
+ * Rule 3: sensitive or traumatic history — refused even as a fact and whatever the qualifier
+ * ("the former ghetto", "dawne getto", "el antiguo gueto") [FOLLOW-1415]. Polish "getto" is
+ * listed by form, not by stem, so "Gettysburg" stays out; Spanish "deport-" only as
+ * "deportación", so "polideportivo" stays out.
+ */
+const SENSITIVE_HISTORY: readonly string[] = [
+  // en
+  String.raw`holo[ck]aust\p{L}*|sho[aá]h?|ghettos?|ghettoes|deportations?|deported|deportees?|pogroms?`,
+  String.raw`massacr(?:e|es|ed)|ethnic\s+cleansing|genocid(?:e|es|al)|war\s+crimes?`,
+  String.raw`(?:concentration|extermination|death)\s+camps?`,
+  // pl
+  String.raw`szoa|zagład\p{L}*|getto|getta|gettu|gettem|getcie|gettach|deportacj\p{L}*|deportowan\p{L}*`,
+  String.raw`pogrom\p{L}*|masakr\p{L}*|rzeź|rzezi|czystk\p{L}*\s+etniczn\p{L}*|ludobójstw\p{L}*|ludobójcz\p{L}*`,
+  String.raw`zbrodni\p{L}*\s+wojenn\p{L}*|ob(?:óz|oz\p{L}*)\s+(?:koncentracyjn\p{L}*|śmierci)`,
+  // es
+  String.raw`guetos?|deportaci[oó]n|deportaciones|pogromos?|masacres?|limpiezas?\s+[eé]tnicas?`,
+  String.raw`genocidios?|cr[ií]men(?:es)?\s+de\s+guerra|campos?\s+de\s+(?:concentraci[oó]n|exterminio|la\s+muerte)`,
+];
+
+const anyOf = (patterns: readonly string[], flags: string): RegExp =>
+  new RegExp(`${B}(?:${patterns.join('|')})${E}`, flags);
+const SENSITIVE_HISTORY_RE = anyOf(SENSITIVE_HISTORY, 'iu');
+const COMPOSITION_RE = anyOf(COMPOSITION_PATTERNS, 'iu');
+const RESIDENT_GROUND_RE = anyOf(RESIDENT_GROUND_PATTERNS, 'giu');
+
+/**
+ * A qualifier that puts a group of residents in the past. An adjective must directly precede the
+ * phrase it qualifies ("the old Jewish community", "la antigua comunidad judía"), so "an old
+ * building with Muslim neighbours" does not qualify; an adverb may stand up to
+ * {@link HISTORICAL_ADVERB_REACH} words before it, with no comma between ("historically home to
+ * Kraków's Jewish community").
+ */
+const HISTORICAL_ADJECTIVE_RE = new RegExp(
+  `${B}(?:former|old|historic|historical|dawn(?:a|ej|ego|y|e|ych|ą|ym|ymi)|star(?:a|ej|ego|y|e|ych|ą|ym|ymi)|historyczn(?!ie)\\p{L}*|antigu[oa]s?|hist[oó]ric[oa]s?)\\s+$`,
+  'iu',
+);
+const HISTORICAL_ADVERB_RE = new RegExp(
+  `${B}(?:historically|formerly|once|dawniej|niegdyś|historycznie|hist[oó]ricamente|antiguamente|antaño)${E}`,
+  'giu',
+);
+const HISTORICAL_ADVERB_REACH = 6;
+/** A word that brings the group back into the present ("historically and still Muslim residents"). */
+const PRESENT_MARKER_RE = new RegExp(
+  `${B}(?:still|today|now|nowadays|currently|continues?|nadal|wciąż|obecnie|dziś|dzisiaj|teraz|todav[ií]a|a[uú]n|hoy|actualmente|siguen?|contin[uú]an?)${E}`,
+  'iu',
+);
+
+/**
+ * Only a collective noun (a community, a population) or a place "inhabited by" a group can be a
+ * historical fact; "old Muslim neighbours" are people, and "old" there means their age.
+ */
+const HISTORICAL_SUBJECT_RE = new RegExp(
+  `${B}(?:communit(?:y|ies)|population|enclaves?|społecznoś\\p{L}*|ludnoś\\p{L}*|enklaw\\p{L}*|zamieszkan\\p{L}*|comunidad|poblaci[oó]n|enclave)${E}`,
+  'iu',
+);
+
+/** Is the resident-group phrase at `[start, end)` a statement about the past only (rule 1)? */
+function isHistoricalMention(text: string, start: number, end: number): boolean {
+  if (!HISTORICAL_SUBJECT_RE.test(text.slice(start, end))) return false;
+  const before = text.slice(0, start);
+  const clause = before.slice(before.search(/[^.;:!?\n]*$/u));
+  const rest = text.slice(end);
+  const tail = rest.slice(0, rest.search(/[,.;:!?\n—–]|$/u));
+  if (PRESENT_MARKER_RE.test(tail)) return false;
+  if (HISTORICAL_ADJECTIVE_RE.test(clause)) return true;
+  const adverb = [...clause.matchAll(HISTORICAL_ADVERB_RE)].pop();
+  if (adverb === undefined) return false;
+  const between = clause.slice(adverb.index + adverb[0].length);
+  // A comma ends the adverb's reach: "Once inside, Muslim neighbours" is not about the past.
+  if (between.includes(',') || PRESENT_MARKER_RE.test(between)) return false;
+  return between.split(/\s+/u).filter(Boolean).length <= HISTORICAL_ADVERB_REACH;
+}
 
 /**
  * Does `value` make a statement about the race, ethnic origin or religion of residents or
- * neighbours? [FOLLOW-1411, ESC-089]
+ * neighbours, or recount sensitive history? [FOLLOW-1411, ESC-089; FOLLOW-1415]
  *
  * @param value - Copy as the model wrote it (a directive, a description body or a headline).
- * @returns `true` when it matches a phrase of the closed en / pl / es list.
+ * @returns `true` when it matches a phrase of the closed en / pl / es list: a sensitive-history
+ *          term (rule 3), a composition or exclusion statement (rule 2), or a group of residents
+ *          not put in the past by a historical qualifier (rules 1 and 2).
  */
 export function describesResidentsByProtectedGround(value: string): boolean {
-  return PROTECTED_GROUND_RE.test(value);
+  if (SENSITIVE_HISTORY_RE.test(value) || COMPOSITION_RE.test(value)) return true;
+  for (const m of value.matchAll(RESIDENT_GROUND_RE)) {
+    if (!isHistoricalMention(value, m.index, m.index + m[0].length)) return true;
+  }
+  return false;
 }

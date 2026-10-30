@@ -68,14 +68,15 @@
   (pre-FOLLOW-1366 headline/CTA/feature-label strings for family_buyer and upsizer, e.g. "Room to
   Grow" family wording); boosts `good_school_district` / `family_area` have no producer (inert) —
   wire or drop.
-- **FOLLOW-1415** — status: READY # P1, ESC-089 follow-up (CEO 2026-10-29: race and religion guard
-  targets discrimination, not facts; no controversial copy). Refine
-  `describesResidentsByProtectedGround` (en/pl/es) to three rules: (1) historical facts and places
-  pass ("dawna dzielnica żydowska", "historically home to Kraków's Jewish community", a synagogue or
-  church nearby); (2) discriminatory or exclusionary statements and present-day resident composition
-  by race, ethnic origin or religion stay refused; (3) sensitive or traumatic history is refused
-  (Holocaust, ghetto, deportations, pogroms, massacres, ethnic cleansing, war crimes). Report
-  passing and refused examples; own PR, CI, series.
+- **FOLLOW-1415** — status: IN_REVIEW # branch `ml-engineer/FOLLOW-1415-protected-ground-facts`;
+  stamp `claims-v4`, parity corpus v14 (stamp only, no verdict delta). P1, ESC-089 follow-up (CEO
+  2026-10-29: race and religion guard targets discrimination, not facts; no controversial copy).
+  Refine `describesResidentsByProtectedGround` (en/pl/es) to three rules: (1) historical facts and
+  places pass ("dawna dzielnica żydowska", "historically home to Kraków's Jewish community", a
+  synagogue or church nearby); (2) discriminatory or exclusionary statements and present-day
+  resident composition by race, ethnic origin or religion stay refused; (3) sensitive or traumatic
+  history is refused (Holocaust, ghetto, deportations, pogroms, massacres, ethnic cleansing, war
+  crimes). Report passing and refused examples; own PR, CI, series.
 - **FOLLOW-1413** — status: BACKLOG # P3. Negation over a comma list ("nie wymienia szkół,
   przedszkoli ani placów zabaw") reads the middle items as asserted: fail-closed false refusal for
   every amenity group.

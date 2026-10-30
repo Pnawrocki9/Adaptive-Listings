@@ -193,6 +193,24 @@ ensure_container estalara_ch_local -p 8123:8123 \
   -e CLICKHOUSE_USER="$CH_LOCAL_USER" -e CLICKHOUSE_PASSWORD="$CH_LOCAL_PASSWORD" \
   clickhouse/clickhouse-server:25.8
 wait_for "ClickHouse" 90 curl -sf http://localhost:8123/ping
+# FOLLOW-1391: keep the system logs bounded on every bring-up. The override is copied into the
+# container (it works for a container created before this step existed, and needs no image change);
+# the container is restarted only when the installed copy differs. Touches database `system` only.
+CH_LOGS_XML="scripts/dev/clickhouse-local-logs.xml"
+CH_LOGS_DEST="/etc/clickhouse-server/config.d/zz-local-logs.xml"
+if ! docker exec estalara_ch_local cat "$CH_LOGS_DEST" 2>/dev/null | cmp -s - "$CH_LOGS_XML"; then
+  docker cp "$CH_LOGS_XML" "estalara_ch_local:$CH_LOGS_DEST" || die "docker cp $CH_LOGS_XML failed"
+  docker restart estalara_ch_local >/dev/null || die "docker restart estalara_ch_local failed"
+  wait_for "ClickHouse (after log-config restart)" 90 curl -sf http://localhost:8123/ping
+  log "ClickHouse: system-log retention override installed (restarted)"
+fi
+# Idempotent cleanup: the disabled logs and any *_N leftovers a schema change renames aside hold only
+# diagnostics; truncating a table that no longer exists or is already empty is a no-op.
+for t in trace_log text_log asynchronous_metric_log $(curl -sf -u "$CH_LOCAL_USER:$CH_LOCAL_PASSWORD" http://localhost:8123/ \
+  --data-binary "SELECT name FROM system.tables WHERE database = 'system' AND match(name, '^(query_log|part_log|metric_log|processors_profile_log)_[0-9]+$')"); do
+  curl -sf -u "$CH_LOCAL_USER:$CH_LOCAL_PASSWORD" http://localhost:8123/ \
+    --data-binary "DROP TABLE IF EXISTS system.${t} SYNC" >/dev/null || die "dropping system.${t} failed"
+done
 # Runs on every bring-up (FOLLOW-1280): migrate.sh records applied versions in `schema_migrations`
 # and skips them, so an already-migrated database gets exactly the files main added since, and an
 # up-to-date one gets none. A database migrated before FOLLOW-1280 is bootstrapped once from its

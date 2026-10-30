@@ -1,0 +1,42 @@
+<!--
+  FOLLOW-1391: bound the local ClickHouse system logs. Copied into estalara_ch_local's config.d by
+  scripts/dev/localhost-up.sh (only when the content changed; the container is restarted then).
+  Local dev only: never applied to ClickHouse Cloud / the production path.
+-->
+<clickhouse>
+  <!-- Unbounded in practice (about 1 bn rows, 2 cores of merges): do not collect at all. -->
+  <trace_log remove="1" />
+  <text_log remove="1" />
+  <asynchronous_metric_log remove="1" />
+
+  <!-- Kept for debugging, but only for one day. -->
+  <query_log replace="1">
+    <database>system</database>
+    <table>query_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+  </query_log>
+  <part_log replace="1">
+    <database>system</database>
+    <table>part_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+  </part_log>
+  <metric_log replace="1">
+    <database>system</database>
+    <table>metric_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <collect_interval_milliseconds>10000</collect_interval_milliseconds>
+  </metric_log>
+  <processors_profile_log replace="1">
+    <database>system</database>
+    <table>processors_profile_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+  </processors_profile_log>
+</clickhouse>

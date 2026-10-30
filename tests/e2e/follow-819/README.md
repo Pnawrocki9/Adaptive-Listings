@@ -3520,6 +3520,21 @@ Three consecutive GREEN runs, no RED or ABORTED run. The caveats of §5.23 (a)�
 
 Three consecutive GREEN runs, no RED or ABORTED run. The caveats of §5.23 (a)–(d) apply.
 
+### 5.46 — 2026-10-30 (FOLLOW-1419 series at branch HEAD `8e5efbea`, detached checkout; fresh `next build` (BUILD_ID 12:34 CET, served chunks carry `claims-v6`), control plane under `next start`, global model `claude-sonnet-5-5`, EXECUTED ×3) — **three consecutive `run=GREEN` with `total=8` (runs 137, 138, 139), each `[FRESH]` — the per-PR series of #1103 (merged as `a76f6291`)**
+
+**MANUAL, run by the PM.** Runs 134–136 are VOID and not cited: `git checkout` of the branch failed
+because the agent worktree still held it, so the control plane was not restarted and the runs
+exercised the previous build at `ced57fe4`. The re-run used `git checkout --detach`, `set -e`, and
+asserted `control-plane-3000: started` before the series.
+
+| Run(s) | Started (UTC)            | Result                                               | Cause                            |
+| ------ | ------------------------ | ---------------------------------------------------- | -------------------------------- |
+| 137    | 2026-10-30T11:35:43.225Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `8e5efbea…` |
+| 138    | 11:37:38.460Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `8e5efbea…` |
+| 139    | 11:39:37.275Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `8e5efbea…` |
+
+Three consecutive GREEN runs, no RED or ABORTED run. The caveats of §5.23 (a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

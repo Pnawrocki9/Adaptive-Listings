@@ -168,7 +168,7 @@ export const AMENITY_RES: readonly { readonly claim: RegExp; readonly grounding:
  * "nie"). Both paths look for it in the same clause within 30 characters BEFORE an amenity.
  */
 export const NEGATOR_RE = new RegExp(
-  `(?<![${WORD}])(?:no|not|without|lacks?|lacking|nor|bez|brak|braku|nie|ani|sin|ni|carece|carecen)(?![${WORD}])`,
+  `(?<![${WORD}])(?:no|not|without|lacks?|lacking|neither|nor|bez|brak|braku|nie|ani|sin|ni|carece|carecen)(?![${WORD}])`,
   'iu',
 );
 
@@ -180,3 +180,70 @@ export const NEGATED_AFTER_RE = new RegExp(
   `^(?:[ \\t]*[:–—-][ \\t]*(?:brak|nie|no|none|sin|ninguno|ninguna)|[ \\t]+brak)(?![${WORD}])`,
   'iu',
 );
+
+/**
+ * FOLLOW-1413: the separators of a coordinated list — a comma (optionally followed by a
+ * coordinator) or a coordinator alone: and / or / nor, i / oraz / lub / albo / czy / ani,
+ * y / o / ni. Anchored at the END of the text before a list item.
+ */
+const LIST_COORDINATORS = 'and|or|nor|i|oraz|lub|albo|czy|ani|y|o|ni';
+const LIST_SEPARATOR_END_RE = new RegExp(
+  `(?:[ \\t]*,[ \\t]*(?:(?:${LIST_COORDINATORS})[ \\t]+)?|[ \\t]+(?:${LIST_COORDINATORS})[ \\t]+)$`,
+  'iu',
+);
+/** One word of a bare list item (letters, hyphen). */
+const LIST_WORD_END_RE = /(?<![\p{L}\p{N}_-])[\p{L}-]+$/u;
+/**
+ * Words that end a negated list: a contrast ("but", "ale", "pero") or a verb that opens a new
+ * statement ("is", "there", "jest", "ma", "hay", "tiene"). An item holding one is not a list item.
+ */
+const LIST_BREAK_WORD_RE = new RegExp(
+  `^(?:but|however|yet|although|though|while|whereas|instead|except|is|are|has|have|there|it|` +
+    `ale|lecz|jednak|natomiast|choć|chociaż|za|jest|są|ma|mają|` +
+    `pero|sino|aunque|mientras|hay|tiene|tienen|es|está|están|con)$`,
+  'iu',
+);
+/** At most this many words per list item, and this many items walked back. */
+const LIST_ITEM_MAX_WORDS = 3;
+const LIST_MAX_ITEMS = 8;
+const ARTICLE_RE = /^(?:a|an|the|un|una)$/iu;
+
+/**
+ * FOLLOW-1413: is the match at `start` an item of a coordinated list whose first item is negated
+ * ("no schools, nurseries or playgrounds", "nie wymienia szkół, przedszkoli ani placów zabaw",
+ * "no menciona colegios, guarderías ni parques infantiles")?
+ *
+ * Walks back from `start`: a list separator (`LIST_SEPARATOR_END_RE`), then a bare item of one to
+ * three words, then either another separator (keep walking) or the first item, which must be
+ * negated by the caller's own window rule (`directlyNegated`). Never crosses a sentence end, a
+ * semicolon or colon, a contrast or a new statement (`LIST_BREAK_WORD_RE`), and never an article
+ * ("no garage, a garden" stays a claim): fail-closed, the list must be bare.
+ *
+ * @param text - The text the match was found in.
+ * @param start - The match's UTF-16 start index.
+ * @param directlyNegated - The caller's negation rule, applied to the list's first item.
+ * @returns `true` when the match is negated through the list.
+ */
+export function negatedThroughList(
+  text: string,
+  start: number,
+  directlyNegated: (text: string, start: number) => boolean,
+): boolean {
+  const walk = (end: number, items: number): boolean => {
+    if (items >= LIST_MAX_ITEMS) return false;
+    const sep = LIST_SEPARATOR_END_RE.exec(text.slice(0, end));
+    if (sep === null) return false;
+    // Grow the item one word at a time, leftwards from the separator: 1, 2, then 3 words.
+    let itemStart = sep.index;
+    for (let words = 0; words < LIST_ITEM_MAX_WORDS; words += 1) {
+      const head = text.slice(0, itemStart).replace(/[ \t]+$/u, '');
+      if (words > 0 && head.length === itemStart) break;
+      const word = LIST_WORD_END_RE.exec(head);
+      if (word === null || LIST_BREAK_WORD_RE.test(word[0]) || ARTICLE_RE.test(word[0])) break;
+      itemStart = word.index;
+      if (directlyNegated(text, itemStart) || walk(itemStart, items + 1)) return true;
+    }
+    return false;
+  };
+  return walk(start, 0);
+}

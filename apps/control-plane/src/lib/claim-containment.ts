@@ -28,7 +28,12 @@
  */
 
 import { CLAIMS_VALIDATION_VERSION } from '@/lib/description-generator';
-import { AMENITY_RES, NEGATED_AFTER_RE, NEGATOR_RE } from '@/lib/amenity-lexicon';
+import {
+  AMENITY_RES,
+  NEGATED_AFTER_RE,
+  NEGATOR_RE,
+  negatedThroughList,
+} from '@/lib/amenity-lexicon';
 import { CONDITION_FACT_RE, GUARANTEE_RE, assertsNoWorkClaim } from '@/lib/condition-lexicon';
 import { normaliseNumberGroups } from '@/lib/number-groups';
 
@@ -117,9 +122,13 @@ function isNegated(text: string, start: number): boolean {
   return NEGATOR_RE.test(window);
 }
 
+/** A non-negated match; an item of a negated list is negated too [FOLLOW-1413]. */
 function asserted(pattern: RegExp, text: string): boolean {
   return Array.from(text.matchAll(pattern)).some(
-    (m) => !isNegated(text, m.index) && !NEGATED_AFTER_RE.test(text.slice(m.index + m[0].length)),
+    (m) =>
+      !isNegated(text, m.index) &&
+      !negatedThroughList(text, m.index, isNegated) &&
+      !NEGATED_AFTER_RE.test(text.slice(m.index + m[0].length)),
   );
 }
 

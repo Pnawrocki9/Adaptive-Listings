@@ -41,7 +41,12 @@
  * @module apps/control-plane/src/lib/grounding-check
  */
 
-import { AMENITY_RES, NEGATED_AFTER_RE, NEGATOR_RE } from '@/lib/amenity-lexicon';
+import {
+  AMENITY_RES,
+  NEGATED_AFTER_RE,
+  NEGATOR_RE,
+  negatedThroughList,
+} from '@/lib/amenity-lexicon';
 import { CONDITION_FACT_RE, GUARANTEE_RE, assertsNoWorkClaim } from '@/lib/condition-lexicon';
 import { hasMetaCommentary } from '@/lib/meta-commentary';
 import { hasModelControlTag } from '@/lib/model-control-tags';
@@ -331,11 +336,12 @@ function isNegated(text: string, startUtf16: number): boolean {
 
 /**
  * `_asserted`: at least one NON-negated match. FOLLOW-1383: a match followed by a spec-line
- * negation ("Basen: brak") is negated too.
+ * negation ("Basen: brak") is negated too. FOLLOW-1413: so is an item of a negated list ("no
+ * schools, nurseries or playgrounds").
  */
 function asserted(pattern: RegExp, text: string): boolean {
   for (const m of text.matchAll(pattern)) {
-    if (isNegated(text, m.index)) continue;
+    if (isNegated(text, m.index) || negatedThroughList(text, m.index, isNegated)) continue;
     if (NEGATED_AFTER_RE.test(text.slice(m.index + m[0].length))) continue;
     return true;
   }

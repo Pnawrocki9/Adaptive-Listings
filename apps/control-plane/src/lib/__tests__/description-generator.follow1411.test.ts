@@ -350,3 +350,48 @@ describe('FOLLOW-1415 — historical facts are served, sensitive history is refu
     expect(report.headlineViolation).toBe('protected_ground');
   });
 });
+
+/**
+ * FOLLOW-1419 (CEO decisions 2026-10-30): terms that evoke painful associations are refused even
+ * where the listing says them, a place named by a group passes only with a historical adjective
+ * directly before it, and ordinary listing words ("przedwojenna kamienica", "Oświęcim", "ready for
+ * occupation") are served.
+ */
+describe('FOLLOW-1419 — painful history and bare places named by a group are refused', () => {
+  beforeEach(() => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'test-key-'.repeat(3));
+    mockCreate.mockReset();
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each([
+    ['en', 'Two-bedroom flat in a villa built under Nazi occupation.'],
+    ['pl', 'Mieszkanie z dwiema sypialniami w kamienicy z okresu okupacji niemieckiej.'],
+    ['pl', 'Mieszkanie z dwiema sypialniami, dziesięć minut od Auschwitz.'],
+    ['pl', 'Mieszkanie z dwiema sypialniami w sercu dzielnicy żydowskiej.'],
+    ['es', 'Piso de dos dormitorios en la judería de Córdoba.'],
+  ] as const)(
+    '%s: REFUSED / protected_ground even where the listing says it: %j',
+    async (locale, text) => {
+      const listing: Listing = { original: text, context: { listing_title: '2 bed flat' } };
+      mockCreate.mockResolvedValueOnce(reply(fit(text)));
+      const report = await generateDescription(event(listing, 'lifestyle_expat', locale));
+      expect(report.outcome).toEqual({ verdict: 'REFUSED', violation: 'protected_ground' });
+      expect(report.claimsValidation).toBeNull();
+    },
+  );
+
+  it.each([
+    ['en', 'Two-bedroom flat in a pre-war building, ready for occupation in June.'],
+    ['pl', 'Mieszkanie z dwiema sypialniami w przedwojennej kamienicy w Oświęcimiu.'],
+    ['pl', 'Mieszkanie z dwiema sypialniami w dawnej dzielnicy żydowskiej Kazimierz.'],
+    ['es', 'Piso de dos dormitorios en la antigua judería de Córdoba.'],
+  ] as const)('%s: an ordinary or qualified listing is FIT: %j', async (locale, text) => {
+    const listing: Listing = { original: text, context: { listing_title: '2 bed flat' } };
+    mockCreate
+      .mockResolvedValueOnce(reply(fit(text)))
+      .mockResolvedValueOnce(reply('Two-bedroom flat'));
+    const report = await generateDescription(event(listing, 'lifestyle_expat', locale));
+    expect(report.outcome.verdict).toBe('FIT');
+  });
+});

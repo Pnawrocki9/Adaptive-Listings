@@ -240,8 +240,22 @@ describe('FOLLOW-1305 — a legacy (unstamped) cache hit is not trusted FIT', ()
     });
   });
 
-  it('FOLLOW-1414: a claims-v5 Postgres FIT row is a hit', async () => {
+  it('FOLLOW-1419: a claims-v5 Postgres FIT row is a miss and regenerates once', async () => {
+    // claims-v5 rows never passed the tightened protected-ground guard ("the Jewish quarter",
+    // "okupacja niemiecka", camp names ...).
     mockGetPgCachedDescription.mockResolvedValueOnce(pgRow(SAFE_TEXT, 'claims-v5'));
+
+    const body = (await (await GET(request())).json()) as { source: string; description: string };
+
+    expect(body.source).toBe('template_fallback');
+    expect(body.description).not.toBe(SAFE_TEXT);
+    await vi.waitFor(() => {
+      expect(generationsStarted()).toBe(1);
+    });
+  });
+
+  it('FOLLOW-1419: a claims-v6 Postgres FIT row is a hit', async () => {
+    mockGetPgCachedDescription.mockResolvedValueOnce(pgRow(SAFE_TEXT, 'claims-v6'));
 
     const body = (await (await GET(request())).json()) as { source: string; description: string };
 

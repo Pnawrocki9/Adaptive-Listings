@@ -114,8 +114,14 @@ import {
  *   negated guarantee ("no guarantee of income") no longer grounds the claim it denies. No
  *   `claims-v4` row was checked against those; it is regenerated once instead of served. (The
  *   loosenings of FOLLOW-1396 / 1397 alone would not need it.)
+ * - `claims-v6` — 2026-10-30, FOLLOW-1419 (CEO decisions of that day): the protected-ground guard
+ *   now also refuses terms that evoke painful associations (Nazi / German occupation, the camps by
+ *   name, expulsions, deportations by train, round-ups, forced labour) and a place named by race,
+ *   ethnic origin or religion without a historical adjective directly before it ("żydowska
+ *   dzielnica", "the Jewish quarter", "la judería"). No `claims-v5` row was checked against
+ *   those; it is regenerated once instead of served.
  */
-export const CLAIMS_VALIDATION_VERSION = 'claims-v5';
+export const CLAIMS_VALIDATION_VERSION = 'claims-v6';
 
 /** G-03: total budget per call (deadline on the whole, retries included). */
 const DESCRIPTION_DEADLINE_MS = 75_000;

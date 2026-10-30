@@ -374,7 +374,7 @@ describe('route.follow1163.test.ts — FOLLOW-1163 / MASTER_DESIGN §E.7.0 (ESC-
    * before this line was drawn and not one asserts a property fact.
    *
    * `headline` and `feature` are withheld. `headline` is where every property claim in the
-   * playbook lives. `feature` is MIXED — most are section labels ("Space & Layout",
+   * playbook lives. `feature` is MIXED — most are section labels ("Family Essentials",
    * "Portfolio Metrics") but four are claims: `remote_worker`'s "Remote Work Ready",
    * `downsizer`'s "Downsizer Friendly", `vacation_rental_investor`'s "Short-Term Rental
    * Projections", `golden_visa_buyer`'s "Residency Requirements". A mechanical rule cannot tell

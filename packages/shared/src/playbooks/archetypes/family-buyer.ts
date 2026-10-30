@@ -7,10 +7,10 @@ export const familyBuyerPlaybook: PlaybookEntry = {
   slots: [
     {
       slot: 'headline',
-      en: '{bedrooms}BR Home — Room to Grow',
+      en: '{bedrooms}BR Family Home — Room to Grow',
       variants: {
         en: [
-          '{bedrooms}BR Home — Room to Grow',
+          '{bedrooms}BR Family Home — Room to Grow',
           'Moving Up — {bedrooms}BR with Space to Spare',
           'Your Next Move — {bedrooms}BR with {key_feature}',
         ],
@@ -18,15 +18,15 @@ export const familyBuyerPlaybook: PlaybookEntry = {
     },
     {
       slot: 'cta',
-      en: 'Get the Moving-Up Guide',
-      pl: 'Pobierz poradnik: przeprowadzka do większego lokum',
-      es: 'Descarga la guía para mudarte a algo más grande',
+      en: 'Get Family Buyer Guide',
+      pl: 'Pobierz poradnik dla rodzin',
+      es: 'Descarga la guía para familias',
     },
     {
       slot: 'feature',
-      en: 'Space & Layout',
-      pl: 'Przestrzeń i układ',
-      es: 'Espacio y distribución',
+      en: 'Family Essentials',
+      pl: 'Dla rodziny — najważniejsze',
+      es: 'Esenciales para la familia',
     },
   ],
   listing_rules: {

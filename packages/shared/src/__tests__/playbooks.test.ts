@@ -153,6 +153,30 @@ describe('getPlaybook — spot checks for key archetypes', () => {
     expect(headlineSlot?.variants?.en.some((v) => /moving up/i.test(v))).toBe(true);
   });
 
+  // FOLLOW-1412 (ESC-089): the family-fitted CTA and section label FOLLOW-1366 retired are back.
+  // Neither asserts a fact about a listing (an offer and a heading), so they ground nothing.
+  it('family_buyer serves the family-fitted CTA, feature label and headline (FOLLOW-1412)', () => {
+    const playbook = getPlaybook('family_buyer');
+    const slot = (n: string) => playbook.slots.find((s) => s.slot === n);
+    expect(slot('cta')?.en).toBe('Get Family Buyer Guide');
+    expect(slot('cta')?.pl).toBe('Pobierz poradnik dla rodzin');
+    expect(slot('cta')?.es).toBe('Descarga la guía para familias');
+    expect(slot('feature')?.en).toBe('Family Essentials');
+    expect(slot('headline')?.en).toBe('{bedrooms}BR Family Home — Room to Grow');
+    expect(slot('headline')?.variants?.en).toContain('{bedrooms}BR Family Home — Room to Grow');
+  });
+
+  // `good_school_district` and `family_area` are listing flags nothing in apps/ or packages/
+  // produces (no listing field carries a school or area-profile fact), so a boost on either could
+  // never fire. They stay dropped: a producer would have to read non-listing data (§E.7.0).
+  it('no playbook boosts or suppresses on a flag with no producer (FOLLOW-1412)', () => {
+    for (const p of getAllPlaybooks().values()) {
+      const flags = [...p.listing_rules.boost_if, ...p.listing_rules.suppress_if];
+      expect(flags).not.toContain('good_school_district');
+      expect(flags).not.toContain('family_area');
+    }
+  });
+
   it('lifestyle_expat headline is relocation framing, no resident claim [FOLLOW-1366]', () => {
     const playbook = getPlaybook('lifestyle_expat');
     const headlineSlot = playbook.slots.find((s) => s.slot === 'headline');

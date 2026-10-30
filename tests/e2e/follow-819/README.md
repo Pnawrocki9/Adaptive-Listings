@@ -3434,6 +3434,23 @@ run but run 30, where they were UNMEASURED (holdout). The caveats of §5.23 (a)�
 Three consecutive GREEN runs, no RED or ABORTED run in the series. The caveats of §5.23 (a)–(d)
 apply.
 
+### 5.41 — 2026-10-30 (FOLLOW-1411 series on `main` at `2ac3d9d0`, after the merge of #1093, control plane under `next start`, global model `claude-sonnet-5-5`, EXECUTED ×3) — **three consecutive `run=GREEN` with `total=8` (runs 110, 111, 112), each `[FRESH]` — the post-merge series of #1093**
+
+**MANUAL, run by the PM.** #1093 was merged with CI green before its series ran, so the series ran
+on `main` after the merge. `CP_MODE=prod scripts/dev/localhost-up.sh` at `2ac3d9d0`; the local
+`app_config.generation_model` set to `claude-sonnet-5-5`, as in §5.37. The first bring-ups failed in
+`next build` on a stale local build of `@estalara/shared` (a poisoned turbo cache entry, then the
+`.next/cache/eslint` results computed against it); neither reaches CI or Vercel, which build fresh.
+
+| Run(s) | Started (UTC)            | Result                                               | Cause                            |
+| ------ | ------------------------ | ---------------------------------------------------- | -------------------------------- |
+| 110    | 2026-10-30T00:56:08.746Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `2ac3d9d0…` |
+| 111    | 00:58:05.652Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `2ac3d9d0…` |
+| 112    | 01:00:04.104Z            | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `2ac3d9d0…` |
+
+Three consecutive GREEN runs, no RED or ABORTED run in the series. The caveats of §5.23 (a)–(d)
+apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

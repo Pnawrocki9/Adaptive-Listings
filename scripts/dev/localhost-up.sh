@@ -181,6 +181,15 @@ for f in packages/db/dist packages/auth/dist packages/shared/dist packages/sdk/d
   [ -e "$f" ] || die "expected build output missing in THIS checkout: $f"
 done
 log "dist present in this checkout for db, auth, shared, sdk"
+# FOLLOW-1246: stamp each dist with the git tree hash of the src/ it was built from; the harness
+# preflight compares it with HEAD by content (a merge moves commit times, not bytes). Turbo may
+# replay a cache hit without touching the files, so the stamp is written after every build step.
+if [ "${SKIP_BUILD:-0}" != "1" ]; then
+  for p in shared db auth; do
+    git rev-parse "HEAD:packages/$p/src" >"packages/$p/dist/.estalara-src-tree" ||
+      die "could not stamp packages/$p/dist"
+  done
+fi
 
 # Local-only dev container credentials (README 3.1), not a secret. Kept in variables so a
 # literal `user:pass` never appears on a curl line (gitleaks curl-auth-user).
@@ -203,6 +212,18 @@ if ! docker exec estalara_ch_local cat "$CH_LOGS_DEST" 2>/dev/null | cmp -s - "$
   docker restart estalara_ch_local >/dev/null || die "docker restart estalara_ch_local failed"
   wait_for "ClickHouse (after log-config restart)" 90 curl -sf http://localhost:8123/ping
   log "ClickHouse: system-log retention override installed (restarted)"
+fi
+# FOLLOW-1246: the container's default date_time_input_format must be `basic` (the ClickHouse default,
+# and what the ingest integration suite's negative control assumes). A volume that once ran with
+# `best_effort` persisted in the default profile fails that control locally (K3 finding 4). Warn, with
+# the fix; never recreate a container here (it holds the local events data).
+CH_DTIF="$(curl -sf -u "$CH_LOCAL_USER:$CH_LOCAL_PASSWORD" http://localhost:8123/ \
+  --data-binary "SELECT value FROM system.settings WHERE name = 'date_time_input_format'" || true)"
+if [ "$CH_DTIF" != "basic" ]; then
+  log "WARNING: estalara_ch_local date_time_input_format='${CH_DTIF:-unreadable}', expected 'basic'. The ingest
+    integration suite's negative control (AC2-B) will fail locally. Fix: docker rm -f estalara_ch_local and
+    re-run this script (README 3.1 recreate; data is rebuilt by migrate.sh), then verify with
+    SELECT value FROM system.settings WHERE name='date_time_input_format'."
 fi
 # Idempotent cleanup: the disabled logs and any *_N leftovers a schema change renames aside hold only
 # diagnostics; truncating a table that no longer exists or is already empty is a no-op.
@@ -331,6 +352,9 @@ $(tail -n 20 "$LOG_DIR/shim-pip.log")"
   # FastAPI answers a bodyless POST with 422 before the bearer check runs.
   wait_for "shim :8090 (401 without bearer)" 60 \
     bash -c '[ "$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "content-type: application/json" -d "{}" http://localhost:8090/chat_nlp_endpoint)" = 401 ]'
+  # FOLLOW-1246 (amendment 2026-10-19): a cold shim made run 1 RED at K1, K2b and K3. Do not print "Run the
+  # harness" until /health answers too (ingest's /health is waited in step 8).
+  wait_for "shim :8090 /health" 60 curl -sf -m 5 http://localhost:8090/health
 
   # FOLLOW-1299 (README 6.11): the control plane reads Redis with Upstash's URL-path REST form, which
   # SRH answers 404. Without this adapter (and UPSTASH_REDIS_URL in step 9) the shadow key the shim
@@ -394,7 +418,9 @@ dev) CP_CMD=(pnpm dev) CP_WAIT=240 ;;
 # server env is identical to the dev mode at run time.
 # `next start` forces NODE_ENV=production, whose origin list refuses the localhost pages;
 # ESTALARA_LOCAL_ORIGINS=1 keeps the local list (ignored on Vercel, origin-policy.ts).
-prod) CP_CMD=(env ESTALARA_LOCAL_ORIGINS=1 bash -c 'pnpm build && exec pnpm start') CP_WAIT=1500 ;;
+# FOLLOW-1246: the git sha the build was made from goes next to BUILD_ID (gitignored build output); the
+# harness preflight compares it with HEAD (`[STALE-BUILD]`). Written only after `pnpm build` succeeded.
+prod) CP_CMD=(env ESTALARA_LOCAL_ORIGINS=1 bash -c 'pnpm build && git rev-parse HEAD >.next/ESTALARA_BUILD_SHA && exec pnpm start') CP_WAIT=1500 ;;
 *) die "CP_MODE must be dev or prod, got '$CP_MODE'" ;;
 esac
 step "9/11 control plane :3000 - apps/control-plane 'next $CP_MODE' under doppler, NOT root 'pnpm dev' (README 6.5)"
@@ -422,6 +448,34 @@ fi
 LISTING_UPDATED_WEBHOOK_SECRET="$(cat "$LISTING_UPDATED_WEBHOOK_SECRET_FILE")"
 [[ "$LISTING_UPDATED_WEBHOOK_SECRET" =~ ^[0-9a-f]{64}$ ]] ||
   die "$LISTING_UPDATED_WEBHOOK_SECRET_FILE does not hold 32 hex bytes - delete it and re-run"
+# FOLLOW-1246: RESTART_CP=1 stops an already-running control plane (this script's pid file: wrapper,
+# children, the next-server on :3000) instead of "already running - leaving it", which kept serving an
+# older build while the artefact read [FRESH]. Opt-in; a :3000 held by a foreign process still dies below.
+stop_tree() {
+  local pid="$1" child
+  pgrep -s "$pid" 2>/dev/null || true
+  for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+    echo "$child"
+    stop_tree "$child"
+  done
+}
+if [ "${RESTART_CP:-0}" = "1" ] && pid_alive control-plane-3000; then
+  cp_pid="$(cat "$PID_DIR/control-plane-3000.pid")"
+  mapfile -t cp_tree < <({ echo "$cp_pid"; stop_tree "$cp_pid"; } | sort -un)
+  log "RESTART_CP=1: stopping control plane pid $cp_pid (+${#cp_tree[@]} in tree)"
+  kill -TERM "${cp_tree[@]}" 2>/dev/null || true
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    [ -z "$(port_owner 3000)" ] && break
+    sleep 1
+  done
+  if [ -n "$(port_owner 3000)" ]; then
+    kill -KILL "${cp_tree[@]}" 2>/dev/null || true
+    sleep 2
+  fi
+  [ -z "$(port_owner 3000)" ] || die "RESTART_CP=1: :3000 is still bound after stopping the control plane:
+$(port_owner 3000)"
+  rm -f "$PID_DIR/control-plane-3000.pid"
+fi
 start_bg control-plane-3000 3000 "$REPO_ROOT/apps/control-plane" \
   doppler run -c dev -- env \
   "${CP_REDIS_ENV[@]}" \

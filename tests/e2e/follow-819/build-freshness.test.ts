@@ -249,6 +249,21 @@ describe('readBuildFreshnessFacts — real files, real git, a symlinked package'
     expect(v.stale[0]).toContain('@estalara/auth');
   });
 
+  it('an incremental build that rewrites only a nested dist file is fresh (scan is recursive)', async () => {
+    // After #1103 `tsc` rewrote only dist/playbooks/traits.js; dist/index.js kept its old mtime.
+    const nested = path.join(main, 'packages/auth/dist/playbooks');
+    await mkdir(nested, { recursive: true });
+    const f = path.join(nested, 'traits.js');
+    await writeFile(f, 'x');
+    const built = new Date('2026-10-04T00:00:00Z');
+    await utimes(f, built, built);
+    // `tsc` rewrites the file in place, so the directory keeps its old mtime too.
+    const old = new Date('2026-07-28T00:00:00Z');
+    await utimes(nested, old, old);
+    const v = evaluateBuildFreshness(await readBuildFreshnessFacts({ repoRoot: wt }));
+    expect(v).toMatchObject({ ok: true, verdict: 'FRESH-BUILD' });
+  });
+
   it('a link that does not resolve is stale, not a crash', async () => {
     const empty = await mkdtemp(path.join(tmpdir(), 'follow-1246-empty-'));
     try {

@@ -4272,13 +4272,19 @@ export function evaluateBuildFreshness({ packages, served = null }) {
     : { ok: false, verdict: 'STALE-BUILD', stale, reason: stale.join('; ') };
 }
 
-/** Newest mtime (ms) among the entries directly under `dir`, or `null` if unreadable/empty. */
+/**
+ * Newest mtime (ms) among the files anywhere under `dir`, or `null` if unreadable/empty. Recursive:
+ * an incremental `tsc` rewrites only the outputs of changed sources, so a fresh build can leave
+ * every top-level file older than the last `src/` commit (`dist/playbooks/traits.js` was the only
+ * rewritten file after #1103).
+ */
 async function newestEntryMtimeMs(dir) {
   try {
-    const names = await readdir(dir);
+    const entries = await readdir(dir, { withFileTypes: true, recursive: true });
     let newest = null;
-    for (const n of names) {
-      const { mtimeMs } = await stat(nodePath.join(dir, n));
+    for (const e of entries) {
+      if (!e.isFile()) continue;
+      const { mtimeMs } = await stat(nodePath.join(e.parentPath ?? e.path, e.name));
       if (newest === null || mtimeMs > newest) newest = mtimeMs;
     }
     return newest;

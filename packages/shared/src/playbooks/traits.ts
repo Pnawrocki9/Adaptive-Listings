@@ -229,8 +229,20 @@ export function traitSlots(addOns: readonly TraitAddOn[]): SlotDirective[] {
  *     "historic", "antiguo / antigua"), {@link PLACE_GROUND_PATTERNS}. A building or institution
  *     ("a synagogue nearby", "a Catholic school", "a church") and a street's name ("ul.
  *     Żydowska") stay allowed.
- * Prices are untouched: a figure is only ever the listing's exact figure (the digit rule in
- * `grounding-check`), so "850 tys." for 849 000 stays refused.
+ * Prices are not this guard's: the digit rule in `grounding-check` and `llm-gateway` holds a price
+ * to the listing's exact figure (CEO 2026-10-30, "always show the exact price") — "1,15 mln" for
+ * 1 149 000 is refused (`number-groups.ts`) [FOLLOW-1421].
+ *
+ * The CEO's rule 2 and the follow-ups of 2026-10-30 [FOLLOW-1420]:
+ *   - Rule 2 also reads composition through a majority ("Most residents are Catholic", "a
+ *     Muslim-majority neighbourhood", "Większość mieszkańców to katolicy", "La mayoría de los
+ *     vecinos son musulmanes"), {@link MAJORITY_PATTERNS}. "Most residents enjoy the park",
+ *     "większość mieszkań ma balkon" and "a majority-owned company" name no group and pass.
+ *   - "once" puts a group in the past only as "was once" or "once home to …", never as the
+ *     conjunction ("Once you move in, …"); "remains" brings it back into the present.
+ *   - Rule 3 spares a street's name in an address ("ul. Bohaterów Getta 5", "przy ul.
+ *     Katyńskiej"): an address is a fact copied from the listing, {@link isStreetName}. "The
+ *     former ghetto" stays refused, and so does a sensitive term outside the address.
  *
  * A NARROW, closed en / pl / es phrase list, not a classifier: the gateway and the description
  * path refuse a text that matches, whoever wrote the words. What it is NOT: a buyer's nationality
@@ -281,7 +293,7 @@ const PL_AREA = String.raw`(?:dzielnic|okolic|osiedl|kwarta[lł]|miasteczk|rejon
 /** pl: an institution after the adjective ("w okolicy katolickiego kościoła"). */
 const PL_INSTITUTION = String.raw`(?:kości|synagog|cerkw|meczet|szkoł|szkol|cmentarz|muze|świątyn|parafi|gmin|przedszkol)\p{L}*`;
 const PL_PEOPLE = String.raw`(?:mieszkańc|sąsiad|sąsiedz|społecznoś|ludnoś|rodzin|enklaw|gett)\p{L}*`;
-const PL_MOSTLY = String.raw`głównie|przeważnie|w\s+większości|wyłącznie|niemal\s+wyłącznie|prawie\s+wyłącznie|sami|tylko`;
+const PL_MOSTLY = String.raw`głównie|przeważnie|w\s+większości|w\s+przeważającej\s+(?:mierze|części)|wyłącznie|niemal\s+wyłącznie|prawie\s+wyłącznie|sami|tylko`;
 const PL_EXCLUDED = String.raw`(?:imigrant|migrant|uchodźc|uchodźców|mniejszoś|romów|cyganów)\p{L}*`;
 /** es: race, ethnic origin or religion, as an adjective stem; colours only with people. */
 const ES_GROUND_NO_COLOUR = String.raw`(?:musulm[aá]n|isl[aá]mic|jud[ií]|cat[oó]lic|cristian|protestante|ortodox|gitan|[aá]rabe|asi[aá]tic)\p{L}*`;
@@ -365,6 +377,32 @@ const COMPOSITION_PATTERNS: readonly string[] = [
   String.raw`(?:étnica|etnica|racial|religiosa)mente\s+(?:divers|homog[eé]ne|mixt|uniform)\p{L}*`,
 ];
 
+/** Up to three words, no clause stop, between a group of people and its verb ("residents here"). */
+const FEW_WORDS = String.raw`(?:\s+[^\s,.;:!?]+){0,3}?`;
+/** pl: a group named as a noun in any case, or as an adjective ("katolikami", "żydowscy"). */
+const PL_GROUP_ANY = String.raw`${PL_GROUP_NOUN}|katolikami|muzułmanami|żydami|chrześcijanami|romami|cyganami|arabami|azjatami|hindusami|${PL_GROUND}`;
+/**
+ * Rule 2 through a majority [FOLLOW-1420]: "most / the majority of" a group of people, then a
+ * verb, then a ground; or a ground fused with "majority" / "dominated". A majority of rooms, flats
+ * or shares names no group and passes.
+ */
+const MAJORITY_PATTERNS: readonly string[] = [
+  // en — "Most residents are Catholic", "the majority of locals here are Hindu", "most of whom are"
+  String.raw`(?:most|(?:the\s+|a\s+)?(?:vast\s+|large\s+|great\s+)?majority)\s+(?:of\s+(?:the\s+|its\s+|our\s+)?)?(?:local\s+)?(?:${EN_PEOPLE}|whom|them)${FEW_WORDS}\s+(?:are|is|were|was)\s+(?:(?:${EN_MOSTLY})\s+)?(?:${EN_GROUND}|${EN_GROUP_NOUN})`,
+  // "a Muslim-majority neighbourhood", "a Catholic majority", "a majority-Muslim area",
+  // "a Catholic-dominated estate" (colours only with "majority": "a black-dominated kitchen")
+  String.raw`(?:${EN_GROUND})(?:-|\s+)majority|majority(?:-|\s+)(?:${EN_GROUND}|${EN_GROUP_NOUN})`,
+  String.raw`(?:${EN_GROUND_NO_COLOUR})(?:-|\s+)dominated`,
+  // pl — "Większość mieszkańców to katolicy", "przeważająca część sąsiadów stanowią muzułmanie"
+  String.raw`(?:większoś\p{L}*|przeważając\p{L}*\s+częś\p{L}*)\s+(?:${PL_PEOPLE}|ludzi|osób)${FEW_WORDS}\s+(?:to|jest|są|stanowi\p{L}*)(?:\s+[^\s,.;:!?]+)?\s+(?:${PL_GROUP_ANY})`,
+  // "muzułmańska większość", "z przewagą katolików", "przewaga ludności muzułmańskiej"
+  String.raw`${PL_GROUND}\s+większoś\p{L}*|przewag\p{L}*\s+(?:${PL_PEOPLE}\s+)?(?:${PL_GROUP_ANY})`,
+  // es — "La mayoría de los vecinos son musulmanes", "la mayor parte de los habitantes son"
+  String.raw`(?:mayor[ií]a|mayor\s+parte)\s+de\s+(?:los\s+|las\s+|sus\s+|la\s+)?(?:${ES_PEOPLE})${FEW_WORDS}\s+(?:son|es|eran|era)\s+(?:(?:${ES_MOSTLY})\s+)?${ES_GROUND}`,
+  // "una zona con mayoría musulmana", "de mayoría judía"
+  String.raw`mayor[ií]a\s+${ES_GROUND}`,
+];
+
 /**
  * Rule 3: sensitive or traumatic history — refused even as a fact and whatever the qualifier
  * ("the former ghetto", "dawne getto", "el antiguo gueto") [FOLLOW-1415]. Polish "getto" is
@@ -407,7 +445,8 @@ const SENSITIVE_HISTORY: readonly string[] = [
   String.raw`campos?\s+(?:de\s+(?:concentraci[oó]n|exterminio|trabajo)\s+)?(?:de|en)\s+${CAMP_TOWN}`,
   // en — occupation, expulsion, deportation by train, forced labour
   String.raw`(?:german|nazi|soviet|wartime|enemy)\s+occupation|german-occupied`,
-  String.raw`expulsions?|expelled|forced(?:ly)?\s+(?:displace\p{L}*|resettle\p{L}*|removals?)|displaced\s+persons`,
+  // "expelled", not air or exhaust ("the air is expelled through a heat-recovery unit") [FOLLOW-1420]
+  String.raw`expulsions?|(?<!(?:air|exhaust|smoke|fumes|gas|steam|moisture|water|heat)\s+(?:(?:is|are|gets|get|being)\s+)?)expelled|forced(?:ly)?\s+(?:displace\p{L}*|resettle\p{L}*|removals?)|displaced\s+persons`,
   String.raw`(?:death|deportation|prisoner|cattle)\s+(?:transports?|trains?|wagons?|cars?)|transports?\s+to\s+(?:the\s+)?(?:camps?|ghettos?)`,
   String.raw`(?:forced|slave)\s+labou?r\p{L}*|(?:labou?r|internment|transit|prison|pow|prisoner[- ]of[- ]war)\s+camps?`,
   // pl — "okupacja niemiecka", "w czasie okupacji" (Polish "okupacja" is never occupancy)
@@ -432,8 +471,8 @@ const SENSITIVE_HISTORY: readonly string[] = [
 
 const anyOf = (patterns: readonly string[], flags: string): RegExp =>
   new RegExp(`${B}(?:${patterns.join('|')})${E}`, flags);
-const SENSITIVE_HISTORY_RE = anyOf(SENSITIVE_HISTORY, 'iu');
-const COMPOSITION_RE = anyOf(COMPOSITION_PATTERNS, 'iu');
+const SENSITIVE_HISTORY_RE = anyOf(SENSITIVE_HISTORY, 'giu');
+const COMPOSITION_RE = anyOf([...COMPOSITION_PATTERNS, ...MAJORITY_PATTERNS], 'iu');
 const RESIDENT_GROUND_RE = anyOf(RESIDENT_GROUND_PATTERNS, 'giu');
 const PLACE_GROUND_RE = anyOf(PLACE_GROUND_PATTERNS, 'giu');
 
@@ -449,13 +488,14 @@ const HISTORICAL_ADJECTIVE_RE = new RegExp(
   'iu',
 );
 const HISTORICAL_ADVERB_RE = new RegExp(
-  `${B}(?:historically|formerly|once|dawniej|niegdyś|historycznie|hist[oó]ricamente|antiguamente|antaño)${E}`,
+  // "once" only as "was once" or "once home to …", never the conjunction "once you move in"
+  `${B}(?:historically|formerly|(?<=(?:was|were|had|has|have)\\s+)once|once(?=\\s+(?:(?:a|an|the)\\s+)?(?:home|heart|cent(?:re|er)|known|housed|hosted|thriving|vibrant|lively|large|bustling|populated|inhabited)${E})|dawniej|niegdyś|historycznie|hist[oó]ricamente|antiguamente|antaño)${E}`,
   'giu',
 );
 const HISTORICAL_ADVERB_REACH = 6;
 /** A word that brings the group back into the present ("historically and still Muslim residents"). */
 const PRESENT_MARKER_RE = new RegExp(
-  `${B}(?:still|today|now|nowadays|currently|continues?|nadal|wciąż|obecnie|dziś|dzisiaj|teraz|todav[ií]a|a[uú]n|hoy|actualmente|siguen?|contin[uú]an?)${E}`,
+  `${B}(?:still|today|now|nowadays|currently|continues?|remains?|remaining|nadal|pozostaj\\p{L}*|permanec\\p{L}*|wciąż|obecnie|dziś|dzisiaj|teraz|todav[ií]a|a[uú]n|hoy|actualmente|siguen?|contin[uú]an?)${E}`,
   'iu',
 );
 
@@ -491,6 +531,25 @@ function isHistoricalMention(text: string, start: number, end: number): boolean 
 }
 
 /**
+ * An address marker, then up to three capitalised words of the street's name, ending where the
+ * sensitive term starts ("ul. Bohaterów ", "przy ul. ", "calle ") [FOLLOW-1420].
+ */
+const ADDRESS_BEFORE_RE =
+  /(?<![\p{L}\p{N}])(?:[Uu]l\.|[Uu]lic(?:a|y|ą|ę)|[Aa]l\.|[Aa]lej(?:a|i|ą|ę)|[Pp]l\.|[Pp]lac(?:u|em)?|[Cc]alle|[Cc]\/|[Aa]venida|[Aa]vda\.)\s+(?:\p{Lu}[\p{L}'’-]*\s+){0,3}$/u;
+/** English puts the street word after the name ("Ghetto Heroes Street"). */
+const ADDRESS_AFTER_RE =
+  /^(?:\s+\p{Lu}[\p{L}'’-]*){0,3}\s+(?:Street|St\.|Avenue|Ave\.|Road|Rd\.|Square)/u;
+
+/**
+ * Is the sensitive term at `[start, end)` part of a street's name in an address (rule 3 spares it:
+ * an address is a fact copied from the listing)? The term must be capitalised, as a name is.
+ */
+function isStreetName(text: string, start: number, end: number): boolean {
+  if (!/^\p{Lu}/u.test(text.slice(start, end))) return false;
+  return ADDRESS_BEFORE_RE.test(text.slice(0, start)) || ADDRESS_AFTER_RE.test(text.slice(end));
+}
+
+/**
  * Does `value` make a statement about the race, ethnic origin or religion of residents or
  * neighbours, or recount sensitive history? [FOLLOW-1411, ESC-089; FOLLOW-1415]
  *
@@ -501,7 +560,10 @@ function isHistoricalMention(text: string, start: number, end: number): boolean 
  *          with no historical adjective directly before it [FOLLOW-1419].
  */
 export function describesResidentsByProtectedGround(value: string): boolean {
-  if (SENSITIVE_HISTORY_RE.test(value) || COMPOSITION_RE.test(value)) return true;
+  if (COMPOSITION_RE.test(value)) return true;
+  for (const m of value.matchAll(SENSITIVE_HISTORY_RE)) {
+    if (!isStreetName(value, m.index, m.index + m[0].length)) return true;
+  }
   for (const m of value.matchAll(RESIDENT_GROUND_RE)) {
     if (!isHistoricalMention(value, m.index, m.index + m[0].length)) return true;
   }

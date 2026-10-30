@@ -11,7 +11,7 @@
  *   No generation started. Latency target <100ms p95.
  *
  * Cache miss:
- *   Returns copy_template.en immediately (template_fallback).
+ *   Returns template_fallback immediately (empty description, FOLLOW-1318).
  *   Starts the in-process generation in `after()` to generate + cache the AI description.
  *   Latency target <150ms p95.
  *
@@ -26,7 +26,7 @@
  *   3. template_fallback immediately + generation in `after()`
  *
  * Source values in response:
- *   - `template_fallback` — returned from PlaybookEntry.copy_template (no Redis involved)
+ *   - `template_fallback` — empty description (never the playbook copy_template, FOLLOW-1318); no Redis involved
  *   - `ai_cached`         — returned from Upstash Redis or Postgres (a generation completed earlier)
  *
  * Note: `ai_generated` is NOT a valid source value from this endpoint. The endpoint never
@@ -123,11 +123,14 @@ type Locale = z.infer<typeof QueryParamsSchema>['locale'];
  *
  * Used both for a genuine cache miss AND for a NEUTRAL negative-cache hit
  * (ADR-0010 archetype-fit gate) — from the wire's perspective the two cases are
- * identical: the caller gets the agent's static copy and no headline.
+ * identical: the caller gets no headline and an EMPTY description (FOLLOW-1318). The playbook
+ * `copy_template` is the generator's internal writing instruction, never buyer-facing copy, and
+ * the seller's description is not in hand on these paths without a new fetch. The SDK paints only
+ * `ai_cached` and keeps the host page's own text on any other source.
  */
-function templateFallbackResponse(templateText: string, localeCode: Locale): DescriptionResponse {
+function templateFallbackResponse(localeCode: Locale): DescriptionResponse {
   return {
-    description: templateText,
+    description: '',
     headline: null,
     source: 'template_fallback',
     locale: localeCode,
@@ -325,7 +328,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // fix: without it, a NEUTRAL verdict was indistinguishable from "nothing
     // cached yet" and every repeat request re-triggered a fresh Sonnet 4.6 call.
     if (pgHit.verdict === 'NEUTRAL') {
-      return NextResponse.json(templateFallbackResponse(templateText, localeCode), {
+      return NextResponse.json(templateFallbackResponse(localeCode), {
         status: 200,
       });
     }
@@ -384,7 +387,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       tags: { area: 'description', kind: 'listing_revision_unavailable' },
       extra: { tenantId, listingId: listing_id, archetype: archetypeId, locale: localeCode },
     });
-    return NextResponse.json(templateFallbackResponse(templateText, localeCode), { status: 200 });
+    return NextResponse.json(templateFallbackResponse(localeCode), { status: 200 });
   }
 
   // ── Step 2: Redis cache lookup ────────────────────────────────────────────
@@ -422,7 +425,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // already wrote the NEUTRAL marker directly to Postgres — FOLLOW-460 path) and
     // skip the regeneration below.
     if (cached.verdict === 'NEUTRAL') {
-      return NextResponse.json(templateFallbackResponse(templateText, localeCode), {
+      return NextResponse.json(templateFallbackResponse(localeCode), {
         status: 200,
       });
     }
@@ -527,5 +530,5 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   // Return template fallback immediately.
   // headline is null on cold-start — SDK keeps the playbook headline directive (ADR-0009).
-  return NextResponse.json(templateFallbackResponse(templateText, localeCode), { status: 200 });
+  return NextResponse.json(templateFallbackResponse(localeCode), { status: 200 });
 }

@@ -2,7 +2,9 @@
 /**
  * FOLLOW-1311: replay the frozen model outputs (`fixtures/raw.v1.jsonl`) through the REAL
  * `generateDescription` and `callLlmGateway`, with only the SDK and the sinks replaced, and compare
- * every verdict with `fixtures/verdicts.v1.jsonl`.
+ * every verdict with the current frozen verdicts, `fixtures/verdicts.v2.jsonl`.
+ * `verdicts.v1.jsonl` stays as the baseline every target is measured from, and
+ * `verdicts.v2.delta.json` classifies, by hand, every case that moved from v1 to v2.
  *
  * A change that moves no verdict leaves this green. A change that does move one must show it: run
  * with `CLAIM_REPLAY_OUT=<file>` and diff that file against the frozen verdicts, then classify every
@@ -125,6 +127,25 @@ describe('FOLLOW-1311 claim baseline replay', () => {
       writeFileSync(process.env.CLAIM_REPLAY_OUT, `${lines.join('\n')}\n`);
       return;
     }
-    expect(lines).toEqual(readLines('verdicts.v1.jsonl'));
+    expect(lines).toEqual(readLines('verdicts.v2.jsonl'));
+  });
+
+  it('v2 moves only the classified cases, and meets the targets', () => {
+    const delta = JSON.parse(
+      readFileSync(path.join(FIXTURES, 'verdicts.v2.delta.json'), 'utf8'),
+    ) as {
+      fit_before: number;
+      new_body_refusals: number;
+      true_positives: number;
+      moved: Record<string, unknown>;
+    };
+    const v1 = readLines('verdicts.v1.jsonl');
+    const v2 = readLines('verdicts.v2.jsonl');
+    const moved = v1
+      .filter((line, i) => line !== v2[i])
+      .map((line) => (JSON.parse(line) as { id: string }).id);
+    expect(moved.sort()).toEqual(Object.keys(delta.moved).sort());
+    expect(delta.new_body_refusals / delta.fit_before).toBeLessThanOrEqual(0.1);
+    expect(delta.true_positives / delta.new_body_refusals).toBeGreaterThanOrEqual(0.9);
   });
 });

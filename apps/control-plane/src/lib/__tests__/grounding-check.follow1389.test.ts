@@ -62,16 +62,16 @@ describe("FOLLOW-1389 — the page language's common opening word is not a name"
   it.each([
     // The FOLLOW-1381 live headlines that were refused on their first word alone.
     ['Dom z trzema sypialniami i zadaszonym lanai w Palm Coast, FL', FX, 'pl'],
-    ['Trzypokojowy dom z ogrodem na cichej ulicy, Palm Coast, FL', FX, 'pl'],
+    ['Czteropokojowy dom z ogrodem na cichej ulicy, Palm Coast, FL', FX, 'pl'],
     ['Willa wolnostojąca z basenem i licencją turystyczną, Jávea', JAV, 'pl'],
     ['Detached house in Straszyn, 165 m² on 920 m² plot, three bedrooms and garden', GDA, 'en'],
     [
-      'Two-bedroom flat in Warszawa Mokotów, lift, loggia and secure building on ul. Kłobucka',
+      'Two-room flat in Warszawa Mokotów, lift, loggia and secure building on ul. Kłobucka',
       WAW,
       'en',
     ],
     // More of the closed list.
-    ['Dwupokojowe mieszkanie 64 m², Krakow Podgorze', KRK, 'pl'],
+    ['Trzypokojowe mieszkanie 64 m², Krakow Podgorze', KRK, 'pl'],
     ['Mieszkanie 64 m², Krakow Podgorze', KRK, 'pl'],
     ['Casa con piscina en Jávea', JAV, 'es'],
     ['Semi-detached house in Straszyn', GDA, 'en'],

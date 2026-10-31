@@ -17,6 +17,12 @@
 
 import { stripGroundedCounts } from '@/lib/count-claims';
 import { stripGroundedDecades } from '@/lib/decade-expressions';
+import {
+  checkTypedClaims,
+  readAreaNumbers,
+  type ListingSource,
+  type TypedViolation,
+} from '@/lib/typed-claims';
 import { AMENITY_RES, asserted } from '@/lib/amenity-lexicon';
 import { CONDITION_FACT_RE, assertsGuarantee, assertsNoWorkClaim } from '@/lib/condition-lexicon';
 import {
@@ -26,7 +32,7 @@ import {
 } from '@/lib/number-groups';
 
 export type NumberViolation = 'hallucinated_number';
-export type ClaimViolation = 'unsupported_amenity' | 'unsupported_guarantee' | 'unit_mismatch';
+export type ClaimViolation = 'unsupported_amenity' | 'unsupported_guarantee' | TypedViolation;
 
 /** What still differs between the two paths. Every field is a real difference, pinned by tests. */
 export interface ClaimDialect {
@@ -54,13 +60,6 @@ export function areaNumberPattern(digit: string, space: string, flags: string): 
     `square${space}+f(?:ee|oo)t)`;
   return new RegExp(`(${digit}[${digit}.,]*)${space}*${unit}(?![a-z])`, flags);
 }
-
-/**
- * T5: the area units only a LISTING is read for: "64 mkw." grounds "64 m²" [FOLLOW-1311]. Reading
- * them in the copy too is a tightening, not this loosening.
- */
-const LISTING_AREA_NUMBER_RE =
-  /(\p{Nd}[\p{Nd}.,]*)\s*(?:mkw|m\.?\s?kw|metr\p{L}*\s+kwadratow\p{L}*|metros?\s+cuadrados?)(?![\p{L}\p{N}])/giu;
 
 const AREA_KEY_RE = /area|size|sqm|sq_?ft|m2|surface|plot|floor_?space|footage/i;
 
@@ -221,6 +220,8 @@ export interface ClaimGrounding {
   readonly text: string;
   /** Canonical numbers the listing states AS an area (an area field, or a number + area unit). */
   readonly areaNumbers: ReadonlySet<string>;
+  /** The same words by field, for the typed claims. */
+  readonly sources: readonly ListingSource[];
 }
 
 /**
@@ -239,10 +240,15 @@ export function buildGrounding(
   dialect: ClaimDialect,
 ): ClaimGrounding {
   const parts = [...leading];
+  const sources: ListingSource[] = leading.map((text) => ({ field: 'original_description', text }));
   const areaNumbers = new Set<string>();
   for (const [key, value] of Object.entries(ctx)) {
     const negative = NEGATIVE_FIELD_VALUES.has(dialect.strip(value).toLowerCase());
-    if (!negative) parts.push(`${key.replaceAll('_', ' ')}: ${value}`);
+    if (!negative) {
+      const line = `${key.replaceAll('_', ' ')}: ${value}`;
+      parts.push(line);
+      sources.push({ field: key, text: line });
+    }
     if (AREA_KEY_RE.test(key) && (!negative || dialect.areaFromNegativeFields)) {
       for (const m of normaliseNumberGroups(value).matchAll(dialect.digit)) {
         areaNumbers.add(canonNumber(m[0]));
@@ -254,11 +260,10 @@ export function buildGrounding(
   for (const m of normaliseNumberGroups(text).matchAll(dialect.areaNumber)) {
     areaNumbers.add(canonNumber(m[1] ?? ''));
   }
-  for (const m of normaliseNumberGroups(text).matchAll(LISTING_AREA_NUMBER_RE)) {
-    areaNumbers.add(canonNumber(m[1] ?? ''));
-  }
+  // T5: every area unit, the words a Polish or Spanish listing uses included [FOLLOW-1311].
+  for (const n of readAreaNumbers(normaliseNumberGroups(text))) areaNumbers.add(n);
   areaNumbers.delete('');
-  return { text, areaNumbers };
+  return { text, areaNumbers, sources };
 }
 
 /**
@@ -294,6 +299,10 @@ export function checkClaimClasses(
   }
   for (const m of normaliseNumberGroups(value).matchAll(dialect.areaNumber)) {
     if (!grounding.areaNumbers.has(canonNumber(m[1] ?? ''))) return 'unit_mismatch';
+  }
+  // T1, T3–T6, T9: each typed claim against the same key in the listing [FOLLOW-1311].
+  for (const check of checkTypedClaims(value, grounding.sources)) {
+    if (check.violation !== null) return check.violation;
   }
   return null;
 }

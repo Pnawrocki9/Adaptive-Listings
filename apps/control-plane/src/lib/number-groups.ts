@@ -45,6 +45,10 @@ export function normaliseNumberGroups(s: string): string {
  * attached one-letter multiplier ("850k", "1.15M", "1.15m" — attached only, so "64 m" stays
  * metres). "mil" followed by "millones" is the Spanish billion and is not read.
  */
+/** The multiplier WORDS of a multiplied number, as a regex alternation. */
+export const MULTIPLIER_WORDS =
+  'tys\\.?|tysi[ąę]c\\p{L}*|thousands?|mil(?![ \\t]+millones)|mln\\.?|millions?|millones|mill[oó]n|milion\\p{L}*|mld\\.?|miliard\\p{L}*|billions?|bn';
+
 const MULTIPLIED_NUMBER_RE =
   /(?<![\p{Nd}.])(\p{Nd}+(?:\.\p{Nd}+)?)(?:[ \u00a0\u202f\u2009]?(tys\.?|tysi[ąę]c\p{L}*|thousands?|mil(?![ \t]+millones)|mln\.?|millions?|millones|mill[oó]n|milion\p{L}*|mld\.?|miliard\p{L}*|billions?|bn)|(k|K|M|m))(?![\p{L}\p{N}_])/gu;
 
@@ -63,7 +67,7 @@ interface MultipliedNumber {
   readonly significant: number;
 }
 
-function readMultiplied(number: string, multiplier: string): MultipliedNumber | null {
+export function readMultiplied(number: string, multiplier: string): MultipliedNumber | null {
   const [whole = '', fraction = ''] = number.split('.');
   const exponent = multiplierExponent(multiplier);
   if (fraction.length > exponent) return null;

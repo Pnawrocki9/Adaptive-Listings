@@ -115,4 +115,26 @@ describe('FOLLOW-1311 on /api/adapt', () => {
     expect(served).toBe(false);
     expect(judged).toBe(true);
   });
+
+  it.each([
+    [EN, 'Home at $385,000'],
+    [EN, 'Home with three bedrooms'],
+    [PL, 'Trzypokojowe mieszkanie'],
+  ])('typed, allowed: %#', async (ctx, value) => {
+    expect((await run(ctx, value)).served).toBe(true);
+  });
+
+  it.each([
+    ['T1', EN, 'Home at €385,000'],
+    ['T3', EN, 'A five-bedroom home'],
+    ['T3', EN, 'Home with 3 bathrooms'],
+    ['T5', PL, 'Mieszkanie 64 sq ft'],
+    ['T6', EN, 'Dom trzypokojowy'],
+    ['T9', EN, 'Home without a garage'],
+    ['T9', PL, 'Mieszkanie bez balkonu'],
+  ])('typed, refused without a judge call: %s %#', async (_t, ctx, value) => {
+    const { served, judged } = await run(ctx, value);
+    expect(served).toBe(false);
+    expect(judged).toBe(false);
+  });
 });

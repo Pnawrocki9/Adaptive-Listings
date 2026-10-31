@@ -411,6 +411,11 @@ B), `docs/INTERFACES.md` (description event becomes in-process; seed route), Mod
   name policies stay with their paths. No verdict moved: parity corpus unchanged, no stamp bump, and
   the frozen replay (`apps/control-plane/scripts/claim-baseline`) is byte-identical. Adapt's
   `recentEvents` grounding is gone: no code set it, and §E.7.0 never allowed it.
+- **2026-10-31 — typed claims (FOLLOW-1311 slices 2 and 3).** §3's `ClaimViolation` gains
+  `count_mismatch`, `money_mismatch`, `year_mismatch` and `negation_contradiction`
+  (`lib/typed-claims.ts`, both paths). A count, a sum of money, an area unit and a year are read
+  with what they are about; `checkTypedClaims` also gives AC(1b) each claim's source field. Narrow
+  on purpose: a plain count under the stated one may be a part of it. `claims-v8`, corpus v21–v24.
 
 ## References
 

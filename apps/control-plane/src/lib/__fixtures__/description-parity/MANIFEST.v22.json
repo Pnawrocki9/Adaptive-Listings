@@ -1,0 +1,98 @@
+{
+  "case_count": 98,
+  "change": "FOLLOW-1311 slice 3 (T6): a Polish room count is not a bedroom count. One FIT body of the corpus is refused: it writes \"Dwupokojowy dom\" for a \"2-bedroom cottage\". No other verdict moved under the typed count, money, area, year and negation checks.",
+  "claims_validation_version": "claims-v7",
+  "corpus": "corpus.v22.jsonl",
+  "corpus_sha256": "eb2757e9:bd1f9253:5fad25b1:72e184ae:ae264ec1:99d91c90:89cbe5b6:d6c9e017",
+  "delta": [
+    {
+      "id": "live.027.listing-012.downsizer.pl",
+      "kind": "live",
+      "changed": {
+        "outcome": {
+          "v21": {
+            "verdict": "FIT",
+            "description": "Dwupokojowy dom w Ponta do Sol na Maderze — właściwie dobrana wielkość, bez zbędnych metrów do utrzymania. 110 mkw. rozłożone na uroczym parterowym budownictwie oznacza, że wszystko jest w zasięgu ręki, bez schodów między kondygnacjami i bez przestrzeni, która tylko czeka na sprzątanie.\n\nTaras obiegający dom dookoła to miejsce, gdzie można siedzieć o każdej porze dnia — po prostu wyjść na zewnątrz, bez wychodzenia daleko. Widok na Atlantyk jest stały, przewidywalny i niczego od ciebie nie wymaga. Ogród tropikalny jest częścią krajobrazu, a nie projektem do realizacji.\n\nWioska jest pięć minut stąd — piesze zakupy, podstawowe usługi blisko, codzienne sprawy do ogarnięcia bez samochodu, jeśli zajdzie taka potrzeba. To spokojny rozdział, napisany w miejscu, gdzie nie trzeba rezygnować z urody otoczenia, żeby zyskać spokój głowy.\n\nCena: 285 000 euro.",
+            "verifiedFacts": [
+              "location: Ponta do Sol, Madeira, Portugal",
+              "bedrooms: 2",
+              "property_type: cottage",
+              "terrace: wrap-around",
+              "views: Atlantic Ocean",
+              "size: 110 sqm",
+              "garden: tropical",
+              "distance_to_village: 5 min",
+              "price: €285,000"
+            ]
+          },
+          "v22": {
+            "verdict": "REFUSED",
+            "violation": "count_mismatch"
+          }
+        },
+        "headline_called": {
+          "v21": true,
+          "v22": false
+        },
+        "headline_violation": {
+          "v21": "empty",
+          "v22": null
+        },
+        "claims_validation": {
+          "v21": "claims-v7",
+          "v22": null
+        },
+        "prompt_sha256": {
+          "headline_system": {
+            "v21": "e77c8460:85a6c19f:4de83538:eb0bb6ce:154894ee:e3dfa5c4:04b06a81:d3d73171",
+            "v22": null
+          },
+          "headline_user": {
+            "v21": "2b041e46:3c62e17e:4ecb4eae:85b08c95:574e2c6d:5bbb327d:9e60105d:9c234d96",
+            "v22": null
+          }
+        }
+      },
+      "reason": "The FIT body opens \"Dwupokojowy dom\" for a listing that says \"2-bedroom cottage\". A Polish room count includes the living room, so a two-bedroom home is not \"dwupokojowy\": the room-count contradiction of FOLLOW-1386, refused as count_mismatch (T6). The body is REFUSED, so no headline is called. The same body also writes \"parterowym budownictwie… bez schodów\", which the listing never states; that class is slice 4."
+    }
+  ],
+  "derived_from": {
+    "corpus": "corpus.v21.jsonl",
+    "manifest": "MANIFEST.v21.json",
+    "corpus_sha256": "d6732f6b:d62eccb6:c4b66e8c:ce5ee57f:d5502f59:ce886015:f737e0fb:56f1aa11"
+  },
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-10-31",
+  "headline_called": 62,
+  "headline_suppressed": 29,
+  "kind": "verdict_delta",
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "NEUTRAL/with_reason": 8,
+    "NEUTRAL/without_reason": 1,
+    "REFUSED/unsupported_amenity": 6,
+    "FAILED/meta_commentary": 1,
+    "REFUSED/count_mismatch": 1,
+    "REFUSED/hallucinated_number": 5,
+    "REFUSED/unsupported_guarantee": 2,
+    "REFUSED/unit_mismatch": 2,
+    "FAILED/empty": 2,
+    "FAILED/residual_tag": 3,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/truncated": 1
+  },
+  "per_verdict": {
+    "FIT": 62,
+    "REFUSED": 16,
+    "NEUTRAL": 9,
+    "FAILED": 11
+  },
+  "recorded_outputs_predate_prompt": "Every raw_headline in this corpus was produced by an older headline prompt. They are replayed through the unchanged checks, so they pin the checks and the new prompt bytes, NOT what the new prompt makes the model write."
+}

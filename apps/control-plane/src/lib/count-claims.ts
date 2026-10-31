@@ -14,7 +14,7 @@
  */
 
 /** What a count counts. */
-type CountKey = 'bedroom' | 'bathroom' | 'room' | 'car';
+export type CountKey = 'bedroom' | 'bathroom' | 'room' | 'car';
 
 /** One count read from a text. */
 interface CountMention {
@@ -123,7 +123,7 @@ const KAWALERKA_RE = /(?<![\p{L}\p{N}])kawaler(?:k\p{L}*|ek)(?![\p{L}\p{N}])/giu
  * @param text - A number-normalised text (`normaliseNumberGroups`).
  * @returns Every count with its key.
  */
-function readCounts(text: string): CountMention[] {
+export function readCounts(text: string): CountMention[] {
   const counts: CountMention[] = [];
   for (const m of text.matchAll(PHRASE_RE)) {
     const groups = m.groups ?? {};

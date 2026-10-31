@@ -69,12 +69,13 @@ describe('FOLLOW-1402 — the description prompt names the output language', () 
     async (locale, language) => {
       const body = await descriptionRequest({ ...EVENT, locale });
       const user = body.messages[0]!.content;
-      // FOLLOW-1414 appended one paragraph after it (write about the home): the language paragraph
-      // is now the second-to-last line.
+      // FOLLOW-1414 appended one paragraph after it (write about the home), FOLLOW-1311 another
+      // (room counts): the language paragraph is now the third-to-last.
       const lines = user.split('\n');
-      expect(lines.at(-1)).toMatch(/^WRITE ABOUT THE HOME, NOT THE LISTING:/u);
-      expect(lines.at(-2)).toBe('');
-      const last = lines.at(-3)!;
+      expect(lines.at(-1)).toMatch(/^ROOM COUNTS:/u);
+      expect(lines.at(-3)).toMatch(/^WRITE ABOUT THE HOME, NOT THE LISTING:/u);
+      expect(lines.at(-4)).toBe('');
+      const last = lines.at(-5)!;
       expect(
         last.startsWith(`LANGUAGE: write the description body in ${language} (locale: ${locale}).`),
       ).toBe(true);

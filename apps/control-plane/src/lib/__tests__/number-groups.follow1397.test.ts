@@ -59,7 +59,7 @@ describe('FOLLOW-1397 — the description path', () => {
     ['Cena: 850 tysięcy złotych.', K_CTX],
     ['Price: 850k PLN.', K_CTX],
     ['Price: 850K PLN.', K_CTX],
-    ['Precio: 850 mil euros.', K_CTX],
+    ['Precio: 850 mil zł.', K_CTX],
     // exact [FOLLOW-1421]
     ['Cena: 1149 tys. zł.', ROUNDED_CTX],
   ] as const)('%j is grounded by %j', (text, ctx) => {

@@ -41,8 +41,8 @@ const LIS_CTX = {
 };
 // The four refused sentences: three distinct, verbatim.
 const STUDY = [
-  'Dwupokojowe mieszkanie o powierzchni 85 m² na drugim piętrze kamienicy z lat 30.',
-  'Wyremontowane dwupokojowe mieszkanie o powierzchni 85 m² w Campo de Ourique w Lizbonie, na drugim piętrze kamienicy z lat 30.',
+  'Mieszkanie o powierzchni 85 m² na drugim piętrze kamienicy z lat 30.',
+  'Wyremontowane mieszkanie o powierzchni 85 m² w Campo de Ourique w Lizbonie, na drugim piętrze kamienicy z lat 30.',
 ];
 
 async function servedOnAdapt(value: string, listingContext: Record<string, string>) {

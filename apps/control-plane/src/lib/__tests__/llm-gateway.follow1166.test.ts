@@ -5,7 +5,7 @@
  * under MASTER_DESIGN §E.7.0: a template cannot know a property, so template text is not evidence
  * about one. It removed the CORPUS half of FOLLOW-1034 and left the PROMPT half — `GROUNDING_RULE`
  * still said "Reuse the wording of the context **and the current directives**", and
- * `buildHaikuPrompt` supplies those current directives as the playbook's own slot copy. So the
+ * `buildTweakPrompt` supplies those current directives as the playbook's own slot copy. So the
  * model was instructed to reuse wording the checker had just stopped accepting. That is [MP-010]'s
  * failure class — rule enforced ≠ rule stated — with the polarity flipped, and MP-010 is the one
  * that cost 100% of the LLM path.
@@ -195,7 +195,7 @@ describe('FOLLOW-1166 — the prompt no longer offers the template as a source o
 
   it('the Sonnet prompt never carried a `Current directives` block, so the cut clause named a block half its readers never had', async () => {
     // Recorded because it is the sharpest evidence that the clause was carried rather than
-    // maintained: `GROUNDING_RULE` is shared by both builders, but only `buildHaikuPrompt` supplies
+    // maintained: `GROUNDING_RULE` is shared by both builders, but only `buildTweakPrompt` supplies
     // base directives. On the Sonnet path the model was told to reuse the wording of something the
     // prompt did not contain.
     mockCreate.mockResolvedValue(

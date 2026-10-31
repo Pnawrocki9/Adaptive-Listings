@@ -68,6 +68,17 @@ Rule I's violation set is otherwise unchanged against the baseline.
 - This record is not updated by later tickets. New history goes into the ticket, the PR and, when it
   is a decision, a new ADR — not back into comment blocks.
 
+## Later decision: the tweak band's model (FOLLOW-1426, CEO 2026-10-31)
+
+The `The record` below quotes the comments as they stood on the baseline date; where it says the
+tweak band "stays Haiku", that is history. Since FOLLOW-1426 `callLlmGateway` decides the band from
+`similarity` once (`bandFor`) and passes it on: the band picks the `source` (`llm_tweaked` vs
+`llm_full`), the prompt (tweak vs generation) and the judge call budget. The model is `forceModel`,
+else `getGlobalGenerationModel()` for BOTH bands. The band is never inferred from the model. The
+fact-check judge stays on Haiku 4.5 (it writes nothing buyers read). Local data over two days that
+motivated it: Haiku p50 2.6 s, p95 3.6 s, USD 0.0023 per call; Sonnet p50 2.3 s, p95 3.6 s, USD
+0.0045 per call.
+
 ## The record
 
 Format of each entry: `#### <file>:<baseline line> — <enclosing declaration>`, the first code line

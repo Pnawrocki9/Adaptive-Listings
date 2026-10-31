@@ -63,7 +63,7 @@ const YIELD_HUNTER = getPlaybook('yield_hunter');
 /** Read from the playbook, not retyped — a re-authoring must fail this file loudly. */
 const SHIPPED_CTA = YIELD_HUNTER.slots.find((s) => s.slot === 'cta')?.en ?? '';
 
-const HAIKU = 'claude-haiku-4-5';
+const TWEAK_BAND_MODEL = 'claude-sonnet-5-5'; // FOLLOW-1426: the tweak band runs on the generation model
 const SONNET = 'claude-sonnet-5-5'; // the default generation model since FOLLOW-1387
 
 const SIMILARITY_HAIKU_BAND = 0.75;
@@ -203,13 +203,13 @@ describe('FOLLOW-1177 — the provenance exemption is countable', () => {
 
       const result = await callLlmGateway({ ...BASE_INPUT, similarity: SIMILARITY_HAIKU_BAND });
 
-      expect(generationModel()).toBe(HAIKU);
+      expect(generationModel()).toBe(TWEAK_BAND_MODEL);
       expect(mockCreate).toHaveBeenCalledTimes(1); // no judge round trip — the exemption's win
       expect(result?.directives).toHaveLength(1);
 
       const rows = exemptionRows();
       expect(rows).toHaveLength(1);
-      expect(rows[0]?.model).toBe(HAIKU);
+      expect(rows[0]?.model).toBe(TWEAK_BAND_MODEL);
       // Free by construction: the exemption clears the flag without calling anything.
       expect(rows[0]?.tokensIn).toBe('0');
       expect(rows[0]?.costUsd).toBe('0');

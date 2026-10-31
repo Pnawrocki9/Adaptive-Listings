@@ -95,7 +95,7 @@ describe('callLlmGateway — routing', () => {
     }
   });
 
-  it('selects Haiku for medium similarity (0.6 < sim <= 0.85)', async () => {
+  it('selects the default generation model, Sonnet 5.5, for medium similarity (0.6 < sim <= 0.85) [FOLLOW-1426]', async () => {
     process.env.ANTHROPIC_API_KEY = 'test-key-abc123';
     const mockDirectives: TextDirective[] = [
       {
@@ -112,7 +112,7 @@ describe('callLlmGateway — routing', () => {
 
     const result = await callLlmGateway({ ...BASE_INPUT, similarity: 0.75 });
     expect(result).not.toBeNull();
-    expect(result?.model).toBe('claude-haiku-4-5');
+    expect(result?.model).toBe('claude-sonnet-5-5');
 
     delete process.env.ANTHROPIC_API_KEY;
   });
@@ -675,7 +675,7 @@ describe('callLlmGateway — FOLLOW-261 parameterized ClickHouse INSERT (logLlmC
 
     expect(parsedUrl.searchParams.get('param_p_session_id')).toBe(sessionId);
     expect(parsedUrl.searchParams.get('param_p_tenant_id')).toBe(tenantId);
-    expect(parsedUrl.searchParams.get('param_p_model')).toBe('claude-haiku-4-5');
+    expect(parsedUrl.searchParams.get('param_p_model')).toBe('claude-sonnet-5-5');
     expect(parsedUrl.origin).toBe('http://localhost:8123');
   });
 

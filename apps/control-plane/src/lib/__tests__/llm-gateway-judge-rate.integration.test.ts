@@ -5,7 +5,7 @@
  * question.** This spec used to run at a hardcoded `similarity: 0.75`, which `llm-gateway.ts`
  * routes to Haiku. #875 and #877 each reported its output as the price of the fact check
  * (`0/12 judged, 0/12 discarded`, _"#875's win costs nothing to keep"_) with no band beside the
- * number. That is the band where the price is near zero BY CONSTRUCTION: `buildHaikuPrompt`
+ * number. That is the band where the price is near zero BY CONSTRUCTION: `buildTweakPrompt`
  * shows the model the archetype's authored `cta`, the model reproduces it, and #877's provenance
  * exemption fires. `buildSonnetPrompt` shows it nothing of the kind, so on the full-generation
  * band the `cta` is an ordinary flag — and that band is where a behaviour-only buyer lands
@@ -98,8 +98,8 @@ const RUNS = 12;
  * exactly the locale where the old number was true).
  */
 const BANDS = [
-  { band: 'haiku-tweak', similarity: 0.75, budget: 3 },
-  { band: 'sonnet-generation', similarity: 0.5, budget: 3 },
+  { band: 'tweak', similarity: 0.75, budget: 3 },
+  { band: 'generation', similarity: 0.5, budget: 3 },
 ] as const;
 
 describe('FOLLOW-1173/1178 — judge round-trip rate on the directive path, per band', () => {

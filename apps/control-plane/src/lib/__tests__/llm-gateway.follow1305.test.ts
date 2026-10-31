@@ -87,7 +87,7 @@ async function run(pairs: [slot: string, value: string][]) {
   const result = await callLlmGateway({
     archetypeId: 'yield_hunter',
     confidence: 0.75,
-    similarity: 0.75, // Haiku tweak band → `llm_tweaked` at the route
+    similarity: 0.75, // tweak band → `llm_tweaked` at the route
     basePlaybook: YIELD_HUNTER,
     listingContext: LISTING_CONTEXT,
     onFallback: (reason) => reasons.push(reason),

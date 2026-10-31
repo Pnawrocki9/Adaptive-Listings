@@ -127,7 +127,7 @@ describe('FOLLOW-1177 / FOLLOW-1183 — the unjudged register, against a live Cl
         await callLlmGateway({
           archetypeId: 'yield_hunter',
           confidence: 0.75,
-          similarity: 0.75, // Haiku tweak band — the prompt carries the authored `cta`
+          similarity: 0.75, // tweak band — the prompt carries the authored `cta`
           basePlaybook: getPlaybook('yield_hunter'),
           listingContext: LISTING_CONTEXT,
           sessionId: `follow1177-exempt-${String(run)}`,
@@ -144,7 +144,7 @@ describe('FOLLOW-1177 / FOLLOW-1183 — the unjudged register, against a live Cl
 
       const exempt = rows.filter((r) => r.source === 'fact_check_unjudged_exempt_authored');
       expect(exempt.length).toBeGreaterThanOrEqual(1);
-      expect(exempt.every((r) => r.model === 'claude-haiku-4-5')).toBe(true);
+      expect(exempt.every((r) => r.model === 'claude-sonnet-5-5')).toBe(true);
       // A skip is not a verdict: MP-012's denominator predicate must not see these rows.
       expect(exempt.every((r) => !r.source.startsWith('fact_check_judge'))).toBe(true);
     },

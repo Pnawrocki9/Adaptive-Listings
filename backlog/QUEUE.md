@@ -122,6 +122,15 @@
   tolerance from #1101 removed for money, kept only for people and area counts.
 - **FOLLOW-1422** — status: READY # P2 docs (RETRO-371). Record the 2026-10-30 guard rulings in
   ESC-089, MASTER_DESIGN and ADR-0023 with the claims stamp history.
+- **FOLLOW-1233** — status: DONE # PR #1111, merged as `c7d34d91`; README §5.52. Phase 4 P4:
+  bring-up seeds the cosine inputs, the preflight aborts without them.
+- **FOLLOW-1168** — status: DONE # PR #1112, merged as `6d58d1c2`; README §5.53. Phase 4 P5: an arm
+  is credited only when a served slot depends on it. Until FOLLOW-1164 decides what a variant is, no
+  copy-variant difference is measured.
+- **FOLLOW-1425** — status: READY # P3 harness. Run 188 (README §5.54): AC(5) RED, 7 attempts of
+  `scrollIntoViewIfNeeded` timed out, cause unknown. `clickCtaWhenReady` keeps only the first line
+  of each error; keep the Playwright call log in the evidence. Next free: FOLLOW-1426, RETRO-372,
+  ESC-090.
 - **FOLLOW-1423** — status: BACKLOG # P2 product. Composition rule gaps left by #1108: percentages
   ("80% of residents are Muslim"), a group before "most" ("Catholics make up most of…"), Polish
   majority phrasing without to/jest/są/stanowi.
@@ -366,10 +375,8 @@
   `core-master` `ListingResponseTO.kt` 2026-10-30; AC(1b) still owed at K4a; was READY # P1.
   Grounding loses price and street address on the real Estalara backend (`priceUsd`/`priceEur`, no
   `streetAddress`). control-plane. Plan: Phase 4 P2, gate K4a.
-- **FOLLOW-1318** — status: IN_REVIEW # PR #1109 (branch
-  backend-engineer/FOLLOW-1318-no-playbook-text), CI green, README §5.51; was BACKLOG # P2.
-  `GET /api/adapt/description` returns playbook-internal text on `template_fallback`. control-plane.
-  Plan: Phase 4 P3, gate K4a.
+- **FOLLOW-1318** — status: DONE # PR #1109, merged as `c23e9d14`; README §5.51. P2, Phase 4 P3:
+  `GET /api/adapt/description` no longer returns playbook-internal text on `template_fallback`.
 - **FOLLOW-1297** — status: DONE # PR A #997 `2bb2db6c` (port, parity 98/98), production cutover
   2026-10-13 (#1000 `0cbca8dc`, smoke green), PR B #1001 `95e15d36` (`apps/llm-gateway` and its
   gates deleted; register 42 → 39 checks). Operator step owed:

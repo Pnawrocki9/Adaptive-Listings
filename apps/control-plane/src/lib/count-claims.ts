@@ -139,9 +139,20 @@ const VAGUE_RE = new RegExp(
     `(?:[\\p{L}-]+${SPACE}+)?(?:${KEY_ALTERNATION})(?![\\p{L}\\p{N}])`,
   'giu',
 );
-/** A number and a key too far apart to read as one phrase, inside one clause. */
-const FAR_RE = new RegExp(
-  `(?<![\\p{L}\\p{N}.,])${NUMBER_TOKEN}${SPACE}+(?:[\\p{L}-]+${SPACE}+){1,5}?(?:${KEY_ALTERNATION})(?![\\p{L}\\p{N}])`,
+/**
+ * A part named without a count of the whole ("one of the bedrooms", "jedna z sypialni", "una de las
+ * habitaciones"), or a number and its noun with too many adjectives to read ("Three very large
+ * sunny bedrooms"). A clause that goes on to something else ("two floors with bedrooms") is neither.
+ */
+const PART_OF_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}.,])${NUMBER_TOKEN}${SPACE}+(?:of${SPACE}+(?:the|these|its)|z|de${SPACE}+(?:las|los))${SPACE}+(?:KEYSLOT)`.replace(
+    'KEYSLOT',
+    KEY_ALTERNATION,
+  ) + `(?![\\p{L}\\p{N}])`,
+  'giu',
+);
+const MANY_ADJECTIVES_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}.,])${NUMBER_TOKEN}${SPACE}+(?:${ADJECTIVE}${SPACE}+){3,4}(?:${KEY_ALTERNATION})(?![\\p{L}\\p{N}])`,
   'giu',
 );
 const POLISH_COMPOUND_RE = new RegExp(
@@ -150,7 +161,12 @@ const POLISH_COMPOUND_RE = new RegExp(
   'giu',
 );
 const KAWALERKA_RE = /(?<![\p{L}\p{N}])kawaler(?:k\p{L}*|ek)(?![\p{L}\p{N}])/giu;
-const STUDIO_RE = /(?<![\p{L}\p{N}])(?:studio|estudio|kawaler(?:k\p{L}*|ek))(?![\p{L}\p{N}])/iu;
+/**
+ * The property noun: "Studio apartment", "Studio, Albufeira", "kawalerka". Never a room of a bigger
+ * home ("yoga studio", "a garden studio").
+ */
+const STUDIO_RE =
+  /(?<![\p{L}\p{N}])kawaler(?:k\p{L}*|ek)(?![\p{L}\p{N}])|(?<![\p{L}\p{N}])(?:studio|estudio)[ \u00a0]+(?:apartment|flat|apartamento|piso)(?![\p{L}\p{N}])|(?:^|[.;:!?\n][ \u00a0]*)(?:(?:a|an|el|un)[ \u00a0]+)?(?:studio|estudio)(?=[ \u00a0]*(?:$|[.,;:—–-]|(?:in|w|en|de|of|o|na|przy)[ \u00a0]))/iu;
 const SPEC_JOIN_RE = /^[ \u00a0]*(?:,|\/|\+|&|and|oraz|i|y|·|\|)[ \u00a0]*$/iu;
 const SINGULAR_KEY_RE = /^(?:bed|bedroom|bath|bathroom|room)$/iu;
 /** Only a spec attached to a digit: "3BR/2BA". */
@@ -233,24 +249,18 @@ export function readCounts(text: string): CountMention[] {
 }
 
 /**
- * The keys a text mentions in a way no count can be read from: a range, a vague quantity, or a
- * number too far from its noun. Such a key is unknown: if the recogniser cannot tell, it passes.
+ * The keys a text mentions in a way no count can be read from: a range, a vague quantity, a part
+ * ("one of the bedrooms"), or too many adjectives. Such a key is unknown: if the recogniser cannot tell, it passes.
  *
  * @param text - A number-normalised listing text.
  * @returns The unreadable keys.
  */
 export function unreadableCountKeys(text: string): Set<CountKey> {
   const keys = new Set<CountKey>();
-  for (const re of [RANGE_RE, VAGUE_RE]) {
+  for (const re of [RANGE_RE, VAGUE_RE, PART_OF_RE, MANY_ADJECTIVES_RE]) {
     for (const m of text.matchAll(re)) {
       const key = keyOf(m.groups ?? {});
       if (key !== undefined) keys.add(key);
-    }
-  }
-  for (const clause of text.split(/[.;:!?\n,]/u)) {
-    for (const m of clause.matchAll(FAR_RE)) {
-      const key = keyOf(m.groups ?? {});
-      if (key !== undefined && !readCounts(m[0]).some((c) => c.key === key)) keys.add(key);
     }
   }
   return keys;

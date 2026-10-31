@@ -222,9 +222,14 @@ describe('KNOWN LIMITS: wrong, and still passing, on purpose', () => {
       '64 m² działki',
     ],
     [
-      'a number the listing states as something else, with a currency added',
-      { original: 'Dom z 3 pokojami i ogrodem o szerokości 12 metrów.' },
-      'Czynsz 12 zł',
+      '"windy" is left out of the amenity list by design',
+      { original: 'Mieszkanie, winda.' },
+      'Brak windy w budynku',
+    ],
+    [
+      '"Listed at" with no unit in the listing is unknowable',
+      { original: 'Flat, ask for details.', ctx: { listing_price: '385000' } },
+      'Listed at $385,000',
     ],
   ])('%s', (_name, l, text) => {
     expect(verdict(l, text)).toBeNull();
@@ -236,5 +241,174 @@ describe('quality', () => {
     const source = readFileSync(path.resolve(__dirname, '../typed-claims.ts'), 'utf8');
     const line = /const AREA_RE = new RegExp\(\s*`([^`]+)`/u.exec(source)?.[1] ?? '';
     expect(line.startsWith('(?<![\\\\p{Nd}.,])(\\\\p{Nd}[\\\\p{Nd}.,]*)')).toBe(true);
+  });
+});
+
+describe('second review: a listed address masks the address, not the number', () => {
+  it.each<[Listing, string]>([
+    [
+      {
+        original: 'Piso.',
+        ctx: { listing_price: '120000 EUR', listing_location: 'Calle Mayor, 12, Valencia' },
+      },
+      'Precio 120.000 €',
+    ],
+    [
+      {
+        original: 'Mieszkanie.',
+        ctx: { listing_price: '385000 PLN', listing_location: 'Długa, 5, Kraków' },
+      },
+      'Cena 385 000 zł',
+    ],
+    [{ original: 'Piso de 64 m².', ctx: { listing_location: 'Calle Mayor, 4' } }, '64 m²'],
+    [
+      { original: 'Piso.', ctx: { listing_location: 'Calle Mayor, 12, Valencia' } },
+      'Piso en Calle Mayor 12',
+    ],
+    [
+      { original: 'Piso.', ctx: { listing_location: 'Calle Mayor, 12, Valencia' } },
+      'Piso en Calle Mayor, 12',
+    ],
+    [{ original: 'Flat.', ctx: { listing_location: 'High Street, 5' } }, 'Flat at High Street, 5'],
+  ])('passes: %#', (l, text) => {
+    expect(verdict(l, text)).toBeNull();
+  });
+
+  it.each<[Listing, string]>([
+    [
+      {
+        original: 'A two-bedroom home with 5 windows.',
+        ctx: { listing_location: 'High Street, 5' },
+      },
+      'A 5-bedroom home',
+    ],
+    [
+      { original: 'Piso de dos dormitorios.', ctx: { listing_location: 'Calle Sol, 3' } },
+      '3 dormitorios',
+    ],
+  ])('refused: %#', (l, text) => {
+    expect(verdict(l, text)).toBe('count_mismatch');
+  });
+});
+
+describe('second review: the mask swallows no claim', () => {
+  const FOUR = { original: 'A two-bedroom home with 4 windows and a terrace.' };
+  it.each<[Listing, string, string]>([
+    [FOUR, '4 Bedroom Terrace House', 'count_mismatch'],
+    [{ original: 'Flat of 120 m² with a terrace.' }, '120 Sq Ft Terrace', 'unit_mismatch'],
+    [
+      { original: 'Piso de dos dormitorios y 4 ventanas.' },
+      'Piso en Calle Mayor 4 Dormitorios',
+      'count_mismatch',
+    ],
+    [
+      { original: 'Mieszkanie z dwiema sypialniami i 4 oknami.' },
+      'Mieszkanie ul. Długa 4 Sypialnie',
+      'count_mismatch',
+    ],
+    [
+      { original: 'Sale.', ctx: { listing_price: '240000 EUR', rent: '900 EUR' } },
+      'Price €900 Main Street',
+      'money_mismatch',
+    ],
+    [
+      { original: 'Turnover of 300000 PLN.', ctx: { listing_price: '240000 EUR' } },
+      '$300,000 Ocean Drive',
+      'money_mismatch',
+    ],
+    [{ original: 'A two-bedroom home with 5 windows.' }, '5 Bedrooms Road', 'count_mismatch'],
+  ])('refused: %#', (l, text, code) => {
+    expect(verdict(l, text)).toBe(code);
+  });
+});
+
+describe('second review: studio is the property noun only', () => {
+  it.each<[Listing, string]>([
+    [{ original: 'Villa, 3 bedrooms, yoga studio.' }, 'Two rooms face the sea'],
+    [{ original: 'Villa, bedrooms upstairs and a garden studio.' }, 'Three bedrooms'],
+    [{ original: 'Studio apartment.' }, 'Kawalerka'],
+  ])('passes: %#', (l, text) => {
+    expect(verdict(l, text)).toBeNull();
+  });
+
+  it('a studio still states no bedroom', () => {
+    expect(verdict({ original: 'Studio apartment, 32 sqm.' }, 'A one-bedroom flat')).toBe(
+      'count_mismatch',
+    );
+  });
+});
+
+describe('second review: a listing number is not money in any currency', () => {
+  it.each<[Listing, string]>([
+    [{ original: 'Cena 385 000.', ctx: { listing_price: '385000 EUR' } }, 'Only $385,000'],
+    [{ original: '32137 Palm Coast.' }, 'A bargain at $32,137'],
+    [{ original: 'Built 2015.' }, 'Just €2,015'],
+    [{ original: '4 bedrooms.' }, 'Only €4'],
+    [{ original: 'Dom z ogrodem o szerokości 12 metrów.' }, 'Czynsz 12 zł'],
+  ])('refused: %#', (l, text) => {
+    expect(verdict(l, text)).toBe('money_mismatch');
+  });
+});
+
+describe('second review: a key stays known unless it is really unreadable', () => {
+  it.each<[Listing, string, string]>([
+    [
+      { original: 'Three-bedroom home on two floors with bedrooms upstairs.' },
+      'A five-bedroom home',
+      'count_mismatch',
+    ],
+    [
+      { original: 'Dwie łazienki. Jedna duża kuchnia i łazienka.' },
+      'Five bathrooms',
+      'count_mismatch',
+    ],
+    [
+      { original: 'Tres dormitorios con un amplio salón y dormitorios exteriores.' },
+      'Cinco dormitorios',
+      'count_mismatch',
+    ],
+    [{ original: 'A two-bedroom flat.' }, 'Eight rooms', 'count_mismatch'],
+    [{ original: 'Mieszkanie z dwiema sypialniami.' }, 'Osiem pokoi', 'count_mismatch'],
+  ])('refused: %#', (l, text, code) => {
+    expect(verdict(l, text)).toBe(code);
+  });
+
+  it.each<[Listing, string]>([
+    [{ original: 'Three bedrooms, one of the bedrooms has an en-suite.' }, 'Three bedrooms'],
+    [{ original: 'Jedna z sypialni ma balkon.' }, 'A two-bedroom flat'],
+    [{ original: 'Three very large sunny bedrooms.' }, 'A two-bedroom suite'],
+    [{ original: 'A two-bedroom flat.' }, 'Three rooms'],
+  ])('passes: %#', (l, text) => {
+    expect(verdict(l, text)).toBeNull();
+  });
+});
+
+describe('second review: T9', () => {
+  const G: Listing = { original: 'Home with a garage, a pool, a lift and a balcony.' };
+  it.each<[Listing, string]>([
+    [G, 'No garage? No problem.'],
+    [G, 'No pool, no problem'],
+    [{ original: 'Garage not included in the price.' }, 'No garage.'],
+  ])('passes: %#', (l, text) => {
+    expect(verdict(l, text)).toBeNull();
+  });
+
+  it.each<[Listing, string]>([
+    [G, 'No lift in the building'],
+    [{ original: 'Piso con ascensor.' }, 'Sin ascensor en el edificio'],
+    [G, 'There is no garage on the property'],
+    [G, 'It has no balcony or terrace'],
+  ])('refused: %#', (l, text) => {
+    expect(verdict(l, text)).toBe('negation_contradiction');
+  });
+});
+
+describe('second review: address misses', () => {
+  it.each<[Listing, string]>([
+    [{ original: 'Flat at 12 Bath Mews with 2 bathrooms.' }, 'Flat at 12 Bath Mews'],
+    [{ original: 'Flat at 12 Bath Road with 2 bathrooms.' }, 'flat at 12 bath road'],
+    [{ original: 'Flat at Aleje 12 Bath with 2 bathrooms.' }, 'Flat at Aleje 12 Bath'],
+  ])('passes: %#', (l, text) => {
+    expect(verdict(l, text)).toBeNull();
   });
 });

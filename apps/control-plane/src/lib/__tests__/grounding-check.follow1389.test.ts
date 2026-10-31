@@ -72,7 +72,6 @@ describe("FOLLOW-1389 — the page language's common opening word is not a name"
     ],
     // More of the closed list.
     ['Mieszkanie 64 m², Krakow Podgorze', KRK, 'pl'],
-    ['Mieszkanie 64 m², Krakow Podgorze', KRK, 'pl'],
     ['Casa con piscina en Jávea', JAV, 'es'],
     ['Semi-detached house in Straszyn', GDA, 'en'],
   ] as const)('%j is accepted for %s', (headline, l, locale) => {

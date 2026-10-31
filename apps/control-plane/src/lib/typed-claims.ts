@@ -117,7 +117,11 @@ function checkCounts(text: string, sources: readonly ListingSource[]): TypedClai
     const stated = facts.get(other);
     if (stated === undefined) return check(null, null);
     const crossedPlain = c.key === 'bedroom' && c.value >= 2 && stated.has(c.value);
-    return c.compound || crossedPlain ? check('count_mismatch', null) : check(null, null);
+    // "Eight rooms" on a two-bedroom: no reading of a part makes that many.
+    const beyondAnyReading = c.key === 'room' && c.value > Math.max(...stated.keys()) + 3;
+    return c.compound || crossedPlain || beyondAnyReading
+      ? check('count_mismatch', null)
+      : check(null, null);
   });
 }
 
@@ -161,6 +165,10 @@ const PRICE_WORD_BEFORE_RE =
   /(?<![\p{L}\p{N}])(?:prices?|priced at|listed at|asking|cena|precio)[ \u00a0:]*(?:of[ \u00a0]+|to[ \u00a0]+|wynosi[ \u00a0]+|de[ \u00a0]+)?$/iu;
 const PRICE_FIELD_RE = /price|cena|precio/iu;
 /** A number with no currency, the multiplier words included ("250", "1,15 mln"). */
+/** A number that measures something, or names a place, is no sum of money. */
+const MEASURED_NUMBER_RE =
+  /(?<![\p{L}\p{N}.])\p{Nd}+(?:\.\p{Nd}+)?[ \u00a0]*(?:%|m|km|cm|ha|min|metr\p{L}*|meters?|metres?|kilomet\p{L}*|hectares?|hektar\p{L}*|minut\p{L}*|miles?|floors?|pi[eę]t\p{L}*|windows?|okn\p{L}*)(?![\p{L}\p{N}])|(?<![\p{L}\p{N}.])\p{Nd}+[ \u00a0]+\p{Lu}\p{Ll}+/gu;
+const YEAR_WORD_AFTER_RE = /^[ \u00a0]*(?:roku|rok|r\.)(?![\p{L}\p{N}])/iu;
 const BARE_NUMBER_RE = new RegExp(
   `${NO_DIGIT_BEFORE}${NUMBER}(?:[ \\u00a0\\u202f\\u2009]?(${MULTIPLIER_WORDS})(?![\\p{L}\\p{N}]))?(?![\\p{L}\\p{N}%])`,
   'giu',
@@ -228,7 +236,18 @@ function checkMoney(text: string, sources: readonly ListingSource[]): TypedClaim
     }
     // Numbers with no currency: the listing states the number, not its unit, so a copy that adds
     // one cannot be told wrong ("250 a month", "Cena 1,15 mln."). Areas are not sums of money.
-    let bare = value.replace(AREA_RE, (s) => ' '.repeat(s.length));
+    const blank = (s: string): string => ' '.repeat(s.length);
+    let bare = value.replace(AREA_RE, blank).replace(MEASURED_NUMBER_RE, blank);
+    for (const c of readCounts(bare)) {
+      if (c.digit)
+        bare = bare.slice(0, c.start) + blank(bare.slice(c.start, c.end)) + bare.slice(c.end);
+    }
+    bare = bare.replace(YEAR_RE, (y: string, _g: string, at: number, whole: string) =>
+      yearKey(whole, at, at + y.length) !== null ||
+      YEAR_WORD_AFTER_RE.test(whole.slice(at + y.length))
+        ? blank(y)
+        : y,
+    );
     for (const m of [...money].sort((a, b) => b.start - a.start)) {
       bare = bare.slice(0, m.start) + ' '.repeat(m.end - m.start) + bare.slice(m.end);
     }
@@ -242,6 +261,13 @@ function checkMoney(text: string, sources: readonly ListingSource[]): TypedClaim
         price: fieldIsPrice || PRICE_WORD_BEFORE_RE.test(bare.slice(0, m.index)),
       });
     }
+  }
+  // A number the listing gives a currency elsewhere has that currency: "cena 385 000" and
+  // "385000 EUR" are one sum, and neither says dollars.
+  const withCurrency = new Set(facts.filter((f) => f.currency !== null).map((f) => f.value));
+  for (let i = facts.length - 1; i >= 0; i -= 1) {
+    const fact = facts[i];
+    if (fact?.currency === null && withCurrency.has(fact.value)) facts.splice(i, 1);
   }
   const prices = new Set(facts.filter((f) => f.price).map((f) => f.value));
   return readMoney(text).map((c) => {
@@ -391,21 +417,33 @@ const DENIED_BEFORE_RE =
   /(?<![\p{L}\p{N}_])(?:no|without|lacks?|has no|there is no|there['’]s no|does not have|doesn['’]t have|bez|brak|braku|nie ma|nie posiada|sin|no hay|no tiene|carece de)(?:[ \t]+(?:a|an|any|the|żadnego|żadnej|żadnych|ningún|ninguna|un|una))?[ \t]+$/iu;
 /**
  * Nothing that changes the subject follows: "no garage." denies the garage; "no garage included",
- * "no pool to maintain", "no parking permit needed" and "no school commute" do not.
+ * "no pool to maintain", "no parking permit needed" and "no school commute" do not. A closed
+ * location phrase and one more item keep the denial ("no lift in the building", "no balcony or
+ * terrace"). "No garage? No problem." and "no pool, no problem" are a shrug, not a denial.
  */
-const CLAUSE_ENDS_RE = /^[ \t]*(?:here|tu|aquí)?[ \t]*(?:[.,;:!?)–—\n]|$)/iu;
+const CLAUSE_ENDS_RE =
+  /^(?:[ \t]+(?:or|ani|ni|o)[ \t]+[\p{L}-]+)?(?:[ \t]+(?:here|tu|aquí|in the building|on the property|in this building|w budynku|na terenie|en el edificio))?[ \t]*(?:[.,;:)–—\n!]|$)/iu;
+const NO_PROBLEM_AFTER_RE =
+  /^[ \t]*[?,.!–—:-]*[ \t]*(?:no problem|bez problemu|sin problema|no worries)/iu;
+/** "Garage not included in the price" asserts no garage. */
+const NOT_INCLUDED_RE =
+  /[\p{L}-]+[ \t]+(?:(?:is[ \t]+)?not included|nie wchodzi\p{L}*|nie jest w cenie|no incluid\p{L}*|no está incluid\p{L}*)/giu;
 /** A spec line with nothing after the negator: "Pool: no.". "Parking: no permit needed" is not. */
 const SPEC_DENIED_AFTER_RE =
   /^(?:[ \t]*[:–—-][ \t]*(?:brak|nie|no|none|sin|ninguno|ninguna)|[ \t]+brak)[ \t]*(?:[.,;!?\n]|$)/iu;
 
 function checkNegations(text: string, sources: readonly ListingSource[]): TypedClaimCheck[] {
-  const listing = sources.map((s) => s.text).join('\n');
+  const withoutExcluded = (t: string): string =>
+    t.replace(NOT_INCLUDED_RE, (x) => ' '.repeat(x.length));
+  const listing = withoutExcluded(sources.map((s) => s.text).join('\n'));
   const out: TypedClaimCheck[] = [];
   for (const { claim, grounding } of AMENITY_RES) {
     for (const m of text.matchAll(claim)) {
       const rest = text.slice(m.index + m[0].length);
       const denied =
-        (DENIED_BEFORE_RE.test(text.slice(0, m.index)) && CLAUSE_ENDS_RE.test(rest)) ||
+        (DENIED_BEFORE_RE.test(text.slice(0, m.index)) &&
+          CLAUSE_ENDS_RE.test(rest) &&
+          !NO_PROBLEM_AFTER_RE.test(rest)) ||
         SPEC_DENIED_AFTER_RE.test(rest);
       if (!denied) continue;
       const contradicted = asserted(grounding, listing);
@@ -414,7 +452,7 @@ function checkNegations(text: string, sources: readonly ListingSource[]): TypedC
         key: m[0].toLowerCase(),
         value: 'none',
         source: contradicted
-          ? (sources.find((s) => asserted(grounding, s.text))?.field ?? null)
+          ? (sources.find((s) => asserted(grounding, withoutExcluded(s.text)))?.field ?? null)
           : null,
         violation: contradicted ? 'negation_contradiction' : null,
       });

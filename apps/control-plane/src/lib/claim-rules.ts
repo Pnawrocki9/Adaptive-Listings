@@ -61,6 +61,7 @@ export function areaNumberPattern(digit: string, space: string, flags: string): 
   return new RegExp(`(${digit}[${digit}.,]*)${space}*${unit}(?![a-z])`, flags);
 }
 
+const COUNT_FIELD_KEY_RE = /bed|bath|room|sypial|pok[oó]j|dormitor/iu;
 const AREA_KEY_RE = /area|size|sqm|sq_?ft|m2|surface|plot|floor_?space|footage/i;
 
 /** A field with one of these values says "no", so its key cannot ground what it denies. */
@@ -244,9 +245,12 @@ export function buildGrounding(
   const areaNumbers = new Set<string>();
   for (const [key, value] of Object.entries(ctx)) {
     const negative = NEGATIVE_FIELD_VALUES.has(dialect.strip(value).toLowerCase());
+    const line = `${key.replaceAll('_', ' ')}: ${value}`;
     if (!negative) {
-      const line = `${key.replaceAll('_', ' ')}: ${value}`;
       parts.push(line);
+      sources.push({ field: key, text: line });
+    } else if (COUNT_FIELD_KEY_RE.test(key)) {
+      // "bedrooms: 0" says something a count can be compared with, and grounds no amenity.
       sources.push({ field: key, text: line });
     }
     if (AREA_KEY_RE.test(key) && (!negative || dialect.areaFromNegativeFields)) {

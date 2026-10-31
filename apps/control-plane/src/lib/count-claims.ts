@@ -5,7 +5,7 @@
  * A digit alone says nothing about what it counts, so the digit rule could not tell "3 bedrooms"
  * from "3 bathrooms", and refused "3 bedrooms" on a listing that spells it "three-bedroom". This
  * module reads a count together with its key, in en / pl / es, in digits or words, and is used by
- * both paths through `checkNumbers` (`lib/claim-rules.ts`).
+ * both paths through `checkNumbers` (`lib/claim-rules.ts`) and `lib/typed-claims.ts`.
  *
  * The keys are never interchanged: a Polish room count includes the living room, so "dwupokojowe"
  * is not "two-bedroom". Pure, no I/O.
@@ -25,7 +25,11 @@ interface CountMention {
   /** The number's own span, UTF-16. */
   readonly start: number;
   readonly end: number;
-  /** One word for the property ("three-bedroom", "trzypokojowe"), not a phrase ("three bedrooms"). */
+  /**
+   * A statement about the whole property: one word ("three-bedroom", "trzypokojowe"), a singular
+   * noun ("two bedroom home"), or a spec list ("3 bedrooms and 2 bathrooms"). A plain phrase ("two
+   * bedrooms") may be a part of the whole.
+   */
   readonly compound: boolean;
 }
 
@@ -39,6 +43,8 @@ const WORDS: Readonly<Record<string, number>> = {
   six: 6,
   seven: 7,
   eight: 8,
+  nine: 9,
+  ten: 10,
   // pl
   jeden: 1,
   jedna: 1,
@@ -60,8 +66,11 @@ const WORDS: Readonly<Record<string, number>> = {
   pięcioma: 5,
   sześć: 6,
   sześciu: 6,
+  sześcioma: 6,
   siedem: 7,
   osiem: 8,
+  dziewięć: 9,
+  dziesięć: 10,
   // es
   uno: 1,
   una: 1,
@@ -73,6 +82,8 @@ const WORDS: Readonly<Record<string, number>> = {
   seis: 6,
   siete: 7,
   ocho: 8,
+  nueve: 9,
+  diez: 10,
 };
 
 /** A Polish compound's prefix: "dwupokojowe", "trzystanowiskowy". */
@@ -89,57 +100,97 @@ const POLISH_PREFIX: Readonly<Record<string, number>> = {
 
 /** Each key across en / pl / es. "habitaciones" is the Spanish bedroom count of a listing. */
 const KEY_PATTERNS: readonly (readonly [CountKey, string])[] = [
-  ['bedroom', 'bed(?:s|rooms?|roomed)?|sypial\\p{L}*|dormitorios?|habitaci(?:ón|on|ones)'],
-  ['bathroom', 'bath(?:s|rooms?)?|łazien\\p{L}*|baños?|banos?'],
+  ['bedroom', 'bed(?:s|rooms?|roomed)?|br|bd|sypial\\p{L}*|dormitorios?|habitaci(?:ón|on|ones)'],
+  ['bathroom', 'bath(?:s|rooms?)?|ba|łazien\\p{L}*|baños?|banos?'],
   ['room', 'rooms?|pok[oó]j\\p{L}*|pokoi\\p{L}*'],
   ['car', 'cars?|samoch[oó]d\\p{L}*|aut(?:a|o)?|stanowisk\\p{L}*|coches?|veh[ií]culos?'],
 ];
 const KEY_ALTERNATION = KEY_PATTERNS.map(([key, p]) => `(?<${key}>${p})`).join('|');
 
-/** Adjectives that keep a count whole ("two separate bedrooms", "dwie osobne sypialnie"). */
-const FILLER = '(?:(?:separate|osobn\\p{L}*|oddzieln\\p{L}*)[ \\u00a0]+)?';
-
+const SPACE = '[ \\u00a0]';
 const NUMBER_WORDS = Object.keys(WORDS)
   .sort((a, b) => b.length - a.length)
   .join('|');
+const NUMBER_TOKEN = `(?:[0-9]{1,2}|${NUMBER_WORDS})`;
+
+/**
+ * Up to two adjectives between the number and the noun ("Four spacious bedrooms", "Pięć dużych
+ * sypialni"), never a word that opens another phrase.
+ */
+const NOT_AN_ADJECTIVE =
+  'the|and|for|from|with|per|about|near|that|which|are|has|have|was|were|floors?|minutes?|years?|' +
+  'lub|albo|oraz|dla|przy|jest|są|con|para|por|desde|los|las|del|una|uno';
+const ADJECTIVE = `(?!(?:${NOT_AN_ADJECTIVE})${SPACE})[\\p{L}-]{3,}`;
 
 const PHRASE_RE = new RegExp(
   `(?<![\\p{L}\\p{N}.,])(?:(?<digits>[0-9]{1,2})[- \\u00a0]?|(?<word>${NUMBER_WORDS})[- \\u00a0]+)` +
-    `${FILLER}(?:${KEY_ALTERNATION})(?![\\p{L}\\p{N}])`,
+    `(?<filler>(?:${ADJECTIVE}${SPACE}+){0,2})(?:${KEY_ALTERNATION})(?![\\p{L}\\p{N}])`,
   'giu',
 );
-
+/** A range: "2-3 bedroom apartments", "two to three bedrooms", "dwa lub trzy pokoje". */
+const RANGE_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}.,])${NUMBER_TOKEN}${SPACE}*(?:-|–|—|to|or|lub|albo|do|o)${SPACE}*${NUMBER_TOKEN}[- \\u00a0]*` +
+    `(?:[\\p{L}-]+${SPACE}+)?(?:${KEY_ALTERNATION})(?![\\p{L}\\p{N}])`,
+  'giu',
+);
+/** No number at all: "several bedrooms", "kilka pokoi". */
+const VAGUE_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}])(?:several|multiple|many|various|kilka|kilku|wiele|varios|varias)${SPACE}+` +
+    `(?:[\\p{L}-]+${SPACE}+)?(?:${KEY_ALTERNATION})(?![\\p{L}\\p{N}])`,
+  'giu',
+);
+/** A number and a key too far apart to read as one phrase, inside one clause. */
+const FAR_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}.,])${NUMBER_TOKEN}${SPACE}+(?:[\\p{L}-]+${SPACE}+){1,5}?(?:${KEY_ALTERNATION})(?![\\p{L}\\p{N}])`,
+  'giu',
+);
 const POLISH_COMPOUND_RE = new RegExp(
   `(?<![\\p{L}\\p{N}])(?<prefix>${Object.keys(POLISH_PREFIX).join('|')})` +
     `(?:(?<room>pokojow\\p{L}*)|(?<car>stanowiskow\\p{L}*))(?![\\p{L}\\p{N}])`,
   'giu',
 );
-
 const KAWALERKA_RE = /(?<![\p{L}\p{N}])kawaler(?:k\p{L}*|ek)(?![\p{L}\p{N}])/giu;
+const STUDIO_RE = /(?<![\p{L}\p{N}])(?:studio|estudio|kawaler(?:k\p{L}*|ek))(?![\p{L}\p{N}])/iu;
+const SPEC_JOIN_RE = /^[ \u00a0]*(?:,|\/|\+|&|and|oraz|i|y|·|\|)[ \u00a0]*$/iu;
+const SINGULAR_KEY_RE = /^(?:bed|bedroom|bath|bathroom|room)$/iu;
+/** Only a spec attached to a digit: "3BR/2BA". */
+const ABBREVIATED_KEY_RE = /^(?:br|bd|ba)$/iu;
+
+function keyOf(groups: Record<string, string | undefined>): CountKey | undefined {
+  return KEY_PATTERNS.find(([k]) => groups[k] !== undefined)?.[0];
+}
 
 /**
- * Every count of `text`, in the order found per pattern.
+ * Every count of `text`.
  *
- * @param text - A number-normalised text (`normaliseNumberGroups`).
- * @returns Every count with its key.
+ * @param text - A number-normalised text.
+ * @returns Every count with its key, in text order. A range is no count.
  */
 export function readCounts(text: string): CountMention[] {
-  const counts: CountMention[] = [];
+  const counts: (CountMention & { nounEnd: number })[] = [];
+  const ranges = Array.from(text.matchAll(RANGE_RE), (m) => [m.index, m.index + m[0].length]);
   for (const m of text.matchAll(PHRASE_RE)) {
+    if (ranges.some(([s = 0, e = 0]) => m.index >= s && m.index < e)) continue;
     const groups = m.groups ?? {};
-    const key = KEY_PATTERNS.find(([k]) => groups[k] !== undefined)?.[0];
+    const key = keyOf(groups);
     if (key === undefined) continue;
     const digits = groups.digits;
     const number = digits ?? groups.word ?? '';
     const value = digits !== undefined ? Number(digits) : WORDS[number.toLowerCase()];
     if (value === undefined) continue;
+    const noun = groups[key] ?? '';
+    // "Two beds in the guest room" is furniture; "2 beds" is a spec.
+    if (digits === undefined && (/^beds$/iu.test(noun) || ABBREVIATED_KEY_RE.test(noun))) continue;
     counts.push({
       key,
       value,
       digit: digits !== undefined,
       start: m.index,
       end: m.index + number.length,
-      compound: text.charAt(m.index + number.length) === '-',
+      compound:
+        text.charAt(m.index + number.length) === '-' ||
+        (value >= 2 && (groups.filler ?? '') === '' && SINGULAR_KEY_RE.test(noun)),
+      nounEnd: m.index + m[0].length,
     });
   }
   for (const m of text.matchAll(POLISH_COMPOUND_RE)) {
@@ -153,19 +204,67 @@ export function readCounts(text: string): CountMention[] {
       start: m.index,
       end: m.index + (groups.prefix ?? '').length,
       compound: true,
+      nounEnd: m.index + m[0].length,
     });
   }
   for (const m of text.matchAll(KAWALERKA_RE)) {
+    const end = m.index + m[0].length;
     counts.push({
       key: 'room',
       value: 1,
       digit: false,
       start: m.index,
-      end: m.index + m[0].length,
+      end,
       compound: true,
+      nounEnd: end,
     });
   }
-  return counts;
+  counts.sort((x, y) => x.start - y.start);
+  // A spec list states the whole property: "3 bedrooms and 3 bathrooms".
+  return counts.map((c, i) => {
+    const next = counts[i + 1];
+    const prev = counts[i - 1];
+    const listed =
+      (next !== undefined && SPEC_JOIN_RE.test(text.slice(c.nounEnd, next.start))) ||
+      (prev !== undefined && SPEC_JOIN_RE.test(text.slice(prev.nounEnd, c.start)));
+    // "una habitación y un baño" of one floor: a 1 in a list may still be a part.
+    return { ...c, compound: c.compound || (listed && c.value >= 2) };
+  });
+}
+
+/**
+ * The keys a text mentions in a way no count can be read from: a range, a vague quantity, or a
+ * number too far from its noun. Such a key is unknown: if the recogniser cannot tell, it passes.
+ *
+ * @param text - A number-normalised listing text.
+ * @returns The unreadable keys.
+ */
+export function unreadableCountKeys(text: string): Set<CountKey> {
+  const keys = new Set<CountKey>();
+  for (const re of [RANGE_RE, VAGUE_RE]) {
+    for (const m of text.matchAll(re)) {
+      const key = keyOf(m.groups ?? {});
+      if (key !== undefined) keys.add(key);
+    }
+  }
+  for (const clause of text.split(/[.;:!?\n,]/u)) {
+    for (const m of clause.matchAll(FAR_RE)) {
+      const key = keyOf(m.groups ?? {});
+      if (key !== undefined && !readCounts(m[0]).some((c) => c.key === key)) keys.add(key);
+    }
+  }
+  return keys;
+}
+
+/**
+ * Does a listing call itself a studio ("Studio apartment", "estudio", "kawalerka")? It then states
+ * one room and no bedroom, whichever of those words the copy uses.
+ *
+ * @param text - A listing's words.
+ * @returns `true` when it does.
+ */
+export function namesStudio(text: string): boolean {
+  return STUDIO_RE.test(text);
 }
 
 /**

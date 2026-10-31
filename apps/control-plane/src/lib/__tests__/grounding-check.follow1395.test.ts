@@ -31,8 +31,8 @@ const PL = {
 
 describe('FOLLOW-1395 — inflected Polish place names', () => {
   it.each([
-    ['Trzypokojowe mieszkanie 64 m² na Podgórzu w Krakowie', KRK],
-    ['Trzypokojowe mieszkanie 64 m² w Krakowie, Podgórze', KRK],
+    ['Mieszkanie 64 m² na Podgórzu w Krakowie', KRK],
+    ['Mieszkanie 64 m² w Krakowie, Podgórze', KRK],
     ['Studio w Albufeirze, 32 m², wspólny basen', ALB],
     ['Mieszkanie w Albufeirze', ALB],
     ['Dom pod Gdańskiem', PL],

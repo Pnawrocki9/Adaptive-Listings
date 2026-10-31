@@ -136,6 +136,15 @@ const STUDY: [string, Listing, string, string][] = [
   ['lis.diaspora_buyer.pl', LIS, 'diaspora_buyer', SONNET_LIS_DIASPORA_PL],
 ];
 
+/**
+ * ESC-089 stays provable: `lis` above is refused for its room count, so nothing there shows its
+ * family wording being served. The same body without "Dwupokojowe" must be FIT.
+ */
+const SONNET_LIS_WITHOUT_ROOM_COUNT = SONNET_LIS_DIASPORA_PL.replace(
+  'Dwupokojowe mieszkanie',
+  'Mieszkanie',
+);
+
 describe('FOLLOW-1411 — family wording is served; each study body is judged on its facts', () => {
   beforeEach(() => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'test-key-'.repeat(3));
@@ -153,6 +162,18 @@ describe('FOLLOW-1411 — family wording is served; each study body is judged on
     'wro.diaspora_buyer.pl': 'FIT',
     'lis.diaspora_buyer.pl': { verdict: 'REFUSED', violation: 'count_mismatch' },
   };
+
+  it('ESC-089: "Adres znajomy dla rodziny" and "dom rodzinny" are served, on a lis body that is FIT', async () => {
+    expect(SONNET_LIS_WITHOUT_ROOM_COUNT).toContain('Adres znajomy dla rodziny');
+    expect(SONNET_LIS_WITHOUT_ROOM_COUNT).toContain('dom rodzinny');
+    expect(SONNET_LIS_WITHOUT_ROOM_COUNT).not.toContain('Dwupokojowe');
+    mockCreate
+      .mockResolvedValueOnce(reply(fit(SONNET_LIS_WITHOUT_ROOM_COUNT)))
+      .mockResolvedValueOnce(reply(LIS.context.listing_title));
+    const report = await generateDescription(event(LIS, 'diaspora_buyer', 'pl'));
+    expect(report.outcome.verdict).toBe('FIT');
+    expect(report.claimsValidation).not.toBeNull();
+  });
 
   it.each(STUDY)('%s: the familial-steering refusal no longer applies', async (id, l, a, body) => {
     mockCreate

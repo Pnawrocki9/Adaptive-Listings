@@ -416,6 +416,9 @@ B), `docs/INTERFACES.md` (description event becomes in-process; seed route), Mod
   (`lib/typed-claims.ts`, both paths). A count, a sum of money, an area unit and a year are read
   with what they are about; `checkTypedClaims` also gives AC(1b) each claim's source field. Narrow
   on purpose: a plain count under the stated one may be a part of it. `claims-v8`, corpus v21–v24.
+  If a recogniser cannot tell, it passes. A street address is masked on both sides before anything
+  is read (`lib/street-address.ts`, CEO 2026-10-30), and the stated count wins over a derived one:
+  on a listing that states only bedrooms any "N-room" is refused, the correct-looking +1 included.
 
 ## References
 

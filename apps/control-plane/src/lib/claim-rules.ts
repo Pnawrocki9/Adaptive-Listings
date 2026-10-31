@@ -15,6 +15,7 @@
  * @module apps/control-plane/src/lib/claim-rules
  */
 
+import { stripGroundedCounts } from '@/lib/count-claims';
 import { stripGroundedDecades } from '@/lib/decade-expressions';
 import { AMENITY_RES, asserted } from '@/lib/amenity-lexicon';
 import { CONDITION_FACT_RE, assertsGuarantee, assertsNoWorkClaim } from '@/lib/condition-lexicon';
@@ -53,6 +54,13 @@ export function areaNumberPattern(digit: string, space: string, flags: string): 
     `square${space}+f(?:ee|oo)t)`;
   return new RegExp(`(${digit}[${digit}.,]*)${space}*${unit}(?![a-z])`, flags);
 }
+
+/**
+ * T5: the area units only a LISTING is read for: "64 mkw." grounds "64 m²" [FOLLOW-1311]. Reading
+ * them in the copy too is a tightening, not this loosening.
+ */
+const LISTING_AREA_NUMBER_RE =
+  /(\p{Nd}[\p{Nd}.,]*)\s*(?:mkw|m\.?\s?kw|metr\p{L}*\s+kwadratow\p{L}*|metros?\s+cuadrados?)(?![\p{L}\p{N}])/giu;
 
 const AREA_KEY_RE = /area|size|sqm|sq_?ft|m2|surface|plot|floor_?space|footage/i;
 
@@ -190,7 +198,11 @@ export function checkNumbers(
   const grounding = withMultipliedNumbers(normalised);
   const withoutDecades = stripGroundedDecades(normaliseNumberGroups(rawText), normalised);
   if (withoutDecades === null) return 'hallucinated_number';
-  const text = stripGroundedMultipliedNumbers(withoutDecades, grounding);
+  // T3: a count the listing states with the same key, in digits or in words [FOLLOW-1311].
+  const text = stripGroundedCounts(
+    stripGroundedMultipliedNumbers(withoutDecades, grounding),
+    grounding,
+  );
   const grounded = new Set<string>();
   for (const m of grounding.matchAll(dialect.digit)) {
     const canon = canonNumber(m[0]);
@@ -240,6 +252,9 @@ export function buildGrounding(
   const text = parts.join('\n');
   // "1 200 m²" is one number, as in the digit rule [FOLLOW-1388].
   for (const m of normaliseNumberGroups(text).matchAll(dialect.areaNumber)) {
+    areaNumbers.add(canonNumber(m[1] ?? ''));
+  }
+  for (const m of normaliseNumberGroups(text).matchAll(LISTING_AREA_NUMBER_RE)) {
     areaNumbers.add(canonNumber(m[1] ?? ''));
   }
   areaNumbers.delete('');

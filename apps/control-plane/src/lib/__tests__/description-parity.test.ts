@@ -98,6 +98,9 @@
  *     composition refusal, and its multiplied price may have been rounded), so v20 is a stamp-only
  *     re-freeze of v19 like v19 of v18 (no corpus verdict moved under the tightened checks). Every
  *     guard replays with the CURRENT stamp (v20's).
+ *   - `corpus.v21.jsonl` + `MANIFEST.v21.json` — FOLLOW-1311 slice 2 (T3: a digit count the listing
+ *     states in words) is a verdict delta of v20 in `VERDICT_DELTAS`: three recorded headlines are
+ *     refused for their next violation instead. No stamp bump: a loosening.
  *
  * No other I/O happens: the test env configures no Redis, ClickHouse, Postgres or Sentry, so the
  * spend gate reads 0, every write reports `not_configured` and no row is written.
@@ -277,6 +280,8 @@ const MANIFEST_V20 = JSON.parse(
   readFileSync(join(FIXTURE_DIR, 'MANIFEST.v20.json'), 'utf8'),
 ) as ManifestV3 & { stamp_refreeze: { from: string; to: string; cases: number } };
 const STAMP = new Map(CASES_V20.map((c) => [c.id, c.expected.claims_validation] as const));
+/** The stamp v20 introduced (FOLLOW-1420); the corpora after it are frozen with it. */
+const V20_STAMP = 'claims-v7';
 /** The stamp v14 introduced (FOLLOW-1415); the corpora after it are frozen with it. */
 const V14_STAMP = 'claims-v4';
 const CASES_V15: Case[] = readCorpus('corpus.v15.jsonl');
@@ -329,6 +334,15 @@ const VERDICT_DELTAS: {
     ],
   },
   { version: 16, ticket: 'FOLLOW-1397', ids: ['live.020.listing-009.yield_hunter.en'] },
+  {
+    version: 21,
+    ticket: 'FOLLOW-1311',
+    ids: [
+      'live.030.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.first_time_buyer.en',
+      'live.031.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.flip_investor.en',
+      'live.032.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.neutral.en',
+    ],
+  },
 ].map((d) => ({
   ...d,
   cases: readCorpus(`corpus.v${String(d.version)}.jsonl`),
@@ -346,6 +360,10 @@ const AFTER_V9_DELTA_IDS = new Set(
 const AFTER_V15_DELTA_IDS = new Set(
   VERDICT_DELTAS.filter((d) => d.version > 15).flatMap((d) => d.manifest.delta.map((x) => x.id)),
 );
+/** Every case a verdict delta after v20 changed: the v17–v20 guards no longer replay it. */
+const AFTER_V20_DELTA_IDS = new Set(
+  VERDICT_DELTAS.filter((d) => d.version > 20).flatMap((d) => d.manifest.delta.map((x) => x.id)),
+);
 
 /** The corpus a verdict delta is derived from: the one numbered just before it. */
 function corpusBefore(version: number): { cases: Case[]; manifest: ManifestV3 } {
@@ -353,6 +371,7 @@ function corpusBefore(version: number): { cases: Case[]; manifest: ManifestV3 } 
   if (version - 1 === 9) return { cases: CASES_V9, manifest: MANIFEST_V9 };
   if (version - 1 === 10) return { cases: CASES_V10, manifest: MANIFEST_V10 };
   if (version - 1 === 15) return { cases: CASES_V15, manifest: MANIFEST_V15 };
+  if (version - 1 === 20) return { cases: CASES_V20, manifest: MANIFEST_V20 };
   const d = VERDICT_DELTAS.find((x) => x.version === version - 1);
   if (d === undefined) throw new Error(`no corpus v${String(version - 1)}`);
   return d;
@@ -827,7 +846,13 @@ describe.each(VERDICT_DELTAS.map((d, i) => [d.version, d.ticket, d, i] as const)
       // Frozen before v10 with claims-v1; after it with the stamp v10 introduced [FOLLOW-1411];
       // after v14 with v14's [FOLLOW-1397].
       expect(d.manifest.claims_validation_version).toBe(
-        d.version > 14 ? V14_STAMP : d.version > 10 ? V10_STAMP : FROZEN_STAMP,
+        d.version > 20
+          ? V20_STAMP
+          : d.version > 14
+            ? V14_STAMP
+            : d.version > 10
+              ? V10_STAMP
+              : FROZEN_STAMP,
       );
       expect(d.cases.map((c) => c.id)).toEqual(prevCases.map((c) => c.id));
       expect([...ids].sort()).toEqual([...d.ids].sort());
@@ -1564,7 +1589,9 @@ describe('description parity corpus v17 (FOLLOW-1414 — write about the home, P
     expect(POLISH_ROOM_COUNTS).not.toMatch(/dwuipokojowe/u);
   });
 
-  describe.each(CASES_V17.map((c) => [c.id, c] as const))('%s', (_id, c) => {
+  describe.each(
+    CASES_V17.filter((c) => !AFTER_V20_DELTA_IDS.has(c.id)).map((c) => [c.id, c] as const),
+  )('%s', (_id, c) => {
     it('generates identically to the v17 record', async () => {
       await expectIdentical(c);
     });
@@ -1625,7 +1652,9 @@ describe('description parity corpus v18 (FOLLOW-1414 — claims-v5, stamp-only r
     expect(V18_TEXT.length).toBe(V17_TEXT.length); // same-length value: no byte shifted
   });
 
-  describe.each(CASES_V18.map((c) => [c.id, c] as const))('%s', (_id, c) => {
+  describe.each(
+    CASES_V18.filter((c) => !AFTER_V20_DELTA_IDS.has(c.id)).map((c) => [c.id, c] as const),
+  )('%s', (_id, c) => {
     it('generates identically to the v18 record', async () => {
       await expectIdentical(c);
     });
@@ -1682,7 +1711,9 @@ describe('description parity corpus v19 (FOLLOW-1419 — claims-v6, stamp-only r
     expect(V19_TEXT.length).toBe(V18_TEXT.length); // same-length value: no byte shifted
   });
 
-  describe.each(CASES_V19.map((c) => [c.id, c] as const))('%s', (_id, c) => {
+  describe.each(
+    CASES_V19.filter((c) => !AFTER_V20_DELTA_IDS.has(c.id)).map((c) => [c.id, c] as const),
+  )('%s', (_id, c) => {
     it('generates identically to the v19 record', async () => {
       await expectIdentical(c);
     });
@@ -1739,9 +1770,29 @@ describe('description parity corpus v20 (FOLLOW-1420 / FOLLOW-1421 — claims-v7
     expect(V20_TEXT.length).toBe(V19_TEXT.length); // same-length value: no byte shifted
   });
 
-  describe.each(CASES_V20.map((c) => [c.id, c] as const))('%s', (_id, c) => {
+  describe.each(
+    CASES_V20.filter((c) => !AFTER_V20_DELTA_IDS.has(c.id)).map((c) => [c.id, c] as const),
+  )('%s', (_id, c) => {
     it('generates identically to the v20 record', async () => {
       await expectIdentical(c);
     });
+  });
+});
+
+describe('description parity corpus v21 (FOLLOW-1311 slice 2 — a digit count the listing spells out)', () => {
+  it('each delta is "3-Bed" grounded by "three-bedroom": the headline is refused for its next word', () => {
+    const v21 = VERDICT_DELTAS.find((d) => d.version === 21)!;
+    expect(v21.manifest.delta).toHaveLength(3);
+    for (const id of v21.ids) {
+      const before = CASES_V20.find((c) => c.id === id)!;
+      const after = v21.cases.find((c) => c.id === id)!;
+      expect(before.raw_headline).toContain('3-Bed');
+      expect(before.input.original_description).toContain('three-bedroom');
+      expect(before.expected.headline_violation).toBe('hallucinated_number');
+      expect(after.expected.headline_violation).not.toBe('hallucinated_number');
+      expect(after.expected.headline_violation).not.toBeNull();
+      expect(after.expected.headline).toBeNull();
+      expect(after.expected.outcome).toEqual(before.expected.outcome);
+    }
   });
 });

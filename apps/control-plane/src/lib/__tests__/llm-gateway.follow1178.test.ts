@@ -4,7 +4,7 @@
  * WHY THIS FILE EXISTS. #875 and #877 each reported a judge-round-trip price as one number
  * (`0/12 judged, 0/12 discarded, 12/12 at one call`, _"#875's win costs nothing to keep"_).
  * Both measurements ran at `similarity: 0.75`, which `llm-gateway.ts` routes to Haiku — the band
- * where the price is near zero BY CONSTRUCTION, because `buildHaikuPrompt` shows the model the
+ * where the price is near zero BY CONSTRUCTION, because `buildTweakPrompt` shows the model the
  * archetype's authored `cta` and the model reproduces it, so #877's provenance exemption fires.
  * `buildSonnetPrompt` shows it nothing of the kind, so on the full-generation band the exemption
  * is satisfiable only by coincidence and the `cta` is an ordinary flag. Every one of the nine
@@ -80,7 +80,7 @@ const SHIPPED_CTA = YIELD_HUNTER.slots.find((s) => s.slot === 'cta')?.en ?? '';
  * the gateway actually passed to Anthropic — which is what makes "this ran on band X" a
  * measurement rather than a comment.
  */
-const HAIKU = 'claude-haiku-4-5';
+const TWEAK_BAND_MODEL = 'claude-sonnet-5-5'; // FOLLOW-1426: the tweak band runs on the generation model
 const SONNET = 'claude-sonnet-5-5'; // the default generation model since FOLLOW-1387
 
 /**
@@ -247,7 +247,7 @@ describe('FOLLOW-1178 — judge budget per band', () => {
 
       const result = await callLlmGateway({ ...BASE_INPUT, similarity: SIMILARITY_HAIKU_BAND });
 
-      expect(generationModel()).toBe(HAIKU);
+      expect(generationModel()).toBe(TWEAK_BAND_MODEL);
       expect(mockCreate).toHaveBeenCalledTimes(3);
       expect(result?.directives).toHaveLength(3);
     });
@@ -278,7 +278,7 @@ describe('FOLLOW-1178 — judge budget per band', () => {
 
       const result = await callLlmGateway({ ...BASE_INPUT, similarity: SIMILARITY_HAIKU_BAND });
 
-      expect(generationModel()).toBe(HAIKU);
+      expect(generationModel()).toBe(TWEAK_BAND_MODEL);
       expect(mockCreate).toHaveBeenCalledTimes(1); // generation only
       expect(result).toBeNull();
     });

@@ -5,7 +5,7 @@
  * WHY THIS FILE EXISTS. #880 replaced a flat `MAX_JUDGE_CALLS_PER_REQUEST = 2` with a per-band
  * budget and DERIVED each number. The tweak band's derivation read _"Three slots minus the one
  * the prompt makes exempt-able leaves two adjudicable flags."_ The exempt-able one is the `cta`,
- * and it is exempt-able only because `buildHaikuPrompt` renders `value: s.en` and
+ * and it is exempt-able only because `buildTweakPrompt` renders `value: s.en` and
  * `isTemplateAuthoredValue` compares against `[s.en, ...(s.variants?.en ?? [])]`. There is no
  * non-English authored string anywhere in the playbooks for that predicate to match (RETRO-321
  * §4a LG-1 census: 17 `slot: 'cta'` entries, every one `{ slot, en }` only).
@@ -63,7 +63,7 @@ const YIELD_HUNTER = getPlaybook('yield_hunter');
 /** Read from the playbook, not retyped — a re-authoring must fail this file loudly. */
 const SHIPPED_CTA = YIELD_HUNTER.slots.find((s) => s.slot === 'cta')?.en ?? '';
 
-const HAIKU = 'claude-haiku-4-5';
+const TWEAK_BAND_MODEL = 'claude-sonnet-5-5'; // FOLLOW-1426: the tweak band runs on the generation model
 const SONNET = 'claude-sonnet-5-5'; // the default generation model since FOLLOW-1387
 
 /** `0.6 < similarity <= 0.85` → Haiku (the band FOLLOW-819's harness drives); else Sonnet. */
@@ -204,7 +204,7 @@ describe('FOLLOW-1180 — the tweak-band budget on a non-English listing', () =>
 
       const result = await callLlmGateway({ ...BASE_INPUT, similarity: SIMILARITY_HAIKU_BAND });
 
-      expect(generationModel()).toBe(HAIKU);
+      expect(generationModel()).toBe(TWEAK_BAND_MODEL);
       // 1 generation + 3 adjudications. Before this ticket: 1 and a null result.
       expect(mockCreate).toHaveBeenCalledTimes(4);
       expect(result?.directives).toHaveLength(3);
@@ -232,7 +232,7 @@ describe('FOLLOW-1180 — the tweak-band budget on a non-English listing', () =>
 
       const result = await callLlmGateway({ ...BASE_INPUT, similarity: SIMILARITY_HAIKU_BAND });
 
-      expect(generationModel()).toBe(HAIKU);
+      expect(generationModel()).toBe(TWEAK_BAND_MODEL);
       expect(mockCreate).toHaveBeenCalledTimes(3); // 1 generation + 2 adjudications
       expect(result?.directives).toHaveLength(3);
       expect(judgeSourcesFromFetch()).toEqual([
@@ -268,7 +268,7 @@ describe('FOLLOW-1180 — the tweak-band budget on a non-English listing', () =>
         similarity: SIMILARITY_HAIKU_BAND,
       });
 
-      expect(generationModel()).toBe(HAIKU);
+      expect(generationModel()).toBe(TWEAK_BAND_MODEL);
       expect(mockCreate).toHaveBeenCalledTimes(4);
       expect(result?.directives).toHaveLength(3);
       expect(judgeSourcesFromFetch()).toHaveLength(3);
@@ -323,7 +323,7 @@ describe('FOLLOW-1180 — the tweak-band budget on a non-English listing', () =>
 
       const result = await callLlmGateway({ ...BASE_INPUT, similarity: SIMILARITY_HAIKU_BAND });
 
-      expect(generationModel()).toBe(HAIKU);
+      expect(generationModel()).toBe(TWEAK_BAND_MODEL);
       expect(mockCreate).toHaveBeenCalledTimes(1);
       expect(result).toBeNull();
       expect(judgeSourcesFromFetch()).toEqual([]);

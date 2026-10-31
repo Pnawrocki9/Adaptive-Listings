@@ -1,5 +1,6 @@
 /**
- * LLM Gateway: Haiku tweak band, else the generation model; history in ADR-0024 [ADP-002].
+ * LLM Gateway: tweak band and generation band both run on the admin generation model; the band
+ * comes from `similarity`, never from the model; history in ADR-0024 [ADP-002, FOLLOW-1426].
  * @module apps/control-plane/src/lib/llm-gateway
  */
 
@@ -97,11 +98,22 @@ const JUDGE_CALL_BUDGET_TWEAK_BAND = 3;
 const JUDGE_CALL_BUDGET_GENERATION_BAND = 3;
 
 /**
+ * The band, decided once from `similarity` and passed around; never inferred from the model
+ * [FOLLOW-1426]. `tweak` is the `llm_tweaked` source, `full` is `llm_full`.
+ */
+type Band = 'tweak' | 'full';
+
+/** Tweak band: similarity in (0.6, 0.85]; the route's `llmSource` splits at the same point. */
+function bandFor(similarity: number): Band {
+  return similarity > 0.6 && similarity <= 0.85 ? 'tweak' : 'full';
+}
+
+/**
  * Judge budget for this band (same split as `generationSource`); over budget stays rejected
  * [FOLLOW-1178].
  */
-function judgeCallBudget(model: string): number {
-  return model === HAIKU_MODEL ? JUDGE_CALL_BUDGET_TWEAK_BAND : JUDGE_CALL_BUDGET_GENERATION_BAND;
+function judgeCallBudget(band: Band): number {
+  return band === 'tweak' ? JUDGE_CALL_BUDGET_TWEAK_BAND : JUDGE_CALL_BUDGET_GENERATION_BAND;
 }
 
 /**
@@ -158,8 +170,8 @@ type GenerationOutcome =
   | 'unavailable_error';
 
 /** The single place a generation `source` is picked [FOLLOW-1041]. */
-function generationSource(model: string, outcome: GenerationOutcome): string {
-  const band = model === HAIKU_MODEL ? 'llm_tweaked' : 'llm_full';
+function generationSource(bandId: Band, outcome: GenerationOutcome): string {
+  const band = bandId === 'tweak' ? 'llm_tweaked' : 'llm_full';
   return outcome === 'served' ? band : `${band}_${outcome}`;
 }
 
@@ -224,7 +236,7 @@ function traitRulesBlock(input: LlmGatewayInput): string {
   return block === '' ? '' : `\n${block}\n`;
 }
 
-function buildHaikuPrompt(input: LlmGatewayInput): string {
+function buildTweakPrompt(input: LlmGatewayInput): string {
   const { archetypeId, basePlaybook, sessionContext, listingContext } = input;
   const baseDirectivesJson = JSON.stringify(
     basePlaybook.slots.map((s) => ({
@@ -620,18 +632,12 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
 
   const { confidence, similarity } = input;
 
-  // Model: forceModel, then Haiku on the tweak band, then the admin model [FOLLOW-161].
-  let model: string;
-  if (input.forceModel) {
-    // DEMO MODE takes absolute precedence (DEMO-001).
-    model = input.forceModel;
-  } else if (similarity > 0.6 && similarity <= 0.85) {
-    // Low-latency Haiku tweak path — stays Haiku, not selectable.
-    model = HAIKU_MODEL;
-  } else {
-    // Returns the default when the config DB is down [FOLLOW-161].
-    model = await getGlobalGenerationModel();
-  }
+  // Band from similarity, once; the model never decides it [FOLLOW-1426].
+  const band = bandFor(similarity);
+
+  // Model: forceModel, else the admin model for both bands [FOLLOW-161, FOLLOW-1426].
+  // DEMO MODE takes absolute precedence (DEMO-001); the config DB down returns the default.
+  const model: string = input.forceModel ?? (await getGlobalGenerationModel());
 
   // Circuit breaker: today's spend, one O(1) Upstash read (FOLLOW-1290; fail-open)
   const currentSpend = await getDailySpend();
@@ -650,8 +656,8 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     );
   }
 
-  // Build prompt — use haiku-style for haiku, sonnet-style for all others.
-  const prompt = model === HAIKU_MODEL ? buildHaikuPrompt(input) : buildSonnetPrompt(input);
+  // Prompt follows the band, not the model [FOLLOW-1426].
+  const prompt = band === 'tweak' ? buildTweakPrompt(input) : buildSonnetPrompt(input);
 
   // 512 for a 4.x model; a 5.x model's thinking and tokenizer profile on top [FOLLOW-1377].
   const request = generationRequestFor(model, 512);
@@ -686,7 +692,7 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
           tokensOut,
           costUsd,
           latencyMs,
-          source: generationSource(model, outcome),
+          source: generationSource(band, outcome),
         }),
       );
     };
@@ -798,7 +804,7 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     }
 
     // Over budget: flagged slots refused unjudged, others served [FOLLOW-1178, FOLLOW-1312].
-    const judgeBudget = judgeCallBudget(model);
+    const judgeBudget = judgeCallBudget(band);
     const flaggedSlots = scanned
       .filter((s) => s.violation === 'hallucinated_proper_name')
       .map((s) => s.directive.slot);
@@ -887,7 +893,7 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
         tokensOut: 0,
         costUsd: 0,
         latencyMs: Date.now() - startMs,
-        source: generationSource(model, 'unavailable_error'),
+        source: generationSource(band, 'unavailable_error'),
       }),
     );
 

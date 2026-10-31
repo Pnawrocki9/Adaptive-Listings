@@ -671,3 +671,8 @@ the invoking command.
   out of the place rule ("ul. Żydowska" is an address, "a Catholic school" an institution). ·
   **Guardrail I'd add:** for every new refusal term, pin at least one real-listing sentence that
   uses the same string in its ordinary sense as a PASS test before it ships.
+- **2026-10-31 / FOLLOW-1426** · Moved the `/api/adapt` tweak band from hardcoded Haiku 4.5 to the
+  global generation model; the band is now decided once from `similarity` (`bandFor`) and drives
+  source, prompt and judge budget. · Judgment call: kept the tweak prompt (not the generation
+  prompt) on the new model; judge stays Haiku. · Guardrail I'd add: never infer a band/label from a
+  model id (`model === X`); a test must vary the model and assert the label does not move.

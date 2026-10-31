@@ -59,7 +59,7 @@ const { getPlaybook } = await import('@estalara/shared/playbooks');
 const YIELD_HUNTER = getPlaybook('yield_hunter');
 
 /** The two model strings the band split produces, asserted against the model actually used. */
-const HAIKU = 'claude-haiku-4-5';
+const TWEAK_BAND_MODEL = 'claude-sonnet-5-5'; // FOLLOW-1426: the tweak band runs on the generation model
 const SONNET = 'claude-sonnet-5-5'; // the default generation model since FOLLOW-1387
 
 /** `0.6 < similarity <= 0.85` → Haiku; everything else → the generation band. */
@@ -237,14 +237,14 @@ describe('FOLLOW-1183 — the futility skip is countable, per band', () => {
 
       const result = await callLlmGateway({ ...BASE_INPUT, similarity: SIMILARITY_HAIKU_BAND });
 
-      expect(generationModel()).toBe(HAIKU);
+      expect(generationModel()).toBe(TWEAK_BAND_MODEL);
       expect(mockCreate).toHaveBeenCalledTimes(1);
       expect(result).toBeNull();
 
       const rows = unjudgedRows();
       expect(rows).toHaveLength(1);
       expect(rows[0]?.source).toBe('fact_check_unjudged_over_budget_flags_5');
-      expect(rows[0]?.model).toBe(HAIKU);
+      expect(rows[0]?.model).toBe(TWEAK_BAND_MODEL);
     });
 
     it('the row is FREE, and its zeros are measured rather than unknown', async () => {

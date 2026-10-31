@@ -487,7 +487,7 @@ describe('route.follow1163.test.ts — FOLLOW-1163 / MASTER_DESIGN §E.7.0 (ESC-
 
   /**
    * @param similarity 0.95 → branch 2 (playbook verbatim, no LLM).
-   *                   0.85 → branch 3 (Haiku tweak; the mocked gateway returns null, so the
+   *                   0.85 → branch 3 (tweak band; the mocked gateway returns null, so the
    *                          `playbook_fallback_llm_unavailable` path runs).
    *                   0.40 → branch 4 (full generation; same null, but its fallback is empty).
    * @param confidence 0.9 clears the gate; at or below the threshold is branch 1.

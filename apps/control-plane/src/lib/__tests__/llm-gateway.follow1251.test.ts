@@ -3,7 +3,7 @@
  *
  * THE RECORDED REFUSAL (tests/e2e/follow-819/README.md §5.15 run 2):
  * `[llm-gateway] directive fact-check violation: hallucinated_proper_name archetype=yield_hunter
- * slot=feature value="Investment Performance"`. `buildHaikuPrompt` shows the model the playbook's
+ * slot=feature value="Investment Performance"`. `buildTweakPrompt` shows the model the playbook's
  * `feature` label as a base directive, the model repeats it, neither word is in the listing, the
  * judge correctly finds it ungrounded IN THE LISTING, and one rejection discarded the whole batch
  * (since FOLLOW-1312 a rejection refuses only its own slot).
@@ -83,7 +83,7 @@ function directives(archetype: string, ...pairs: [slot: string, value: string][]
   return JSON.stringify(list);
 }
 
-/** Haiku tweak band (0.6 < similarity ≤ 0.85) — the band the recorded refusal was on. */
+/** Tweak band (0.6 < similarity ≤ 0.85) — the band the recorded refusal was on. */
 const BASE_INPUT = {
   archetypeId: 'yield_hunter' as const,
   confidence: 0.75,
@@ -134,7 +134,7 @@ describe('FOLLOW-1251 — authored section labels are grounded by construction',
 
     const result = await callLlmGateway(BASE_INPUT);
 
-    // The real `buildHaikuPrompt` is what showed the model the label as a base directive.
+    // The real `buildTweakPrompt` is what showed the model the label as a base directive.
     const prompt = JSON.stringify(mockCreate.mock.calls[0]?.[0]);
     expect(prompt).toContain(SHIPPED_FEATURE);
     // The label is NOT in the listing, so the exemption — not the grounding — cleared it.

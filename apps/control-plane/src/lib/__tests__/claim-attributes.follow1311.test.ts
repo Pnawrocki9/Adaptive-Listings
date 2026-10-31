@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildClaimGrounding, checkUnsupportedClaims } from '@/lib/claim-containment';
 import { checkBodyClaims, checkHeadlineFacts } from '@/lib/grounding-check';
+import { maskStreetAddresses } from '@/lib/street-address';
 import { checkTypedClaims } from '@/lib/typed-claims';
 
 interface Listing {
@@ -392,6 +393,212 @@ describe('both paths, and the export AC(1b) calls', () => {
   });
 });
 
+describe('review round: title case', () => {
+  it.each<[string, string]>([
+    ['bungalow', 'Charming Bungalow'],
+    ['detached', 'Modern Detached Villa'],
+    ['freehold', 'Stylish Freehold Flat'],
+    ['solar, after "With"', 'Villa With Solar Panels'],
+    ['orientation first', 'Spacious Flat, South-Facing, Fully Furnished'],
+    ['furnished', 'Spacious Flat, Fully Furnished'],
+    ['the old limit', 'This is a Detached Villa'],
+  ])('refused on a third-floor flat: %s', (_name, text) => {
+    expect(verdict(PLAIN_EN, text)).toBe('unsupported_attribute');
+  });
+
+  it.each<[string, Listing, string]>([
+    [
+      'a title grounds furnished',
+      { original: 'Modern Fully Furnished Flat' },
+      'A fully furnished flat',
+    ],
+    [
+      'a title field',
+      { original: 'Flat.', ctx: { listing_title: 'Modern Fully Furnished Flat' } },
+      'A fully furnished flat',
+    ],
+    ['detached', { original: 'Spacious Detached House' }, 'A detached house'],
+    ['bungalow', { original: 'Charming Bungalow' }, 'A bungalow'],
+  ])('the listing title grounds: %s', (_name, listing, text) => {
+    expect(verdict(listing, text)).toBeNull();
+  });
+
+  it.each<[string, string]>([
+    ['after a preposition', 'A flat near Solar Panels Way'],
+    ['pl: after a preposition', 'Mieszkanie przy Parterowej'],
+    ['before a street word', 'Solar Panels Way is close'],
+  ])('a name: %s', (_name, text) => {
+    expect(verdict(PLAIN_EN, text)).toBeNull();
+  });
+});
+
+describe('review round: the address ruling', () => {
+  it.each<[string, string, string]>([
+    ['exactly: ul. parterowa', 'ul. parterowa, Warszawa', 'ul. parterowa'],
+    ['exactly: przy ul. parterowa', 'ul. parterowa, Warszawa', 'przy ul. parterowa'],
+    ['exactly: freehold road', 'Freehold Road, Leeds', 'freehold road'],
+    ['exactly: Freehold Road, Leeds', 'Freehold Road, Leeds', 'Freehold Road, Leeds'],
+    ['exactly: Bungalow Avenue', 'Bungalow Avenue, Leeds', 'Bungalow Avenue'],
+    ['exactly: Detached House Lane', 'Detached House Lane, Leeds', 'Detached House Lane'],
+    ['exactly: Furnished Lane', 'Furnished Lane, Leeds', 'Furnished Lane'],
+    ['exactly: Solar Panels Way', 'Solar Panels Way, Leeds', 'Solar Panels Way'],
+    ['ul. parterowa', 'ul. parterowa, Warszawa', 'Mieszkanie, ul. parterowa'],
+    ['przy ul. parterowa', 'ul. parterowa, Warszawa', 'Mieszkanie przy ul. parterowa'],
+    ['freehold road', 'Freehold Road, Leeds', 'A flat on freehold road'],
+    ['Freehold Road, Leeds', 'Freehold Road, Leeds', 'A flat at Freehold Road, Leeds'],
+    ['Bungalow Avenue', 'Bungalow Avenue, Leeds', 'A flat, Bungalow Avenue'],
+    ['Detached House Lane', 'Detached House Lane, Leeds', 'A flat: Detached House Lane'],
+    ['Furnished Lane', 'Furnished Lane, Leeds', 'Furnished Lane is close'],
+    ['Solar Panels Way', 'Solar Panels Way, Leeds', 'solar panels way is close'],
+  ])('a listed street passes: %s', (_name, location, text) => {
+    expect(verdict({ original: 'Flat.', ctx: { listing_location: location } }, text)).toBeNull();
+  });
+
+  it('with no listed street, a lower-case street prefix still passes', () => {
+    expect(verdict(PLAIN_PL, 'Mieszkanie przy ul. parterowa')).toBeNull();
+  });
+
+  it.each<[string, string, string]>([
+    ['a location that is the word alone', 'Bungalow', 'A bungalow'],
+    ['a town named like an attribute', 'Solar Panels, Spain', 'Solar panels on the roof'],
+    ['a town and a region', 'Freehold, New Jersey', 'It is freehold.'],
+    ['the street blanks only itself', 'Bungalow Road, Leeds', 'A bungalow on Bungalow Road'],
+    [
+      'the street blanks only itself, freehold',
+      'Freehold Road, Leeds',
+      'Freehold, on Freehold Road',
+    ],
+  ])('masking swallows no claim: %s', (_name, location, text) => {
+    expect(verdict({ original: 'Flat.', ctx: { listing_location: location } }, text)).toBe(
+      'unsupported_attribute',
+    );
+  });
+
+  it('a street repeated in the description grounds nothing', () => {
+    const listing = {
+      original: 'Flat on Freehold Road.',
+      ctx: { listing_location: 'Freehold Road, Leeds' },
+    };
+    expect(verdict(listing, 'It is freehold.')).toBe('unsupported_attribute');
+  });
+
+  it.each<[string]>([
+    ['Plac zabaw w pobliżu'],
+    ['Plaza de parking incluida'],
+    ['Cicha ulica z basenem'],
+    ['Calle con piscina'],
+    ['Paseo marítimo'],
+  ])('a lower-case word after a street word stays: %s', (text) => {
+    expect(maskStreetAddresses(text).replace(/ +/gu, ' ')).toMatch(
+      /zabaw|parking|basenem|piscina|marítimo/u,
+    );
+  });
+});
+
+describe('review round: suggestions are not claims', () => {
+  it.each<[string, Listing, string]>([
+    ['budget for', PLAIN_EN, 'Budget for a new boiler'],
+    ['would be a good idea', PLAIN_EN, 'A new boiler would be a good idea'],
+    ['imperative', PLAIN_EN, 'Add solar panels'],
+    ['put in', PLAIN_EN, 'You could put in solar panels'],
+    ['a question', PLAIN_EN, 'Would you add solar panels?'],
+    ['a question, furnished', PLAIN_EN, 'Could it be furnished?'],
+    ['if', PLAIN_EN, 'If furnished, it lets faster'],
+    ['a plural kind', PLAIN_EN, 'Furnished rentals are in demand here'],
+    ['a singular kind', PLAIN_EN, 'A furnished flat lets faster.'],
+    ['pl: a good idea', PLAIN_PL, 'Fotowoltaika to dobry pomysł'],
+    ['es: si', PLAIN_ES, 'Si instalas placas solares, ahorras'],
+    ['es: a question', PLAIN_ES, '¿Está amueblado?'],
+  ])('passes: %s', (_name, listing, text) => {
+    expect(verdict(listing, text)).toBeNull();
+  });
+
+  it.each<[string, Listing, string]>([
+    ['a statement after a question', PLAIN_EN, 'Looking for a home? It is fully furnished.'],
+    ['a kind with no verb of the market', PLAIN_EN, 'A furnished flat near the park'],
+    ['"if" in another clause', PLAIN_EN, 'If you call, the flat is sold furnished.'],
+  ])('still a claim: %s', (_name, listing, text) => {
+    expect(verdict(listing, text)).toBe('unsupported_attribute');
+  });
+});
+
+describe('review round: T8 and synonyms', () => {
+  it.each<[string, Listing, string]>([
+    ['boiler replaced', { original: 'Boiler replaced in 2023' }, 'New boiler'],
+    ['plumbing replaced', { original: 'Plumbing replaced' }, 'New plumbing'],
+    ['solar: Panele PV 5 kW', { original: 'Panele PV 5 kW' }, 'Solar panels'],
+    ['solar: exactly Instalacja PV', { original: 'Instalacja PV' }, 'Solar panels'],
+    ['top: 4th (top) floor', { original: '4th (top) floor' }, 'Top-floor flat'],
+    ['top: exactly najwyższym piętrze', { original: 'najwyższym piętrze' }, 'Top-floor flat'],
+    ['top: exactly 4/4 piętro', { original: '4/4 piętro' }, 'Top-floor flat'],
+    ['south: exactly Okna południowe', { original: 'Okna południowe' }, 'South-facing'],
+    ['south: exactly SW-facing', { original: 'SW-facing' }, 'South-facing'],
+    ['furnished: exactly', { original: 'w pełni wyposażone' }, 'Umeblowane'],
+    ['low: exactly', { original: 'Rent is low' }, 'Low rent'],
+    ['pl: piec wymieniony', { original: 'Piec został wymieniony.' }, 'A new boiler'],
+    ['solar: panele PV', { original: 'Panele PV na dachu.' }, 'Solar panels on the roof'],
+    ['solar: instalacja PV', { original: 'Instalacja PV.' }, 'Solar panels on the roof'],
+    ['top: (top) floor', { original: 'Flat on the 4th (top) floor.' }, 'A top-floor flat'],
+    ['top: najwyższym piętrze', { original: 'Na najwyższym piętrze.' }, 'A top-floor flat'],
+    ['top: 4/4', { original: 'Mieszkanie, 4/4 piętro.' }, 'A top-floor flat'],
+    ['south: okna południowe', { original: 'Okna południowe.' }, 'South-facing'],
+    ['south: SW-facing', { original: 'SW-facing flat.' }, 'A south-facing flat'],
+    ['west: SW-facing', { original: 'SW-facing flat.' }, 'A west-facing flat'],
+    ['furnished: wyposażone', { original: 'W pełni wyposażone.' }, 'Umeblowane'],
+    ['low: rent is low', { original: 'Rent is low.' }, 'Low rent'],
+  ])('allowed: %s', (_name, listing, text) => {
+    expect(verdict(listing, text)).toBeNull();
+  });
+
+  it.each<[string, Listing, string]>([
+    ['boiler due', { original: 'Boiler to be replaced.' }, 'A new boiler'],
+    ['pl: piec do wymiany', { original: 'Piec do wymiany.' }, 'A new boiler'],
+    ['a bath count is no floor', { original: 'Flat, 3/3 bath.' }, 'A top-floor flat'],
+    ['a kitchen is not furnished', { original: 'W pełni wyposażona kuchnia.' }, 'Umeblowane'],
+    ['a kitchen, after', { original: 'Kuchnia jest w pełni wyposażona.' }, 'Umeblowane'],
+    ['SW is not east', { original: 'SW-facing flat.' }, 'An east-facing flat'],
+    ['low rent, word order', PLAIN_EN, 'The rent is low.'],
+  ])('refused: %s', (_name, listing, text) => {
+    expect(verdict(listing, text)).toBe('unsupported_attribute');
+  });
+});
+
+describe('review round: the whole property, and what a listing withholds', () => {
+  const TWO_STOREY: Listing = { original: 'A two-storey house.' };
+
+  it.each<[string, Listing, string]>([
+    ['the bedrooms', TWO_STOREY, 'The bedrooms are on one level'],
+    ['one level, of a part', PLAIN_EN, 'The roof is on one level.'],
+    ['pl: sypialnie', PLAIN_PL, 'Sypialnie na jednym poziomie'],
+    ['es: los dormitorios', PLAIN_ES, 'Los dormitorios en una sola planta'],
+  ])('a part passes: %s', (_name, listing, text) => {
+    expect(verdict(listing, text)).toBeNull();
+  });
+
+  it.each<[string, Listing, string]>([
+    ['the house', TWO_STOREY, 'The house is on one level'],
+    ['everything', TWO_STOREY, 'Everything sits on one level.'],
+    ['the area', { original: 'Flat of 68 sqm.' }, 'All 68 sqm on one level'],
+    ['exactly: Solar panels planned', { original: 'Solar panels planned' }, 'Solar panels'],
+    ['exactly: not offered', { original: 'Vacant possession not offered' }, 'Vacant possession'],
+    ['planned solar', { original: 'Solar panels planned.' }, 'Solar panels on the roof'],
+    ['planned, pl', { original: 'Fotowoltaika planowana.' }, 'Solar panels on the roof'],
+    ['not offered', { original: 'Vacant possession not offered.' }, 'Vacant possession'],
+    ['is not offered', { original: 'Vacant possession is not offered.' }, 'Vacant possession'],
+  ])('refused: %s', (_name, listing, text) => {
+    expect(verdict(listing, text)).toBe('unsupported_attribute');
+  });
+});
+
+describe('regex cost', () => {
+  it('16 KB of the word stays linear: the context of a match is a slice, not the whole prefix', () => {
+    const text = 'furnished '.repeat(1600);
+    const started = performance.now();
+    expect(verdict(PLAIN_EN, text)).toBe('unsupported_attribute');
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+});
+
 /**
  * Wrong copy that still passes. If the recogniser cannot tell, it passes; each of these is on record
  * in the FOLLOW-1311 amendment.
@@ -425,22 +632,28 @@ describe('KNOWN_LIMITS: these pass although they are wrong', () => {
     ['part-furnished', PLAIN_EN, 'A part-furnished flat'],
     ['sold with furniture', PLAIN_EN, 'Sold with all its furniture'],
     ['"low" on other costs', PLAIN_PL, 'Niskie koszty stałe'],
-    ['low rent, word order', PLAIN_EN, 'The rent is low.'],
+    ['a capital right after a preposition', PLAIN_EN, 'A flat in Detached Villa country'],
+    ['a street word after the claim, unlisted', PLAIN_EN, 'A Detached House Lane flat'],
+    ['a question', PLAIN_EN, 'Why not this fully furnished flat?'],
+    ['"if" with a real claim after it', PLAIN_EN, 'If you like this fully furnished flat, call.'],
+    ['a plural', PLAIN_EN, 'Modern south-facing flats'],
+    ['"could" after the word', PLAIN_EN, 'Solar panels could cut your bills.'],
+    [
+      'the word in the listing, in a name',
+      { original: 'Mieszkanie przy Parterowej.' },
+      'Parterowe mieszkanie',
+    ],
     ['another renewable fitting', PLAIN_EN, 'A new heat pump'],
     ['leasehold', PLAIN_EN, 'The flat is leasehold.'],
-    ['a capital in mid-sentence reads as a name', PLAIN_EN, 'This is a Detached Villa'],
     ['new windows', PLAIN_EN, 'New windows throughout'],
   ])('%s', (_name, listing, text) => {
     expect(verdict(listing, text)).toBeNull();
   });
 
-  it('the other way: a street in lower case is not masked, so its word is read as a claim', () => {
-    expect(verdict(PLAIN_PL, 'Mieszkanie przy ul. parterowa')).toBe('unsupported_attribute');
-  });
-
   it.each<[string, Listing, string]>([
-    ['a remark about the market', PLAIN_EN, 'A furnished flat lets faster.'],
-    ['one level, of a part', PLAIN_EN, 'The roof is on one level.'],
+    ['a generic remark no simple rule reads', PLAIN_EN, 'Solar panels cut bills.'],
+    ['pl: the same', PLAIN_PL, 'Panele słoneczne obniżają rachunki.'],
+    ['a street in lower case, not listed', PLAIN_EN, 'A flat on freehold road'],
   ])('the other way: refused although it may be fine: %s', (_name, listing, text) => {
     expect(verdict(listing, text)).toBe('unsupported_attribute');
   });

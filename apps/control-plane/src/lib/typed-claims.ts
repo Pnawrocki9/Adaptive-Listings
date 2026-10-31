@@ -508,7 +508,10 @@ export function checkTypedClaims(
     .map((s) => s.text.slice(s.text.indexOf(':') + 1));
   const masked = sources
     .filter((s) => !isAddressField(s.field))
-    .map((s) => ({ field: s.field, text: maskStreetAddresses(s.text) }));
+    .map((s) => ({
+      field: s.field,
+      text: maskStreetAddresses(maskListedAddressParts(s.text, addresses)),
+    }));
   const copy = maskStreetAddresses(maskListedAddressParts(text, addresses));
   const normalised = normaliseNumberGroups(copy);
   return [

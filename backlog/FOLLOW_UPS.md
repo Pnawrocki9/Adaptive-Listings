@@ -57149,6 +57149,12 @@ since the baseline (8.8 %), all classified true by a single rater. Parity corpus
 The earlier prototype's 8 bodies did not reproduce: every other attribute in the recordings is
 grounded once the groups read across languages (125 recognised claims).
 
+**What these numbers do not say.** 13 of the 14 attributes refuse nothing on this corpus. The one
+true positive comes from the attribute added after seeing the replay ("top floor"), so 8.8 % and the
+100 % true-positive share say nothing about the precision of the rest. The classification is a
+single rater's; the replay test computes the counts in the delta headers from the frozen verdicts,
+not the share.
+
 **"Detached" for "single-family" is allowed, in English, on a listing naming no attached form
 (ml-engineer, 2026-10-31).** The replay does not decide it: no body or slot of either corpus asserts
 it. The one recording that does is a FOLLOW-1381 headline pinned in FOLLOW-1389's test
@@ -57163,6 +57169,13 @@ an attached single-family home that does not say so, pinned as a limit. "Dom jed
 - Other storey counts and house types: `A two-storey home`, `A semi-detached house`,
   `A terraced house`. No fact of the listing is compared with them.
 - `A detached house` on a single-family home that is attached and does not say so (above).
+- `A flat in Detached Villa country`, `A Detached House Lane flat`: a capital after a preposition or
+  before a street word reads as a name, in copy only.
+- `Parterowe mieszkanie` on "Mieszkanie przy Parterowej": on the listing side no capital reads as a
+  name, so an unmasked street name grounds the word.
+- `Why not this fully furnished flat?`, `If you like this fully furnished flat, call.`,
+  `Modern south-facing flats`, `Solar panels could cut your bills.`: a question, a condition, a
+  plural kind and "could" after the word all state nothing, and these are the cost of that rule.
 - `Mieszkanie na parterze` on a second floor: a floor position other than the top is not read.
 - `No stairs to climb`, `Bez schodów` on a third floor: "no stairs" is true of a flat with a lift.
 - `A south-facing terrace` on "south-facing living room": the same point on another part.
@@ -57170,12 +57183,16 @@ an attached single-family home that does not say so, pinned as a limit. "Dom jed
 - `It is not furnished.` on a furnished listing: a denial in copy is not compared.
 - `Fully furnished` on "furnished": the same key. `Furnished with designer pieces`: "furnished with"
   is mostly a verb. `A part-furnished flat`, `Sold with all its furniture`: not read in copy.
-- `Niskie koszty stałe`, `The rent is low.`: "low" only directly on a named fee (the replay has
-  "niskie koszty stałe" on 55 EUR a month; reading it would refuse a body over an opinion).
+- `Niskie koszty stałe`: "low" only on a named fee (the replay has "niskie koszty stałe" on 55 EUR a
+  month; reading it would refuse a body over an opinion).
 - `A new heat pump`, `New windows throughout`, `The flat is leasehold.`: not in the list. New
   windows are out on purpose: "nowa instalacja elektryczna, okna" states them through a list.
-- `This is a Detached Villa`: a capital in mid-sentence reads as a name.
 
-Refused although it may be fine, also pinned or known: a street in lower case is not masked
-(`przy ul. parterowa`); a general remark about the market names the attribute ("a furnished flat
-lets faster") and is read as a claim; `on one level` about a part of the property.
+Refused although it may be fine, pinned: `Solar panels cut bills.`,
+`Panele słoneczne obniżają rachunki.` (a generic remark no simple rule reads);
+`A flat on freehold road` when that street is not listed (a listed one passes in any case, and so
+does a lower-case name after `ul.`, `calle`).
+
+The review round of 2026-10-31 also bounded `clauseBefore` and the list walk of the shared amenity
+rule to a slice of the text: both read the whole prefix per match, which was the larger share of the
+cost on saturated text. No verdict moved by it.

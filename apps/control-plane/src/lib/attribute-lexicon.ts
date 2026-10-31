@@ -18,7 +18,8 @@
  *     a real headline says so of a real listing ("Wolnostojący dom", FOLLOW-1381, Palm Coast). "Dom
  *     jednorodzinny" and "vivienda unifamiliar" do not entail it: they commonly name a terrace.
  *   - "własność", "księga wieczysta" → freehold.
- *   - "replaced" → new, for an installation; "do wymiany" (to be replaced) is not.
+ *   - "replaced" → new, for electrics, a boiler and plumbing; "do wymiany" (to be replaced) is not.
+ *   - "w pełni wyposażone" → furnished, unless it is a room; "4th (top) floor", "4/4" → top floor.
  * The garage → parking entailment lives in `lib/amenity-lexicon.ts`.
  *
  * Pure, no I/O.
@@ -52,6 +53,15 @@ interface AttributeDef {
 const PART_AFTER =
   `(?![ \\t-]+(?:rear|side|extensions?|annex(?:e|es)?|garages?|outbuildings?|wings?|sheds?|workshops?|` +
   `dobudówk\\p{L}*|przybudówk\\p{L}*|garaż\\p{L}*|budyn\\p{L}*${S}gospodarcz\\p{L}*|częś[cć]\\p{L}*)(?![${W}]))`;
+const WHOLE_EN = `(?:(?:all|everything)(?:${S}\\p{L}+){0,2}|(?:home|house|flat|apartment|property|villa|bungalow|it|living|sqm|m²)(?:${S}(?:is|sits|lies))?)`;
+const WHOLE_PL = `(?:wszystko|(?:dom|mieszkanie|apartament|bungalow|m²)(?:${S}\\p{L}+){0,2})`;
+const WHOLE_ES = '(?:todo|casa|vivienda|m²)';
+/** What a listing may say about the whole, with no subject beside it. */
+const LEVEL_LISTING = [
+  `on${S}(?:one|a${S}single)${S}(?:level|floor)(?!${S}of${S}(?:the|a|this))`,
+  `na${S}jednym${S}poziomie(?!${S}(?:z|ze|cen))`,
+  `en${S}una${S}(?:sola|[uú]nica)${S}planta(?!${S}de)`,
+];
 const SINGLE_STOREY = [
   // "one story" alone is a tale ("tells a single story"): only hyphenated, or naming the house.
   `(?:single|one)-stor(?:e)?y${PART_AFTER}`,
@@ -60,16 +70,16 @@ const SINGLE_STOREY = [
   // "one level from the street" is a distance: with a space, only naming what is on it.
   `(?:single|one)-level${PART_AFTER}`,
   `(?:single|one)${S}level${S}(?:home|house|living|layout|property|villa|flat|apartment|bungalow)`,
-  `on${S}(?:one|a${S}single)${S}level(?!${S}of${S}(?:the|a|this))`,
+  // "The bedrooms are on one level" is a part of a house that may have two: name the whole.
+  `${WHOLE_EN}${S}on${S}(?:one|a${S}single)${S}(?:level|floor)(?!${S}of${S}(?:the|a|this))`,
   `single-floor${PART_AFTER}`,
-  `(?:all${S}|everything${S})on${S}one${S}floor`,
-  `on${S}a${S}single${S}floor`,
   // pl
   `jedno(?:poziomow|kondygnacyjn)(?:y|a|e|ą|ego|ej|ym|ych|ymi)${PART_AFTER}`,
-  `na${S}jednym${S}poziomie(?!${S}(?:z|ze|cen))`,
+  `${WHOLE_PL}${S}na${S}jednym${S}poziomie(?!${S}(?:z|ze|cen))`,
   // es: "una planta" alone is a plant, and "planta baja" is a floor of a building.
   `(?:casa|vivienda|chal[eé]t?|bungalow|villa|piso|apartamento)${S}de${S}una${S}planta(?!${S}de)`,
-  `(?:de|en)${S}una${S}(?:sola|[uú]nica)${S}planta(?!${S}de)`,
+  `de${S}una${S}(?:sola|[uú]nica)${S}planta(?!${S}de)`,
+  `${WHOLE_ES}${S}en${S}una${S}(?:sola|[uú]nica)${S}planta(?!${S}de)`,
   `de${S}planta${S}[uú]nica`,
 ];
 const PARTEROWY = [`parterow(?:y|a|e|ą|ego|ej|emu|ym|ych|ymi|i)${PART_AFTER}`];
@@ -86,7 +96,7 @@ const SINGLE_STOREY_HOUSE = [
   `(?:casa|vivienda)${S}de${S}una${S}(?:sola${S})?planta`,
 ];
 /** "on one level", "single-storey" and their translations, a listing's "parterowy", a bungalow. */
-const LEVEL_FACTS = [...SINGLE_STOREY, ...PARTEROWY, ...BUNGALOW];
+const LEVEL_FACTS = [...SINGLE_STOREY, ...LEVEL_LISTING, ...PARTEROWY, ...BUNGALOW];
 
 // ─── Position in the building ─────────────────────────────────────────────────
 
@@ -108,6 +118,10 @@ const TOP_FLOOR_LISTING = [
   `ostatni\\p{L}*${S}pi[eę]tr\\p{L}*`,
   `[uú]ltim[oa]${S}(?:planta|piso)`,
   'penthouse|[aá]tico',
+  `\\(top\\)${S}floor`,
+  `najwyższ\\p{L}*${S}pi[eę]tr\\p{L}*`,
+  // "4/4 piętro": the two groups are the only capturing groups of this pattern.
+  `(\\p{Nd}{1,2})/\\1${S}(?:pi[eę]tr\\p{L}*|floor)|(?:pi[eę]tr\\p{L}*|floor)[ \\t:]+(\\p{Nd}{1,2})/\\2`,
 ];
 
 // ─── Detached ─────────────────────────────────────────────────────────────────
@@ -148,6 +162,7 @@ const DIRECTIONS: readonly {
   plAdj: string;
   plNoun: string;
   es: string;
+  abbr: string;
 }[] = [
   {
     key: 'south',
@@ -155,6 +170,7 @@ const DIRECTIONS: readonly {
     plAdj: 'południow(?:ej|a|ą|e|y|o-(?:zachodni|wschodni)(?:ej|a|ą|e|y))',
     plNoun: 'południe|południowy[ \\t]+(?:zachód|wschód)',
     es: 'sur|sureste|suroeste|sudeste|sudoeste',
+    abbr: 's|sw|se',
   },
   {
     key: 'north',
@@ -162,6 +178,7 @@ const DIRECTIONS: readonly {
     plAdj: 'północn(?:ej|a|ą|e|y|o-(?:zachodni|wschodni)(?:ej|a|ą|e|y))',
     plNoun: 'północ|północny[ \\t]+(?:zachód|wschód)',
     es: 'norte|noreste|noroeste|nordeste',
+    abbr: 'n|nw|ne',
   },
   {
     key: 'east',
@@ -169,6 +186,7 @@ const DIRECTIONS: readonly {
     plAdj: '(?:(?:południowo|północno)-)?wschodni(?:ej|a|ą|e)',
     plNoun: '(?:(?:południowy|północny)[ \\t]+)?wsch[oó]d',
     es: 'este|sureste|sudeste|noreste|nordeste',
+    abbr: 'e|se|ne',
   },
   {
     key: 'west',
@@ -176,6 +194,7 @@ const DIRECTIONS: readonly {
     plAdj: '(?:(?:południowo|północno)-)?zachodni(?:ej|a|ą|e)',
     plNoun: '(?:(?:południowy|północny)[ \\t]+)?zach[oó]d',
     es: 'oeste|suroeste|sudoeste|noroeste',
+    abbr: 'w|sw|nw',
   },
 ];
 /** What follows a compass word and makes it a place: "facing South Beach", "south of the river". */
@@ -186,7 +205,7 @@ const NOT_A_PLACE =
 function orientationPatterns(d: (typeof DIRECTIONS)[number]): string[] {
   const es = `(?:${d.es})`;
   return [
-    `(?:${d.en})[- ]facing`,
+    `(?:${d.en}|${d.abbr})[- ]facing`,
     `(?:faces?|facing)${S}(?:${d.en})${NOT_A_PLACE}`,
     `(?:${d.en})(?:ern|erly)?${S}(?:aspect|exposure)`,
     `(?:orientation|aspect|exposure)[ \\t:]+(?:${d.en})${NOT_A_PLACE}`,
@@ -194,6 +213,7 @@ function orientationPatterns(d: (typeof DIRECTIONS)[number]): string[] {
     `od${S}strony${S}(?:${d.plAdj})${NOT_A_PLACE}`,
     `(?:wystaw\\p{L}*|ekspozycj\\p{L}*|orientacj\\p{L}*)[ \\t:]+(?:${d.plAdj}|${d.plNoun})${NOT_A_PLACE}`,
     `(?:okn\\p{L}*|wystawion\\p{L}*|skierowan\\p{L}*|zorientowan\\p{L}*|wychodz\\p{L}*)(?:${S}\\p{L}+){0,1}${S}na${S}(?:${d.plNoun})${NOT_A_PLACE}`,
+    `okn\\p{L}*${S}(?:${d.plAdj})${NOT_A_PLACE}`,
     // es
     `orientad[oa]s?${S}(?:al|hacia${S}el)${S}${es}${NOT_A_PLACE}`,
     `orientaci[oó]n[ \\t:]+(?:al${S})?${es}${NOT_A_PLACE}`,
@@ -225,6 +245,7 @@ const FURNISHED_LISTING = [
   `meble${S}w${S}cenie`,
   `con${S}(?:todos${S})?(?:los${S})?muebles`,
   `muebles${S}incluidos`,
+  `(?<!(?:${ROOM_PL})${S}(?:(?:jest|są)${S})?)w${S}pełni${S}wyposażon\\p{L}*(?!${S}(?:${ROOM_PL})(?![${W}]))`,
 ];
 
 // ─── Renewable fittings ───────────────────────────────────────────────────────
@@ -235,6 +256,7 @@ const SOLAR = [
   `solar-powered(?!${S}(?:lights?|lamps?|lanterns?))`,
   'photovoltaics?',
   `pv${S}(?:panels?|system|installation)`,
+  `(?:panel\\p{L}*|instalacj\\p{L}*)${S}pv`,
   `panel\\p{L}*${S}(?:słoneczn|fotowoltaiczn)\\p{L}*`,
   'fotowoltaik\\p{L}*',
   `instalacj\\p{L}*${S}(?:fotowoltaiczn|solarn)\\p{L}*`,
@@ -271,6 +293,7 @@ const FREEHOLD_LISTING = [
 /** "Low" is the seller's to say. A low price, "low-rent" and "low rental income" are not read. */
 const LOW_FEES = [
   `low${S}(?:rent|service${S}charges?|fees|(?:community|condominium|condo|hoa|maintenance|monthly)${S}(?:fees?|charges?))`,
+  `(?:rent|service${S}charges?|fees)${S}(?:is|are)${S}low`,
   `nisk\\p{L}+${S}czynsz\\p{L}*`,
   `czynsz\\p{L}*${S}(?:jest${S})?nisk\\p{L}+`,
   `baj[oa]s?${S}(?:alquiler|gastos${S}de${S}comunidad|cuotas?|comunidad)`,
@@ -288,9 +311,16 @@ const NEW_ELECTRICS = [
   `instalaci[oó]n${S}el[eé]ctrica${S}nueva`,
 ];
 /** "Do wymiany" (to be replaced) is not here, and neither is an installation with no "new". */
+/** T8: "<thing> replaced" and "replaced <thing>", in English. */
+function replacedEn(thing: string): string[] {
+  const done = '(?:replaced|renewed|updated|upgraded)';
+  return [
+    `${done}${S}(?:the${S})?(?:${thing})`,
+    `(?:${thing})${S}(?:(?:was|were|has${S}been|have${S}been)${S})?${done}`,
+  ];
+}
 const NEW_ELECTRICS_LISTING = [
-  `(?:replaced|renewed|updated|upgraded)${S}(?:the${S})?(?:electrics|wiring|electrical)`,
-  `(?:electrics|wiring|electrical${S}(?:installation|system))${S}(?:(?:was|were|has${S}been|have${S}been)${S})?(?:replaced|renewed|updated|upgraded)`,
+  ...replacedEn(`electrics|wiring|electrical(?:${S}(?:installation|system))?`),
   `(?<!do${S})wymian\\p{L}*${S}instalacji${S}elektrycznej`,
   `wymienion\\p{L}*${S}instalacj\\p{L}*${S}elektryczn\\p{L}*`,
   `instalacj\\p{L}*${S}elektryczn\\p{L}*${S}(?:(?:została|jest)${S})?wymienion\\p{L}*`,
@@ -345,8 +375,25 @@ const ATTRIBUTES: readonly AttributeDef[] = [
   { key: 'freehold', claim: FREEHOLD, groundedBy: FREEHOLD_LISTING },
   { key: 'low_fees', claim: LOW_FEES },
   { key: 'new_electrics', claim: NEW_ELECTRICS, groundedBy: NEW_ELECTRICS_LISTING },
-  { key: 'new_boiler', claim: NEW_BOILER },
-  { key: 'new_plumbing', claim: NEW_PLUMBING },
+  {
+    key: 'new_boiler',
+    claim: NEW_BOILER,
+    groundedBy: [
+      ...replacedEn('boiler'),
+      `wymienion\\p{L}*${S}(?:piec|kocioł)`,
+      `(?:piec|kocioł)${S}(?:(?:został|jest)${S})?wymienion\\p{L}*`,
+      `caldera${S}(?:renovada|sustituida)`,
+    ],
+  },
+  {
+    key: 'new_plumbing',
+    claim: NEW_PLUMBING,
+    groundedBy: [
+      ...replacedEn('plumbing'),
+      `wymienion\\p{L}*${S}(?:hydraulik\\p{L}*|instalacj\\p{L}*${S}wodn\\p{L}*)`,
+      `fontaner[ií]a${S}(?:renovada|sustituida)`,
+    ],
+  },
 ];
 
 /** One attribute, compiled: {@link assertedAttributes} and {@link groundsAttribute} read it. */
@@ -373,8 +420,11 @@ export const ATTRIBUTE_RES: readonly Attribute[] = ATTRIBUTES.map((a) => ({
  */
 const NOT_STATED_BEFORE_RE = new RegExp(
   `(?<![${W}])(?:` +
-    `(?:could|can|may|might|would|to)${S}(?:be${S}(?:sold${S})?|have${S}|add${S}|install${S}|fit${S}|take${S})|` +
-    `(?:ready|room|space|potential|scope|ideal|suitable|option|possibility)${S}(?:for|of|to${S}(?:add|install|fit))${S}(?:(?:adding|installing|fitting)${S})?|` +
+    `(?:could|can|may|might|would|to)${S}(?:be${S}(?:sold${S})?|have${S}|take${S})|` +
+    `(?:add|adding|install|installing|fit|fitting|put${S}in|putting${S}in)${S}(?:(?:a|an|some|the)${S})?|` +
+    `(?:zamontuj|zamontować|zainstaluj|zainstalować|instalar|instala|instalas|montar)${S}|` +
+    `(?:if|jeśli|jeżeli|gdyby|si)(?:${S}[\\p{L}-]+){0,3}${S}|` +
+    `(?:ready|room|space|potential|scope|ideal|suitable|option|possibility|budget)${S}(?:for|of|to)${S}(?:(?:adding|installing|fitting|add|install|fit)${S})?(?:(?:a|an|some)${S})?|` +
     `(?:needs?|needing|requires?|requiring|wants?)${S}(?:(?:a|an)${S})?|` +
     `można(?:${S}\\p{L}+)?${S}|możliwoś\\p{L}*(?:${S}\\p{L}+)?${S}|(?:miejsce|gotow\\p{L}*)${S}(?:pod|na)${S}|` +
     `(?:wymaga|wymagają|potrzebuje|potrzebn\\p{L}*)${S}|` +
@@ -384,10 +434,68 @@ const NOT_STATED_BEFORE_RE = new RegExp(
   'iu',
 );
 
-/** A capital in mid-sentence is a name: "przy Parterowej", "the Solar Panels Café", "facing South". */
-function readsAsName(text: string, start: number, match: string): boolean {
-  if (/^\p{Ll}.*\p{Lu}/su.test(match)) return true;
-  return /^\p{Lu}/u.test(match) && /\p{Ll},?[ \t]+$/u.test(text.slice(0, start));
+/**
+ * After the word, it is a suggestion, a plan, something withheld, or the market in general: "a new
+ * boiler would be a good idea", "solar panels planned", "vacant possession not offered", "furnished
+ * rentals are in demand", "fotowoltaika to dobry pomysł".
+ */
+const NOT_STATED_AFTER_RE = new RegExp(
+  `^[ \\t]+(?:` +
+    `would|could|might|may|can|(?:(?:is|are)${S})?(?:planned|proposed|a${S}good${S}idea|unavailable)|to${S}be${S}(?:installed|fitted|added)|` +
+    `(?:(?:is|are)${S})?not${S}(?:offered|available|included|provided)|` +
+    `rentals|lets|flats|apartments|homes|houses|properties|units|villas|` +
+    `planowan\\p{L}*|w${S}planach|to${S}(?:dobry|świetny)${S}pomysł|byłby|byłaby|byłoby|nie${S}(?:jest${S})?(?:oferowan|dostępn)\\p{L}*|` +
+    `previst\\p{L}*|ser[ií]an?|podr[ií]an?|es${S}(?:una${S})?buena${S}idea|no${S}(?:est[aá]n?${S})?(?:ofrecid|disponibl|incluid)\\p{L}*` +
+    `)(?![${W}])`,
+  'iu',
+);
+/** "A furnished flat lets faster": a kind of flat, not this one. A simple rule, English only. */
+const AN_BEFORE_RE = new RegExp(`(?<![${W}])an?${S}$`, 'iu');
+const KIND_AFTER_RE = new RegExp(
+  `^${S}(?:flat|apartment|home|house|property|unit|villa|studio|rental|let)${S}(?:lets?|rents?|sells?|attracts?|commands?|tends?|usually|generally|often)(?![${W}])`,
+  'iu',
+);
+/** The clause ends in a question mark: "Could it be furnished?", "¿Está amueblado?". */
+const QUESTION_AFTER_RE = /^[^.!?\n]{0,200}\?/u;
+const CONTEXT = 60;
+
+/** Lower case only: "Near South-Facing" in title case is a claim. */
+const NAME_PREPOSITION_RE =
+  /(?<![\p{L}\p{N}])(?:at|on|in|near|off|by|przy|koło|obok|na|w|en|de|del)[ \t]+$/u;
+const STREET_AFTER_RE =
+  /^[ \t]+(?:Street|St\.?|Road|Rd\.?|Avenue|Ave\.?|Lane|Ln\.?|Drive|Boulevard|Blvd\.?|Way|Crescent|Mews)(?![\p{L}\p{N}])/u;
+
+/**
+ * A capital reads as a name only after a preposition or before a street word, in copy: "przy
+ * Parterowej", "Solar Panels Way". In title case it is a claim: "Modern Detached Villa". "Facing
+ * North London": a capital inside the match, and another right after it.
+ */
+function readsAsName(match: string, before: string, after: string): boolean {
+  if (/^\p{Ll}.*\p{Lu}/su.test(match)) return /^[ \t]+\p{Lu}/u.test(after);
+  return (
+    /^\p{Lu}/u.test(match) && (NAME_PREPOSITION_RE.test(before) || STREET_AFTER_RE.test(after))
+  );
+}
+
+function assertedInContext(
+  pattern: RegExp,
+  text: string,
+  keep: (match: string, before: string, after: string) => boolean,
+): string[] {
+  return assertedMatches(pattern, text)
+    .filter((m) => {
+      const before = text.slice(Math.max(0, m.index - CONTEXT), m.index);
+      const end = m.index + m[0].length;
+      const after = text.slice(end, end + 200);
+      return (
+        !NOT_STATED_BEFORE_RE.test(before) &&
+        !NOT_STATED_AFTER_RE.test(after) &&
+        !QUESTION_AFTER_RE.test(after) &&
+        !(AN_BEFORE_RE.test(before) && KIND_AFTER_RE.test(after)) &&
+        keep(m[0], before, after)
+      );
+    })
+    .map((m) => m[0]);
 }
 
 /**
@@ -395,16 +503,18 @@ function readsAsName(text: string, start: number, match: string): boolean {
  * offer or a need, not a name.
  *
  * @param pattern - A global pattern from {@link ATTRIBUTE_RES}.
- * @param text - Generated copy, or a listing's words, addresses masked.
+ * @param text - Generated copy, addresses masked.
  * @returns Each asserted match, as written.
  */
 export function assertedAttributes(pattern: RegExp, text: string): string[] {
-  return assertedMatches(pattern, text)
-    .filter(
-      (m) =>
-        !NOT_STATED_BEFORE_RE.test(text.slice(0, m.index)) && !readsAsName(text, m.index, m[0]),
-    )
-    .map((m) => m[0]);
+  return assertedInContext(pattern, text, (match, before, after) => {
+    return !readsAsName(match, before, after);
+  });
+}
+
+/** The listing's own words: its title case is its fact, so no capital reads as a name here. */
+function statedByListing(pattern: RegExp, listing: string): boolean {
+  return assertedInContext(pattern, listing, () => true).length > 0;
 }
 
 /**
@@ -415,11 +525,9 @@ export function assertedAttributes(pattern: RegExp, text: string): string[] {
  * @returns `true` when they do.
  */
 export function groundsAttribute(attribute: Attribute, listing: string): boolean {
-  if (assertedAttributes(attribute.grounding, listing).length > 0) return true;
+  if (statedByListing(attribute.grounding, listing)) return true;
   const { weak } = attribute;
   return (
-    weak !== undefined &&
-    !weak.unless.test(listing) &&
-    assertedAttributes(weak.grounding, listing).length > 0
+    weak !== undefined && !weak.unless.test(listing) && statedByListing(weak.grounding, listing)
   );
 }

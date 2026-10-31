@@ -179,6 +179,8 @@ describe('FOLLOW-1311 claim baseline replay', () => {
       id: string;
       verdict?: string;
       refused?: unknown[];
+      served?: unknown[];
+      headline_sha?: string | null;
     }
     const read = (file: string) => readLines(file).map((l) => JSON.parse(l) as Verdict);
     const v1 = read('verdicts.v1.jsonl');
@@ -210,7 +212,75 @@ describe('FOLLOW-1311 claim baseline replay', () => {
     const slots = (vs: Verdict[]) => vs.reduce((n, v) => n + (v.refused?.length ?? 0), 0);
     expect(slots(v3) - slots(v1)).toBeLessThanOrEqual(8);
 
-    // NOT computed: the true-positive share is a recorded human classification (single rater).
+    // The headers of the delta files are read from the frozen verdicts, not taken on trust.
+    const v2 = read('verdicts.v2.jsonl');
+    const slotTotal = (vs: Verdict[]) =>
+      vs.reduce((n, v) => n + (v.refused?.length ?? 0) + (v.served?.length ?? 0), 0);
+    const lostFit = (from: Verdict[], to: Verdict[]) =>
+      from.filter((v) => v.verdict === 'FIT' && to.find((x) => x.id === v.id)?.verdict !== 'FIT')
+        .length;
+    const unRefused = (from: Verdict[], to: Verdict[]) =>
+      from.filter(
+        (v) => v.verdict === 'REFUSED' && to.find((x) => x.id === v.id)?.verdict === 'FIT',
+      ).length;
+    const headlineLost = (from: Verdict[], to: Verdict[]) =>
+      from.filter((v) => {
+        const after = to.find((x) => x.id === v.id);
+        return (
+          v.verdict === 'FIT' && after?.verdict === 'FIT' && v.headline_sha && !after.headline_sha
+        );
+      }).length;
+    const header = (index: number) =>
+      deltas[index] as unknown as Record<string, number> & {
+        moved: Record<string, { classified: string }>;
+      };
+    const trueCount = (index: number) =>
+      Object.values(header(index).moved).filter((m) => m.classified === 'true').length;
+    expect({
+      fit_before: header(0).fit_before,
+      new_body_refusals: header(0).new_body_refusals,
+      adapt_slots_newly_refused: header(0).adapt_slots_newly_refused,
+      adapt_slots_total: header(0).adapt_slots_total,
+      un_refused: header(0).un_refused,
+    }).toEqual({
+      fit_before: fit.length,
+      new_body_refusals: lostFit(v1, v2),
+      adapt_slots_newly_refused: slots(v2) - slots(v1),
+      adapt_slots_total: slotTotal(v2),
+      un_refused: unRefused(v1, v2),
+    });
+    expect(header(0).true_positives).toBe(
+      Object.entries(header(0).moved).filter(
+        ([id, m]) =>
+          m.classified === 'true' &&
+          v1.find((v) => v.id === id)?.verdict === 'FIT' &&
+          v2.find((v) => v.id === id)?.verdict !== 'FIT',
+      ).length,
+    );
+    expect({
+      fit_before: header(1).fit_before,
+      fit_baseline: header(1).fit_baseline,
+      new_body_refusals: header(1).new_body_refusals,
+      new_body_refusals_since_baseline: header(1).new_body_refusals_since_baseline,
+      true_positives: header(1).true_positives,
+      headlines_newly_suppressed: header(1).headlines_newly_suppressed,
+      adapt_slots_newly_refused: header(1).adapt_slots_newly_refused,
+      adapt_slots_total: header(1).adapt_slots_total,
+      un_refused: header(1).un_refused,
+    }).toEqual({
+      fit_before: v2.filter((v) => v.verdict === 'FIT').length,
+      fit_baseline: fit.length,
+      new_body_refusals: lostFit(v2, v3),
+      new_body_refusals_since_baseline: refused.length,
+      true_positives: trueCount(1),
+      headlines_newly_suppressed: headlineLost(v2, v3),
+      adapt_slots_newly_refused: slots(v3) - slots(v2),
+      adapt_slots_total: slotTotal(v3),
+      un_refused: unRefused(v2, v3),
+    });
+
+    // NOT computed: the true-positive share is a recorded human classification (single rater). The
+    // 5 of 5 says nothing about the precision of the attributes that refuse nothing on this corpus.
     const classified = refused.map((v) => {
       const own = deltas[1]?.moved[v.id] ?? deltas[0]?.moved[v.id];
       return own?.classified;

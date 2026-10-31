@@ -683,3 +683,7 @@ the invoking command.
   choice, found only by running neighbouring test files. · Guardrail I'd add: dump every recognised
   claim with its grounding source over the recordings before reading a verdict diff; a diff of zero
   says nothing until the recogniser is shown to fire.
+- **2026-10-31 / FOLLOW-1311 slice 4, review round** · Fixed title case, the address ruling,
+  suggestions read as claims, T8 gaps and quadratic context reads. · Judgment call: exits for
+  questions, conditions and plurals open named holes in exchange for fewer false refusals. ·
+  Guardrail I'd add: test a lexicon in title case and against a listed street before first review.

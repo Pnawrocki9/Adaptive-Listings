@@ -676,3 +676,10 @@ the invoking command.
   source, prompt and judge budget. · Judgment call: kept the tweak prompt (not the generation
   prompt) on the new model; judge stays Haiku. · Guardrail I'd add: never infer a band/label from a
   model id (`model === X`); a test must vary the model and assert the label does not move.
+- **2026-10-31 / FOLLOW-1311 slice 4** · Attribute lexicon en/pl/es plus T8 as a `groundedBy` table;
+  `claims-v9`. · Judgment call: the frozen replay moved one body only, on a key ("top floor") not in
+  the brief's list; the other 125 recognised claims were grounded. "Detached" for "single-family"
+  has no evidence in either corpus; an older pinned test held the one real case and changed my first
+  choice, found only by running neighbouring test files. · Guardrail I'd add: dump every recognised
+  claim with its grounding source over the recordings before reading a verdict diff; a diff of zero
+  says nothing until the recogniser is shown to fire.

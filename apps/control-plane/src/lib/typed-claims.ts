@@ -23,6 +23,9 @@
  *     and the reverse; the prompt says the same (FOLLOW-1386).
  *   - T9 negation kept, narrowly: "no garage." is refused for a listing with a garage, only when
  *     nothing follows that changes the subject ("no garage included" passes).
+ *   - T8 a closed entailment table for physical and tenure attributes (`lib/attribute-lexicon.ts`):
+ *     "parterowy" for "ground-floor, one level" passes, "single-storey" for "single-family" is
+ *     refused.
  *
  * A count is refused narrowly, so a part of the whole is no contradiction ("two bedrooms for the
  * children" of a three-bedroom home): a whole-property count must equal a stated value of its key;
@@ -38,6 +41,7 @@
 
 import { AMENITY_RES, asserted } from '@/lib/amenity-lexicon';
 import { namesStudio, readCounts, unreadableCountKeys, type CountKey } from '@/lib/count-claims';
+import { ATTRIBUTE_RES, assertedAttributes, groundsAttribute } from '@/lib/attribute-lexicon';
 import { MULTIPLIER_WORDS, normaliseNumberGroups, readMultiplied } from '@/lib/number-groups';
 import { isAddressField, maskListedAddressParts, maskStreetAddresses } from '@/lib/street-address';
 
@@ -47,7 +51,8 @@ export type TypedViolation =
   | 'money_mismatch'
   | 'unit_mismatch'
   | 'year_mismatch'
-  | 'negation_contradiction';
+  | 'negation_contradiction'
+  | 'unsupported_attribute';
 
 /** One place the listing's words come from. */
 export interface ListingSource {
@@ -57,8 +62,8 @@ export interface ListingSource {
 
 /** One recognised claim of a text, with its verdict. */
 interface TypedClaimCheck {
-  readonly kind: 'count' | 'money' | 'area' | 'year' | 'negation';
-  /** What the claim is about: `bedroom`, `EUR`, `m2`, `renovated`, or the denied words. */
+  readonly kind: 'count' | 'money' | 'area' | 'year' | 'negation' | 'attribute';
+  /** What the claim is about: `bedroom`, `EUR`, `m2`, `renovated`, `furnished`, the denied words. */
   readonly key: string;
   readonly value: string;
   /** The listing field that grounds it; `null` when nothing does. */
@@ -461,6 +466,29 @@ function checkNegations(text: string, sources: readonly ListingSource[]): TypedC
   return out;
 }
 
+// ─── Attributes (T8) ──────────────────────────────────────────────────────────
+
+function checkAttributes(text: string, sources: readonly ListingSource[]): TypedClaimCheck[] {
+  const listing = sources.map((s) => s.text).join('\n');
+  return ATTRIBUTE_RES.flatMap((attribute) => {
+    const claims = assertedAttributes(attribute.claim, text);
+    if (claims.length === 0) return [];
+    const grounded = groundsAttribute(attribute, listing);
+    const source = grounded
+      ? (sources.find((s) => groundsAttribute(attribute, s.text))?.field ?? null)
+      : null;
+    return claims.map(
+      (value): TypedClaimCheck => ({
+        kind: 'attribute',
+        key: attribute.key,
+        value,
+        source,
+        violation: grounded ? null : 'unsupported_attribute',
+      }),
+    );
+  });
+}
+
 // ─── The check ────────────────────────────────────────────────────────────────
 
 /**
@@ -489,5 +517,6 @@ export function checkTypedClaims(
     ...checkAreas(normalised, masked),
     ...checkYears(copy, masked),
     ...checkNegations(copy, masked),
+    ...checkAttributes(copy, masked),
   ];
 }

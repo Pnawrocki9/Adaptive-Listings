@@ -1,6 +1,6 @@
 # Backlog Queue
 
-## ▶️ START HERE — session 180 (2026-10-19) — **Checkpoint K3 GREEN at `main` `434b2513` (`docs/checkpoints/K3.md`, README §5.31, tag `k3-green` on this ledger's merge): Phase 3 M1 #1042, M2 #1044, M3 #1041, M5 #1043, N2 full #1045 DONE; N1 `--final` reads 0. A RED pair at `3952ac29` was bisected by a read-only forensic (not a Phase 3 regression) → FOLLOW-1352 #1046 (harness predicate) + FOLLOW-1351 #1047 (SDK single-flight chat refresh). **CEO ruling 2026-10-19: Faza Q — the quiz must identify one archetype with ≥ 90 % accuracy (buyer self-confirmation as ground truth, EN + PL mandatory, buyer-side language switcher, 12 results + neutral + traits) and the backoffice must manage the quiz end to end — is INSERTED between K3 and Phase 4.** Plan approved in plan mode (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, copied to `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` by the Q0 PR); packages Q0 docs → Q1 shared → Q2 SDK ∥ Q3 recording ∥ Q7 editor → Q4 fold → Q5 traits → Q6 harness (AC(10), TALLY 8) → Q8 report; checkpoints KQ1 (localhost 3× GREEN 8/8), KQ2 (CEO walkthrough — absorbs the K3 'moment CEO'), KQ3 (production, CTO: ≥ 400 decided runs, pre-registered Wilson bound). Phase 4 (P1–P7) follows KQ2. New stubs: FOLLOW-1353 (Sentry drizzle params, P2), FOLLOW-1354 (SDK adapt fetch timeout, P2); amendments 1307, 1233/1246, 1350. Retro batch owed (weekly): #1042, #1043, #1044, #1047. Next free: FOLLOW-1420, RETRO-368, ESC-090.**
+## ▶️ START HERE — session 180 (2026-10-19) — **Checkpoint K3 GREEN at `main` `434b2513` (`docs/checkpoints/K3.md`, README §5.31, tag `k3-green` on this ledger's merge): Phase 3 M1 #1042, M2 #1044, M3 #1041, M5 #1043, N2 full #1045 DONE; N1 `--final` reads 0. A RED pair at `3952ac29` was bisected by a read-only forensic (not a Phase 3 regression) → FOLLOW-1352 #1046 (harness predicate) + FOLLOW-1351 #1047 (SDK single-flight chat refresh). **CEO ruling 2026-10-19: Faza Q — the quiz must identify one archetype with ≥ 90 % accuracy (buyer self-confirmation as ground truth, EN + PL mandatory, buyer-side language switcher, 12 results + neutral + traits) and the backoffice must manage the quiz end to end — is INSERTED between K3 and Phase 4.** Plan approved in plan mode (`~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`, copied to `docs/PLAN-QUIZ-ACCURACY-2026-10-19.md` by the Q0 PR); packages Q0 docs → Q1 shared → Q2 SDK ∥ Q3 recording ∥ Q7 editor → Q4 fold → Q5 traits → Q6 harness (AC(10), TALLY 8) → Q8 report; checkpoints KQ1 (localhost 3× GREEN 8/8), KQ2 (CEO walkthrough — absorbs the K3 'moment CEO'), KQ3 (production, CTO: ≥ 400 decided runs, pre-registered Wilson bound). Phase 4 (P1–P7) follows KQ2. New stubs: FOLLOW-1353 (Sentry drizzle params, P2), FOLLOW-1354 (SDK adapt fetch timeout, P2); amendments 1307, 1233/1246, 1350. Retro batch owed (weekly): #1042, #1043, #1044, #1047. Next free: FOLLOW-1425, RETRO-372, ESC-090.**
 
 ### Dispatch record (session 180)
 
@@ -53,9 +53,9 @@
 - **FOLLOW-1380** — status: DONE # 2026-10-23. Blind compare Haiku 5.5 vs Sonnet 5.5 (24 cases,
   `docs/research/MODEL-COMPARE-HAIKU55-SONNET55-2026-10-22.md`): verdict Sonnet 5.5 (Haiku fails the
   faithfulness/refusal condition; quality not significantly different). Re-run after 1381–1384.
-- **FOLLOW-1391** — status: BACKLOG # P3. Local ClickHouse container keeps `system.trace_log` /
-  `asynchronous_metric_log` / `text_log` unbounded (~1 bn rows, ~2 cores of merges): disable or TTL
-  them in `scripts/dev/localhost-up.sh`.
+- **FOLLOW-1391** — status: DONE # PR #1105, merged as `e26a53c3`; README §5.47; was BACKLOG # P3.
+  Local ClickHouse container keeps `system.trace_log` / `asynchronous_metric_log` / `text_log`
+  unbounded (~1 bn rows, ~2 cores of merges): disable or TTL them in `scripts/dev/localhost-up.sh`.
 - **FOLLOW-1396** — status: DONE # PR #1101, merged as `17cede38`; README §5.45; stamp `claims-v5`;
   was IN_REVIEW (branch ml-engineer/FOLLOW-1413-claim-false-refusals) # P3. Headline check refuses
   exonyms ("Warsaw" for "Warszawa"): the main Haiku 5.5 EN headline refusal after FOLLOW-1395.
@@ -111,6 +111,24 @@
   "antiguo"); bare present tense is refused. Tightening: bump the claims stamp. Decision (3), no
   code change: prices are always exact — "850 tys." for 849 000 stays refused
   (`hallucinated_number`).
+- **FOLLOW-1246** — status: DONE # PR #1107, merged as `425c5264`; README §5.48. Phase 4 P1, widened
+  by RETRO-369/371: harness preflight refuses `[STALE-BUILD]`, by src tree stamp and served build
+  sha; `RESTART_CP=1`; shim `/health` wait; orphan `workerd`; CH `date_time_input_format` drift
+  warns only (cause unconfirmed). `turbo.json` `dev` unchanged, cold build not timed.
+- **FOLLOW-1420** — status: DONE # PR #1108, merged as `00034ad6`; README §5.49; `claims-v7`. Rule 2
+  refuses majority wording en/pl/es. CEO 2026-10-30 on the address exception: a street address
+  always passes.
+- **FOLLOW-1421** — status: DONE # PR #1108. CEO ruling: prices always exact; the multiplier
+  tolerance from #1101 removed for money, kept only for people and area counts.
+- **FOLLOW-1422** — status: READY # P2 docs (RETRO-371). Record the 2026-10-30 guard rulings in
+  ESC-089, MASTER_DESIGN and ADR-0023 with the claims stamp history.
+- **FOLLOW-1423** — status: BACKLOG # P2 product. Composition rule gaps left by #1108: percentages
+  ("80% of residents are Muslim"), a group before "most" ("Catholics make up most of…"), Polish
+  majority phrasing without to/jest/są/stanowi.
+- **FOLLOW-1424** — status: BACKLOG # P2 product. Inferred from code, not yet observed:
+  `{location_highlight}` prefers `publicLocationLabel`, so a second_home_buyer headline can carry a
+  street and ZIP ("Your Holiday Home — 9 Blackberry Pl"). Check on the real app, then ask the CEO.
+  Also fold: stale comment at `scripts/dev/fixture-listing-details-server.mjs:40`.
 - **FOLLOW-1411** — status: DONE # PR #1093, merged as `2ac3d9d0` (2026-10-29); post-merge
   FOLLOW-819 series GREEN ×3 on `main` (README §5.41, runs 110–112). P1, ESC-089 (CEO 2026-10-29):
   familial-steering refusal lifted on `/api/adapt` and the description path; one guard kept on every
@@ -344,11 +362,14 @@
 - **FOLLOW-1316** — status: READY # P1, NEXT UP, CEO-approved 2026-10-16. Cross-visit buyer profile
   persistence (`xid` to the server, profile restored on a new session); compliance-engineer review
   is a gate. sdk + backend. Plan 2026-10-17: Phase 4 P7, gate K4b.
-- **FOLLOW-1317** — status: READY # P1. Grounding loses price and street address on the real
-  Estalara backend (`priceUsd`/`priceEur`, no `streetAddress`). control-plane. Plan: Phase 4 P2,
-  gate K4a.
-- **FOLLOW-1318** — status: BACKLOG # P2. `GET /api/adapt/description` returns playbook-internal
-  text on `template_fallback`. control-plane. Plan: Phase 4 P3, gate K4a.
+- **FOLLOW-1317** — status: DONE # PR #1092, merged as `080ccef5` (2026-10-29), re-checked against
+  `core-master` `ListingResponseTO.kt` 2026-10-30; AC(1b) still owed at K4a; was READY # P1.
+  Grounding loses price and street address on the real Estalara backend (`priceUsd`/`priceEur`, no
+  `streetAddress`). control-plane. Plan: Phase 4 P2, gate K4a.
+- **FOLLOW-1318** — status: IN_REVIEW # PR #1109 (branch
+  backend-engineer/FOLLOW-1318-no-playbook-text), CI green, README §5.51; was BACKLOG # P2.
+  `GET /api/adapt/description` returns playbook-internal text on `template_fallback`. control-plane.
+  Plan: Phase 4 P3, gate K4a.
 - **FOLLOW-1297** — status: DONE # PR A #997 `2bb2db6c` (port, parity 98/98), production cutover
   2026-10-13 (#1000 `0cbca8dc`, smoke green), PR B #1001 `95e15d36` (`apps/llm-gateway` and its
   gates deleted; register 42 → 39 checks). Operator step owed:

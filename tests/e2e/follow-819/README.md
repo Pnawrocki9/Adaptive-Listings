@@ -3560,6 +3560,71 @@ asserted `control-plane-3000: started` before the series.
 
 Three consecutive GREEN runs, no RED or ABORTED run. The caveats of §5.23 (a)–(d) apply.
 
+### 5.47 — 2026-10-30 (FOLLOW-1391 series at branch HEAD `73063de0`, local ClickHouse logs bounded by `localhost-up.sh`, fresh `next build`, global model `claude-sonnet-5-5`, EXECUTED ×3) — **three consecutive `run=GREEN` with `total=8` (runs 140, 141, 142), each `[FRESH]` — the per-PR series of #1105 (merged as `e26a53c3`)**
+
+**MANUAL, run by the PM.** The override was already installed by the agent's test of the block, so
+this bring-up exercised the no-change path (no container restart).
+
+| Run(s) | Started (UTC)            | Result                                               | Cause                            |
+| ------ | ------------------------ | ---------------------------------------------------- | -------------------------------- |
+| 140    | 2026-10-30T12:19:38.122Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `73063de0…` |
+| 141    | 2026-10-30T12:21:33.017Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `73063de0…` |
+| 142    | 2026-10-30T12:23:12.813Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `73063de0…` |
+
+Three consecutive GREEN runs, no RED or ABORTED run counted. The caveats of §5.23 (a)–(d) apply.
+
+### 5.48 — 2026-10-30 (FOLLOW-1246 series at branch HEAD `e5c0a47d`; served build made from `e26a53c3`, product code identical; EXECUTED ×4) — **three `run=GREEN` with `total=8` (runs 164, 165, 166) and one holdout draw (run 163, UNMEASURED, neutral), each `[FRESH]`, preflight `FRESH-BUILD` — the per-PR series of #1107 (merged as `425c5264`)**
+
+**MANUAL, run by the PM.** Runs 143–162 are VOID: the new preflight refused every run with
+`[STALE-BUILD]`, a false alarm found by running it. It read only top-level `dist` entries
+(`2c9d85bd` made it recursive), then graded by commit time, which a squash merge moves although the
+bytes do not (`e5c0a47d` grades by the git tree hash of `src/`, stamped into
+`dist/.estalara-src-tree`). The `CP_MODE=prod` bring-up returned before `next build` finished, so
+`git checkout` during a build records the wrong sha: wait for `.next/ESTALARA_BUILD_SHA`.
+
+| Run(s) | Started (UTC)            | Result                                                    | Cause                            |
+| ------ | ------------------------ | --------------------------------------------------------- | -------------------------------- |
+| 163    | 2026-10-30T14:19:49.861Z | `TALLY green=7 red=0 unmeasured=1 total=8 run=UNMEASURED` | `[FRESH]` harnessSha `e5c0a47d…` |
+| 164    | 2026-10-30T14:21:08.541Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `e5c0a47d…` |
+| 165    | 2026-10-30T14:22:58.122Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `e5c0a47d…` |
+| 166    | 2026-10-30T14:24:48.185Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `e5c0a47d…` |
+
+Three consecutive GREEN runs, no RED or ABORTED run counted. The caveats of §5.23 (a)–(d) apply.
+
+### 5.49 — 2026-10-30 (FOLLOW-1420/1421 series at branch HEAD `9f9f5b9c`, fresh `next build`, served chunks carry `claims-v7`; EXECUTED ×4) — **three `run=GREEN` with `total=8` (runs 168, 169, 170) and one holdout draw (run 167, UNMEASURED, neutral), each `[FRESH]` — the per-PR series of #1108 (merged as `00034ad6`)**
+
+**MANUAL, run by the PM.** This branch predates the #1107 preflight, so the build was checked by
+hand (control plane stopped by PID, `started`, `BUILD_ID` newer than the stop).
+
+| Run(s) | Started (UTC)            | Result                                                    | Cause                            |
+| ------ | ------------------------ | --------------------------------------------------------- | -------------------------------- |
+| 167    | 2026-10-30T14:35:14.661Z | `TALLY green=7 red=0 unmeasured=1 total=8 run=UNMEASURED` | `[FRESH]` harnessSha `9f9f5b9c…` |
+| 168    | 2026-10-30T14:36:37.174Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `9f9f5b9c…` |
+| 169    | 2026-10-30T14:38:07.050Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `9f9f5b9c…` |
+| 170    | 2026-10-30T14:39:44.771Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `9f9f5b9c…` |
+
+Three consecutive GREEN runs, no RED or ABORTED run counted. The caveats of §5.23 (a)–(d) apply.
+
+### 5.50 — 2026-10-30 (post-merge series on `main` at `00034ad6`, which combines #1107 and #1108; `RESTART_CP=1 CP_MODE=prod`, `.next/ESTALARA_BUILD_SHA` = HEAD, EXECUTED ×3) — **three consecutive `run=GREEN` with `total=8` (runs 171, 172, 173), each `[FRESH]`, preflight `FRESH-BUILD`**
+
+| Run(s) | Started (UTC)            | Result                                               | Cause                            |
+| ------ | ------------------------ | ---------------------------------------------------- | -------------------------------- |
+| 171    | 2026-10-30T15:07:08.895Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `00034ad6…` |
+| 172    | 2026-10-30T15:09:10.419Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `00034ad6…` |
+| 173    | 2026-10-30T15:10:51.363Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `00034ad6…` |
+
+Three consecutive GREEN runs, no RED or ABORTED run counted. The caveats of §5.23 (a)–(d) apply.
+
+### 5.51 — 2026-10-30 (FOLLOW-1318 series at branch HEAD `42c3a900`, `RESTART_CP=1 CP_MODE=prod`, `.next/ESTALARA_BUILD_SHA` = HEAD, EXECUTED ×3) — **three consecutive `run=GREEN` with `total=8` (runs 175, 176, 177), each `[FRESH]` — the per-PR series of #1109**
+
+| Run(s) | Started (UTC)            | Result                                               | Cause                            |
+| ------ | ------------------------ | ---------------------------------------------------- | -------------------------------- |
+| 175    | 2026-10-30T15:23:02.356Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `42c3a900…` |
+| 176    | 2026-10-30T15:25:02.866Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `42c3a900…` |
+| 177    | 2026-10-30T15:26:54.964Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `42c3a900…` |
+
+Three consecutive GREEN runs, no RED or ABORTED run counted. The caveats of §5.23 (a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

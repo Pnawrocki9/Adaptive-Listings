@@ -196,7 +196,7 @@ control-plane verifier (X1).
 - **Returning-visitor profile** (FOLLOW-1316, D-E) ships with its consent/DPIA review; until then
   `__estalara_xid__` is minted and transmitted nowhere.
 - **Claim-check stamp.** Cached copy carries the claim-check version that passed it
-  (`CLAIMS_VALIDATION_VERSION`, `claims-v5` since #1101). After a deploy that bumps it, older cache
+  (`CLAIMS_VALIDATION_VERSION`, `claims-v7` since #1108). After a deploy that bumps it, older cache
   entries are not served; they regenerate lazily on the next request for that listing, so the first
   requests after the deploy are slower and cost more LLM calls. No backfill step is needed.
 - **Local `next build`** fails on two React copies in the local `node_modules` (plan Phase 3 M4);

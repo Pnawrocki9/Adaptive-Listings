@@ -234,8 +234,8 @@
 - **FOLLOW-1385** — status: SUPERSEDED # by FOLLOW-1401 (same fix, wider: second_home_buyer,
   vacation_rental_investor and first_time_buyer templates, en/pl/es). Vacation-rental
   `copy_template` recommends "turnkey", which the claim check refuses.
-- **FOLLOW-1386** — status: BACKLOG # P3. Polish room-count convention ("dwupokojowe" = 1 bedroom +
-  living room) mistranslated by both models; add guidance.
+- **FOLLOW-1386** — status: DONE # by #1117, was BACKLOG # P3. Polish room-count convention
+  ("dwupokojowe" = 1 bedroom + living room) mistranslated by both models; add guidance.
 - **FOLLOW-1368** — status: BACKLOG # ESC-087 option 3: `/api/adapt` uses the playbook branch only
   when every slot is grounded, else the LLM — all sessions; own series; after KQ2.
 - **FOLLOW-1367** — status: DONE # folded into #1071 (AC(5) after the quiz card, warm

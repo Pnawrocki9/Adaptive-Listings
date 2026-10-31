@@ -27,6 +27,8 @@
  *     "949.000") as one number and a decimal comma as a decimal point, on BOTH sides (FOLLOW-1381,
  *     corpus v4, `normaliseNumberGroups`). Since FOLLOW-1388 the adapt checker reads them the same
  *     way, through the same function (`lib/number-groups.ts`).
+ *   - the digit rule, the claim classes and their grounding are ONE implementation since FOLLOW-1311
+ *     (`lib/claim-rules.ts`); what still differs is `DESCRIPTION_CLAIM_DIALECT` below;
  *   - the amenity vocabulary, its negators and its spec-line negation ("Basen: brak") are ONE list
  *     shared with the adapt checker (`lib/amenity-lexicon.ts`, FOLLOW-1383): en / pl / es, Polish
  *     inflection as explicit endings. Python's list was English only. So, since FOLLOW-1393, are the
@@ -42,27 +44,26 @@
  */
 
 import {
-  AMENITY_RES,
-  NEGATED_AFTER_RE,
-  NEGATOR_RE,
-  negatedThroughList,
-} from '@/lib/amenity-lexicon';
-import { CONDITION_FACT_RE, assertsGuarantee, assertsNoWorkClaim } from '@/lib/condition-lexicon';
+  areaNumberPattern,
+  buildGrounding,
+  canonNumber,
+  checkClaimClasses,
+  checkNumbers as checkNumbersIn,
+  STOP_CAPS,
+  stemLoose,
+  type ClaimDialect,
+  type ClaimViolation,
+  type NumberViolation,
+} from '@/lib/claim-rules';
 import { hasMetaCommentary } from '@/lib/meta-commentary';
 import { hasModelControlTag } from '@/lib/model-control-tags';
-import {
-  normaliseNumberGroups,
-  stripGroundedMultipliedNumbers,
-  withMultipliedNumbers,
-} from '@/lib/number-groups';
-import { stripGroundedDecades } from '@/lib/decade-expressions';
+
+export { canonNumber, stemLoose };
+export type { ClaimViolation, NumberViolation };
 
 // ─── Violation codes (ADR-0023 §3) ────────────────────────────────────────────
 
-export type NumberViolation = 'hallucinated_number';
 export type FactViolation = NumberViolation | 'hallucinated_proper_name';
-/** = `claim-containment.ts` `ClaimViolation`; restated here so this module has no adapt import. */
-export type ClaimViolation = 'unsupported_amenity' | 'unsupported_guarantee' | 'unit_mismatch';
 export type ContractViolation =
   | 'residual_tag'
   | 'formatted_body'
@@ -136,11 +137,6 @@ function pySplitlines(s: string): string[] {
 /** Python `s[:n]` on a `str`: the first `n` CODE POINTS. */
 export function pySliceCodePoints(s: string, n: number): string {
   return Array.from(s).slice(0, n).join('');
-}
-
-/** Python `len(s)` on a `str`: code points. */
-function pyLen(s: string): number {
-  return Array.from(s).length;
 }
 
 /**
@@ -221,57 +217,21 @@ const PY_UPPER_RE = /^\p{Uppercase}$/u;
 const FACT_CHECK_DIGIT_RE = /\p{Nd}[\p{Nd}.,/%m²sqftftm-]*/giu;
 /** `_GROUNDING_WORD_RE`: `[\w-]+`. */
 const GROUNDING_WORD_RE = new RegExp(`[${PY_WORD}-]+`, 'gu');
-/** `_STEM_SUFFIXES`, longest first. */
-const STEM_SUFFIXES = ['ing', 'ed', 'es', 's', 'e'] as const;
 
 /**
- * `_canon_number`: what a digit token asserts — its digits and decimal point, outer dots stripped.
- * `[^0-9.]` is ASCII in Python too, so a non-ASCII decimal digit (matched by `\p{Nd}` above)
- * canonicalises to '' and is skipped by the callers, exactly as in Python.
+ * The description path's side of what still differs between the two paths (`lib/claim-rules.ts`):
+ * Unicode digits, a case-insensitive digit token (Python `re.IGNORECASE`), Python's whitespace, and
+ * an area field states its number whatever its value. Pinned by the frozen parity corpus.
  */
-export function canonNumber(token: string): string {
-  return token
-    .replace(/[^0-9.]/gu, '')
-    .replace(/^\.+/u, '')
-    .replace(/\.+$/u, '');
-}
+const DESCRIPTION_CLAIM_DIALECT: ClaimDialect = {
+  digit: FACT_CHECK_DIGIT_RE,
+  areaNumber: areaNumberPattern('\\p{Nd}', PY_WS, 'giu'),
+  strip: pyStrip,
+  areaFromNegativeFields: true,
+};
 
-/** `_stem_loose`: lowercase, then strip ONE English suffix when the word is long enough. */
-export function stemLoose(word: string): string {
-  const w = word.toLowerCase();
-  const len = pyLen(w);
-  for (const suffix of STEM_SUFFIXES) {
-    if (len > suffix.length + 2 && w.endsWith(suffix)) return w.slice(0, -suffix.length);
-  }
-  return w;
-}
-
-/**
- * `_check_numbers`: every digit token of `text` must canonicalise to a digit token of `grounding`.
- * The grounding is tokenised with the SAME regex, so "425000" enters whole and never verifies "5".
- * Both sides are number-normalised first (FOLLOW-1381, `lib/number-groups.ts`), so a grouped
- * number is one token. A decade expression ("lat 30.", "1930s") is checked as a decade first
- * (FOLLOW-1405, `lib/decade-expressions.ts`).
- */
-function checkNumbers(rawText: string, rawGrounding: string): NumberViolation | null {
-  const normalised = normaliseNumberGroups(rawGrounding);
-  // The listing's "1,15 mln" also grounds "1150000" [FOLLOW-1397] (not a decade: "2 tys." is no year).
-  const grounding = withMultipliedNumbers(normalised);
-  // A decade is checked as a decade, then kept out of the digit rule [FOLLOW-1405].
-  const withoutDecades = stripGroundedDecades(normaliseNumberGroups(rawText), normalised);
-  if (withoutDecades === null) return 'hallucinated_number';
-  // A grounded "1,15 mln" / "850 tys." / "1.15M" is the number it names [FOLLOW-1397].
-  const text = stripGroundedMultipliedNumbers(withoutDecades, grounding);
-  const grounded = new Set<string>();
-  for (const m of grounding.matchAll(FACT_CHECK_DIGIT_RE)) {
-    const canon = canonNumber(m[0]);
-    if (canon) grounded.add(canon);
-  }
-  for (const m of text.matchAll(FACT_CHECK_DIGIT_RE)) {
-    const canon = canonNumber(m[0]);
-    if (canon && !grounded.has(canon)) return 'hallucinated_number';
-  }
-  return null;
+function checkNumbers(text: string, grounding: string): NumberViolation | null {
+  return checkNumbersIn(text, grounding, DESCRIPTION_CLAIM_DIALECT);
 }
 
 /**
@@ -295,113 +255,14 @@ function checkBodyFacts(
 
 // ─── Claim containment (`_check_unsupported_claims`, FOLLOW-1305) ────────────
 
-const CLAUSE_BREAK_RE = /[.;:!?\n,]/gu;
-const NEGATION_WINDOW = 30;
-
-const AREA_UNIT =
-  `(?:m²|m2|sq\\.?${PY_WS}?m|sqm|square${PY_WS}+met(?:re|er)s?|sq\\.?${PY_WS}?ft|sqft|` +
-  `square${PY_WS}+f(?:ee|oo)t)`;
-/** `(\d[\d.,]*)\s*UNIT(?![a-z])`, `re.IGNORECASE` (so the lookahead also rejects `A-Z`). */
-const AREA_NUMBER_RE = new RegExp(`(\\p{Nd}[\\p{Nd}.,]*)${PY_WS}*${AREA_UNIT}(?![a-z])`, 'giu');
-const AREA_KEY_RE = /area|size|sqm|sq_?ft|m2|surface|plot|floor_?space|footage/iu;
-const NEGATIVE_FIELD_VALUES: ReadonlySet<string> = new Set([
-  '',
-  'no',
-  'false',
-  '0',
-  'none',
-  'n/a',
-  'null',
-  // FOLLOW-1383: the Polish "no" values of a spec field.
-  'nie',
-  'brak',
-]);
-
-/**
- * `_claim_grounding`: the listing's own words — `original_description` plus every POSITIVE field
- * as `key: value` (underscores in the key become spaces), newline-joined. A field whose value says
- * "no" is skipped so its key cannot ground the amenity it denies.
- */
-function claimGrounding(original: string, ctx: Readonly<Record<string, string>>): string {
-  const parts = [original];
-  for (const [key, value] of Object.entries(ctx)) {
-    if (NEGATIVE_FIELD_VALUES.has(pyStrip(value).toLowerCase())) continue;
-    parts.push(`${key.replaceAll('_', ' ')}: ${value}`);
-  }
-  return parts.join('\n');
-}
-
-/** `_is_negated`: a negator in the same clause within the 30 CODE POINTS before `start`. */
-function isNegated(text: string, startUtf16: number): boolean {
-  const before = Array.from(text.slice(0, startUtf16));
-  let window = before.slice(Math.max(0, before.length - NEGATION_WINDOW)).join('');
-  let lastBreak: RegExpExecArray | null = null;
-  for (const m of window.matchAll(CLAUSE_BREAK_RE)) lastBreak = m;
-  if (lastBreak) window = window.slice(lastBreak.index + lastBreak[0].length);
-  return NEGATOR_RE.test(window);
-}
-
-/**
- * `_asserted`: at least one NON-negated match. FOLLOW-1383: a match followed by a spec-line
- * negation ("Basen: brak") is negated too. FOLLOW-1413: so is an item of a negated list ("no
- * schools, nurseries or playgrounds").
- */
-function asserted(pattern: RegExp, text: string): boolean {
-  for (const m of text.matchAll(pattern)) {
-    if (isNegated(text, m.index) || negatedThroughList(text, m.index, isNegated)) continue;
-    if (NEGATED_AFTER_RE.test(text.slice(m.index + m[0].length))) continue;
-    return true;
-  }
-  return false;
-}
-
-/** `_grounded_area_numbers`: numbers the listing states AS an area. */
-function groundedAreaNumbers(
-  grounding: string,
-  ctx: Readonly<Record<string, string>>,
-): Set<string> {
-  const numbers = new Set<string>();
-  for (const m of normaliseNumberGroups(grounding).matchAll(AREA_NUMBER_RE)) {
-    numbers.add(canonNumber(m[1] ?? ''));
-  }
-  for (const [key, value] of Object.entries(ctx)) {
-    if (AREA_KEY_RE.test(key)) {
-      for (const m of normaliseNumberGroups(value).matchAll(FACT_CHECK_DIGIT_RE)) {
-        numbers.add(canonNumber(m[0]));
-      }
-    }
-  }
-  numbers.delete('');
-  return numbers;
-}
-
 /** `_check_unsupported_claims`: the first amenity / guarantee / unit claim the listing does not make. */
 function checkUnsupportedClaimsPy(
   text: string,
   original: string,
   ctx: Readonly<Record<string, string>>,
 ): ClaimViolation | null {
-  const grounding = claimGrounding(original, ctx);
-
-  // FOLLOW-1383: one group per amenity across en / pl / es (`lib/amenity-lexicon.ts`).
-  for (const { claim, grounding: grounds } of AMENITY_RES) {
-    if (asserted(claim, text) && !asserted(grounds, grounding)) return 'unsupported_amenity';
-  }
-  // FOLLOW-1393: one guarantee / no-work / condition list across en / pl / es
-  // (`lib/condition-lexicon.ts`); a condition fact counts only when it is not negated.
-  // FOLLOW-1408: a negated guarantee ("no guarantee of income") is a disclaimer, on both sides.
-  if (assertsGuarantee(text) && !assertsGuarantee(grounding)) return 'unsupported_guarantee';
-  if (
-    assertsNoWorkClaim(text) &&
-    !(assertsNoWorkClaim(grounding) || asserted(CONDITION_FACT_RE, grounding))
-  ) {
-    return 'unsupported_guarantee';
-  }
-  const areaNumbers = groundedAreaNumbers(grounding, ctx);
-  for (const m of normaliseNumberGroups(text).matchAll(AREA_NUMBER_RE)) {
-    if (!areaNumbers.has(canonNumber(m[1] ?? ''))) return 'unit_mismatch';
-  }
-  return null;
+  const grounding = buildGrounding([original], ctx, DESCRIPTION_CLAIM_DIALECT);
+  return checkClaimClasses(text, grounding, DESCRIPTION_CLAIM_DIALECT);
 }
 
 /** `_check_body_claims`: the digit rule, then the claim classes. Non-null ⇒ REFUSED. */
@@ -416,83 +277,7 @@ export function checkBodyClaims(
 // ─── Headline fact check (`_check_headline_facts`) ───────────────────────────
 
 /** `_HEADLINE_STOP_CAPS`: capitalised words that are not proper names. */
-const HEADLINE_STOP_CAPS: ReadonlySet<string> = new Set([
-  'A',
-  'An',
-  'The',
-  'In',
-  'On',
-  'At',
-  'Of',
-  'For',
-  'To',
-  'And',
-  'Or',
-  'But',
-  'With',
-  'From',
-  'By',
-  'As',
-  'Its',
-  'Is',
-  'Are',
-  'Was',
-  'Be',
-  'Has',
-  'Have',
-  'This',
-  'That',
-  'These',
-  'Those',
-  'Your',
-  'Our',
-  'Their',
-  'Ideal',
-  'Prime',
-  'Strong',
-  'Stunning',
-  'Spacious',
-  'Modern',
-  'Elegant',
-  'Bright',
-  'Charming',
-  'Impressive',
-  'Exceptional',
-  'Superb',
-  'Excellent',
-  'Beautiful',
-  'Luxury',
-  'Luxurious',
-  'Attractive',
-  'Unique',
-  'Rare',
-  'Perfect',
-  'Classic',
-  'Contemporary',
-  'Traditional',
-  'Cosy',
-  'Cozy',
-  'Quiet',
-  'Peaceful',
-  'Vibrant',
-  'Sought',
-  'Desirable',
-  'Prestigious',
-  'Newly',
-  'Well',
-  'Fully',
-  'Tastefully',
-  'Beautifully',
-  'Recently',
-  'Lovingly',
-  'Generously',
-  'Conveniently',
-  'Investor',
-  'Family',
-  'Investment',
-  'Lifestyle',
-  'Portfolio',
-]);
+const HEADLINE_STOP_CAPS: ReadonlySet<string> = new Set(STOP_CAPS);
 
 /**
  * FOLLOW-1389: per page language, the closed list of ordinary words a headline opens with —

@@ -17,12 +17,7 @@ import { DAILY_SPEND_CAP_USD, getDailySpend } from '@/lib/llm-spend-counter';
 // FOLLOW-1297: one price table for the adapt and description paths (ADR-0023 §3).
 import { computeCost } from '@/lib/llm-pricing';
 import { generationRequestFor } from '@/lib/generation-models';
-import {
-  normaliseNumberGroups,
-  stripGroundedMultipliedNumbers,
-  withMultipliedNumbers,
-} from '@/lib/number-groups';
-import { stripGroundedDecades } from '@/lib/decade-expressions';
+import { STOP_CAPS, checkNumbers, stemLoose } from '@/lib/claim-rules';
 import { hasMetaCommentary } from '@/lib/meta-commentary';
 import { hasModelControlTag } from '@/lib/model-control-tags';
 // FOLLOW-1061: the `llm_calls` INSERT moved to its own module so the `/api/adapt` route can book
@@ -31,6 +26,7 @@ import { logLlmCallAsync } from '@/lib/llm-calls-register';
 import { isAuthoredSectionLabel, isNonAssertiveSlot } from '@/lib/ungrounded-directives';
 import {
   slotRefusal,
+  ADAPT_CLAIM_DIALECT,
   buildClaimGrounding,
   checkUnsupportedClaims,
   type ClaimViolation,
@@ -323,87 +319,10 @@ function parseDirectivesFromResponse(
   }
 }
 
-// Fact whitelist: listing facts + session events only, never playbook copy (ESC-076) [FOLLOW-457].
+// Fact whitelist: listing facts only, never playbook copy or the session (ESC-076) [FOLLOW-457].
 
 const FACT_CHECK_STOP_CAPS: ReadonlySet<string> = new Set([
-  // Articles, prepositions, conjunctions
-  'A',
-  'An',
-  'The',
-  'In',
-  'On',
-  'At',
-  'Of',
-  'For',
-  'To',
-  'And',
-  'Or',
-  'But',
-  'With',
-  'From',
-  'By',
-  'As',
-  'Its',
-  'Is',
-  'Are',
-  'Was',
-  'Be',
-  'Has',
-  'Have',
-  'This',
-  'That',
-  'These',
-  'Those',
-  'Your',
-  'Our',
-  'Their',
-  // Common real-estate descriptive adjectives / openers (not proper names)
-  'Ideal',
-  'Prime',
-  'Strong',
-  'Stunning',
-  'Spacious',
-  'Modern',
-  'Elegant',
-  'Bright',
-  'Charming',
-  'Impressive',
-  'Exceptional',
-  'Superb',
-  'Excellent',
-  'Beautiful',
-  'Luxury',
-  'Luxurious',
-  'Attractive',
-  'Unique',
-  'Rare',
-  'Perfect',
-  'Classic',
-  'Contemporary',
-  'Traditional',
-  'Cosy',
-  'Cozy',
-  'Quiet',
-  'Peaceful',
-  'Vibrant',
-  'Sought',
-  'Desirable',
-  'Prestigious',
-  'Newly',
-  'Well',
-  'Fully',
-  'Tastefully',
-  'Beautifully',
-  'Recently',
-  'Lovingly',
-  'Generously',
-  'Conveniently',
-  // Archetype framing words that open adapted directives
-  'Investor',
-  'Family',
-  'Investment',
-  'Lifestyle',
-  'Portfolio',
+  ...STOP_CAPS,
   'Request',
   // Words that never assert a fact; consulted before the judge, so keep them [FOLLOW-1042].
   'Get',
@@ -438,9 +357,6 @@ const FACT_CHECK_STOP_CAPS: ReadonlySet<string> = new Set([
   'Rural',
 ]);
 
-/** Digit sequences: numbers, prices, percentages, areas (m²/sqft), dates, etc. */
-const FACT_CHECK_DIGIT_RE = /\d[\d.,/%m²sqft-]*/g;
-
 type DirectiveFactViolation = 'hallucinated_number' | 'hallucinated_proper_name';
 
 /**
@@ -469,33 +385,8 @@ function escapeRegExpToken(token: string): string {
 
 /** Grounding text a directive value must trace to. */
 function buildDirectiveGroundingText(input: LlmGatewayInput): string {
-  const { listingContext, sessionContext } = input;
-  // Listing facts + the buyer's own events; templates are not evidence (ESC-076) [FOLLOW-1162].
-  const parts = [
-    listingContext ? JSON.stringify(listingContext) : '',
-    sessionContext?.recentEvents?.join(' ') ?? '',
-  ];
-  return parts.join(' ').toLowerCase();
-}
-
-/**
- * Fact check for one directive value: canonical digits, then capitalised words [FOLLOW-457].
- * @returns A violation reason code, or null when the value is fully grounded.
- */
-/** Canonical digits of a token: compare facts, not typography [ESC-063]. */
-function canonNumber(token: string): string {
-  return token.replace(/[^0-9.]/g, '').replace(/^\.+|\.+$/g, '');
-}
-
-/** Case-folded one-suffix English stem, applied to both sides [FOLLOW-1042]. */
-function stemLoose(word: string): string {
-  const w = word.toLowerCase();
-  for (const suffix of ['ing', 'ed', 'es', 's', 'e']) {
-    if (w.length > suffix.length + 2 && w.endsWith(suffix)) {
-      return w.slice(0, -suffix.length);
-    }
-  }
-  return w;
+  // Listing facts only: neither a template nor the session is evidence (ESC-076, §E.7.0).
+  return input.listingContext ? JSON.stringify(input.listingContext).toLowerCase() : '';
 }
 
 /**
@@ -514,28 +405,12 @@ function isTemplateAuthoredValue(playbook: PlaybookEntry, slot: string, value: s
     .some((authored) => normalise(authored) === candidate);
 }
 
+/**
+ * Fact check for one directive value: canonical digits, then capitalised words [FOLLOW-457].
+ * @returns A violation reason code, or null when the value is fully grounded.
+ */
 function checkDirectiveFacts(value: string, grounding: string): DirectiveFactViolation | null {
-  // Same regex both sides: "5" never matches inside "425000" [FOLLOW-457]. Both sides are
-  // number-normalised first, as on the description path: "949 000" is one number [FOLLOW-1388].
-  // The listing's "1,15 mln" also grounds "1150000", as on the description path [FOLLOW-1397]
-  // (not a decade: "2 tys." is no year).
-  const normalisedGrounding = normaliseNumberGroups(grounding);
-  const withMultiplied = withMultipliedNumbers(normalisedGrounding);
-  const groundingNumbers = new Set(
-    Array.from(withMultiplied.matchAll(FACT_CHECK_DIGIT_RE), (m) => canonNumber(m[0])),
-  );
-  // A decade is checked as a decade, then kept out of the digit rule, as on the description path
-  // [FOLLOW-1405].
-  const withoutDecades = stripGroundedDecades(normaliseNumberGroups(value), normalisedGrounding);
-  if (withoutDecades === null) return 'hallucinated_number';
-  // A grounded "1,15 mln" / "850 tys." is the number it names [FOLLOW-1397].
-  const withoutMultiplied = stripGroundedMultipliedNumbers(withoutDecades, withMultiplied);
-  for (const match of withoutMultiplied.matchAll(FACT_CHECK_DIGIT_RE)) {
-    const canon = canonNumber(match[0]);
-    if (canon !== '' && !groundingNumbers.has(canon)) {
-      return 'hallucinated_number';
-    }
-  }
+  if (checkNumbers(value, grounding, ADAPT_CLAIM_DIALECT) !== null) return 'hallucinated_number';
 
   // Unicode word class: accented words enter whole [FOLLOW-1042].
   const groundingStems = new Set(grounding.split(/[^\p{L}\p{N}-]+/u).map(stemLoose));

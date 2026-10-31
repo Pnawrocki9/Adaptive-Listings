@@ -25,7 +25,7 @@
  * @module apps/control-plane/src/lib/condition-lexicon
  */
 
-import { NEGATED_AFTER_RE, NEGATOR_RE } from '@/lib/amenity-lexicon';
+import { NEGATED_AFTER_RE, NEGATOR_RE, clauseBefore } from '@/lib/amenity-lexicon';
 
 const W = '\\p{L}\\p{N}_';
 
@@ -117,23 +117,11 @@ export const CONDITION_FACT_RE = wordRe(
 /** The global twin of `NO_WORK_CLAIM_RE`, for `matchAll`. */
 const NO_WORK_CLAIM_ALL_RE = new RegExp(NO_WORK_CLAIM_RE.source, 'giu');
 
-/** The amenity negation window: same clause, 30 code points before the match. */
-const NEGATION_WINDOW = 30;
-const CLAUSE_BREAK_RE = /[.;:!?\n,]/gu;
-
 /** "not only" / "not just" / "nie tylko" / "no solo": a negator that affirms what follows. */
 const AFFIRMING_NEGATION_RE = wordRe(
   ['(?:not|nie|no) (?:just|only|merely|tylko|s[oó]lo|solamente)'],
   'iu',
 );
-
-function clauseBefore(text: string, start: number): string {
-  const before = Array.from(text.slice(0, start));
-  const window = before.slice(Math.max(0, before.length - NEGATION_WINDOW)).join('');
-  let cut = 0;
-  for (const m of window.matchAll(CLAUSE_BREAK_RE)) cut = m.index + m[0].length;
-  return window.slice(cut);
-}
 
 /**
  * Does `text` claim the property needs no work — at least one match of the no-work vocabulary

@@ -403,6 +403,14 @@ B), `docs/INTERFACES.md` (description event becomes in-process; seed route), Mod
   listing states no rent or yield figure", "ogłoszenie nie wymienia szkół") still passes. A
   tightening, so `CLAIMS_VALIDATION_VERSION` moves to `claims-v5` (cached rows were never checked
   against it); the description and Polish headline prompts gained a paragraph (corpus v17).
+- **2026-10-31 — one module for the claim rules (FOLLOW-1311 slice 1).** The "later, measured
+  change" of §2's scope boundary starts here. The digit rule, the claim classes, their grounding,
+  the number canonicaliser and the shared stop capitals now live once in `lib/claim-rules.ts`; the
+  negation helpers live once in `lib/amenity-lexicon.ts`. What still differs between the paths is
+  stated as two `ClaimDialect` objects (`ADAPT_CLAIM_DIALECT`, `DESCRIPTION_CLAIM_DIALECT`), and the
+  name policies stay with their paths. No verdict moved: parity corpus unchanged, no stamp bump, and
+  the frozen replay (`apps/control-plane/scripts/claim-baseline`) is byte-identical. Adapt's
+  `recentEvents` grounding is gone: no code set it, and §E.7.0 never allowed it.
 
 ## References
 

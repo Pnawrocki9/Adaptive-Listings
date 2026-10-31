@@ -181,6 +181,48 @@ export const NEGATED_AFTER_RE = new RegExp(
   'iu',
 );
 
+/** The negation window: the same clause, within this many code points before a match. */
+const NEGATION_WINDOW = 30;
+const CLAUSE_BREAK_RE = /[.;:!?\n,]/gu;
+
+/**
+ * The clause before `start`: at most {@link NEGATION_WINDOW} code points, back to the last clause
+ * mark.
+ *
+ * @param text - The text the match was found in.
+ * @param start - The match's UTF-16 start index.
+ * @returns The part of the window after the last clause mark.
+ */
+export function clauseBefore(text: string, start: number): string {
+  const before = Array.from(text.slice(0, start));
+  const window = before.slice(Math.max(0, before.length - NEGATION_WINDOW)).join('');
+  let cut = 0;
+  for (const m of window.matchAll(CLAUSE_BREAK_RE)) cut = m.index + m[0].length;
+  return window.slice(cut);
+}
+
+function isNegated(text: string, start: number): boolean {
+  return NEGATOR_RE.test(clauseBefore(text, start));
+}
+
+/**
+ * At least one NON-negated match of `pattern`. A match followed by a spec-line negation ("Basen:
+ * brak") is negated [FOLLOW-1383], and so is an item of a negated list ("no schools, nurseries or
+ * playgrounds") [FOLLOW-1413].
+ *
+ * @param pattern - A global pattern.
+ * @param text - The text to read.
+ * @returns `true` when the text asserts what the pattern names.
+ */
+export function asserted(pattern: RegExp, text: string): boolean {
+  for (const m of text.matchAll(pattern)) {
+    if (isNegated(text, m.index) || negatedThroughList(text, m.index, isNegated)) continue;
+    if (NEGATED_AFTER_RE.test(text.slice(m.index + m[0].length))) continue;
+    return true;
+  }
+  return false;
+}
+
 /**
  * FOLLOW-1413: the separators of a coordinated list — a comma (optionally followed by a
  * coordinator) or a coordinator alone: and / or / nor, i / oraz / lub / albo / czy / ani,
@@ -240,7 +282,7 @@ const LIST_CLAUSE_END_RE =
  * @param directlyNegated - The caller's negation rule, applied to the list's first item.
  * @returns `true` when the match is negated through the list.
  */
-export function negatedThroughList(
+function negatedThroughList(
   text: string,
   start: number,
   directlyNegated: (text: string, start: number) => boolean,

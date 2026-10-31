@@ -18,6 +18,7 @@ import { DAILY_SPEND_CAP_USD, getDailySpend } from '@/lib/llm-spend-counter';
 import { computeCost } from '@/lib/llm-pricing';
 import { generationRequestFor } from '@/lib/generation-models';
 import { STOP_CAPS, checkNumbers, stemLoose } from '@/lib/claim-rules';
+import { isOtherNameOfListingPlace, isPolishCaseFormOfFact } from '@/lib/name-forms';
 import { hasMetaCommentary } from '@/lib/meta-commentary';
 import { hasModelControlTag } from '@/lib/model-control-tags';
 // FOLLOW-1061: the `llm_calls` INSERT moved to its own module so the `/api/adapt` route can book
@@ -409,7 +410,11 @@ function isTemplateAuthoredValue(playbook: PlaybookEntry, slot: string, value: s
  * Fact check for one directive value: canonical digits, then capitalised words [FOLLOW-457].
  * @returns A violation reason code, or null when the value is fully grounded.
  */
-function checkDirectiveFacts(value: string, grounding: string): DirectiveFactViolation | null {
+function checkDirectiveFacts(
+  value: string,
+  grounding: string,
+  listingContext: Readonly<Record<string, string>>,
+): DirectiveFactViolation | null {
   if (checkNumbers(value, grounding, ADAPT_CLAIM_DIALECT) !== null) return 'hallucinated_number';
 
   // Unicode word class: accented words enter whole [FOLLOW-1042].
@@ -434,7 +439,14 @@ function checkDirectiveFacts(value: string, grounding: string): DirectiveFactVio
       `(?<![\\p{L}\\p{N}])${escapeRegExpToken(clean)}(?![\\p{L}\\p{N}])`,
       'iu',
     );
-    if (!boundary.test(grounding) && !groundingStems.has(stemLoose(clean))) {
+    // T7: the listing's own place in another form; the request names no page language, so a Polish
+    // case form is read on every request [FOLLOW-1311].
+    if (
+      !boundary.test(grounding) &&
+      !groundingStems.has(stemLoose(clean)) &&
+      !isPolishCaseFormOfFact(clean, '', listingContext) &&
+      !isOtherNameOfListingPlace(clean, grounding, 'pl')
+    ) {
       return 'hallucinated_proper_name';
     }
   }
@@ -729,7 +741,11 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
     // A statement about residents' race, ethnic origin or religion is refused on EVERY request;
     // the seller's wording is no licence [FOLLOW-1411, ESC-089]. Family wording is not refused.
     const scanned = directives.map((directive) => {
-      const factViolation = checkDirectiveFacts(directive.value, grounding);
+      const factViolation = checkDirectiveFacts(
+        directive.value,
+        grounding,
+        input.listingContext ?? {},
+      );
       const claimViolation: ClaimViolation | null =
         factViolation === 'hallucinated_number'
           ? null

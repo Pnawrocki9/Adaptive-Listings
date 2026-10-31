@@ -1,0 +1,80 @@
+{
+  "case_count": 98,
+  "change": "FOLLOW-1311 slice 2 (T3): a digit count the listing states with the same key in words is grounded, so \"3-Bed\" passes on \"three-bedroom\". Three recorded headlines were refused at that first violation and are now refused for the next one. Every one stays suppressed; no body verdict moved. No stamp bump: a loosening.",
+  "claims_validation_version": "claims-v7",
+  "corpus": "corpus.v21.jsonl",
+  "corpus_sha256": "d6732f6b:d62eccb6:c4b66e8c:ce5ee57f:d5502f59:ce886015:f737e0fb:56f1aa11",
+  "delta": [
+    {
+      "id": "live.030.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.first_time_buyer.en",
+      "kind": "live",
+      "changed": {
+        "headline_violation": {
+          "v20": "hallucinated_number",
+          "v21": "unsupported_guarantee"
+        }
+      },
+      "reason": "The raw headline \"Spacious 3-Bed Home With Garage, Lanai & Garden — Move-In Ready\" was refused at \"3-Bed\", which the listing's \"three-bedroom\" now grounds (T3). It is still refused, for the next one: \"Move-In Ready\" is a no-work claim the listing does not make. The headline stays suppressed; no body verdict moved."
+    },
+    {
+      "id": "live.031.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.flip_investor.en",
+      "kind": "live",
+      "changed": {
+        "headline_violation": {
+          "v20": "hallucinated_number",
+          "v21": "hallucinated_proper_name"
+        }
+      },
+      "reason": "The raw headline \"Spacious 3-Bed, 2-Bath Home With Garage & Lanai — Strong Flip Potential\" was refused at \"3-Bed\", which the listing's \"three-bedroom\" now grounds (T3), as \"two-bathroom\" grounds \"2-Bath\". It is still refused, for the next one: capitalised words that are not the listing's. The headline stays suppressed; no body verdict moved."
+    },
+    {
+      "id": "live.032.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.neutral.en",
+      "kind": "live",
+      "changed": {
+        "headline_violation": {
+          "v20": "hallucinated_number",
+          "v21": "hallucinated_proper_name"
+        }
+      },
+      "reason": "The raw headline \"Quiet 3-Bed Home With Garage, Screened Lanai & Mature Garden Near the Waterway\" was refused at \"3-Bed\", which the listing's \"three-bedroom\" now grounds (T3). It is still refused, for the next one: the capitalised-word rule meets \"Near\". The headline stays suppressed; no body verdict moved."
+    }
+  ],
+  "derived_from": {
+    "corpus": "corpus.v20.jsonl",
+    "manifest": "MANIFEST.v20.json",
+    "corpus_sha256": "fd0da821:69053897:6e6a7845:0d107116:03b91209:f14eb921:db2eb4c0:bbaff300"
+  },
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-10-31",
+  "headline_called": 63,
+  "headline_suppressed": 30,
+  "kind": "verdict_delta",
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "NEUTRAL/with_reason": 8,
+    "NEUTRAL/without_reason": 1,
+    "REFUSED/unsupported_amenity": 6,
+    "FAILED/meta_commentary": 1,
+    "REFUSED/hallucinated_number": 5,
+    "REFUSED/unsupported_guarantee": 2,
+    "REFUSED/unit_mismatch": 2,
+    "FAILED/empty": 2,
+    "FAILED/residual_tag": 3,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/truncated": 1
+  },
+  "per_verdict": {
+    "FIT": 63,
+    "REFUSED": 15,
+    "NEUTRAL": 9,
+    "FAILED": 11
+  },
+  "recorded_outputs_predate_prompt": "Every raw_headline in this corpus was produced by an older headline prompt. They are replayed through the unchanged checks, so they pin the checks and the new prompt bytes, NOT what the new prompt makes the model write."
+}

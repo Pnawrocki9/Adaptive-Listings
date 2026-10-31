@@ -3635,6 +3635,57 @@ Three consecutive GREEN runs, no RED or ABORTED run counted. The caveats of §5.
 
 Three consecutive GREEN runs, no RED or ABORTED run counted. The caveats of §5.23 (a)–(d) apply.
 
+### 5.52 — 2026-10-30 (FOLLOW-1233 series at branch HEAD `442dc2a3`, `RESTART_CP=1 CP_MODE=prod`, EXECUTED ×5) — **three consecutive `run=GREEN` with `total=8` (runs 180, 181, 182), each `[FRESH]` — the per-PR series of #1111**
+
+| Run | Result                                                    | Cause                                                                                                                                                                            |
+| --- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 178 | aborted by preflight                                      | `[listing_embeddings_missing]`: the intended refusal. The cosine inputs had been deleted on purpose (`DELETE 13` from `listing_embeddings`) to prove the abort; not a graded run |
+| 179 | `TALLY green=7 red=0 unmeasured=1 total=8 run=UNMEASURED` | the chat arm's session drew holdout, `[UNMEASURED:holdout] AC(8)`, neutral; `[FRESH]`                                                                                            |
+| 180 | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `442dc2a3…`                                                                                                                                                 |
+| 181 | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `442dc2a3…`                                                                                                                                                 |
+| 182 | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `442dc2a3…`                                                                                                                                                 |
+
+The live check of AC(3) on the same branch: the seeded path made no OpenAI call; after the deletion
+above the preflight aborted; a repeat bring-up seeded the listing half back (13 rows) and the runs
+logged `scoringPaths:["cosine"]`. The caveats of §5.23 (a)–(d) apply.
+
+### 5.53 — 2026-10-30 (FOLLOW-1168 series at branch HEAD `1c482580`, `RESTART_CP=1 CP_MODE=prod`, EXECUTED ×5) — **three consecutive `run=GREEN` with `total=8` (runs 183, 184, 187; 185 and 186 drew holdout), each `[FRESH]` — the per-PR series of #1112**
+
+| Run(s) | Started (UTC)            | Result                                                    | Cause                                                             |
+| ------ | ------------------------ | --------------------------------------------------------- | ----------------------------------------------------------------- |
+| 183    | 2026-10-30T16:20:37.241Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `1c482580…`                                  |
+| 184    | 2026-10-30T16:22:36.754Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `1c482580…`                                  |
+| 185    | 2026-10-30T16:24:08.421Z | `TALLY green=3 red=0 unmeasured=5 total=8 run=UNMEASURED` | `[UNMEASURED:holdout]`, neutral; `[FRESH]` harnessSha `1c482580…` |
+| 186    | 2026-10-30T16:25:44.707Z | `TALLY green=3 red=0 unmeasured=5 total=8 run=UNMEASURED` | `[UNMEASURED:holdout]`, neutral; `[FRESH]` harnessSha `1c482580…` |
+| 187    | 2026-10-30T16:27:16.275Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `1c482580…`                                  |
+
+Two main-arm holdout draws in a row are chance: the #1112 diff has no holdout-related line, and the
+main-arm rate over the last 56 runs is 3 of 56. Neutral under the series rule. The caveats of §5.23
+(a)–(d) apply.
+
+### 5.54 — 2026-10-31 (post-merge series on `main` at `6d58d1c2`, which combines #1109, #1110, #1111 and #1112; `RESTART_CP=1 CP_MODE=prod`, `.next/ESTALARA_BUILD_SHA` = HEAD, EXECUTED ×5) — **one RED, then three consecutive `run=GREEN` with `total=8` (runs 189, 191, 192; 190 drew holdout), each `[FRESH]`**
+
+| Run(s) | Started (UTC)            | Result                                                    | Cause                                                                                 |
+| ------ | ------------------------ | --------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| 188    | 2026-10-31T12:05:54.513Z | `TALLY green=7 red=1 unmeasured=0 total=8 run=RED`        | **RED** AC(5): the CTA was never clicked, see below; `[FRESH]` harnessSha `6d58d1c2…` |
+| 189    | 2026-10-31T12:08:08.677Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `6d58d1c2…`                                                      |
+| 190    | 2026-10-31T12:10:37.415Z | `TALLY green=3 red=0 unmeasured=5 total=8 run=UNMEASURED` | `[UNMEASURED:holdout]`, neutral; `[FRESH]` harnessSha `6d58d1c2…`                     |
+| 191    | 2026-10-31T12:13:22.264Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `6d58d1c2…`                                                      |
+| 192    | 2026-10-31T12:15:23.775Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `6d58d1c2…`                                                      |
+
+**Run 188 is a real RED and it is not explained.** `clickCtaWhenReady` spent its whole budget: 7
+attempts, each ending in `locator.scrollIntoViewIfNeeded: Timeout ~2000ms`, so about 14 s, not the
+short node-swap race FOLLOW-1398 absorbs (that race took 1 attempt in all four later runs). AC(1),
+AC(2), AC(3), AC(4), AC(7), AC(8) and AC(10) passed in the same run. The same run logged one failed
+ingest POST (`ingestFailedAtNetwork: 1`, a CORS console error on `:8787`, re-sent successfully). It
+was the first run after a fresh bring-up. Those are facts on record, not a diagnosis: the harness
+keeps only the first line of each Playwright error, so the call log that would name the failing
+actionability check is gone. FOLLOW-1425 keeps it for the next occurrence. Nothing in #1109–#1112
+touches the SDK or the CTA's text. **Load during this series:** a background agent ran the
+control-plane package's whole test suite by mistake at about 12:08–12:17 UTC (load average about
+10). Run 188 had ended by 12:08:01, so this overload does not explain it; runs 189–192 ran under it
+and passed. The caveats of §5.23 (a)–(d) apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

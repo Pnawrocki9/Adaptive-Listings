@@ -1,0 +1,48 @@
+{
+  "ticket": "FOLLOW-1311 slice 3",
+  "classified_by": "ml-engineer, single rater, by hand against the listing",
+  "fit_before": 57,
+  "new_body_refusals": 4,
+  "true_positives": 4,
+  "adapt_slots_newly_refused": 0,
+  "adapt_slots_total": 84,
+  "un_refused": 0,
+  "moved": {
+    "description.krk.first_time_buyer.pl": {
+      "from": "FIT",
+      "to": "REFUSED count_mismatch",
+      "classified": "true",
+      "why": "\"Dwupokojowe mieszkanie\" for a listing with two separate bedrooms and a living room."
+    },
+    "description.krk.yield_hunter.pl": {
+      "from": "FIT",
+      "to": "REFUSED count_mismatch",
+      "classified": "true",
+      "why": "\"Mieszkanie dwupokojowe\" for the same two-bedroom listing."
+    },
+    "description.wro.diaspora_buyer.es": {
+      "from": "FIT",
+      "to": "REFUSED count_mismatch",
+      "classified": "true",
+      "why": "\"cuatro habitaciones\" for \"czteropokojowe\" with three bedrooms; the same body says \"tres dormitorios\" two sentences later."
+    },
+    "description.lis.diaspora_buyer.pl": {
+      "from": "FIT",
+      "to": "REFUSED count_mismatch",
+      "classified": "true",
+      "why": "\"Dwupokojowe mieszkanie\" for a \"two-bedroom apartment\"."
+    },
+    "description.fx.diaspora_buyer.pl": {
+      "from": "headline kept",
+      "to": "headline suppressed, count_mismatch",
+      "classified": "true",
+      "why": "\"trzypokojowy dom\" for a \"three-bedroom\" home. The body is still served."
+    },
+    "description.tor.retiree_relocator.pl": {
+      "from": "headline kept",
+      "to": "headline suppressed, count_mismatch",
+      "classified": "true",
+      "why": "\"dwupokojowy\" bungalow for \"two bedrooms\". The body is still served."
+    }
+  }
+}

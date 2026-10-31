@@ -101,6 +101,15 @@
  *   - `corpus.v21.jsonl` + `MANIFEST.v21.json` — FOLLOW-1311 slice 2 (T3: a digit count the listing
  *     states in words) is a verdict delta of v20 in `VERDICT_DELTAS`: three recorded headlines are
  *     refused for their next violation instead. No stamp bump: a loosening.
+ *   - `corpus.v22.jsonl` + `MANIFEST.v22.json` — FOLLOW-1311 slice 3 (typed claims) is a verdict
+ *     delta of v21: one body writes a room count for a bedroom count and is refused.
+ *   - `corpus.v23.jsonl` + `MANIFEST.v23.json` — FOLLOW-1311 slice 3 appended the room-count
+ *     paragraph to both USER prompts of every page, so v23 is a prompt-digest re-freeze of v22; the
+ *     v23 guard proves each new prompt is the v22 prompt plus that paragraph, byte for byte. Every
+ *     guard replays with the CURRENT user digests (v23's); the guards of older prompt changes read
+ *     the prompt without the paragraph.
+ *   - `corpus.v24.jsonl` + `MANIFEST.v24.json` — `claims-v8`, a stamp-only re-freeze of v23, the
+ *     current contract.
  *
  * No other I/O happens: the test env configures no Redis, ClickHouse, Postgres or Sentry, so the
  * spend gate reads 0, every write reports `not_configured` and no row is written.
@@ -229,9 +238,13 @@ const CASES_V17: Case[] = readCorpus('corpus.v17.jsonl');
 const MANIFEST_V17 = JSON.parse(
   readFileSync(join(FIXTURE_DIR, 'MANIFEST.v17.json'), 'utf8'),
 ) as ManifestV3 & { headline_refrozen: string[] };
-/** FOLLOW-1414 (v17) re-froze them again; its guard asserts that was v17's only change. */
+const CASES_V23: Case[] = readCorpus('corpus.v23.jsonl');
+const MANIFEST_V23 = JSON.parse(
+  readFileSync(join(FIXTURE_DIR, 'MANIFEST.v23.json'), 'utf8'),
+) as ManifestV3;
+/** FOLLOW-1414 (v17) and FOLLOW-1311 (v23) re-froze them again; each guard asserts its only change. */
 const DESCRIPTION_USER_SHA = new Map(
-  CASES_V17.map((c) => [c.id, c.expected.prompt_sha256.description_user] as const),
+  CASES_V23.map((c) => [c.id, c.expected.prompt_sha256.description_user] as const),
 );
 /** The claims-validation stamp every corpus v1–v9 was frozen with (the manifests keep it). */
 const FROZEN_STAMP = 'claims-v1';
@@ -279,7 +292,11 @@ const CASES_V20: Case[] = readCorpus('corpus.v20.jsonl');
 const MANIFEST_V20 = JSON.parse(
   readFileSync(join(FIXTURE_DIR, 'MANIFEST.v20.json'), 'utf8'),
 ) as ManifestV3 & { stamp_refreeze: { from: string; to: string; cases: number } };
-const STAMP = new Map(CASES_V20.map((c) => [c.id, c.expected.claims_validation] as const));
+const CASES_V24: Case[] = readCorpus('corpus.v24.jsonl');
+const MANIFEST_V24 = JSON.parse(
+  readFileSync(join(FIXTURE_DIR, 'MANIFEST.v24.json'), 'utf8'),
+) as ManifestV3 & { stamp_refreeze: { from: string; to: string; cases: number } };
+const STAMP = new Map(CASES_V24.map((c) => [c.id, c.expected.claims_validation] as const));
 /** The stamp v20 introduced (FOLLOW-1420); the corpora after it are frozen with it. */
 const V20_STAMP = 'claims-v7';
 /** The stamp v14 introduced (FOLLOW-1415); the corpora after it are frozen with it. */
@@ -293,10 +310,11 @@ const MANIFEST_V15 = JSON.parse(
 };
 /**
  * The CURRENT headline prompt digests, by case id (FOLLOW-1315 re-froze them as v3, FOLLOW-1382
- * as v5, FOLLOW-1411 as v12, FOLLOW-1408 as v15, FOLLOW-1414 as v17 for a Polish page; each of
+ * as v5, FOLLOW-1411 as v12, FOLLOW-1408 as v15, FOLLOW-1414 as v17 for a Polish page, FOLLOW-1311
+ * as v23; each of
  * those guards asserts they were that corpus's only change).
  */
-const HEADLINE_SHA = new Map(CASES_V17.map((c) => [c.id, c.expected.prompt_sha256] as const));
+const HEADLINE_SHA = new Map(CASES_V23.map((c) => [c.id, c.expected.prompt_sha256] as const));
 
 /**
  * The verdict deltas after v5, oldest first, each derived from the corpus before it (v6 from v5).
@@ -343,6 +361,7 @@ const VERDICT_DELTAS: {
       'live.032.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.neutral.en',
     ],
   },
+  { version: 22, ticket: 'FOLLOW-1311', ids: ['live.027.listing-012.downsizer.pl'] },
 ].map((d) => ({
   ...d,
   cases: readCorpus(`corpus.v${String(d.version)}.jsonl`),
@@ -789,7 +808,12 @@ describe('description parity corpus v5 (FOLLOW-1382 — the current contract: he
       // it was before v12.
       const user = beforeV12Persona(
         beforeV15Persona(
-          beforeV17Headline((mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content, c),
+          beforeV17Headline(
+            withoutRoomConvention(
+              (mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content,
+            ),
+            c,
+          ),
           c,
         ),
         c,
@@ -975,6 +999,19 @@ function descriptionLanguageParagraph(locale: string): string {
 }
 
 /** FOLLOW-1414: the Polish room-count paragraph (v17), as the generator writes it. */
+const ROOM_COUNT_CONVENTION =
+  'ROOM COUNTS: a bedroom count and a room count are different facts. A Polish room count ' +
+  '(dwupokojowe, 3 pokoje) includes the living room, so "dwupokojowe" is not "two-bedroom" and ' +
+  '"two-bedroom" is not "dwupokojowe". Keep the count the listing states, under the word it ' +
+  'uses: translate pokoje as rooms and sypialnie as bedrooms, never one as the other. In ' +
+  'Spanish, write dormitorios for bedrooms and never habitaciones for a room count.';
+/** A user prompt as it was before FOLLOW-1311 appended the room-count paragraph (corpus v23). */
+function withoutRoomConvention(prompt: string): string {
+  const tail = `\n\n${ROOM_COUNT_CONVENTION}`;
+  expect(prompt.endsWith(tail)).toBe(true);
+  return prompt.slice(0, -tail.length);
+}
+
 const POLISH_ROOM_COUNTS =
   'Polish room counts are one word: jednopokojowe, dwupokojowe, trzypokojowe, czteropokojowe, ' +
   'pięciopokojowe (for example "mieszkanie dwupokojowe", "dwupokojowe mieszkanie").';
@@ -1058,7 +1095,7 @@ describe('description parity corpus v9 (FOLLOW-1402 — description language, pr
       await generateDescription(c.input);
       // FOLLOW-1414 (v17) appended one more paragraph; read the prompt as it was before v17.
       const user = beforeV17Description(
-        (mockCreate.mock.calls[0]![0] as CreateParams).messages[0]!.content,
+        withoutRoomConvention((mockCreate.mock.calls[0]![0] as CreateParams).messages[0]!.content),
         c,
       );
       const paragraph = descriptionLanguageParagraph(c.input.locale);
@@ -1272,7 +1309,9 @@ describe('description parity corpus v12 (FOLLOW-1411 — headline persona re-fre
         .mockResolvedValueOnce(response(c.raw_description.text, c.raw_description.stop_reason))
         .mockResolvedValueOnce(response(c.raw_headline ?? '', 'end_turn'));
       await generateDescription(c.input);
-      const user = (mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content;
+      const user = withoutRoomConvention(
+        (mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content,
+      );
       expect(sha(user), c.id).toBe(c.expected.prompt_sha256.headline_user);
       expect(sha(beforeV12Persona(user, c)), c.id).toBe(prev.expected.prompt_sha256.headline_user);
     }
@@ -1474,7 +1513,9 @@ describe('description parity corpus v15 (FOLLOW-1408 — first_time_buyer person
         .mockResolvedValueOnce(response(c.raw_description.text, c.raw_description.stop_reason))
         .mockResolvedValueOnce(response(c.raw_headline ?? '', 'end_turn'));
       await generateDescription(c.input);
-      const user = (mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content;
+      const user = withoutRoomConvention(
+        (mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content,
+      );
       expect(sha(user), c.id).toBe(c.expected.prompt_sha256.headline_user);
       expect(sha(beforeV15Persona(user, c)), c.id).toBe(prev.expected.prompt_sha256.headline_user);
     }
@@ -1560,20 +1601,24 @@ describe('description parity corpus v17 (FOLLOW-1414 — write about the home, P
 
   it('every new prompt is the v16 prompt plus the FOLLOW-1414 paragraph, byte for byte', async () => {
     const locales = new Set<string>();
-    for (const c of CASES_V17) {
+    for (const c of CASES_V17.filter((x) => !AFTER_V20_DELTA_IDS.has(x.id))) {
       const prev = v16.cases.find((x) => x.id === c.id)!;
       mockCreate.mockReset();
       mockCreate
         .mockResolvedValueOnce(response(c.raw_description.text, c.raw_description.stop_reason))
         .mockResolvedValueOnce(response(c.raw_headline ?? '', 'end_turn'));
       await generateDescription(c.input);
-      const desc = (mockCreate.mock.calls[0]![0] as CreateParams).messages[0]!.content;
+      const desc = withoutRoomConvention(
+        (mockCreate.mock.calls[0]![0] as CreateParams).messages[0]!.content,
+      );
       expect(sha(desc), c.id).toBe(c.expected.prompt_sha256.description_user);
       expect(sha(beforeV17Description(desc, c)), c.id).toBe(
         prev.expected.prompt_sha256.description_user,
       );
       if (c.expected.headline_called) {
-        const head = (mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content;
+        const head = withoutRoomConvention(
+          (mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content,
+        );
         expect(sha(head), c.id).toBe(c.expected.prompt_sha256.headline_user);
         expect(sha(beforeV17Headline(head, c)), c.id).toBe(
           prev.expected.prompt_sha256.headline_user,
@@ -1720,11 +1765,11 @@ describe('description parity corpus v19 (FOLLOW-1419 — claims-v6, stamp-only r
   });
 });
 
-describe('description parity corpus v20 (FOLLOW-1420 / FOLLOW-1421 — claims-v7, stamp-only re-freeze, the current contract)', () => {
+describe('description parity corpus v20 (FOLLOW-1420 / FOLLOW-1421 — claims-v7, stamp-only re-freeze)', () => {
   const V19_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v19.jsonl'), 'utf8');
   const V20_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v20.jsonl'), 'utf8');
   const OLD = `"claims_validation": "${V19_STAMP}"`;
-  const NEW = `"claims_validation": "${CLAIMS_VALIDATION_VERSION}"`;
+  const NEW = `"claims_validation": "${V20_STAMP}"`;
 
   beforeEach(() => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'parity-'.repeat(4));
@@ -1732,8 +1777,7 @@ describe('description parity corpus v20 (FOLLOW-1420 / FOLLOW-1421 — claims-v7
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it('the manifest describes v20 as a stamp re-freeze of v19 under the current constant', () => {
-    expect(CLAIMS_VALIDATION_VERSION).toBe('claims-v7');
+  it('the manifest describes v20 as a stamp re-freeze of v19 under claims-v7', () => {
     expect(MANIFEST_V20.corpus).toBe('corpus.v20.jsonl');
     expect(MANIFEST_V20.kind).toBe('stamp_refreeze');
     expect(MANIFEST_V20.derived_from.corpus).toBe('corpus.v19.jsonl');
@@ -1741,10 +1785,10 @@ describe('description parity corpus v20 (FOLLOW-1420 / FOLLOW-1421 — claims-v7
     expect(MANIFEST_V20.derived_from.corpus_sha256).toBe(MANIFEST_V19.corpus_sha256);
     expect(sha(V19_TEXT)).toBe(MANIFEST_V20.derived_from.corpus_sha256);
     expect(sha(V20_TEXT)).toBe(MANIFEST_V20.corpus_sha256);
-    expect(MANIFEST_V20.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(MANIFEST_V20.claims_validation_version).toBe(V20_STAMP);
     expect(MANIFEST_V20.stamp_refreeze).toEqual({
       from: V19_STAMP,
-      to: CLAIMS_VALIDATION_VERSION,
+      to: V20_STAMP,
       cases: MANIFEST_V19.per_verdict.FIT,
     });
     expect(MANIFEST_V20.delta).toEqual([]);
@@ -1794,5 +1838,107 @@ describe('description parity corpus v21 (FOLLOW-1311 slice 2 — a digit count t
       expect(after.expected.headline).toBeNull();
       expect(after.expected.outcome).toEqual(before.expected.outcome);
     }
+  });
+});
+
+describe('description parity corpus v22 (FOLLOW-1311 slice 3 — a room count is not a bedroom count)', () => {
+  it('the one delta is "Dwupokojowy dom" for "2-bedroom cottage": the body is refused', () => {
+    const id = 'live.027.listing-012.downsizer.pl';
+    const v21 = VERDICT_DELTAS.find((d) => d.version === 21)!.cases.find((c) => c.id === id)!;
+    const v22 = VERDICT_DELTAS.find((d) => d.version === 22)!.cases.find((c) => c.id === id)!;
+    expect(v21.raw_description.text).toContain('Dwupokojowy dom');
+    expect(v21.input.original_description).toContain('2-bedroom');
+    expect(v21.expected.outcome.verdict).toBe('FIT');
+    expect(v22.expected.outcome).toEqual({ verdict: 'REFUSED', violation: 'count_mismatch' });
+    expect(v22.expected.headline_called).toBe(false);
+  });
+});
+
+describe('description parity corpus v23 (FOLLOW-1311 slice 3 — room-count paragraph, prompt re-freeze)', () => {
+  const v22 = VERDICT_DELTAS.find((d) => d.version === 22)!;
+
+  beforeEach(() => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'parity-'.repeat(4));
+    mockCreate.mockReset();
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('v23 is v22 with ONLY the user prompt digests changed', () => {
+    expect(MANIFEST_V23.corpus).toBe('corpus.v23.jsonl');
+    expect(MANIFEST_V23.delta).toEqual([]);
+    expect(CASES_V23.map((c) => c.id)).toEqual(v22.cases.map((c) => c.id));
+    for (const [i, v23] of CASES_V23.entries()) {
+      const prev = v22.cases[i]!;
+      const { prompt_sha256: pNew, ...restNew } = v23.expected;
+      const { prompt_sha256: pOld, ...restOld } = prev.expected;
+      expect({ ...v23, expected: restNew }, v23.id).toEqual({ ...prev, expected: restOld });
+      expect(pNew.description_system, v23.id).toBe(pOld.description_system);
+      expect(pNew.headline_system, v23.id).toBe(pOld.headline_system);
+      expect(pNew.description_user, v23.id).not.toBe(pOld.description_user);
+      if (v23.expected.headline_called)
+        expect(pNew.headline_user, v23.id).not.toBe(pOld.headline_user);
+    }
+  });
+
+  it('every new user prompt is the v22 prompt plus the paragraph, byte for byte', async () => {
+    for (const c of CASES_V23) {
+      const prev = v22.cases.find((x) => x.id === c.id)!;
+      mockCreate.mockReset();
+      mockCreate
+        .mockResolvedValueOnce(response(c.raw_description.text, c.raw_description.stop_reason))
+        .mockResolvedValueOnce(response(c.raw_headline ?? '', 'end_turn'));
+      await generateDescription(c.input);
+      const calls = mockCreate.mock.calls as unknown as [CreateParams][];
+      expect(sha(withoutRoomConvention(calls[0]![0].messages[0]!.content)), c.id).toBe(
+        prev.expected.prompt_sha256.description_user,
+      );
+      if (c.expected.headline_called) {
+        expect(sha(withoutRoomConvention(calls[1]![0].messages[0]!.content)), c.id).toBe(
+          prev.expected.prompt_sha256.headline_user,
+        );
+      }
+    }
+  });
+});
+
+describe('description parity corpus v24 (FOLLOW-1311 slice 3 — claims-v8, stamp-only re-freeze, the current contract)', () => {
+  const V23_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v23.jsonl'), 'utf8');
+  const V24_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v24.jsonl'), 'utf8');
+  const OLD = `"claims_validation": "${V20_STAMP}"`;
+  const NEW = `"claims_validation": "${CLAIMS_VALIDATION_VERSION}"`;
+
+  beforeEach(() => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'parity-'.repeat(4));
+    mockCreate.mockReset();
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('the manifest describes v24 as a stamp re-freeze of v23 under the current constant', () => {
+    expect(CLAIMS_VALIDATION_VERSION).toBe('claims-v8');
+    expect(MANIFEST_V24.kind).toBe('stamp_refreeze');
+    expect(MANIFEST_V24.derived_from.corpus).toBe('corpus.v23.jsonl');
+    expect(MANIFEST_V24.derived_from.corpus_sha256).toBe(MANIFEST_V23.corpus_sha256);
+    expect(sha(V23_TEXT)).toBe(MANIFEST_V24.derived_from.corpus_sha256);
+    expect(sha(V24_TEXT)).toBe(MANIFEST_V24.corpus_sha256);
+    expect(MANIFEST_V24.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(MANIFEST_V24.stamp_refreeze).toEqual({
+      from: V20_STAMP,
+      to: CLAIMS_VALIDATION_VERSION,
+      cases: MANIFEST_V23.per_verdict.FIT,
+    });
+    expect(MANIFEST_V24.delta).toEqual([]);
+    expect(MANIFEST_V24.case_count).toBe(CASES_V24.length);
+  });
+
+  it('v24 is v23 byte for byte except the stamp value, in every FIT case and nowhere else', () => {
+    expect(V23_TEXT.split(OLD).length - 1).toBe(MANIFEST_V23.per_verdict.FIT);
+    expect(V24_TEXT.split(NEW).length - 1).toBe(MANIFEST_V23.per_verdict.FIT);
+    expect(V24_TEXT).toBe(V23_TEXT.split(OLD).join(NEW));
+  });
+
+  describe.each(CASES_V24.map((c) => [c.id, c] as const))('%s', (_id, c) => {
+    it('generates identically to the v24 record', async () => {
+      await expectIdentical(c);
+    });
   });
 });

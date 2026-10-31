@@ -117,11 +117,11 @@ async function promptsFor(body: Record<string, unknown>, locale: 'en' | 'pl'): P
   mockCreate
     .mockResolvedValueOnce(
       modelResponse(
-        '<adaptation_verdict>FIT</adaptation_verdict>\nA two-bedroom apartment.\n' +
+        '<adaptation_verdict>FIT</adaptation_verdict>\nA bright apartment.\n' +
           '<verified_facts_used>\n["bedrooms: 2"]\n</verified_facts_used>',
       ),
     )
-    .mockResolvedValueOnce(modelResponse('Two-bedroom apartment'));
+    .mockResolvedValueOnce(modelResponse('Bright apartment'));
 
   await generateDescription(event);
 

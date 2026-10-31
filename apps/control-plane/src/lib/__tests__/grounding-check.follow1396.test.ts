@@ -38,9 +38,9 @@ const JAV = { original: 'Villa en Jávea con piscina.', ctx: { listing_location:
 
 describe('FOLLOW-1396 — exonyms and diacritic-free names of the listing’s own place', () => {
   it.each([
-    ['en', 'Two-bedroom flat in Warsaw with a balcony', WAW],
+    ['en', 'Two-room flat in Warsaw with a balcony', WAW],
     ['en', 'Warsaw flat with a balcony', WAW],
-    ['es', 'Piso de dos dormitorios en Varsovia', WAW],
+    ['es', 'Piso en Varsovia', WAW],
     ['pl', 'Mieszkanie w Warszawie z balkonem', WAW_EN],
     ['pl', 'Warszawa, Mokotów: mieszkanie z balkonem', WAW_EN],
     ['en', 'Flat in Cracow, Podgórze', KRK],
@@ -60,11 +60,11 @@ describe('FOLLOW-1396 — exonyms and diacritic-free names of the listing’s ow
 
   it.each([
     // an exonym of ANOTHER place
-    ['en', 'Two-bedroom flat in Cracow', WAW],
+    ['en', 'Two-room flat in Cracow', WAW],
     ['en', 'Flat in Seville', ZAZ],
     ['pl', 'Mieszkanie w Krakowie', WAW_EN],
     // an invented place, with or without diacritics
-    ['en', 'Two-bedroom flat in Poznan', WAW],
+    ['en', 'Two-room flat in Poznan', WAW],
     ['en', 'Flat in Gdansk', KRK],
     ['en', 'Villa in Marbella with a pool', JAV],
     // a country or region the listing does not name

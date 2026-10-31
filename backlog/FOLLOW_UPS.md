@@ -57111,3 +57111,28 @@ check half is absorbed by slice 3.
 **Found while recording.** `/api/adapt`'s tweak band is pinned to `claude-haiku-4-5`
 (`llm-gateway.ts`, `similarity` in (0.6, 0.85]), unlike the standing "all calls on Sonnet 5.5"; the
 baseline uses `forceModel` so that it records Sonnet 5.5. Not changed here.
+
+**Declared limits of slice 3 (2026-10-31, after two review rounds).** The principle: if a recogniser
+cannot tell, it passes. Each is wrong copy that still passes, pinned by name in
+`apps/control-plane/src/lib/__tests__/claim-review.follow1311.test.ts` unless marked otherwise:
+
+- `No private garden`: "private" cannot be told from shared, and "no private pool" beside a
+  community pool is true.
+- `Two bedrooms and a garden` on three bedrooms: a plain count under the stated one may be a part.
+- `Dwa pokoje` on a two-bedroom: a plain room count, real copy uses it correctly. Refused only
+  beyond stated bedrooms + 3 (`Eight rooms`).
+- `Listed at €385,000` or `$385,000` on `listing_price: 385000`: the listing states no unit.
+- `64 m² działki` on "Mieszkanie 64 m²": the right number on the wrong part of the property.
+- `Brak windy w budynku`: "windy" is left out of the amenity list on purpose (it is an English
+  word).
+- Not pinned: a listing saying "one of the bedrooms" makes the bedroom key unknown, so a wrong
+  word-form count passes on that listing.
+- Not pinned: a street form outside the closed list is read like any other words;
+  `1512 N 42ND Street` is unmasked, harmlessly, because nothing in it reads as a claim.
+- Not a limit of the check but of its cost: a REFUSED body writes no cache, so every cache miss
+  regenerates and bills it, about USD 0.025 each, bounded only by the daily spend cap. No repeat
+  guard exists. That regeneration is also how a refused listing gets served copy later.
+
+The stated count wins over a derived one: on a listing stating only bedrooms any "N-room" is
+refused, the correct-looking +1 included (chosen by the ml-engineer in the slice 3 review round, in
+line with the room-count prompt; FOLLOW-1386).

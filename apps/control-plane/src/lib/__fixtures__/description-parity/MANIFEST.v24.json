@@ -1,0 +1,52 @@
+{
+  "case_count": 98,
+  "change": "FOLLOW-1311 slice 3: CLAIMS_VALIDATION_VERSION is bumped from claims-v7 to claims-v8, because no claims-v7 row was checked against the typed count, money, area, year and negation claims; it is regenerated once instead of served. v24 is a stamp-only re-freeze of v23.",
+  "claims_validation_version": "claims-v8",
+  "corpus": "corpus.v24.jsonl",
+  "corpus_sha256": "d1a44920:cddda74f:0ffdd0f9:b5d3332b:d3907530:d39b43ae:d2083c8c:36371acf",
+  "delta": [],
+  "derived_from": {
+    "corpus": "corpus.v23.jsonl",
+    "manifest": "MANIFEST.v23.json",
+    "corpus_sha256": "1dcb9bed:b972aa8e:67362bcd:f177f0b8:3a463956:5f88cbd9:6a5968a6:f9a1040b"
+  },
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-10-31",
+  "headline_called": 62,
+  "headline_suppressed": 29,
+  "kind": "stamp_refreeze",
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "NEUTRAL/with_reason": 8,
+    "NEUTRAL/without_reason": 1,
+    "REFUSED/unsupported_amenity": 6,
+    "FAILED/meta_commentary": 1,
+    "REFUSED/count_mismatch": 1,
+    "REFUSED/hallucinated_number": 5,
+    "REFUSED/unsupported_guarantee": 2,
+    "REFUSED/unit_mismatch": 2,
+    "FAILED/empty": 2,
+    "FAILED/residual_tag": 3,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/truncated": 1
+  },
+  "per_verdict": {
+    "FIT": 62,
+    "REFUSED": 16,
+    "NEUTRAL": 9,
+    "FAILED": 11
+  },
+  "recorded_outputs_predate_prompt": "Every raw_headline in this corpus was produced by an older headline prompt. They are replayed through the unchanged checks, so they pin the checks and the new prompt bytes, NOT what the new prompt makes the model write.",
+  "stamp_refreeze": {
+    "from": "claims-v7",
+    "to": "claims-v8",
+    "cases": 62
+  }
+}

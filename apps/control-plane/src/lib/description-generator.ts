@@ -128,8 +128,12 @@ import {
  *   so "1,15 mln" no longer stands for 1 149 000. No `claims-v6` row was checked against those; it
  *   is regenerated once instead of served. (The street-address and ventilation relaxations of rule
  *   3 alone would not need it.)
+ * - `claims-v8` — 2026-10-31, FOLLOW-1311 slice 3: typed claims. A count, a sum of money, an area
+ *   unit and a year are read with what they are about (a room count is not a bedroom count, "$32,137"
+ *   is not a price, "64 sq ft" is not "64 m²"), and a denied amenity the listing has is refused. No
+ *   `claims-v7` row was checked against those; it is regenerated once instead of served.
  */
-export const CLAIMS_VALIDATION_VERSION = 'claims-v7';
+export const CLAIMS_VALIDATION_VERSION = 'claims-v8';
 
 /** G-03: total budget per call (deadline on the whole, retries included). */
 const DESCRIPTION_DEADLINE_MS = 75_000;
@@ -553,6 +557,19 @@ const POLISH_ROOM_COUNTS =
   'pięciopokojowe (for example "mieszkanie dwupokojowe", "dwupokojowe mieszkanie").';
 
 /**
+ * FOLLOW-1311 (absorbs FOLLOW-1386): both models wrote "dwupokojowe" for a two-bedroom flat and
+ * "two-bedroom" for "dwupokojowe". The typed check refuses that as `count_mismatch` (T6); this
+ * paragraph is there so that it is not written in the first place. On every page: an English page
+ * built from a Polish original makes the same mistake the other way round.
+ */
+const ROOM_COUNT_CONVENTION =
+  'ROOM COUNTS: a bedroom count and a room count are different facts. A Polish room count ' +
+  '(dwupokojowe, 3 pokoje) includes the living room, so "dwupokojowe" is not "two-bedroom" and ' +
+  '"two-bedroom" is not "dwupokojowe". Keep the count the listing states, under the word it ' +
+  'uses: translate pokoje as rooms and sypialnie as bedrooms, never one as the other. In ' +
+  'Spanish, write dormitorios for bedrooms and never habitaciones for a room count.';
+
+/**
  * FOLLOW-1414: the paragraph after the language paragraph of the description user prompt. Seen
  * live (FOLLOW-1411): "The listing says the home is close to schools." — copy about the advert,
  * not the home (now refused as `meta_commentary`). On a Polish page it also spells the room-count
@@ -696,6 +713,9 @@ function renderDescriptionPrompt(
     '',
     // FOLLOW-1414 (corpus v17): copy about the home, not the listing; Polish room counts.
     descriptionAboutTheHomeInstruction(e.locale),
+    '',
+    // FOLLOW-1311 (corpus v23): a room count is not a bedroom count.
+    ROOM_COUNT_CONVENTION,
   ].join('\n');
   const { maxTokens, extras } = generationRequestFor(model, maxTokensFor(e.original_description));
   return { system, user, maxTokens, extras };
@@ -735,7 +755,9 @@ function renderHeadlinePrompt(
     factsBlock +
     `\n\n${headlineLanguageInstruction(e.locale)}` +
     // FOLLOW-1414 (corpus v17): the Polish room-count adjectives, spelled.
-    (e.locale === 'pl' ? `\n\n${POLISH_ROOM_COUNTS}` : '');
+    (e.locale === 'pl' ? `\n\n${POLISH_ROOM_COUNTS}` : '') +
+    // FOLLOW-1311 (corpus v23): a room count is not a bedroom count.
+    `\n\n${ROOM_COUNT_CONVENTION}`;
   const { maxTokens, extras } = generationRequestFor(model, HEADLINE_MAX_TOKENS);
   return { system: HEADLINE_SYSTEM_PROMPT, user, maxTokens, extras };
 }

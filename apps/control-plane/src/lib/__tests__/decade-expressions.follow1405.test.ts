@@ -39,10 +39,11 @@ const LIS_CTX = {
   listing_price: '640000 EUR',
   listing_location: 'Campo de Ourique, Lisboa',
 };
-// The four refused sentences: three distinct, verbatim.
+// The four refused sentences: three distinct, verbatim but for the room count, which FOLLOW-1311
+// refuses in its own right ("dwupokojowe" for a two-bedroom flat) and which is not this test's point.
 const STUDY = [
-  'Dwupokojowe mieszkanie o powierzchni 85 m² na drugim piętrze kamienicy z lat 30.',
-  'Wyremontowane dwupokojowe mieszkanie o powierzchni 85 m² w Campo de Ourique w Lizbonie, na drugim piętrze kamienicy z lat 30.',
+  'Mieszkanie o powierzchni 85 m² na drugim piętrze kamienicy z lat 30.',
+  'Wyremontowane mieszkanie o powierzchni 85 m² w Campo de Ourique w Lizbonie, na drugim piętrze kamienicy z lat 30.',
 ];
 
 async function servedOnAdapt(value: string, listingContext: Record<string, string>) {

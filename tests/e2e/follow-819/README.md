@@ -515,6 +515,16 @@ export DATABASE_URL_ADMIN='postgresql://supabase_admin:postgres@127.0.0.1:5433/p
 pnpm db:bootstrap:local && pnpm db:migrate && pnpm seed:local-tenant
 ```
 
+**Cosine inputs (FOLLOW-1233).** AC(3)'s `scoringPaths: ["cosine"]` also needs
+`archetype_embeddings` and `listing_embeddings` for the fixture tenant in this database; the three
+commands above do not create them. `scripts/dev/localhost-up.sh` step 9b does, idempotently (it runs
+`pnpm db:assert:cosine` first and calls OpenAI only for the missing half, key from Doppler `dev`).
+By hand, follow the root `README.md` "Local development setup" §2/§3 (four ordered steps; not
+repeated here). The harness preflight prints `[preflight] cosine precondition confirmed: …` or
+aborts with `[archetype_embeddings_missing]` / `[listing_embeddings_missing]` /
+`[listing_embeddings_wrong_tenant]` / `[fixture_listing_embedding_missing]`. Production analogue:
+FOLLOW-1035.
+
 A migrate/seed run that appears to hang on an older checkout is finished work with an unclosed pool
 — read the last log line, not the exit code (fixed in PR #826).
 

@@ -3994,6 +3994,114 @@ export function evaluateConversionEmitterProbe(probe) {
 }
 
 /**
+ * Floors for the cosine precondition (FOLLOW-1233). They match README "Local development setup" §3
+ * step 4 (`pnpm db:assert:cosine --min-rows 13`) and `ARCHETYPE_SEEDS` (18). A floor, not equality:
+ * a larger manifest still passes, an empty or half-seeded table never does.
+ */
+const COSINE_MIN_ARCHETYPE_ROWS = 18;
+const COSINE_MIN_LISTING_ROWS = 13;
+
+/**
+ * FOLLOW-1233 — pure verdict: are the cosine path's two inputs present in the database the run uses?
+ *
+ * Without BOTH halves `affinityScore()` serves `djb2_fallback` and, since FOLLOW-1202, no reorder at
+ * all, so AC(3)'s `cosine` would depend on undocumented machine state. The first failing half is
+ * named, with the command that produces it; a database seeded for a DIFFERENT tenant is named as such
+ * (FOLLOW-1235) instead of reading as "empty".
+ *
+ * @param {{archetypeRows: number|null, listingRows: number|null,
+ *   fixtureListingPresent: boolean|null, otherTenantListingRows: number|null,
+ *   readError?: string|null}} facts
+ * @param {{tenantId?: string}} [ctx]
+ * @returns {{ok: boolean, code: string, reason: string}}
+ */
+export function evaluateCosinePrecondition(facts, { tenantId = OPS_TENANT_ID } = {}) {
+  const fix =
+    'Run scripts/dev/localhost-up.sh (its step 9b seeds both halves idempotently), or by hand ' +
+    '`pnpm seed:archetypes` then `pnpm seed:listings` then `pnpm db:assert:cosine` (README §3)';
+  if (facts.readError || facts.archetypeRows === null || facts.listingRows === null) {
+    return {
+      ok: false,
+      code: 'cosine_precondition_unreadable',
+      reason:
+        `could not read archetype_embeddings / listing_embeddings (${String(facts.readError ?? 'no facts')}); ` +
+        'DATABASE_URL_ADMIN must be the database the control plane serves (README §6.1)',
+    };
+  }
+  if (facts.archetypeRows < COSINE_MIN_ARCHETYPE_ROWS) {
+    return {
+      ok: false,
+      code: 'archetype_embeddings_missing',
+      reason:
+        `archetype_embeddings has ${String(facts.archetypeRows)} non-NULL row(s), need >= ` +
+        `${String(COSINE_MIN_ARCHETYPE_ROWS)}; listing_embeddings has ${String(facts.listingRows)} for tenant ` +
+        `${String(tenantId)}. Cosine would serve djb2_fallback and no reorder. ${fix}`,
+    };
+  }
+  if (facts.listingRows < COSINE_MIN_LISTING_ROWS) {
+    const wrongTenant = (facts.otherTenantListingRows ?? 0) > 0 && facts.listingRows === 0;
+    return {
+      ok: false,
+      code: wrongTenant ? 'listing_embeddings_wrong_tenant' : 'listing_embeddings_missing',
+      reason: wrongTenant
+        ? `listing_embeddings has 0 row(s) for tenant ${String(tenantId)} but ${String(facts.otherTenantListingRows)} ` +
+          `for other tenant(s): the listing half was seeded under a different DEMO_TENANT_ID. ${fix}`
+        : `listing_embeddings has ${String(facts.listingRows)} non-NULL row(s) for tenant ${String(tenantId)}, ` +
+          `need >= ${String(COSINE_MIN_LISTING_ROWS)}. Cosine would serve djb2_fallback and no reorder. ${fix}`,
+    };
+  }
+  if (facts.fixtureListingPresent !== true) {
+    return {
+      ok: false,
+      code: 'fixture_listing_embedding_missing',
+      reason:
+        `listing_embeddings has ${String(facts.listingRows)} row(s) for tenant ${String(tenantId)} but not the ` +
+        `fixture listing the page declares. ${fix}`,
+    };
+  }
+  return {
+    ok: true,
+    code: 'cosine_ready',
+    reason:
+      `${String(facts.archetypeRows)} archetype and ${String(facts.listingRows)} listing embedding(s) ` +
+      `for tenant ${String(tenantId)}, fixture listing included`,
+  };
+}
+
+/**
+ * Refuse to run when the cosine inputs are absent from `DATABASE_URL_ADMIN` (FOLLOW-1233).
+ *
+ * @param {string} listingId - the fixture listing (from the grounding probe).
+ * @returns {Promise<{code: string, reason: string}>}
+ * @throws with the named code when either half is missing, or the database cannot be read.
+ */
+export async function assertCosinePrecondition(listingId) {
+  const unread = (readError) => ({
+    archetypeRows: null,
+    listingRows: null,
+    fixtureListingPresent: null,
+    otherTenantListingRows: null,
+    readError,
+  });
+  let facts;
+  if (!DATABASE_URL_ADMIN || !OPS_TENANT_ID) {
+    facts = unread('DATABASE_URL_ADMIN / OPS_TENANT_ID not set');
+  } else {
+    try {
+      const { readCosinePreconditionFacts } = await import('./bandit-probe.mjs');
+      facts = await readCosinePreconditionFacts(DATABASE_URL_ADMIN, OPS_TENANT_ID, listingId);
+    } catch (err) {
+      facts = unread(err instanceof Error ? err.message : String(err));
+    }
+  }
+  const verdict = evaluateCosinePrecondition(facts);
+  if (!verdict.ok) {
+    throw new Error(`[${verdict.code}] cosine precondition failed: ${verdict.reason}`);
+  }
+  return { code: verdict.code, reason: verdict.reason };
+}
+
+/**
  * Refuse to run when no server-confirmed conversion can be emitted: AC(5) grades one.
  *
  * @returns {Promise<{emitterUrl: string, reason: string}>}
@@ -5647,6 +5755,10 @@ async function main() {
       `${groundingSource.listingId} grounds ${groundingSource.factsKeys.join(', ')}; facts read ` +
       `from ${String(groundingSource.factsSource ?? 'an upstream that did not name itself')}`,
   );
+
+  // FOLLOW-1233: AC(3)'s `cosine` needs both embedding tables populated for this tenant.
+  const cosine = await assertCosinePrecondition(groundingSource.listingId);
+  console.log(`[preflight] cosine precondition confirmed: ${cosine.reason}`);
 
   // FOLLOW-1238 (preflight half): a bound-but-silent `:8787` is exactly the state the two probes
   // above exist to make impossible, and it costs AC(5) and AC(7) ten minutes later.

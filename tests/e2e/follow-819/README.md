@@ -3678,11 +3678,13 @@ attempts, each ending in `locator.scrollIntoViewIfNeeded: Timeout ~2000ms`, so a
 short node-swap race FOLLOW-1398 absorbs (that race took 1 attempt in all four later runs). AC(1),
 AC(2), AC(3), AC(4), AC(7), AC(8) and AC(10) passed in the same run. The same run logged one failed
 ingest POST (`ingestFailedAtNetwork: 1`, a CORS console error on `:8787`, re-sent successfully). It
-was the first run after a fresh bring-up, with a design agent reading code on the same box. Those
-are coincidences on record, not a diagnosis: the harness keeps only the first line of each
-Playwright error, so the call log that would name the failing actionability check is gone.
-FOLLOW-1425 keeps it for the next occurrence. Nothing in #1109–#1112 touches the CTA's DOM node or
-its timing. The caveats of §5.23 (a)–(d) apply.
+was the first run after a fresh bring-up. Those are facts on record, not a diagnosis: the harness
+keeps only the first line of each Playwright error, so the call log that would name the failing
+actionability check is gone. FOLLOW-1425 keeps it for the next occurrence. Nothing in #1109–#1112
+touches the SDK or the CTA's text. **Load during this series:** a background agent ran the
+control-plane package's whole test suite by mistake at about 12:08–12:17 UTC (load average about
+10). Run 188 had ended by 12:08:01, so this overload does not explain it; runs 189–192 ran under it
+and passed. The caveats of §5.23 (a)–(d) apply.
 
 ## 6. Defects in §3 itself, found by executing it
 

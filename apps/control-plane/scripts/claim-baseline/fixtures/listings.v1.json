@@ -1,0 +1,161 @@
+{
+  "version": 1,
+  "note": "FOLLOW-1311 slice 0. The FOLLOW-1399 case design, MODEL-COMPARE-RERUN-2026-10-26.md. Its listings.json was not kept: 12 texts are recovered from the study records, waw and zak are constructed again and marked so.",
+  "es_pages": ["wro.diaspora_buyer", "gda.flip_investor", "tor.second_home_buyer", "lis.diaspora_buyer"],
+  "listings": [
+    {
+      "key": "fx",
+      "provenance": "study",
+      "archetypes": ["family_buyer", "diaspora_buyer"],
+      "original": "A three-bedroom, two-bathroom single-family home on a quiet residential street. Open-plan living area, attached two-car garage, screened lanai and a mature garden. Close to schools, the intracoastal waterway and local amenities.",
+      "context": {
+        "listing_title": "9 Blackberry Pl, Palm Coast, FL 32137 — 3 bed, 2 bath",
+        "listing_price": "385000 USD",
+        "listing_location": "9 Blackberry Pl, Palm Coast, FL"
+      }
+    },
+    {
+      "key": "krk",
+      "provenance": "study",
+      "archetypes": ["first_time_buyer", "yield_hunter"],
+      "original": "Bright two-bedroom apartment of 64 sqm on the third floor of a 2019 building in Krakow, Podgorze district, a short walk from the Vistula boulevards and the Kladka Bernatka footbridge. The flat has a south-facing living room with an open kitchen fitted with built-in appliances, two separate bedrooms, a bathroom with a walk-in shower and a separate WC. A 7 sqm balcony runs along the living room and overlooks a landscaped inner courtyard. Floors are oak, windows are triple-glazed, and the apartment has underfloor heating in the bathroom. The building has a lift, a bicycle room, video intercom and a gated underground garage; one parking space and a storage unit in the basement are included in the price. The apartment is currently let on a fixed-term lease that ends in June 2027, at a monthly rent of 4,200 PLN. Service charges are 610 PLN per month including water and building insurance. Trams to the Old Town and Kazimierz stop 300 metres from the entrance, and there are shops, cafes and a primary school within the neighbourhood. Asking price 949,000 PLN. The apartment is sold with its kitchen furniture and appliances, and the title is a full freehold with a land and mortgage register. Viewings by appointment through the agency; the tenant asks for 24 hours notice.",
+      "context": {
+        "listing_title": "Two-bedroom apartment, Krakow Podgorze — 64 sqm",
+        "listing_price": "949000 PLN",
+        "listing_location": "Krakow, Podgorze"
+      }
+    },
+    {
+      "key": "waw",
+      "provenance": "constructed-2026-10-31",
+      "archetypes": ["lifestyle_expat", "student_parent"],
+      "original": "Mieszkanie trzypokojowe o powierzchni 62 m² na warszawskim Mokotowie, przy ul. Odyńca, na 2. piętrze bloku z 1978 roku. Salon z wyjściem na balkon od strony zachodniej, dwie osobne sypialnie, kuchnia z oknem, łazienka i oddzielne WC. Mieszkanie po częściowym remoncie w 2020 roku: nowa łazienka i podłogi w salonie, kuchnia do odświeżenia. W budynku jest winda. Do stacji metra Wierzbno 600 m, w okolicy sklepy, przedszkole i park. Czynsz administracyjny 780 zł miesięcznie. Miejsce parkingowe naziemne bez przydziału. Własność z księgą wieczystą.",
+      "context": {
+        "listing_title": "Mieszkanie 3 pokoje, 62 m², Warszawa Mokotów",
+        "listing_price": "985000 PLN",
+        "listing_location": "ul. Odyńca, Mokotów, Warszawa, mazowieckie"
+      }
+    },
+    {
+      "key": "alb",
+      "provenance": "study",
+      "archetypes": ["yield_hunter", "second_home_buyer"],
+      "original": "Studio apartment, 32 sqm, second floor, Albufeira. Furnished. Shared pool. 400 m to the beach.",
+      "context": {
+        "listing_title": "Studio, Albufeira — 32 sqm",
+        "listing_price": "189000 EUR",
+        "listing_location": "Albufeira, Faro"
+      }
+    },
+    {
+      "key": "gda",
+      "provenance": "study",
+      "archetypes": ["diaspora_buyer", "flip_investor"],
+      "original": "Dom wolnostojący z 1998 roku w Straszynie pod Gdańskiem, 165 m² powierzchni użytkowej na działce 920 m². Na parterze salon z kominkiem, kuchnia, pokój i łazienka; na piętrze trzy sypialnie i druga łazienka. Garaż dwustanowiskowy w bryle budynku. Ogrzewanie gazowe, nowy piec z 2021 roku. Dom wymaga odświeżenia: do wymiany są okna na piętrze i instalacja elektryczna w części budynku. Ogród ogrodzony, z drzewami owocowymi. Do obwodnicy Trójmiasta 5 km, w miejscowości szkoła podstawowa i sklepy.",
+      "context": {
+        "listing_title": "Dom wolnostojący 165 m², Straszyn",
+        "listing_price": "1150000 PLN",
+        "listing_location": "Straszyn, pomorskie"
+      }
+    },
+    {
+      "key": "jav",
+      "provenance": "study",
+      "archetypes": ["second_home_buyer", "vacation_rental_investor"],
+      "original": "Detached villa of 210 sqm built area on a 1,050 sqm plot in the Montgó area of Jávea, on the Costa Blanca. Four bedrooms, three bathrooms, a fully fitted kitchen and a living-dining room opening onto a covered terrace with views of the Montgó mountain and, from the upper terrace, of the sea. Private 10 x 5 m swimming pool, outdoor kitchen and parking for three cars inside the gated plot. The property holds a tourist rental licence registered with the Valencian Community. The master bedroom, kitchen and living room are all on the main floor; two guest bedrooms are on the lower floor with their own entrance. Air conditioning hot and cold, underfloor heating in the bathrooms, mains drainage. The Arenal beach and the town centre are a 10-minute drive. IBI property tax 1,120 EUR per year. Sold furnished.",
+      "context": {
+        "listing_title": "Detached villa with pool and tourist licence, Jávea",
+        "listing_price": "895000 EUR",
+        "listing_location": "Partida Montgó, Jávea, Alicante"
+      }
+    },
+    {
+      "key": "poz",
+      "provenance": "study",
+      "archetypes": ["yield_hunter", "student_parent"],
+      "original": "Kawalerka 27 m² na 3. piętrze odnowionej kamienicy na poznańskich Jeżycach, ul. Kraszewskiego. Remont w 2022 roku: nowa instalacja elektryczna, okna i łazienka z prysznicem. Aneks kuchenny z płytą indukcyjną i lodówką. Mieszkanie jest wynajęte studentce za 2 100 zł miesięcznie, umowa do 30 czerwca 2027. Czynsz do wspólnoty 310 zł. Rynek Jeżycki i przystanek tramwajowy 3 minuty pieszo.",
+      "context": {
+        "listing_title": "Kawalerka 27 m², Poznań Jeżyce",
+        "listing_price": "429000 PLN",
+        "listing_location": "ul. Kraszewskiego, Poznań, Jeżyce"
+      }
+    },
+    {
+      "key": "wro",
+      "provenance": "study",
+      "archetypes": ["diaspora_buyer", "family_buyer"],
+      "original": "Czteropokojowe mieszkanie o powierzchni 78,4 m² na parterze nowego budynku (oddanie do użytku: 2024) na wrocławskim Jagodnie. Układ: salon z aneksem kuchennym (29 m²) z wyjściem do ogródka o powierzchni 60 m², trzy sypialnie, łazienka z wanną i oddzielna łazienka z prysznicem przy sypialni głównej. Mieszkanie w stanie deweloperskim, z wylewkami i tynkami, gotowe do wykończenia według własnego projektu. Do mieszkania przynależy komórka lokatorska 4 m² oraz miejsce postojowe w garażu podziemnym — oba w cenie. Osiedle zamknięte, z placem zabaw. W odległości 400 m przedszkole i szkoła podstawowa, w pobliżu market i przychodnia. Autobusem do centrum około 25 minut. Rynek pierwotny, bez podatku PCC.",
+      "context": {
+        "listing_title": "4 pokoje z ogródkiem, 78,4 m², Wrocław Jagodno",
+        "listing_price": "899000 PLN",
+        "listing_location": "Jagodno, Wrocław, dolnośląskie"
+      }
+    },
+    {
+      "key": "zak",
+      "provenance": "constructed-2026-10-31",
+      "archetypes": ["vacation_rental_investor", "second_home_buyer"],
+      "original": "Apartament o powierzchni 48 m² w Zakopanem, przy ul. Kamieniec, na 1. piętrze budynku z 2017 roku. Salon z aneksem kuchennym i balkonem z widokiem na Giewont, jedna sypialnia, łazienka z prysznicem. Apartament jest umeblowany i prowadzony przez firmę zarządzającą najmem krótkoterminowym. W 2025 roku obłożenie wyniosło 61 %, a przychód brutto 94 000 zł; prowizja zarządcy to 22 % przychodu. Umowa z zarządcą do końca 2026 roku. W cenie miejsce w garażu podziemnym. Do Krupówek 900 m. Czynsz administracyjny 640 zł miesięcznie.",
+      "context": {
+        "listing_title": "Apartament 48 m² z zarządcą najmu, Zakopane",
+        "listing_price": "899000 PLN",
+        "listing_location": "ul. Kamieniec, Zakopane, małopolskie"
+      }
+    },
+    {
+      "key": "sop",
+      "provenance": "study",
+      "archetypes": ["lifestyle_expat", "retiree_relocator"],
+      "original": "Trzypokojowe mieszkanie 96 m² na 1. piętrze kamienicy z 1905 roku w Dolnym Sopocie, 250 m od plaży i mola. Wysokie sufity (3,4 m), oryginalne sztukaterie i podłogi z desek dębowych; okna wymienione w 2019 roku na drewniane. Dwie sypialnie, salon z wykuszem, kuchnia z oknem, łazienka i osobne WC. Z balkonu od strony podwórza częściowy widok na morze. W 2021 roku kamienica przeszła remont elewacji i dachu; windy brak. Ogrzewanie miejskie. Do stacji SKM Sopot 8 minut pieszo.",
+      "context": {
+        "listing_title": "Mieszkanie w kamienicy, 96 m², Sopot Dolny",
+        "listing_price": "2350000 PLN",
+        "listing_location": "Dolny Sopot, Sopot, pomorskie"
+      }
+    },
+    {
+      "key": "lok",
+      "provenance": "study",
+      "archetypes": ["commercial_investor", "yield_hunter"],
+      "original": "Lokal użytkowy 120 m² na parterze kamienicy przy ul. Piotrkowskiej w Łodzi, z witryną od ulicy i osobnym wejściem. Lokal jest wynajęty sieci kawiarni na podstawie umowy najmu zawartej do 31 grudnia 2029 roku, czynsz 9 600 zł netto miesięcznie, indeksowany corocznie o inflację. Najemca ponosi koszty mediów. Zaplecze, dwa WC i magazyn w piwnicy (25 m²). Lokal wyodrębniony, z księgą wieczystą. Sprzedaż z najemcą.",
+      "context": {
+        "listing_title": "Lokal użytkowy 120 m² z najemcą, Łódź, Piotrkowska",
+        "listing_price": "1480000 PLN",
+        "listing_location": "ul. Piotrkowska, Łódź, łódzkie"
+      }
+    },
+    {
+      "key": "kat",
+      "provenance": "study",
+      "archetypes": ["flip_investor", "first_time_buyer"],
+      "original": "Mieszkanie 2-pokojowe, 38 m², Katowice Załęże, 4. piętro bez windy. Do generalnego remontu. Własność, księga wieczysta. Blisko przystanku tramwajowego.",
+      "context": {
+        "listing_title": "Mieszkanie 2 pokoje, 38 m², Katowice",
+        "listing_price": "239000 PLN",
+        "listing_location": "Załęże, Katowice, śląskie"
+      }
+    },
+    {
+      "key": "lis",
+      "provenance": "study",
+      "archetypes": ["lifestyle_expat", "diaspora_buyer"],
+      "original": "Renovated two-bedroom apartment of 85 sqm on the second floor of a 1930s building in Campo de Ourique, Lisbon. The renovation was completed in 2021 and kept the original pine floors and high ceilings. The living room has two French windows with small balconies over a tree-lined street. Equipped kitchen, one bathroom and a guest WC. The building has no lift. The Jardim da Estrela is a 7-minute walk away, and the neighbourhood has a covered market, cafes and the tram 28 terminus. Energy certificate C. Condominium fees 65 EUR per month.",
+      "context": {
+        "listing_title": "2-bedroom apartment, Campo de Ourique, Lisbon — 85 sqm",
+        "listing_price": "640000 EUR",
+        "listing_location": "Campo de Ourique, Lisboa"
+      }
+    },
+    {
+      "key": "tor",
+      "provenance": "study",
+      "archetypes": ["retiree_relocator", "second_home_buyer"],
+      "original": "Ground-floor bungalow in La Mata, Torrevieja: two bedrooms, one bathroom, 68 sqm on one level with no steps from the street. South-facing front garden of 40 sqm. Community pool and gardens. 1.2 km to La Mata beach. Air conditioning in the living room. Community fees 55 EUR per month.",
+      "context": {
+        "listing_title": "Ground-floor bungalow, 2 bed, La Mata, Torrevieja",
+        "listing_price": "159000 EUR",
+        "listing_location": "La Mata, Torrevieja, Alicante"
+      }
+    }
+  ]
+}

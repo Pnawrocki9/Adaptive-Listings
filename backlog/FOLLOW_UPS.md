@@ -57051,3 +57051,63 @@ AC:
       stamp history `claims-v2` … current, one line per bump with its reason.
 
 cross_ref: [RETRO-368, RETRO-369, RETRO-371, ESC-089, FOLLOW-1411, FOLLOW-1415, FOLLOW-1419]
+
+## AMENDMENT to FOLLOW-1311 — 2026-10-31: re-scoped against the code of today (stage 1, PM decision)
+
+**AMENDMENT (2026-10-31).** Written 2026-10-11 at 60 hours; the check grew since (#1083, #1085,
+#1086, #1089, #1101, #1103, #1108). Re-scoped by the ml-engineer (stage 1), accepted by the PM. New
+estimate about 41 hours. The check stays a set of closed recognisers: what no recogniser sees falls
+through to today's rules. That open-world limit stays and is recorded, not hidden.
+
+**Evidence.** The real functions on 148 probe sentences (en / pl / es): "This single-storey home",
+"Mieszkanie jest parterowe", "Casa de una planta", "A five-bedroom home" for three, "3 bathrooms and
+2 bedrooms" swapped, "Listed at $32,137" (the ZIP code), "Listed at €385,000" for USD, "64 sq ft"
+for 64 m² and "There is no garage here" for a listing with one all pass on adapt and on the body.
+The body has no name rule at all ("Located in Miami" passes). A prototype replayed over 49 real
+bodies gave 2 of 26 new refusals on current-generation output, 6 of 23 on older recordings (single
+rater, mostly constructed listings: directional only). The blind audit of 2026-10-26 found 38
+external claims, 20 contradictions and 13 invented property facts in Sonnet's 45 served texts.
+
+**Slices, in merge order.**
+
+| #   | Slice                                                                     | Stamp        | Series  | Hours |
+| --- | ------------------------------------------------------------------------- | ------------ | ------- | ----- |
+| 0   | Frozen baseline: 60 description + 28 adapt cases, raw outputs, replay     | none         | none    | 4     |
+| 1   | One module, no verdict change; dead `recentEvents` grounding deleted      | none         | offline | 6     |
+| 2   | Loosenings: number word ↔ digit, `mkw`, name forms on adapt and body      | none         | 1×      | 5     |
+| 3   | Typed count, money, area, year, negation; exports the checker for AC(1b)  | `claims-v8`  | 3×      | 9     |
+| 4   | Attribute lexicon en / pl / es, closed entailment table ("single-storey") | `claims-v9`  | 3×      | 8     |
+| 5   | Street claim; body names go to the judge; adapt `headline` first word     | `claims-v10` | 3×      | 6     |
+| 6   | Template clean-up for external claims (`diaspora-buyer.ts:51` and alike)  | none         | 1×      | 3     |
+
+**Enumerated transformations.** T1 same value and unit, reformatted. T2 exact multiplier. T3 number
+word ↔ digit, same key. T4 year → decade, the year keeps its key. T5 same unit family, no
+conversion. T6 translation, same key ("dwupokojowe" is not "two-bedroom"). T7 name forms. T8 a
+closed entailment table (garage → parking; "ground-floor, one level" → "parterowy"; not
+"single-family" → "single-storey"). T9 negation kept. Unsupported means refused.
+
+**Targets, measured by replaying `apps/control-plane/scripts/claim-baseline`.** New body refusals ≤
+10 % of FIT. ≥ 90 % of new refusals true positives, every one classified by hand. Room-count
+contradictions reach zero. Served invented property facts fall from 13 to ≤ 6 in the final blind
+audit. Adapt: refused slots ≤ 10 %. A slice that misses narrows its recogniser; the targets do not
+loosen.
+
+**Dropped, and why.**
+
+- A source on every claim: impossible without parsing free text. Typed facts only, logged, with no
+  new table or column.
+- Price per m²: 0 of 61 real texts attempt it and it is refused today. Not a transformation (PM
+  default of 2026-10-31, CEO informed; unit and currency conversion are refused too).
+- Refusing every content word not in the listing: refuses most bodies.
+- A new LLM auditor: extra spend, and the truth promise this ticket rejects. The remaining
+  embellishment ("no through traffic", "top-rated schools" for "schools", general market talk) is
+  accepted and recorded as a limit (PM default of 2026-10-31, CEO informed).
+- "Home office" / "principal suite" recognisers: mostly usage suggestions, not claims.
+- A corrective retry: a refused body regenerates on the next miss; only if the targets are missed.
+
+**Moved.** AC(1b) stays in FOLLOW-1345, which depends on slice 3's exported checker. FOLLOW-1386's
+check half is absorbed by slice 3.
+
+**Found while recording.** `/api/adapt`'s tweak band is pinned to `claude-haiku-4-5`
+(`llm-gateway.ts`, `similarity` in (0.6, 0.85]), unlike the standing "all calls on Sonnet 5.5"; the
+baseline uses `forceModel` so that it records Sonnet 5.5. Not changed here.

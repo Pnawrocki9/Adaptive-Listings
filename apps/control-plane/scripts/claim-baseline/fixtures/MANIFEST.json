@@ -1,0 +1,14 @@
+{
+  "ticket": "FOLLOW-1311 slice 0",
+  "recorded_at": "2026-10-31",
+  "recorded_on": "main 6d58d1c2",
+  "model": "claude-sonnet-5-5",
+  "adapt_model_note": "forceModel: the tweak band of /api/adapt is pinned to claude-haiku-4-5 in the code; the baseline records Sonnet 5.5",
+  "cases": { "description": 60, "adapt": 28 },
+  "calls": 148,
+  "tokens": { "input": 605923, "output": 59155 },
+  "cost_usd": 1.803,
+  "never_regenerate": true,
+  "listings": "14: 12 recovered from the FOLLOW-1399 study records, waw and zak constructed again",
+  "limits": "A headline is recorded only for a body that was FIT when recorded; a call the recording lacks answers no_recording in a replay."
+}

@@ -2194,6 +2194,95 @@ describe('route.variant.test.ts — Tests for FOLLOW-007 / FOLLOW-342 — Thomps
     });
   });
 
+  // ─── FOLLOW-1168: the credit rule against a playbook whose surviving slot has variants ───
+
+  describe('POST /api/adapt — FOLLOW-1168: credit follows the served copy', () => {
+    const CTA_VARIANTS = ['Default cta (control)', 'Variant 1 cta', 'Variant 2 cta'];
+
+    const postOnlyV1Active = async (similarity: number) => {
+      const res = await POST(
+        makePostRequest({ ...VALID_BODY, similarity, page_type: 'listing_detail' }),
+      );
+      expect(res.status).toBe(200);
+      return (await res.json()) as {
+        source: string;
+        variant: string;
+        directives: { slot: string; value: string }[];
+      };
+    };
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      vi.mocked(getPlaybook).mockReturnValue({
+        slots: [
+          { slot: 'headline', en: 'Default headline' },
+          { slot: 'cta', en: CTA_VARIANTS[0], variants: { en: CTA_VARIANTS } },
+        ],
+      } as ReturnType<typeof getPlaybook>);
+      mockGetBanditArms.mockResolvedValue([
+        { variant: 'control', alpha: 1, beta: 1, paused: true },
+        { variant: 'v1', alpha: 1, beta: 1, paused: false },
+        { variant: 'v2', alpha: 1, beta: 1, paused: true },
+      ]);
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it.each([
+      ['branch 2', 0.9, 'playbook'],
+      ['branch 3 fallback', 0.7, 'playbook_fallback_llm_unavailable'],
+    ])(
+      '%s: a surviving variant-bearing slot credits the arm it served',
+      async (_b, sim, source) => {
+        const body = await postOnlyV1Active(sim);
+        expect(body.source).toBe(source);
+        expect(body.directives.find((d) => d.slot === 'cta')?.value).toBe('Variant 1 cta');
+        expect(body.variant).toBe('v1');
+      },
+    );
+
+    it('branch 2: variants only on a withheld slot → the same arm is not credited', async () => {
+      vi.mocked(getPlaybook).mockReturnValue({
+        slots: [
+          { slot: 'headline', en: 'Default headline', variants: { en: ['a', 'b', 'c'] } },
+          { slot: 'cta', en: 'Plain cta' },
+        ],
+      } as ReturnType<typeof getPlaybook>);
+
+      const body = await postOnlyV1Active(0.9);
+      expect(body.directives.map((d) => d.slot)).toEqual(['cta']);
+      expect(body.variant).toBe('control');
+    });
+
+    it('llm success: the model wrote a slot the playbook has variants on → not credited', async () => {
+      // Sharpest form of the defect: the slot NAME matches a variant-bearing playbook slot, but
+      // the bytes are the model's. A predicate that only inspected served slot names would credit.
+      vi.mocked(callLlmGateway).mockResolvedValueOnce({
+        directives: [
+          {
+            type: 'text',
+            slot: 'cta',
+            value: 'Model-written cta',
+            archetype: 'yield_hunter',
+            confidence: 0.8,
+          },
+        ],
+        model: 'claude-haiku-4-5',
+        tokens_in: 1,
+        tokens_out: 1,
+        cost_usd: 0,
+        latency_ms: 1,
+      });
+
+      const body = await postOnlyV1Active(0.7);
+      expect(body.source).toBe('llm_tweaked');
+      expect(body.directives.find((d) => d.slot === 'cta')?.value).toBe('Model-written cta');
+      expect(body.variant).toBe('control');
+    });
+  });
+
   // ─── FOLLOW-342: variant reaches copy selection ───────────────────────────────
 
   describe('POST /api/adapt — FOLLOW-342: bandit variant reaches playbook copy selection', () => {

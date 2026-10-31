@@ -490,15 +490,20 @@ describe('route.follow1163.test.ts — FOLLOW-1163 / MASTER_DESIGN §E.7.0 (ESC-
    *                   0.85 → branch 3 (Haiku tweak; the mocked gateway returns null, so the
    *                          `playbook_fallback_llm_unavailable` path runs).
    *                   0.40 → branch 4 (full generation; same null, but its fallback is empty).
+   * @param confidence 0.9 clears the gate; at or below the threshold is branch 1.
    */
-  async function adaptFor(archetype: string, similarity: number): Promise<AdaptBody> {
+  async function adaptFor(
+    archetype: string,
+    similarity: number,
+    confidence = 0.9,
+  ): Promise<AdaptBody> {
     const res = await POST(
       makePostRequest({
         tenant_id: 'est_demo_tenant',
         session_id: `sess-follow1163-${archetype}-${String(similarity)}`,
         page_type: 'listing_detail' as const,
         archetype_hint: archetype,
-        confidence: 0.9,
+        confidence,
         similarity,
         holdout_pct: 0.0,
         listing_id: LISTING_ID,
@@ -616,7 +621,8 @@ describe('route.follow1163.test.ts — FOLLOW-1163 / MASTER_DESIGN §E.7.0 (ESC-
      * same: record `control`. Not a white lie — the copy served on a withheld response IS the
      * control copy, because `cta` falls through to `s.en` for every arm.
      *
-     * The last test in this block is the one that stops the remedy from being too broad.
+     * FOLLOW-1168 extends this to every branch whose served copy cannot depend on the arm. What
+     * stops the remedy from being too broad is pinned in route.decision-tree.test.ts.
      */
     beforeEach(() => {
       vi.clearAllMocks();
@@ -688,33 +694,113 @@ describe('route.follow1163.test.ts — FOLLOW-1163 / MASTER_DESIGN §E.7.0 (ESC-
       expect(insert).toContain('param_p_variant=control');
     });
 
-    it('a response that DID keep a variant-differentiated slot still credits the sampled arm', async () => {
-      // THE LIMIT OF THE REMEDY, and the reason it is not simply "always control". When the LLM
-      // path serves, nothing is withheld and the arm genuinely influenced the copy the model was
-      // asked to improve upon — so v2 must still be credited. Without this case, suppressing the
-      // variant everywhere would pass every other test in this block.
-      const { callLlmGateway } = await import('@/lib/llm-gateway');
-      vi.mocked(callLlmGateway).mockResolvedValueOnce({
-        directives: [
-          {
-            type: 'text',
-            slot: 'headline',
-            value: 'A calm, well-connected home in the old town',
-            archetype: 'yield_hunter',
-            confidence: 0.9,
-          },
-        ],
-        model: 'claude-haiku-4-5',
-        tokens_in: 100,
-        tokens_out: 20,
-        cost_usd: 0,
-        latency_ms: 1,
-      });
+    // ─── FOLLOW-1168: every branch whose served copy cannot depend on the arm ───────────
+    //
+    // The limit of the remedy, "a template slot that keeps its variants still earns credit", needs
+    // a playbook with variants on a surviving slot, which no shipped playbook has. It is pinned
+    // against such a fixture in route.decision-tree.test.ts (FOLLOW-1168 block), not here.
 
-      const body = await adaptFor('yield_hunter', 0.85);
-      expect(body.source).toBe('llm_tweaked');
+    const LLM_RESULT = {
+      directives: [
+        {
+          type: 'text' as const,
+          slot: 'headline',
+          value: 'A calm, well-connected home in the old town',
+          archetype: 'yield_hunter' as const,
+          confidence: 0.9,
+        },
+      ],
+      model: 'claude-haiku-4-5',
+      tokens_in: 100,
+      tokens_out: 20,
+      cost_usd: 0,
+      latency_ms: 1,
+    };
+
+    it.each([
+      ['llm_tweaked', 0.85],
+      ['llm_full', 0.4],
+    ])('%s success: the model never saw the arm, so v2 is not credited', async (source, sim) => {
+      const { callLlmGateway } = await import('@/lib/llm-gateway');
+      vi.mocked(callLlmGateway).mockResolvedValueOnce(LLM_RESULT);
+
+      const body = await adaptFor('yield_hunter', sim);
+      expect(mockGetBanditArms).toHaveBeenCalled();
+      expect(body.source).toBe(source);
       expect(body.fallback_reason).toBeUndefined();
-      expect(body.variant).toBe('v2');
+      expect(body.directives.map((d) => d.value)).toEqual([LLM_RESULT.directives[0]?.value]);
+      expect(body.variant).toBe('control');
+    });
+
+    it('llm success: the ClickHouse row carries control too, not just the response body', async () => {
+      const { callLlmGateway } = await import('@/lib/llm-gateway');
+      vi.mocked(callLlmGateway).mockResolvedValueOnce(LLM_RESULT);
+      vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test:8123/');
+      const inserts: string[] = [];
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((input: unknown, opts?: { body?: string }) => {
+          if ((opts?.body ?? '').includes('INSERT INTO adaptation_decisions')) {
+            inserts.push(String(input));
+          }
+          return Promise.resolve(new Response('', { status: 200 }));
+        }),
+      );
+
+      await adaptFor('yield_hunter', 0.85);
+      expect(inserts).toHaveLength(1);
+      expect(inserts[0]).toContain('param_p_variant=control');
+    });
+
+    it('the gateway input is identical whichever arm was drawn — why no LLM branch earns credit', async () => {
+      // If this goes red someone threaded the arm into the prompt (direction (a)): the premise of
+      // the two tests above is gone, and the credit rule must be re-decided with a measurement.
+      const { callLlmGateway } = await import('@/lib/llm-gateway');
+      const inputs: unknown[] = [];
+      for (const active of ['v1', 'v2']) {
+        vi.mocked(callLlmGateway).mockClear();
+        vi.mocked(callLlmGateway).mockResolvedValueOnce(LLM_RESULT);
+        mockGetBanditArms.mockResolvedValue(
+          ['control', 'v1', 'v2'].map((variant) => ({
+            variant,
+            alpha: 1,
+            beta: 1,
+            paused: variant !== active,
+          })),
+        );
+        await adaptFor('yield_hunter', 0.85);
+        const input = vi.mocked(callLlmGateway).mock.calls[0]?.[0] as unknown as Record<
+          string,
+          unknown
+        >;
+        expect(input).toBeDefined();
+        inputs.push({ ...input, onFallback: 'closure, compared by nothing' });
+      }
+      expect(inputs[0]).toEqual(inputs[1]);
+    });
+
+    it('shipped playbooks: only `headline` carries variants, so no template path credits an arm', () => {
+      // The tally on `runDecisionTree` says "no credit today" because of this. A red here means
+      // a playbook gained a variant-bearing slot: re-read that tally and FOLLOW-1164.
+      const slots = [...getAllPlaybooks().values()].flatMap((p) =>
+        p.slots.filter((s) => (s.variants?.en.length ?? 0) > 1).map((s) => s.slot),
+      );
+      expect(slots.length).toBeGreaterThan(0);
+      expect(new Set(slots)).toEqual(new Set(['headline']));
+    });
+
+    it('branch 1: nothing is served below the confidence gate, so v2 is not credited', async () => {
+      const body = await adaptFor('yield_hunter', 0.95, 0.3);
+      expect(body.source).toBe('default');
+      expect(body.directives).toEqual([]);
+      expect(body.variant).toBe('control');
+    });
+
+    it('branch 4 fallback: nothing is served, so v2 is not credited', async () => {
+      const body = await adaptFor('yield_hunter', 0.4);
+      expect(body.source).toBe('playbook_fallback_llm_unavailable');
+      expect(body.directives).toEqual([]);
+      expect(body.variant).toBe('control');
     });
   });
 

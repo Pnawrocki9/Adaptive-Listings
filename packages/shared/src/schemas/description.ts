@@ -75,7 +75,7 @@ export type DescriptionSource = z.infer<typeof DescriptionSourceSchema>;
  * @example
  * // Tier 1 or cache miss (template fallback)
  * {
- *   description: "This income-producing property...",
+ *   description: "",
  *   headline: null,
  *   source: "template_fallback",
  *   locale: "en",
@@ -93,8 +93,11 @@ export type DescriptionSource = z.infer<typeof DescriptionSourceSchema>;
  * }
  */
 export const DescriptionResponseSchema = z.object({
-  /** The property description text. */
-  description: z.string().min(1),
+  /**
+   * The property description text. Empty on `template_fallback`: a cache miss returns no copy, and
+   * never the playbook's internal writing instructions (FOLLOW-1318).
+   */
+  description: z.string(),
 
   /**
    * Per-listing LLM-generated headline (ADR-0009).

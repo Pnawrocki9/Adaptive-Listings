@@ -127,10 +127,24 @@
 - **FOLLOW-1168** — status: DONE # PR #1112, merged as `6d58d1c2`; README §5.53. Phase 4 P5: an arm
   is credited only when a served slot depends on it. Until FOLLOW-1164 decides what a variant is, no
   copy-variant difference is measured.
+- **FOLLOW-1311** — status: IN_PROGRESS # Phase 4 P6, re-scoped to about 41 h, 7 slices (AMENDMENT
+  in FOLLOW_UPS). Merged: slice 0 #1114, 1 #1115, 2 #1116, 3 #1117 (`643ee4c9`, `claims-v8`, README
+  §5.58). Slice 3 went through two independent review rounds; declared limits are in the amendment.
+  CEO defaults accepted 2026-10-31: no computed price per m²; remaining embellishment is a recorded
+  limit. AC(1b) stays in FOLLOW-1345, which now also depends on this ticket (`checkTypedClaims`).
+- **FOLLOW-1386** — status: DONE # absorbed by #1117: room-count paragraph on description and
+  headline prompts. Its effect on what the model writes is unmeasured.
+- **FOLLOW-1426** — status: DONE # PR #1118, merged as `191909f3`; README §5.59. CEO 2026-10-31: the
+  tweak band of `/api/adapt` runs the global generation model (Sonnet 5.5), band read from
+  `similarity`. The fact-check judge stays on Haiku 4.5.
+- **FOLLOW-1427** — status: READY # P2 product, CEO agreed 2026-10-31. A REFUSED description writes
+  nothing, so every cache miss regenerates and bills it (about $0.025; only the $100 daily cap
+  limits it; read from the code, not run). Add a short repeat guard per listing and archetype, for
+  example one attempt per hour. Regeneration is also the only way such a listing recovers, so the
+  expiry must stay short. Next free: FOLLOW-1428, RETRO-372, ESC-090.
 - **FOLLOW-1425** — status: READY # P3 harness. Run 188 (README §5.54): AC(5) RED, 7 attempts of
   `scrollIntoViewIfNeeded` timed out, cause unknown. `clickCtaWhenReady` keeps only the first line
-  of each error; keep the Playwright call log in the evidence. Next free: FOLLOW-1426, RETRO-372,
-  ESC-090.
+  of each error; keep the Playwright call log in the evidence.
 - **FOLLOW-1423** — status: BACKLOG # P2 product. Composition rule gaps left by #1108: percentages
   ("80% of residents are Muslim"), a group before "most" ("Catholics make up most of…"), Polish
   majority phrasing without to/jest/są/stanowi.

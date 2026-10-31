@@ -1,0 +1,52 @@
+{
+  "case_count": 98,
+  "change": "FOLLOW-1311 slice 4: CLAIMS_VALIDATION_VERSION is bumped from claims-v8 to claims-v9, because no claims-v8 row was checked against the attribute lexicon; it is regenerated once instead of served. v25 is a stamp-only re-freeze of v24: no verdict of the corpus moved. One body of the corpus does read as an unsupported attribute (\"parterowym budownictwie\" in live.027.listing-012.downsizer.pl), and it stays REFUSED for its earlier count_mismatch.",
+  "claims_validation_version": "claims-v9",
+  "corpus": "corpus.v25.jsonl",
+  "corpus_sha256": "ef2c3231:60f60fd2:ad91a7fa:988713c1:6095c61b:4c759dcb:c053076c:ef2b31e1",
+  "delta": [],
+  "derived_from": {
+    "corpus": "corpus.v24.jsonl",
+    "manifest": "MANIFEST.v24.json",
+    "corpus_sha256": "d1a44920:cddda74f:0ffdd0f9:b5d3332b:d3907530:d39b43ae:d2083c8c:36371acf"
+  },
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-10-31",
+  "headline_called": 62,
+  "headline_suppressed": 29,
+  "kind": "stamp_refreeze",
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "NEUTRAL/with_reason": 8,
+    "NEUTRAL/without_reason": 1,
+    "REFUSED/unsupported_amenity": 6,
+    "FAILED/meta_commentary": 1,
+    "REFUSED/count_mismatch": 1,
+    "REFUSED/hallucinated_number": 5,
+    "REFUSED/unsupported_guarantee": 2,
+    "REFUSED/unit_mismatch": 2,
+    "FAILED/empty": 2,
+    "FAILED/residual_tag": 3,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/truncated": 1
+  },
+  "per_verdict": {
+    "FIT": 62,
+    "REFUSED": 16,
+    "NEUTRAL": 9,
+    "FAILED": 11
+  },
+  "recorded_outputs_predate_prompt": "Every raw_headline in this corpus was produced by an older headline prompt. They are replayed through the unchanged checks, so they pin the checks and the new prompt bytes, NOT what the new prompt makes the model write.",
+  "stamp_refreeze": {
+    "from": "claims-v8",
+    "to": "claims-v9",
+    "cases": 62
+  }
+}

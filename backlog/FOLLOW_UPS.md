@@ -57136,3 +57136,46 @@ cannot tell, it passes. Each is wrong copy that still passes, pinned by name in
 The stated count wins over a derived one: on a listing stating only bedrooms any "N-room" is
 refused, the correct-looking +1 included (chosen by the ml-engineer in the slice 3 review round, in
 line with the room-count prompt; FOLLOW-1386).
+
+**Slice 4, attributes (2026-10-31).** `claims-v9`. A closed lexicon, `lib/attribute-lexicon.ts`, en
+/ pl / es: single-storey, "parterowy", bungalow, top floor, detached, orientation by compass point,
+furnished, solar, vacant possession, freehold, low fees, new electrics, boiler and plumbing. T8 is
+its `groundedBy`. Refused as `unsupported_attribute` on both paths; `checkTypedClaims` reports them
+as `kind: 'attribute'`. "Top floor" is not in the original list: it is the one invented attribute
+the frozen replay holds ("a top-floor walk-up" for a fourth floor), so the replay justifies it.
+
+Replay `verdicts.v3`: one new body refusal (true), 0 headlines, 0 of 84 slots, 0 un-refused; 5 of 57
+since the baseline (8.8 %), all classified true by a single rater. Parity corpus v25: stamp only.
+The earlier prototype's 8 bodies did not reproduce: every other attribute in the recordings is
+grounded once the groups read across languages (125 recognised claims).
+
+**"Detached" for "single-family" is allowed, in English, on a listing naming no attached form
+(ml-engineer, 2026-10-31).** The replay does not decide it: no body or slot of either corpus asserts
+it. The one recording that does is a FOLLOW-1381 headline pinned in FOLLOW-1389's test
+("Wolnostojący dom…" on the Palm Coast listing), where it reads correctly. In US usage the term
+reads as detached, so refusing costs real copy for a claim that is almost always true; the hole is
+an attached single-family home that does not say so, pinned as a limit. "Dom jednorodzinny" and
+"vivienda unifamiliar" do not entail it: they commonly name a terrace.
+
+**Declared limits of slice 4.** Wrong copy that still passes, pinned by name in `KNOWN_LIMITS` of
+`apps/control-plane/src/lib/__tests__/claim-attributes.follow1311.test.ts`:
+
+- Other storey counts and house types: `A two-storey home`, `A semi-detached house`,
+  `A terraced house`. No fact of the listing is compared with them.
+- `A detached house` on a single-family home that is attached and does not say so (above).
+- `Mieszkanie na parterze` on a second floor: a floor position other than the top is not read.
+- `No stairs to climb`, `Bez schodów` on a third floor: "no stairs" is true of a flat with a lift.
+- `A south-facing terrace` on "south-facing living room": the same point on another part.
+- `Salon od południa`: "od południa" is also "from noon", so it is not read.
+- `It is not furnished.` on a furnished listing: a denial in copy is not compared.
+- `Fully furnished` on "furnished": the same key. `Furnished with designer pieces`: "furnished with"
+  is mostly a verb. `A part-furnished flat`, `Sold with all its furniture`: not read in copy.
+- `Niskie koszty stałe`, `The rent is low.`: "low" only directly on a named fee (the replay has
+  "niskie koszty stałe" on 55 EUR a month; reading it would refuse a body over an opinion).
+- `A new heat pump`, `New windows throughout`, `The flat is leasehold.`: not in the list. New
+  windows are out on purpose: "nowa instalacja elektryczna, okna" states them through a list.
+- `This is a Detached Villa`: a capital in mid-sentence reads as a name.
+
+Refused although it may be fine, also pinned or known: a street in lower case is not masked
+(`przy ul. parterowa`); a general remark about the market names the attribute ("a furnished flat
+lets faster") and is read as a claim; `on one level` about a part of the property.

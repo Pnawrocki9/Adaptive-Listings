@@ -2,9 +2,10 @@
 /**
  * FOLLOW-1311: replay the frozen model outputs (`fixtures/raw.v1.jsonl`) through the REAL
  * `generateDescription` and `callLlmGateway`, with only the SDK and the sinks replaced, and compare
- * every verdict with the current frozen verdicts, `fixtures/verdicts.v2.jsonl`.
+ * every verdict with the current frozen verdicts, `fixtures/verdicts.v3.jsonl`.
  * `verdicts.v1.jsonl` stays as the baseline every target is measured from, and
- * `verdicts.v2.delta.json` classifies, by hand, every case that moved from v1 to v2.
+ * `verdicts.v2.delta.json` and `verdicts.v3.delta.json` classify, by hand, every case that moved
+ * from v1 to v2 and from v2 to v3.
  *
  * A change that moves no verdict leaves this green. A change that does move one must show it: run
  * with `CLAIM_REPLAY_OUT=<file>` and diff that file against the frozen verdicts, then classify every
@@ -127,7 +128,7 @@ describe('FOLLOW-1311 claim baseline replay', () => {
       writeFileSync(process.env.CLAIM_REPLAY_OUT, `${lines.join('\n')}\n`);
       return;
     }
-    expect(lines).toEqual(readLines('verdicts.v2.jsonl'));
+    expect(lines).toEqual(readLines('verdicts.v3.jsonl'));
   });
 
   it('v2 moves only the classified cases, and the refusal target is computed from the verdicts', () => {
@@ -170,6 +171,52 @@ describe('FOLLOW-1311 claim baseline replay', () => {
     const classified = refused.map((v) => delta.moved[v.id]?.classified);
     expect(classified.every((c) => c === 'true' || c === 'false')).toBe(true);
     const share = classified.filter((c) => c === 'true').length / Math.max(1, classified.length);
+    expect(share).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it('v3 moves only the classified cases, and the targets hold for the whole programme since v1', () => {
+    interface Verdict {
+      id: string;
+      verdict?: string;
+      refused?: unknown[];
+    }
+    const read = (file: string) => readLines(file).map((l) => JSON.parse(l) as Verdict);
+    const v1 = read('verdicts.v1.jsonl');
+    const v3 = read('verdicts.v3.jsonl');
+    const raw2 = readLines('verdicts.v2.jsonl');
+    const raw3 = readLines('verdicts.v3.jsonl');
+    const deltas = ['verdicts.v2.delta.json', 'verdicts.v3.delta.json'].map(
+      (file) =>
+        JSON.parse(readFileSync(path.join(FIXTURES, file), 'utf8')) as {
+          moved: Record<string, { classified: string }>;
+        },
+    );
+    expect(
+      raw2
+        .map((line, i) => (line === raw3[i] ? null : (JSON.parse(line) as Verdict).id))
+        .filter((id) => id !== null)
+        .sort(),
+    ).toEqual(Object.keys(deltas[1]?.moved ?? {}).sort());
+
+    // Computed from the verdicts: body refusals new since the baseline, against the amendment's 10 %.
+    const fit = v1.filter((v) => v.verdict === 'FIT');
+    const refused = fit.filter((v) => v3.find((x) => x.id === v.id)?.verdict !== 'FIT');
+    expect(fit.length).toBe(57);
+    expect(refused.length).toBe(5);
+    expect(refused.length / fit.length).toBeLessThanOrEqual(0.1);
+    expect(
+      v1.filter((v) => v.verdict === 'REFUSED' && v3.find((x) => x.id === v.id)?.verdict === 'FIT'),
+    ).toEqual([]);
+    const slots = (vs: Verdict[]) => vs.reduce((n, v) => n + (v.refused?.length ?? 0), 0);
+    expect(slots(v3) - slots(v1)).toBeLessThanOrEqual(8);
+
+    // NOT computed: the true-positive share is a recorded human classification (single rater).
+    const classified = refused.map((v) => {
+      const own = deltas[1]?.moved[v.id] ?? deltas[0]?.moved[v.id];
+      return own?.classified;
+    });
+    expect(classified.every((c) => c === 'true' || c === 'false')).toBe(true);
+    const share = classified.filter((c) => c === 'true').length / classified.length;
     expect(share).toBeGreaterThanOrEqual(0.9);
   });
 });

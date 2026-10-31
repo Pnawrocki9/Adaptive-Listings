@@ -215,12 +215,24 @@ function isNegated(text: string, start: number): boolean {
  * @returns `true` when the text asserts what the pattern names.
  */
 export function asserted(pattern: RegExp, text: string): boolean {
+  return assertedMatches(pattern, text).length > 0;
+}
+
+/**
+ * Every non-negated match of `pattern`, by the rule of {@link asserted}.
+ *
+ * @param pattern - A global pattern.
+ * @param text - The text to read.
+ * @returns The matches the text asserts.
+ */
+export function assertedMatches(pattern: RegExp, text: string): RegExpExecArray[] {
+  const out: RegExpExecArray[] = [];
   for (const m of text.matchAll(pattern)) {
     if (isNegated(text, m.index) || negatedThroughList(text, m.index, isNegated)) continue;
     if (NEGATED_AFTER_RE.test(text.slice(m.index + m[0].length))) continue;
-    return true;
+    out.push(m);
   }
-  return false;
+  return out;
 }
 
 /**

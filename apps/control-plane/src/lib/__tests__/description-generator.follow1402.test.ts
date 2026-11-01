@@ -72,6 +72,11 @@ describe('FOLLOW-1402 — the description prompt names the output language', () 
       // FOLLOW-1414 appended one paragraph after it (write about the home), FOLLOW-1311 another
       // (room counts): the language paragraph is now the third-to-last.
       const lines = user.split('\n');
+      // FOLLOW-1429 closes a Polish or Spanish prompt with one more paragraph (idiomatic copy).
+      if (locale !== 'en') {
+        expect(lines.at(-1)).toMatch(/^NATURAL (POLISH|SPANISH):/u);
+        lines.splice(-2);
+      }
       expect(lines.at(-1)).toMatch(/^ROOM COUNTS:/u);
       expect(lines.at(-3)).toMatch(/^WRITE ABOUT THE HOME, NOT THE LISTING:/u);
       expect(lines.at(-4)).toBe('');

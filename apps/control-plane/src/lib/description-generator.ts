@@ -588,6 +588,36 @@ const ROOM_COUNT_CONVENTION =
   'Spanish, write dormitorios for bedrooms and never habitaciones for a room count.';
 
 /**
+ * FOLLOW-1429: the closing paragraph of a Polish or Spanish description user prompt. The blind
+ * audit found 32 language errors in 21 of 56 served pl/es texts: stock phrases of the voice pattern
+ * translated word for word ("zaprojektowany pod więcej weekendów", "ingeniado", "matematyka
+ * wyjścia"), "64 sqm", "4,200 PLN" and "Lisbon" left as the listing wrote them, and the sentence
+ * above ("Keep place names ... exactly as the listing writes them") read as a ban on "Lizbona".
+ * Nothing here adds a fact: every figure stays as it is and only its spelling is local. English
+ * pages get nothing (their prompt is unchanged), and the room-count rule stays in
+ * ROOM_COUNT_CONVENTION.
+ */
+const NATIVE_COPY_BY_LOCALE: Readonly<Record<'pl' | 'es', string>> = {
+  pl:
+    'NATURAL POLISH: write idiomatic copy of a Polish estate agent, not a translation. The voice ' +
+    'pattern and the phrases it quotes set a register, they are not sentences to translate: say ' +
+    'the idea in your own words. Use Polish forms: m² (not sqm), the Polish thousands separator ' +
+    'and currency sign when the listing gives the currency ("4 200 zł" for 4,200 PLN) — only the ' +
+    'spelling changes, never a digit or an amount — and the Polish name of a city or region that ' +
+    'has one ("Lizbona", not "Lisbon"; this refines the place-name sentence above), while street, ' +
+    'building and business names stay as the listing writes them. Check gender and case ' +
+    'agreement.',
+  es:
+    'NATURAL SPANISH: write idiomatic copy of a Spanish estate agent, not a translation. The ' +
+    'voice pattern and the phrases it quotes set a register, they are not sentences to translate: ' +
+    'say the idea in your own words. Use Spanish forms: m² (not sqm), the Spanish thousands ' +
+    'separator and currency sign when the listing gives the currency — only the spelling changes, ' +
+    'never a digit or an amount — and the Spanish name of a city or region that has one ' +
+    '("Lisboa", not "Lisbon"; this refines the place-name sentence above), while street, building ' +
+    'and business names stay as the listing writes them. Check gender and agreement.',
+};
+
+/**
  * FOLLOW-1414: the paragraph after the language paragraph of the description user prompt. Seen
  * live (FOLLOW-1411): "The listing says the home is close to schools." — copy about the advert,
  * not the home (now refused as `meta_commentary`). On a Polish page it also spells the room-count
@@ -734,6 +764,8 @@ function renderDescriptionPrompt(
     '',
     // FOLLOW-1311 (corpus v23): a room count is not a bedroom count.
     ROOM_COUNT_CONVENTION,
+    // FOLLOW-1429 (corpus v28): idiomatic pl/es copy, local units and place names.
+    ...(e.locale === 'en' ? [] : ['', NATIVE_COPY_BY_LOCALE[e.locale]]),
   ].join('\n');
   const { maxTokens, extras } = generationRequestFor(model, maxTokensFor(e.original_description));
   return { system, user, maxTokens, extras };

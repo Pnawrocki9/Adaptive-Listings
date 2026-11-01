@@ -700,3 +700,13 @@ the invoking command.
   the false refusals, and my first street rule refused its own listing's address. · Guardrail: a
   rule that is a model is measured live once before handoff; a rule on addresses gets real address
   shapes (abbreviations, apostrophes, lower case) and ordinary title-case phrases as pins first.
+
+- **2026-11-01 / FOLLOW-1429** · Built: pl/es copy_template calques replaced at the source
+  (second_home, retiree, flip, commercial, diaspora), a NATURAL POLISH/SPANISH prompt paragraph on
+  pl/es description prompts only, corpus v28 (5 non-en description_user digests), a calque pin. ·
+  Judgment call: the persona lines in ARCHETYPE_GUIDANCE are not the source (none holds the
+  phrases); the English copy_template closers are, and the pl/es templates quote them; corpus cases
+  embed their own copy_template, so template edits move no digest. Left borderline audit items
+  (underwriting, obronny, fotogeniczny) alone. · Guardrail: a pl/es closer is written in the
+  language first, never a quoted translation of the en closer; replay pins bytes only, so a fresh
+  recording is the evidence.

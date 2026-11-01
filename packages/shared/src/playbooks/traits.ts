@@ -244,11 +244,9 @@ export function traitSlots(addOns: readonly TraitAddOn[]): SlotDirective[] {
  *     Katyńskiej"): an address is a fact copied from the listing, {@link isStreetName}. "The
  *     former ghetto" stays refused, and so does a sensitive term outside the address.
  *
- * "Adres to adres, ma przechodzić" (CEO) [FOLLOW-1431]: {@link isStreetName} spares all three
- * lists, in any case once a house number or an abbreviated marker says it is an address. So "ul.
- * bohaterów getta 5", "Calle de la Judería 5" and "Holocaust Memorial Drive 7" pass, and "żydowska
- * dzielnica" and "Osiedle Żydowskie 3" do not: there the area word is the phrase. Composition
- * statements are never an address.
+ * "Adres to adres, ma przechodzić" (CEO) means an address of THIS listing [FOLLOW-1431]. This guard
+ * takes text only and cannot know that, so its own exception stays as above, and the callers blank
+ * the listing's own address first (`refusesOnProtectedGround`).
  *
  * A NARROW, closed en / pl / es phrase list, not a classifier: the gateway and the description
  * path refuse a text that matches, whoever wrote the words. What it is NOT: a buyer's nationality
@@ -536,7 +534,7 @@ function isHistoricalMention(text: string, start: number, end: number): boolean 
   return between.split(/\s+/u).filter(Boolean).length <= HISTORICAL_ADVERB_REACH;
 }
 
-// ─── The address vocabulary: one, read by this guard and by `street-address.ts` [FOLLOW-1431] ─────
+// ─── The address vocabulary: one, read by `street-address.ts` for the mask [FOLLOW-1431] ───────────
 
 /** A house number makes these a street; they are no ordinary nouns. */
 export const NUMBERED_STREET_WORD =
@@ -558,93 +556,30 @@ export const STREET_PREFIX =
 export const STREET_PARTICLE = '(?:de|del|la|las|los|im\\.)';
 /** Joins a clause, so it names no street: "cicha ulica z basenem" keeps its pool. */
 export const NOT_A_STREET_NAME = `(?:z|ze|bez|i|w|na|przy|o|con|sin|y|en|a|e)${E}`;
-/** What makes a number beside a name a distance, a time or an age, not a house number. */
-const NOT_A_HOUSE_NUMBER_UNIT = String.raw`km|m|m²|min|mins?|minut\p{L}*|minutes?|metr\p{L}*|meters?|metres?|mil|miles?|lat|years?|a[nñ]os|godzin\p{L}*|hours?|horas?`;
-/** At most three digits, because four read as a year ("Majdanek 1944"). */
-export const HOUSE_NUMBER_AFTER_NAME = String.raw`\p{Nd}{1,3}(?!\s*(?:${NOT_A_HOUSE_NUMBER_UNIT})${E})\p{L}?(?:/\p{Nd}+\p{L}?)?(?![\p{L}\p{N}])`;
 
-const NAME_WORD = String.raw`\p{Lu}[\p{L}'’-]*`;
-/** A capitalised word of a street's name, its abbreviation ("Św.") or a number ("ul. 3 Maja"). */
-const NAME_PIECE = String.raw`(?:${NAME_WORD}|\p{Lu}\p{L}{0,3}\.|\p{Nd}+)`;
-const NOT_A_LOWER_NAME = String.raw`(?:${NOT_A_STREET_NAME}|(?:obok|koło|blisko|near|by|cerca|junto|${NOT_A_HOUSE_NUMBER_UNIT})${E})`;
-const ANY_CASE_PIECE = String.raw`(?:${NAME_PIECE}|(?!${NOT_A_LOWER_NAME})\p{Ll}[\p{L}'’-]*)`;
-const PARTICLES_BEFORE = String.raw`(?:${STREET_PARTICLE}\s+){0,2}`;
-const WORDS_AFTER_TERM = String.raw`(?:\s+${NAME_WORD}){0,3}`;
-
-/** A marker, then the capitalised words of the name, ending where the term starts. */
-const AFTER_MARKER_RE = new RegExp(
-  `${B}(?:${STREET_PREFIX})\\s+${PARTICLES_BEFORE}(?:${NAME_PIECE}\\s+${PARTICLES_BEFORE}){0,3}$`,
-  'u',
-);
-/** An abbreviated marker is one whatever the case after it ("ul. getta"); "ulica getta" is not. */
-const AFTER_ABBREVIATED_MARKER_RE = new RegExp(
-  `${B}(?:[Uu]l\\.|[Aa]l\\.|[Oo]s\\.|[Pp]l\\.|[Cc]/|[Aa]vda\\.)\\s+${PARTICLES_BEFORE}$`,
-  'u',
-);
-/** Any marker in any case, when a house number closes the name: "calle del gueto 5". */
-const AFTER_MARKER_ANY_CASE_RE = new RegExp(
-  `${B}(?:${STREET_PREFIX})\\s+${PARTICLES_BEFORE}(?:${ANY_CASE_PIECE}\\s+${PARTICLES_BEFORE}){0,2}$`,
-  'u',
-);
-const BEFORE_HOUSE_NUMBER_RE = new RegExp(
-  `^(?:\\s+${PARTICLES_BEFORE}${ANY_CASE_PIECE}){0,2},?\\s+${HOUSE_NUMBER_AFTER_NAME}`,
-  'u',
-);
-/** English puts the street word after the name ("Ghetto Heroes Street"). */
-const BEFORE_BARE_STREET_WORD_RE = new RegExp(
-  `^${WORDS_AFTER_TERM}\\s+(?:${BARE_STREET_WORD}|St\\.|Square)${E}`,
-  'u',
-);
 /**
- * The old pattern's own reach, no end boundary, so "Ghetto Streets" passes. Closing it would refuse
- * what the guard served, and that needs a `CLAIMS_VALIDATION_VERSION`: not in a loosening.
+ * What the guard spares in text that is not the listing's own: a NARROWER subset of the vocabulary,
+ * and deliberately so. A model that invents "Holocaust Memorial Drive" has written no address of
+ * this listing, so "Adres to adres" gives it nothing, and "Treblinka" stays refused outright (CEO,
+ * PM ruling on FOLLOW-1431). Anything else the listing's own address needs is blanked by the caller
+ * first (`refusesOnProtectedGround`); never widen these two for that.
+ *
+ * An address marker, then up to three capitalised words of the street's name, ending where the
+ * sensitive term starts ("ul. Bohaterów ", "przy ul. ", "calle ") [FOLLOW-1420].
  */
-const BEFORE_UNBOUNDED_STREET_WORD_RE = new RegExp(
-  `^${WORDS_AFTER_TERM}\\s+(?:Street|St\\.|Avenue|Ave\\.|Road|Rd\\.|Square)`,
-  'u',
-);
-/** "Holocaust Memorial Way 7": any street word, with a number after it. */
-const BEFORE_NUMBERED_STREET_WORD_RE = new RegExp(
-  `^${WORDS_AFTER_TERM}\\s+(?:${STREET_WORD})\\s+${HOUSE_NUMBER_AFTER_NAME}`,
-  'u',
-);
-/** "12 Ghetto Way": any street word, with a number before the name. */
-const AFTER_NUMBER_RE = new RegExp(
-  String.raw`(?<![\p{L}\p{N}.,€$£])\p{Nd}+\p{L}?\s+(?:${NAME_WORD}\s+){0,3}$`,
-  'u',
-);
-const BEFORE_ANY_STREET_WORD_RE = new RegExp(`^${WORDS_AFTER_TERM}\\s+(?:${STREET_WORD})${E}`, 'u');
-/** "7 holocaust memorial drive": copy is not always capitalised; the unambiguous words only. */
-const LOWER_PIECE = String.raw`(?!${NOT_A_LOWER_NAME})\p{Ll}[\p{L}'’-]*`;
-const AFTER_NUMBER_LOWER_RE = new RegExp(
-  String.raw`(?<![\p{L}\p{N}.,€$£])\p{Nd}+\s+(?:${LOWER_PIECE}\s+)?$`,
-  'u',
-);
-const BEFORE_LOWER_STREET_WORD_RE = new RegExp(
-  `^(?:\\s+${LOWER_PIECE})?\\s+(?:street|road|lane|avenue|drive|mews)${E}`,
-  'u',
-);
+const ADDRESS_BEFORE_RE =
+  /(?<![\p{L}\p{N}])(?:[Uu]l\.|[Uu]lic(?:a|y|ą|ę)|[Aa]l\.|[Aa]lej(?:a|i|ą|ę)|[Pp]l\.|[Pp]lac(?:u|em)?|[Cc]alle|[Cc]\/|[Aa]venida|[Aa]vda\.)\s+(?:\p{Lu}[\p{L}'’-]*\s+){0,3}$/u;
+/** English puts the street word after the name ("Ghetto Heroes Street"). */
+const ADDRESS_AFTER_RE =
+  /^(?:\s+\p{Lu}[\p{L}'’-]*){0,3}\s+(?:Street|St\.|Avenue|Ave\.|Road|Rd\.|Square)/u;
 
 /**
- * Is the term at `[start, end)` part of a street's name in an address? "Adres to adres, ma
- * przechodzić" (CEO): whoever's address it is, the street rule judges that. Needs a marker: a
- * street prefix or a street word. A marker-free address is the callers' to blank when it is the
- * listing's own.
+ * Is the sensitive term at `[start, end)` part of a street's name in an address (rule 3 spares it:
+ * an address is a fact copied from the listing)? The term must be capitalised, as a name is.
  */
 function isStreetName(text: string, start: number, end: number): boolean {
-  const before = text.slice(0, start);
-  const after = text.slice(end);
-  if (AFTER_ABBREVIATED_MARKER_RE.test(before)) return true;
-  if (AFTER_MARKER_ANY_CASE_RE.test(before) && BEFORE_HOUSE_NUMBER_RE.test(after)) return true;
-  if (AFTER_NUMBER_LOWER_RE.test(before) && BEFORE_LOWER_STREET_WORD_RE.test(after)) return true;
   if (!/^\p{Lu}/u.test(text.slice(start, end))) return false;
-  return (
-    AFTER_MARKER_RE.test(before) ||
-    BEFORE_BARE_STREET_WORD_RE.test(after) ||
-    BEFORE_UNBOUNDED_STREET_WORD_RE.test(after) ||
-    BEFORE_NUMBERED_STREET_WORD_RE.test(after) ||
-    (AFTER_NUMBER_RE.test(before) && BEFORE_ANY_STREET_WORD_RE.test(after))
-  );
+  return ADDRESS_BEFORE_RE.test(text.slice(0, start)) || ADDRESS_AFTER_RE.test(text.slice(end));
 }
 
 /**
@@ -663,19 +598,11 @@ export function describesResidentsByProtectedGround(value: string): boolean {
     if (!isStreetName(value, m.index, m.index + m[0].length)) return true;
   }
   for (const m of value.matchAll(RESIDENT_GROUND_RE)) {
-    const end = m.index + m[0].length;
-    if (!isHistoricalMention(value, m.index, end) && !isStreetName(value, m.index, end)) {
-      return true;
-    }
+    if (!isHistoricalMention(value, m.index, m.index + m[0].length)) return true;
   }
   // A place named by a group passes only with a historical adjective directly before it.
   for (const m of value.matchAll(PLACE_GROUND_RE)) {
-    if (
-      !HISTORICAL_ADJECTIVE_RE.test(clauseBefore(value, m.index)) &&
-      !isStreetName(value, m.index, m.index + m[0].length)
-    ) {
-      return true;
-    }
+    if (!HISTORICAL_ADJECTIVE_RE.test(clauseBefore(value, m.index))) return true;
   }
   return false;
 }

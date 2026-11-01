@@ -709,3 +709,11 @@ the invoking command.
   mask). Those are still one mind's attack. · Guardrail: when a mask is shared by copy and listing,
   widening it is a loosening on one side and a tightening on the other; test both before calling a
   change loosening-only.
+
+- **2026-11-01 / FOLLOW-1431, second commit** · Reverted the guard's non-own reach to origin/main's;
+  all newly spared text now comes from own-address blanking. · Judgment call: I read "an address
+  with a marker passes" as licence to widen a text-only guard, which served invented sensitive
+  streets on the body; I reported it instead of measuring it against origin/main first. My blanket
+  "capital plus number in the listing's text is its own address" also spared "5 min from Treblinka
+  12". · Guardrail: a loosening's report carries a whole-path before/after table against
+  origin/main; a rule that cannot see the listing must not decide what belongs to the listing.

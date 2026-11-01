@@ -10,7 +10,9 @@
 
 import {
   describesResidentsByProtectedGround,
-  HOUSE_NUMBER_AFTER_NAME,
+  STREET_PARTICLE,
+  STREET_PREFIX,
+  STREET_WORD,
 } from '@estalara/shared/playbook-traits';
 import { isAddressField, isListedStreet, maskListedAddressParts } from '@/lib/street-address';
 
@@ -272,83 +274,121 @@ export function isStreetNameOfListing(
 
 // ─── The listing's own address, before the protected-ground guard [FOLLOW-1431] ───────────────────
 
-const ADDRESS_WORD_RE = /(?<![\p{L}\p{N}])\p{L}[\p{L}'’-]*/gu;
-/** Up to three words, then a house number: "Bohaterów Getta 5", "Mieszkanie przy Katyńskiej 5". */
+const WORD = String.raw`\p{L}[\p{L}'’-]*`;
+const CAPITAL_WORD = String.raw`\p{Lu}[\p{L}'’-]*`;
+const LOCATING = '[Pp]rzy|[Nn]a|[Oo]n|[Aa]t|[Ee]n';
+const PARTICLES = `(?:${STREET_PARTICLE}[ \\t]+){0,2}`;
+/** What makes a number a distance, a time or an age, not a house number. */
+const NOT_A_HOUSE_NUMBER_UNIT = String.raw`km|m|m²|min|mins?|minut\p{L}*|minutes?|metr\p{L}*|meters?|metres?|mil|miles?|lat|years?|a[nñ]os|godzin\p{L}*|hours?|horas?`;
+/** At most three digits, because four read as a year ("Majdanek 1944"). */
+const HOUSE_NUMBER = String.raw`\p{Nd}{1,3}(?![ \t]*(?:${NOT_A_HOUSE_NUMBER_UNIT})(?![\p{L}\p{N}]))\p{L}?(?:/\p{Nd}+\p{L}?)?(?![\p{L}\p{N}])`;
+/** Nothing that goes on naming something else follows: "na Katyńskiej zbrodni" is no address. */
+const NAME_ENDS = String.raw`(?=[ \t]*(?:[,.;:!?)\n]|$)|[ \t]+(?:w|we|i|z|ze|in|and|with|en|y|con)[ \t])`;
+
+/** Copy: up to three words, then a house number ("Bohaterów Getta 5", "przy Katyńskiej 5"). */
 const NUMBERED_NAME_RE = new RegExp(
-  String.raw`(?<![\p{L}\p{N}])((?:\p{L}[\p{L}'’-]*[ \t]+){1,3})${HOUSE_NUMBER_AFTER_NAME}`,
+  String.raw`(?<![\p{L}\p{N}])((?:${WORD}[ \t]+){1,3})${HOUSE_NUMBER}`,
+  'gu',
+);
+/** Copy: a street's marker, then its name: "alei Katyńskiej". */
+const MARKED_NAME_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}])(?:${STREET_PREFIX})[ \\t]+${PARTICLES}((?:${WORD}[ \\t]+){0,2}${WORD})${NAME_ENDS}`,
+  'gu',
+);
+/** Copy: a locating word, then the name, capitalised: no noun ("przy getcie") is a street. */
+const LOCATED_NAME_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}])(?:${LOCATING})[ \\t]+(${CAPITAL_WORD}(?:[ \\t]+${CAPITAL_WORD}){0,2})${NAME_ENDS}`,
   'gu',
 );
 /**
- * What a listing's text states as an address with no address field: capitalised, and nothing
- * counted after the number: "the Ghetto 2 bedrooms" is no address.
+ * A listing's free text states its address with a signal: a house number after "przy" / "na" or a
+ * street's marker, or after a street word. A capital and a number are not enough: "5 min from
+ * Treblinka 12" and "Obok Pomnika 5" mention a place and own nothing, whoever wrote them.
  */
-const LISTING_NUMBERED_NAME_RE = new RegExp(
-  String.raw`(?<![\p{L}\p{N}])((?:\p{Lu}[\p{L}'’-]*[ \t]+){1,3})${HOUSE_NUMBER_AFTER_NAME}(?=[ \t]*(?:[,.;:!?)\n]|$)|[ \t]+(?:w|we|in|en)[ \t])`,
-  'gu',
-);
-/** "przy Katyńskiej", "on Długa": capitalised, or it is a noun and no name ("przy getcie"). */
-const AT_NAME_RE =
-  /(?<![\p{L}\p{N}])(?:przy|na|on|at|en)[ \t]+(\p{Lu}[\p{L}'’-]*(?:[ \t]+\p{Lu}[\p{L}'’-]*){0,2})/gu;
+const NUMBER_ENDS = String.raw`(?=[ \t]*(?:[,.;:!?)\n]|$)|[ \t]+(?:w|we|in|en)[ \t])`;
+const STATED_STREET_RES: readonly RegExp[] = [
+  new RegExp(
+    `(?<![\\p{L}\\p{N}])(?:[Pp]rzy|[Nn]a|${STREET_PREFIX})[ \\t]+${PARTICLES}((?:${CAPITAL_WORD}[ \\t]+){1,3})${HOUSE_NUMBER}${NUMBER_ENDS}`,
+    'gu',
+  ),
+  new RegExp(
+    `(?<![\\p{L}\\p{N}])((?:${CAPITAL_WORD}[ \\t]+){1,3}(?:${STREET_WORD}))[ \\t]+${HOUSE_NUMBER}${NUMBER_ENDS}`,
+    'gu',
+  ),
+];
+const MARKER_AT_START_RE = new RegExp(`^(?:${STREET_PREFIX})\\s+${PARTICLES}`, 'iu');
+const NUMBER_AT_END_RE = /\s+\p{Nd}+\p{L}?(?:\/\p{Nd}+\p{L}?)?$/u;
+const NUMBER_AT_START_RE = /^\p{Nd}+\p{L}?\s+/u;
 
-const addressWords = (text: string): RegExpExecArray[] =>
-  Array.from(text.matchAll(ADDRESS_WORD_RE));
+const wordsOf = (text: string): string[] =>
+  Array.from(text.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])${WORD}`, 'gu')), (m) => m[0]).filter(
+    (w) => !new RegExp(`^${STREET_PARTICLE}$`, 'iu').test(w),
+  );
 
-/** The streets the listing states: in an address field, or anywhere with a house number. */
-function ownStreets(listing: Readonly<Record<string, string>>): string[][] {
+/** The streets this listing states, each as written, its number off. */
+function ownStreets(listing: Readonly<Record<string, string>>): string[] {
   return Object.entries(listing).flatMap(([field, value]) => {
-    const parts = isAddressField(field) ? value.split(',').filter(isListedStreet) : [];
-    const numbered = Array.from(value.matchAll(LISTING_NUMBERED_NAME_RE), (m) => m[1] ?? '');
-    return [...parts, ...numbered].map((text) => addressWords(text).map((w) => w[0]));
+    const listed = isAddressField(field)
+      ? value
+          .split(',')
+          .map((part) => part.trim())
+          .filter(isListedStreet)
+      : [];
+    const stated = STATED_STREET_RES.flatMap((re) =>
+      Array.from(value.matchAll(re), (m) => (m[1] ?? '').trim()),
+    );
+    return [...listed, ...stated].map((street) =>
+      street.replace(NUMBER_AT_END_RE, '').replace(NUMBER_AT_START_RE, ''),
+    );
   });
 }
 
-/** Is `words` the end of the street's name, each word the same or a Polish case form? */
-const endsStreet = (words: readonly string[], street: readonly string[]): boolean => {
-  const name = street.slice(-words.length);
-  return (
-    name.length === words.length &&
-    words.every((w, i) => {
-      const other = name[i] ?? '';
-      return (
-        foldDiacritics(w).toLowerCase() === foldDiacritics(other).toLowerCase() ||
-        polishCaseForms(w, other)
-      );
-    })
-  );
-};
-
 /**
  * Blank what `text` repeats of the listing's own address, the forms no marker shows included:
- * "przy Katyńskiej 5" on a listing at "ul. Katyńska 5". A street's name needs a house number or
- * a locating word beside it, so "Pomnik Zbrodni Katyńskiej" on that listing stays what it says, and
- * the name of a town is never blanked (`isListedStreet`).
+ * "przy Katyńskiej 5" and "przy alei Katyńskiej" on a listing at "al. Katyńska 5". The whole name
+ * has to match, in the same word or a Polish case form, so "Pomnik Zbrodni Katyńskiej", "Obok Getta"
+ * and "na Katyńskiej zbrodni" stay what they say. A town is no street (`isListedStreet`): the listing
+ * in Treblinka does not make "Dom w Treblince" an address.
  */
 function blankOwnAddress(text: string, listing: Readonly<Record<string, string>>): string {
+  const streets = ownStreets(listing);
+  const names = streets.map((street) => wordsOf(street.replace(MARKER_AT_START_RE, '')));
+  const isOwn = (words: readonly string[]): boolean =>
+    names.some(
+      (name) =>
+        name.length === words.length &&
+        words.every((word, i) => {
+          const other = name[i] ?? '';
+          return (
+            foldDiacritics(word).toLowerCase() === foldDiacritics(other).toLowerCase() ||
+            polishCaseForms(word, other)
+          );
+        }),
+    );
+  const blank = (match: string): string => ' '.repeat(match.length);
+  const blankIfOwn = (match: string, name: string): string =>
+    isOwn(wordsOf(name)) ? blank(match) : match;
   const addresses = Object.entries(listing)
     .filter(([field]) => isAddressField(field))
     .map(([, value]) => value);
-  const streets = ownStreets(listing);
-  const isOwn = (words: readonly string[]): boolean => streets.some((s) => endsStreet(words, s));
-  const blank = (match: string): string => ' '.repeat(match.length);
-  return maskListedAddressParts(text, addresses)
+  return maskListedAddressParts(text, [...addresses, ...streets])
     .replace(NUMBERED_NAME_RE, (match: string, name: string) => {
-      const words = addressWords(name);
-      for (const [i, word] of words.entries()) {
-        if (isOwn(words.slice(i).map((w) => w[0]))) {
-          return match.slice(0, word.index) + blank(match.slice(word.index));
-        }
+      const words = wordsOf(name);
+      for (let i = 0; i < words.length; i += 1) {
+        if (!isOwn(words.slice(i))) continue;
+        const at = name.lastIndexOf(words[i] ?? '');
+        return match.slice(0, at) + blank(match.slice(at));
       }
       return match;
     })
-    .replace(AT_NAME_RE, (match: string, name: string) =>
-      isOwn(addressWords(name).map((w) => w[0])) ? blank(match) : match,
-    );
+    .replace(MARKED_NAME_RE, blankIfOwn)
+    .replace(LOCATED_NAME_RE, blankIfOwn);
 }
 
 /**
  * The protected-ground guard, on a listing: its own address is a fact it states, and blanked first
- * (PM on FOLLOW-1431, both paths). Blanking only ever spares: text the guard passes as written is
- * passed before anything is blanked.
+ * (PM on FOLLOW-1431, both paths). The only thing this spares that the guard does not. Blanking can
+ * only spare: text the guard passes as written is passed before anything is blanked.
  *
  * @param text - Copy as the model wrote it.
  * @param listing - The listing's own fields by name, the description among them.

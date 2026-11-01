@@ -100,6 +100,7 @@ async function adapt(value: string, context: Context) {
 }
 
 const OWN: [string, string, Locale][] = [
+  // The ticket's sentences.
   ['Bohaterów Getta 5, Warszawa.', 'Bohaterów Getta 5, Warszawa', 'pl'],
   ['Mieszkanie przy Katyńskiej 5.', 'ul. Katyńska 5, Warszawa', 'pl'],
   ['Mieszkanie przy Katyńskiej 5.', 'Katyńska 5, Warszawa', 'pl'],
@@ -112,6 +113,16 @@ const OWN: [string, string, Locale][] = [
   ['ul. bohaterów getta 5.', 'ul. Bohaterów Getta 5, Warszawa', 'pl'],
   ['Calle del Gueto 5.', 'Calle del Gueto 5, Madrid', 'es'],
   ['Holocaust Memorial Drive 7.', 'Holocaust Memorial Drive 7, Miami', 'en'],
+  // The PM's pins, with the listing's number off and on.
+  ['Holocaust Memorial Drive.', 'Holocaust Memorial Drive 7, Miami', 'en'],
+  ['Holocaust Memorial Drive.', '7 Holocaust Memorial Drive, Miami', 'en'],
+  ['Plaza del Gueto.', 'Plaza del Gueto 3, Madrid', 'es'],
+  ['Jewish Quarter Road.', 'Jewish Quarter Road 7, Leeds', 'en'],
+  ['os. Bohaterów Getta.', 'os. Bohaterów Getta 3, Warszawa', 'pl'],
+  ['Calle de la Judería 5.', 'Calle de la Judería 5, Toledo', 'es'],
+  ['Treblinka Road.', 'Treblinka Road 5, Warszawa', 'en'],
+  // A house number on its own address; a town is another matter, below.
+  ['Dom przy Treblince 5.', 'Treblinka 5, mazowieckie', 'pl'],
 ];
 
 describe('FOLLOW-1431: the listing own address is blanked before the guard', () => {
@@ -134,27 +145,55 @@ describe('FOLLOW-1431: the listing own address is blanked before the guard', () 
     });
   });
 
-  it('own, as the description states it, with no address field', async () => {
-    const original = 'Mieszkanie przy Katyńskiej 5 w Warszawie.';
-    const text = 'Mieszkanie przy Katyńskiej 5.';
-    expect(await body(text, original, {}, 'pl')).toBe('FIT');
-    expect(await adapt(text, { listing_description: original })).toBe('served');
+  // A model inventing such a street has written no address of this listing (CEO, PM on 1431).
+  describe.each<[string, Locale]>([
+    ['Holocaust Memorial Drive.', 'en'],
+    ['Plaza del Gueto.', 'es'],
+    ['Jewish Quarter Road.', 'en'],
+    ['os. Bohaterów Getta.', 'pl'],
+    ['Calle de la Judería 5.', 'es'],
+    ['przy alei Katyńskiej.', 'pl'],
+    ['Calle del Gueto.', 'es'],
+    ['Bohaterów Getta 5, Warszawa.', 'pl'],
+    ['Mieszkanie przy Katyńskiej 5.', 'pl'],
+  ])('%j on a listing in Warszawa is refused', (text, locale) => {
+    const context = { listing_location: 'Warszawa' };
+    it('description body', async () => {
+      expect(await body(text, '', context, locale)).toBe('protected_ground');
+    });
+    it('description headline', async () => {
+      expect(await headline(text, '', context, locale)).toBe('protected_ground');
+    });
+    it('/api/adapt', async () => {
+      expect(await adapt(text, context)).toBe('protected_ground');
+    });
   });
 
-  // Each of these holds the sensitive word outside the address, or an address not the listing's.
+  // origin/main served this body, and no tightening here: listed for a follow-up.
+  it('"Treblinka Road." on Warszawa keeps what origin/main did', async () => {
+    const context = { listing_location: 'Warszawa' };
+    expect(await body('Treblinka Road.', '', context, 'en')).toBe('FIT');
+    expect(await headline('Treblinka Road.', '', context, 'en')).toBe('hallucinated_proper_name');
+    expect(await adapt('Treblinka Road.', context)).toBe('hallucinated_proper_name');
+  });
+
+  // Each holds the sensitive word outside the listing's own address.
   const STAYS: [string, string, Locale][] = [
     ['Obok Pomnika Zbrodni Katyńskiej.', 'ul. Katyńska 5, Warszawa', 'pl'],
     ['Blisko Katyńskiej 5 minut pieszo.', 'ul. Katyńska 5, Warszawa', 'pl'],
     ['Widok na Zbrodnię Katyńską.', 'ul. Katyńska 5, Warszawa', 'pl'],
+    ['Na Katyńskiej zbrodni.', 'ul. Katyńska 5, Warszawa', 'pl'],
     ['Obok Pomnika Bohaterów Getta.', 'Bohaterów Getta 5, Warszawa', 'pl'],
+    ['Obok Getta 5.', 'Bohaterów Getta 5, Warszawa', 'pl'],
     ['Mieszkanie przy ul. Bohaterów Getta 5, obok dawnego getta.', 'ul. Bohaterów Getta 5', 'pl'],
     ['The former ghetto is nearby.', 'Bohaterów Getta 5, Warszawa', 'en'],
     ['A short walk from the Holocaust memorial', 'Holocaust Memorial Drive 7', 'en'],
+    // A town is not an address (PM on FOLLOW-1431), even the listing's own.
     ['Dom w Treblince.', 'Treblinka, mazowieckie', 'pl'],
     ['Dom w Sobiborze.', 'Sobibór 12, Włodawa', 'pl'],
     ['Majdanek 1944.', 'Majdanek 12, Lublin', 'pl'],
     ['Żydowska dzielnica.', 'ul. Żydowska 5, Lublin', 'pl'],
-    // Marker-free, and not this listing's: as text alone it is no address.
+    // Marker-free, and not this listing's.
     ['Bohaterów Getta 5, Warszawa.', 'ul. Długa 4, Warszawa', 'pl'],
     ['Mieszkanie przy Katyńskiej 5.', 'ul. Długa 4, Warszawa', 'pl'],
   ];
@@ -171,20 +210,31 @@ describe('FOLLOW-1431: the listing own address is blanked before the guard', () 
     });
   });
 
-  // The street rule, not the guard, judges an address that is not the listing's.
-  describe.each<[string, Locale]>([
-    ['Mieszkanie przy alei Katyńskiej.', 'pl'],
-    ['Calle del Gueto 5.', 'es'],
-    ['Holocaust Memorial Drive 7.', 'en'],
-    ['os. Bohaterów Getta 3.', 'pl'],
-    ['ul. bohaterów getta 5.', 'pl'],
-  ])('%j, not the listing own: past the guard', (text, locale) => {
-    const context = { listing_location: 'Warszawa' };
-    it('description body', async () => {
-      expect(await body(text, '', context, locale)).not.toBe('protected_ground');
+  describe('a listing text states its address only with a signal', () => {
+    it.each<[string, string]>([
+      ['Mieszkanie przy Katyńskiej 5.', 'Mieszkanie przy Katyńskiej 5 w Warszawie.'],
+      ['Mieszkanie przy Katyńskiej.', 'Mieszkanie przy Katyńskiej 5 w Warszawie.'],
+      ['Lokal na Bohaterów Getta 5.', 'Lokal na Bohaterów Getta 5, Warszawa.'],
+      ['Holocaust Memorial Drive 7.', 'A home at Holocaust Memorial Drive 7, Miami.'],
+      ['Holocaust Memorial Drive.', 'A home at Holocaust Memorial Drive 7, Miami.'],
+    ])('own: %j on %j', async (text, original) => {
+      expect(await body(text, original, {}, 'pl')).toBe('FIT');
+      expect(await adapt(text, { listing_description: original })).toBe('served');
     });
-    it('/api/adapt', async () => {
-      expect(await adapt(text, context)).not.toBe('protected_ground');
+
+    // A mention is no address, and the seller's verbatim sentence gets no pass from this rule:
+    // the guard refuses "whoever wrote the words" (FOLLOW-1411).
+    it.each<[string, string]>([
+      ['Treblinka 12.', 'Dom, 5 min from Treblinka 12.'],
+      ['Near Treblinka 12.', 'Dom, 5 min from Treblinka 12.'],
+      ['Dom, 5 min from Treblinka 12.', 'Dom, 5 min from Treblinka 12.'],
+      ['Sobibór 5.', 'Blisko Sobibór 5.'],
+      ['Obok Pomnika Getta 5.', 'Obok Pomnika Getta 5.'],
+      ['Treblinka 12.', 'Dom przy lesie. Treblinka 12 km stąd.'],
+      ['Getta 2.', 'Obok Getta 2 pokoje.'],
+    ])('a mention spares nothing: %j on %j', async (text, original) => {
+      expect(await body(text, original, {}, 'pl')).toBe('protected_ground');
+      expect(await adapt(text, { listing_description: original })).toBe('protected_ground');
     });
   });
 

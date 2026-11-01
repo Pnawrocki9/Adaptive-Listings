@@ -138,8 +138,12 @@ import {
  * - `claims-v10` — 2026-11-01, FOLLOW-1311 slice 5: a street the listing does not state, stated with
  *   a house number, a street prefix or a locating word, is refused (`unsupported_street`). No
  *   `claims-v9` row was checked against that; it is regenerated once instead of served.
+ * - `claims-v11` — 2026-11-01, FOLLOW-1431: Treblinka, Sobibór, Bełżec, Majdanek and Auschwitz lose
+ *   the street-marker exemption of the protected-ground guard, and a statement of composition is
+ *   read with addresses out of the way. No `claims-v10` row was checked against those; it is
+ *   regenerated once instead of served.
  */
-export const CLAIMS_VALIDATION_VERSION = 'claims-v10';
+export const CLAIMS_VALIDATION_VERSION = 'claims-v11';
 
 /** G-03: total budget per call (deadline on the whole, retries included). */
 const DESCRIPTION_DEADLINE_MS = 75_000;
@@ -860,12 +864,6 @@ function parseVerifiedFacts(output: string): { description: string; facts: strin
 }
 
 /** The interpretation half of `_generate_with_sonnet`: raw model output → outcome. */
-/** The listing's own fields, the description among them. */
-const ownFields = (e: DescriptionRequestedEvent): Record<string, string> => ({
-  original_description: e.original_description || '',
-  ...e.listing_context,
-});
-
 function interpretDescription(
   raw: { text: string; stopReason: string | null },
   e: DescriptionRequestedEvent,
@@ -891,7 +889,7 @@ function interpretDescription(
 
   // FOLLOW-1411: a statement about residents' race, ethnic origin or religion is refused before
   // the claim check, as `/api/adapt` orders it; refused, never stripped.
-  if (refusesOnProtectedGround(description, ownFields(e))) {
+  if (refusesOnProtectedGround(description, e.listing_context)) {
     return { verdict: 'REFUSED', violation: 'protected_ground' };
   }
 
@@ -933,7 +931,7 @@ function interpretHeadline(
   const languageViolation = checkOutputLanguage(headline, e.locale);
   if (languageViolation) return { headline: null, violation: languageViolation };
   // FOLLOW-1411: residents' race, ethnic origin or religion, as on the body and on `/api/adapt`.
-  if (refusesOnProtectedGround(headline, ownFields(e))) {
+  if (refusesOnProtectedGround(headline, e.listing_context)) {
     return { headline: null, violation: 'protected_ground' };
   }
   const violation = checkHeadlineFacts(

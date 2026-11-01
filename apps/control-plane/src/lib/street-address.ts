@@ -14,10 +14,8 @@
 
 import {
   ALEJA_FORM,
-  AMBIGUOUS_STREET_WORD,
   BARE_STREET_WORD,
   NOT_A_STREET_NAME,
-  NUMBERED_STREET_WORD,
   STREET_PARTICLE,
   STREET_PREFIX,
   STREET_WORD,
@@ -109,21 +107,19 @@ const WEAK_LOCATING_WORD = '(?:przy|na|od|do|koło|obok|en|del|de|junto a|cerca 
 const PREFIXED_NAME = `(?:${PARTICLE}${GAP}){0,2}(${CLAIM_FIRST}(?:${GAP}(?:${PARTICLE}${GAP})?${CLAIM_PIECE}){0,3})`;
 
 const NUMBERED_CLAIM_RE = new RegExp(
-  `(?<![\\p{L}\\p{N}.,€$£])${HOUSE_NUMBER}${GAP}((?:${CLAIM_PIECE}${GAP}){1,3})(?:${NUMBERED_STREET_WORD})(?![\\p{L}\\p{N}])`,
-  'gu',
-);
-/**
- * "A 2 Story Terrace", "1 Acre Close": before these five a number is usually a count, and nothing
- * in the words tells "3 Season Terrace" from "12 Elm Terrace". So a locating word has to say it is
- * a place [FOLLOW-1436]. "12 Elm Terrace." alone is not read, and passes.
- */
-const NUMBER_LOCATING_WORD = `(?:[Aa]t|[Oo]n|[Oo]ff|[Nn]ear|[Aa]long|[Nn]ext${GAP}to|[Bb]eside|[Bb]y|[Pp]rzy)`;
-const LOCATED_NUMBER_CLAIM_RE = new RegExp(
-  `(?<![\\p{L}\\p{N}])${NUMBER_LOCATING_WORD}${GAP}(?:the${GAP})?${HOUSE_NUMBER}${GAP}((?:${CLAIM_PIECE}${GAP}){1,3})(?:${AMBIGUOUS_STREET_WORD})(?![\\p{L}\\p{N}])`,
+  `(?<![\\p{L}\\p{N}.,€$£])${HOUSE_NUMBER}${GAP}((?:${CLAIM_PIECE}${GAP}){1,3})(?:${STREET_WORD})(?![\\p{L}\\p{N}])`,
   'gu',
 );
 const LOCATED_CLAIM_RE = new RegExp(
   `(?<![\\p{L}\\p{N}])${LOCATING_WORD}${GAP}(?:the${GAP})?((?:${CLAIM_PIECE}${GAP}){1,3})(?:${BARE_STREET_WORD})(?![\\p{L}\\p{N}])${CLAUSE_GOES_ON}`,
+  'gu',
+);
+/**
+ * "Alejka" is a garden path before it is a street, so it needs a house number: "Przy Alejce Różanej
+ * 12" is read and "Alejka Spacerowa prowadzi do parku" is not [FOLLOW-1436].
+ */
+const ALLEY_CLAIM_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}])[Aa]lej(?:k\\p{L}*|ce|ek)${GAP}${PREFIXED_NAME}${GAP}${HOUSE_NUMBER}(?![\\p{L}\\p{N}])`,
   'gu',
 );
 const STRONG_PREFIX_CLAIM_RE = new RegExp(
@@ -174,11 +170,17 @@ const beforeStreetWord = (name: string): string[] => {
   return named(all.slice(lastGeneric + 1));
 };
 
-/** Right after a number, these measure or count: "20 Foot Drive", "2 Lane Road", "4 Wheel Drive". */
+/**
+ * Right after a number these count or measure, so it is no house number: "A 2 Story Terrace", "3
+ * Season Terrace", "1 Acre Close", "4 Wheel Drive" [FOLLOW-1436]. Closed: any other word keeps the
+ * number a house number, so "12 Baker Close", "12 Door Lane" and "12 Lane Road" are read. A real
+ * "12 Mile Road" passes, and that is the known limit.
+ */
 const COUNTED_WORDS: ReadonlySet<string> = new Set(
   (
-    'story stories storey storeys level levels degree degrees foot feet inch yard acre acres ' +
-    'hectare season seasons separate wheel lane way door'
+    'story stories storey storeys level levels degree degrees foot feet inch inches yard yards ' +
+    'acre acres hectare hectares season seasons separate wheel minute minutes hour hours star ' +
+    'stars mile miles meter meters metre metres'
   ).split(' '),
 );
 
@@ -232,9 +234,9 @@ export function readStreetClaims(text: string): StreetClaim[] {
       });
   return [
     ...claims(NUMBERED_CLAIM_RE, afterNumber, false),
-    ...claims(LOCATED_NUMBER_CLAIM_RE, afterNumber, true),
     ...claims(LOCATED_CLAIM_RE, beforeStreetWord, true),
     ...claims(STRONG_PREFIX_CLAIM_RE, afterPrefix, false),
+    ...claims(ALLEY_CLAIM_RE, afterPrefix, false),
     ...claims(WEAK_PREFIX_CLAIM_RE, afterPrefix, true),
   ].filter((claim) => claim.words.length > 0);
 }
@@ -305,16 +307,6 @@ const LISTED_STREET_RE = new RegExp(
 );
 
 /**
- * A part of an address field that is a street: a letter and a digit, or a street by its own words.
- *
- * @param part - One comma-separated part of the field.
- * @returns `false` for a town, whose name says nothing of an address on its own.
- */
-export function isListedStreet(part: string): boolean {
-  return /\p{L}/u.test(part) && (/\p{Nd}/u.test(part) || LISTED_STREET_RE.test(part));
-}
-
-/**
  * Blank what `text` repeats of a listed address, in any case: a part with a letter and a digit
  * ("Rynek 5"), a part that is a street by its own words ("Freehold Road", "ul. parterowa"), or a
  * street with the number the field keeps apart ("Calle Mayor, 12" as "Calle Mayor 12" or "Calle
@@ -336,7 +328,7 @@ export function maskListedAddressParts(text: string, addresses: readonly string[
     const parts = address.split(',').map((part) => part.trim());
     for (const [i, part] of parts.entries()) {
       if (!/\p{L}/u.test(part)) continue;
-      if (isListedStreet(part)) mask(part);
+      if (/\p{Nd}/u.test(part) || LISTED_STREET_RE.test(part)) mask(part);
       const next = parts[i + 1];
       if (next !== undefined && /^\p{Nd}+\p{L}?$/u.test(next)) {
         mask(`${part}, ${next}`);

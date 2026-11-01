@@ -1,8 +1,8 @@
 // @vitest-environment node
 /**
- * FOLLOW-1436 — a count in title case is no house number, and "Alej…" no street prefix. A number
- * before `Terrace`, `Court`, `Close`, `Place` or `Way` counts only after a locating word: these
- * five are ordinary nouns, and nothing else in "3 Season Terrace" tells it from "12 Elm Terrace".
+ * FOLLOW-1436 — a count in title case is no house number, and "Alej…" no street prefix. Which: the
+ * word right after the number, from a closed list of counted and measured things ("Story", "Season",
+ * "Acre"). Any other word keeps it a house number, so "12 Baker Close" and "12 Door Lane" are read.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -104,12 +104,13 @@ const FALSE_REFUSALS: [string, string][] = [
   ['1 Acre Close.', 'On a 1 acre lot, close to town.'],
   // Locating words decide nothing when the words after the number are a measure.
   ['Located on 2 Story Terrace.', 'A 2 story home with a terrace.'],
+  ['At 2 Story Terrace.', 'A 2 story home with a terrace.'],
+  ['A 20 Minute Drive From The Beach.', 'A 20 minute drive from the beach.'],
+  ['A 2 Hour Drive.', 'A 2 hour drive to the coast.'],
+  ['A 5 Star Square.', 'A 5 star hotel on the square.'],
   // The same count before an unambiguous street word.
   ['4 Wheel Drive Access.', 'With 4 wheel drive access.'],
-  ['2 Lane Road Nearby.', 'On a 2 lane road nearby.'],
   ['20 Foot Drive.', 'A 20 foot drive.'],
-  ['2 Modern Court.', 'With 2 modern courts.'],
-  ['3 Palms Way.', 'Near 3 palms and a way down.'],
 ];
 
 const NOT_STREETS: [string, string, 'en' | 'pl' | 'es'][] = [
@@ -164,6 +165,27 @@ describe('FOLLOW-1431: a loosening, so a listing loses no fact to the wider alej
   });
 });
 
+describe('FOLLOW-1436: a number before any other word is a house number (reader, S4)', () => {
+  beforeEach(() => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'test-key-'.repeat(3));
+    process.env.ANTHROPIC_API_KEY = 'test-key-follow-1436';
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each<[string, string, 'en' | 'pl']>([
+    ['45 Victoria Court, London.', 'A flat. Reference 45.', 'en'],
+    ['Your new home: 12 Baker Close.', 'A flat. Reference 12.', 'en'],
+    ['Welcome to 12 Queens Way.', 'A flat. Reference 12.', 'en'],
+    ['12 Downing Place.', 'A flat. Reference 12.', 'en'],
+    ['12 Door Lane.', 'A flat. Reference 12.', 'en'],
+    ['Near 12 Lane Road.', 'A flat. Reference 12.', 'en'],
+    ['Przy Alejce Różanej 12.', 'Mieszkanie. Numer 12.', 'pl'],
+  ])('%j is a street, on both paths', async (text, original, locale) => {
+    expect(await body(text, original, locale)).toBe('unsupported_street');
+    expect(await adapt(text, original)).toBe('unsupported_street');
+  });
+});
+
 describe('FOLLOW-1436: what stays read', () => {
   const PLAIN = 'A bright flat with a balcony.';
   it.each([
@@ -171,6 +193,8 @@ describe('FOLLOW-1436: what stays read', () => {
     '12 Elm St',
     '9 Blackberry Pl',
     'Next to 9 Ocean Terrace.',
+    '12 Elm Terrace.',
+    '12 Elm Court, Bath.',
     'A home at 12 Elm Court.',
     'Located on 7 Harbour Close.',
     'Near 12 Bath Place.',

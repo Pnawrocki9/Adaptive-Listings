@@ -1,8 +1,8 @@
 /**
- * FOLLOW-1431 — the text-only guard keeps exactly the reach it had before: "Adres to adres" is an
- * address of THIS listing, which this guard cannot know, so a model's invented "Holocaust Memorial
- * Drive" is refused here. The listing's own address is blanked by the callers, tested on the whole
- * paths in the control plane (`own-address.follow1431.test.ts`).
+ * FOLLOW-1431 — the text-only guard gets no new reach: "Adres to adres" is an address of THIS
+ * listing, which this guard cannot know, so a model's invented "Holocaust Memorial Drive" is refused
+ * here. It loses one: a camp's name gets no marker exemption. The listing's own address is blanked
+ * by the callers, tested on the whole paths in the control plane (`own-address.follow1431.test.ts`).
  */
 import { describe, expect, it } from 'vitest';
 import { describesResidentsByProtectedGround } from '../playbooks/traits';
@@ -38,6 +38,19 @@ describe('FOLLOW-1431: the guard has no new reach for text that is not the listi
     // No marker at all.
     'Bohaterów Getta 5, Warszawa.',
     'Mieszkanie przy Katyńskiej 5.',
+    // M6: a camp's name gets no marker exemption at all (CEO: refused outright).
+    'ul. Treblinki 3.',
+    'ul. Sobibór 5.',
+    'ul. Treblinka 5.',
+    'ul. Majdanek 5.',
+    'al. Majdanek 12.',
+    'ul. Bełżec 2.',
+    'Calle Sobibór 3.',
+    'Treblinka Road.',
+    'Auschwitz Street.',
+    'Sobibór Avenue',
+    'Plac Treblinka to miejsce pamięci',
+    'Auschwitz Road tours from here',
     // Outright, and with "dawna" only.
     'The former ghetto is nearby.',
     'A short walk from the Holocaust memorial',
@@ -54,12 +67,13 @@ describe('FOLLOW-1431: the guard has no new reach for text that is not the listi
   it.each([
     // What it already spared, unchanged.
     'Mieszkanie przy ul. Bohaterów Getta 5.',
-    'ul. Treblinki 3.',
-    'Calle Sobibór 3.',
-    'al. Majdanek 12.',
-    'ul. Bełżec 2.',
-    'Treblinka Road.',
     'Flat on Ghetto Heroes Street.',
+    // Other terms in that position: left for a follow-up, not ruled here.
+    'Ghetto Road.',
+    'Ghetto Streets',
+    'Birkenau Road.',
+    'ul. Stutthof 5.',
+    'ul. Katyńska 5.',
     'dawna dzielnica żydowska',
     'Ideal for families.',
     'Idealne dla rodziny z dziećmi.',

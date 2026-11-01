@@ -1,8 +1,9 @@
 // @vitest-environment node
 /**
- * FOLLOW-1431 — "Adres to adres, ma przechodzić" (CEO). The whole paths, `generateDescription` and
- * `callLlmGateway`, with only the model mocked: the listing's own address is blanked before the
- * protected-ground guard, and an address that is not the listing's goes on to the street rule.
+ * FOLLOW-1431 — "Adres to adres, ma przechodzić" (CEO): a real address of THIS listing. The whole
+ * paths, `generateDescription` and `callLlmGateway`, with only the model mocked. A street of
+ * `listing_location`, stated with its house number, ending the phrase, is blanked before the
+ * protected-ground guard. Nothing else is spared, and a false refusal is the safe side.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -99,143 +100,276 @@ async function adapt(value: string, context: Context) {
   return output?.directives.some((d) => 'value' in d && d.value === value) ? 'served' : 'dropped';
 }
 
-const OWN: [string, string, Locale][] = [
-  // The ticket's sentences.
-  ['Bohaterów Getta 5, Warszawa.', 'Bohaterów Getta 5, Warszawa', 'pl'],
-  ['Mieszkanie przy Katyńskiej 5.', 'ul. Katyńska 5, Warszawa', 'pl'],
-  ['Mieszkanie przy Katyńskiej 5.', 'Katyńska 5, Warszawa', 'pl'],
-  ['Mieszkanie przy Katyńskiej.', 'ul. Katyńska 5, Warszawa', 'pl'],
-  ['Mieszkanie przy Bohaterów Getta.', 'Bohaterów Getta 5, Warszawa', 'pl'],
-  ['Lokal na Bohaterów Getta.', 'Bohaterów Getta 5, Warszawa', 'pl'],
-  ['A flat on Bohaterów Getta.', 'Bohaterów Getta 5, Warszawa', 'en'],
-  ['przy alei Katyńskiej.', 'al. Katyńska 5, Warszawa', 'pl'],
-  ['os. Bohaterów Getta 3.', 'os. Bohaterów Getta 3, Warszawa', 'pl'],
-  ['ul. bohaterów getta 5.', 'ul. Bohaterów Getta 5, Warszawa', 'pl'],
-  ['Calle del Gueto 5.', 'Calle del Gueto 5, Madrid', 'es'],
-  ['Holocaust Memorial Drive 7.', 'Holocaust Memorial Drive 7, Miami', 'en'],
-  // The PM's pins, with the listing's number off and on.
-  ['Holocaust Memorial Drive.', 'Holocaust Memorial Drive 7, Miami', 'en'],
-  ['Holocaust Memorial Drive.', '7 Holocaust Memorial Drive, Miami', 'en'],
-  ['Plaza del Gueto.', 'Plaza del Gueto 3, Madrid', 'es'],
-  ['Jewish Quarter Road.', 'Jewish Quarter Road 7, Leeds', 'en'],
-  ['os. Bohaterów Getta.', 'os. Bohaterów Getta 3, Warszawa', 'pl'],
-  ['Calle de la Judería 5.', 'Calle de la Judería 5, Toledo', 'es'],
-  ['Treblinka Road.', 'Treblinka Road 5, Warszawa', 'en'],
-  // A house number on its own address; a town is another matter, below.
-  ['Dom przy Treblince 5.', 'Treblinka 5, mazowieckie', 'pl'],
+type Row = [string, Context, string, Locale];
+
+/** On a real own listing: a street of `listing_location`, with its number, ending the phrase. */
+const SERVED: Row[] = [
+  ['Bohaterów Getta 5, Warszawa.', { listing_location: 'Bohaterów Getta 5, Warszawa' }, '', 'pl'],
+  ['Mieszkanie przy Katyńskiej 5.', { listing_location: 'ul. Katyńska 5, Warszawa' }, '', 'pl'],
+  ['Mieszkanie przy Katyńskiej 5.', { listing_location: 'Katyńska 5, Warszawa' }, '', 'pl'],
+  ['przy alei Katyńskiej 5.', { listing_location: 'al. Katyńska 5, Warszawa' }, '', 'pl'],
+  ['os. Bohaterów Getta 3.', { listing_location: 'os. Bohaterów Getta 3, Warszawa' }, '', 'pl'],
+  ['Calle del Gueto 5.', { listing_location: 'Calle del Gueto 5, Madrid' }, '', 'es'],
+  [
+    'Holocaust Memorial Drive 7.',
+    { listing_location: 'Holocaust Memorial Drive 7, Miami' },
+    '',
+    'en',
+  ],
+  [
+    '7 Holocaust Memorial Drive.',
+    { listing_location: '7 Holocaust Memorial Drive, Miami' },
+    '',
+    'en',
+  ],
+  ['Plaza del Gueto 3.', { listing_location: 'Plaza del Gueto 3, Madrid' }, '', 'es'],
+  ['Jewish Quarter Road 7.', { listing_location: 'Jewish Quarter Road 7, Leeds' }, '', 'en'],
+  ['Calle de la Judería 5.', { listing_location: 'Calle de la Judería 5, Toledo' }, '', 'es'],
+  ['Treblinka Road 5.', { listing_location: 'Treblinka Road 5, Warszawa' }, '', 'en'],
+  ['ul. Treblinki 3.', { listing_location: 'ul. Treblinki 3, Warszawa' }, '', 'pl'],
+  ['Dom przy Treblince 5.', { listing_location: 'Treblinka 5, mazowieckie' }, '', 'pl'],
+  ['ul. bohaterów getta 5.', { listing_location: 'ul. bohaterów getta 5, warszawa' }, '', 'pl'],
+  [
+    'ul. Bohaterów Getta 5 m. 12.',
+    { listing_location: 'ul. Bohaterów Getta 5 m. 12, Warszawa' },
+    '',
+    'pl',
+  ],
+  [
+    'ul. Bohaterów Getta 5.',
+    { listing_location: 'ul. Bohaterów Getta 5 m. 12, Warszawa' },
+    '',
+    'pl',
+  ],
+  [
+    'ul. Bohaterów Getta 5 lok. 12.',
+    { listing_location: 'ul. Bohaterów Getta 5 lok. 12, Warszawa' },
+    '',
+    'pl',
+  ],
+  ['C/Gueto 5.', { listing_location: 'C/Gueto 5, Madrid' }, '', 'es'],
 ];
 
-describe('FOLLOW-1431: the listing own address is blanked before the guard', () => {
+/**
+ * The independent reader's holes against 060b6ac5, the camp names (M6), composition (M7), what the
+ * narrow rule gives up on a real own listing (a limit for the CEO), and the rest of the ruling. A
+ * false refusal is safe: the seller's copy stays.
+ */
+const REFUSED: Row[] = [
+  ['The memorial at Treblinka.', { listing_location: 'ul. Polna 3, 08-140 Treblinka' }, '', 'en'],
+  ['Dom przy Treblince.', { listing_location: 'ul. Polna 3, 08-140 Treblinka' }, '', 'pl'],
+  ['The museum at Bełżec.', { listing_location: 'ul. Polna 3, 22-670 Bełżec' }, '', 'en'],
+  ['The memorial at Treblinka.', { listing_location: 'Treblinka 12, mazowieckie' }, '', 'en'],
+  [
+    '10 minutes from the former ghetto.',
+    { listing_location: 'Kraków, 10 minutes from the former ghetto' },
+    '',
+    'en',
+  ],
+  ['5 min from Treblinka', { listing_location: '5 min from Treblinka, Warszawa' }, '', 'en'],
+  [
+    'The Jewish quarter is 200 m away.',
+    { listing_location: 'Kraków, the Jewish quarter is 200 m away' },
+    '',
+    'en',
+  ],
+  ['The ghetto is 3 km away.', { location: 'The ghetto is 3 km away' }, '', 'en'],
+  ['2 km od dawnego getta.', { 'Jaka jest location?': '2 km od dawnego getta.' }, '', 'pl'],
+  ['The camp at Treblinka.', {}, 'Pociąg na Treblinka 12 w sobotę.', 'en'],
+  ['Wycieczka na Majdanek.', {}, 'Autobus na Majdanek 12, przystanek obok.', 'pl'],
+  ['przy Katyńskiej, miejsce zbrodni.', { listing_location: 'ul. Katyńska 5, Warszawa' }, '', 'pl'],
+  [
+    'Stara ul. Długa 5 żydowska dzielnica.',
+    { listing_location: 'ul. Długa 5, Warszawa' },
+    '',
+    'pl',
+  ],
+  ['In the old 12 Elm Road Jewish quarter.', { listing_location: '12 Elm Road, Leeds' }, '', 'en'],
+  [
+    'Pomnik Bohaterów Getta 5 przystanków stąd.',
+    { listing_location: 'Bohaterów Getta 5, Warszawa' },
+    '',
+    'pl',
+  ],
+  [
+    'Pomnik Zbrodni Katyńskiej 5 przecznic stąd.',
+    { listing_location: 'ul. Katyńska 5, Warszawa' },
+    '',
+    'pl',
+  ],
+  ['Zbrodnia Katyńska 5.', { listing_location: 'ul. Katyńska 5, Warszawa' }, '', 'pl'],
+  ['Obok Getta 5.', { listing_location: 'ul. Getta 5, Warszawa' }, '', 'pl'],
+  ['The former ghetto road is gone.', { listing_location: '12 Ghetto Road, Leeds' }, '', 'en'],
+  [
+    'The old holocaust memorial drive.',
+    { listing_location: '12 Holocaust Memorial Drive, Miami' },
+    '',
+    'en',
+  ],
+  ['ul. Sobibór 5.', { listing_location: 'ul. Sobieskiego 5, Warszawa' }, '', 'pl'],
+  ['ul. Treblinka 5.', { listing_location: 'ul. Trebnicka 5, Warszawa' }, '', 'pl'],
+  ['ul. Majdanek 5.', { listing_location: 'Warszawa' }, '', 'pl'],
+  ['Treblinka Road.', { listing_location: 'Warszawa' }, '', 'en'],
+  ['Auschwitz Street.', { listing_location: 'Warszawa' }, '', 'en'],
+  ['Sobibór Avenue', { listing_location: 'Warszawa' }, '', 'en'],
+  ['Plac Treblinka to miejsce pamięci', { listing_location: 'Warszawa' }, '', 'pl'],
+  ['Auschwitz Road tours from here', { listing_location: 'Warszawa' }, '', 'en'],
+  [
+    'Most residents at ul. Długa 5 are Muslim.',
+    { listing_location: 'ul. Długa 5, Warszawa' },
+    '',
+    'en',
+  ],
+  [
+    'Większość mieszkańców ul. Długiej 5 to katolicy.',
+    { listing_location: 'ul. Długa 5, Warszawa' },
+    '',
+    'pl',
+  ],
+  [
+    'La mayoría de los vecinos de C. Mayor 5 son musulmanes.',
+    { listing_location: 'C. Mayor 5, Madrid' },
+    '',
+    'es',
+  ],
+  ['Most residents at ul. Długa 5 are Muslim.', { listing_location: 'Warszawa' }, '', 'en'],
+  ['Większość mieszkańców ul. Długiej 5 to katolicy.', { listing_location: 'Warszawa' }, '', 'pl'],
+  [
+    'La mayoría de los vecinos de C. Mayor 5 son musulmanes.',
+    { listing_location: 'Madrid' },
+    '',
+    'es',
+  ],
+  ['przy Katyńskiej.', { listing_location: 'ul. Katyńska 5, Warszawa' }, '', 'pl'],
+  ['Mieszkanie przy Katyńskiej.', { listing_location: 'ul. Katyńska 5, Warszawa' }, '', 'pl'],
+  [
+    'A flat on Bohaterów Getta near the park.',
+    { listing_location: 'Bohaterów Getta 5, Warszawa' },
+    '',
+    'en',
+  ],
+  ['A flat on Bohaterów Getta.', { listing_location: 'Bohaterów Getta 5, Warszawa' }, '', 'en'],
+  ['Lokal na Bohaterów Getta.', { listing_location: 'Bohaterów Getta 5, Warszawa' }, '', 'pl'],
+  ['Bohaterów Getta.', { listing_location: 'Bohaterów Getta 5, Warszawa' }, '', 'pl'],
+  ['przy alei Katyńskiej.', { listing_location: 'al. Katyńska 5, Warszawa' }, '', 'pl'],
+  ['os. Bohaterów Getta.', { listing_location: 'os. Bohaterów Getta 3, Warszawa' }, '', 'pl'],
+  ['ul. bohaterów getta 5.', { listing_location: 'ul. Bohaterów Getta 5, Warszawa' }, '', 'pl'],
+  [
+    'Holocaust Memorial Drive.',
+    { listing_location: 'Holocaust Memorial Drive 7, Miami' },
+    '',
+    'en',
+  ],
+  ['Treblinka Road.', { listing_location: 'Treblinka Road 5, Warszawa' }, '', 'en'],
+  ['Calle del Gueto.', { listing_location: 'Calle del Gueto 5, Madrid' }, '', 'es'],
+  [
+    'Mieszkanie przy Katyńskiej 5 w Warszawie.',
+    { listing_location: 'ul. Katyńska 5, Warszawa' },
+    '',
+    'pl',
+  ],
+  ['Calle del Gueto, 5.', { listing_location: 'Calle del Gueto, 5, Madrid' }, '', 'es'],
+  ['Mieszkanie przy Katyńskiej 5.', {}, 'Mieszkanie przy Katyńskiej 5 w Warszawie.', 'pl'],
+  ['Bohaterów Getta 5, Warszawa.', { listing_title: 'Bohaterów Getta 5, Warszawa' }, '', 'pl'],
+  ['The former ghetto is nearby.', { listing_location: 'Bohaterów Getta 5, Warszawa' }, '', 'en'],
+  [
+    'A short walk from the Holocaust memorial',
+    { listing_location: 'Holocaust Memorial Drive 7, Miami' },
+    '',
+    'en',
+  ],
+  ['Dom w Treblince.', { listing_location: 'Treblinka, mazowieckie' }, '', 'pl'],
+  ['żydowska dzielnica', { listing_location: 'Warszawa' }, '', 'pl'],
+  [
+    'przy Katyńskiej 5, miejsce zbrodni.',
+    { listing_location: 'ul. Katyńska 5, Warszawa' },
+    '',
+    'pl',
+  ],
+  [
+    'przy Katyńskiej 5. Zbrodnia Katyńska obok.',
+    { listing_location: 'ul. Katyńska 5, Warszawa' },
+    '',
+    'pl',
+  ],
+  ['Bohaterów Getta 7.', { listing_location: 'Bohaterów Getta 5, Warszawa' }, '', 'pl'],
+  ['przy katyńskiej 5.', { listing_location: 'ul. Katyńska 5, Warszawa' }, '', 'pl'],
+  ['Getta 5 km stąd.', { listing_location: 'ul. Getta 5, Warszawa' }, '', 'pl'],
+  ['Getta 5.5 km stąd.', { listing_location: 'ul. Getta 5, Warszawa' }, '', 'pl'],
+  ['Getta 5/7.', { listing_location: 'ul. Getta 5, Warszawa' }, '', 'pl'],
+  ['Near Treblinka 12.', { listing_location: 'Near Treblinka 12, Warszawa' }, '', 'en'],
+  ['The Ghetto 3.', { listing_location: 'The Ghetto 3, Warszawa' }, '', 'en'],
+  ['Majdanek 1944.', { listing_location: 'Majdanek 1944, Lublin' }, '', 'pl'],
+  [
+    'ul. Polna 3, 08-140 Treblinka.',
+    { listing_location: 'ul. Polna 3, 08-140 Treblinka' },
+    '',
+    'pl',
+  ],
+  ['08-140 Treblinka.', { listing_location: 'ul. Polna 3, 08-140 Treblinka' }, '', 'pl'],
+  ['Treblinka 12.', { public_location_label: 'Treblinka 12, mazowieckie' }, '', 'pl'],
+  ['Treblinka 12.', { listing_location_note: 'Treblinka 12, mazowieckie' }, '', 'pl'],
+  [
+    'Stara ul. Katyńska 5 żydowska dzielnica.',
+    { listing_location: 'ul. Katyńska 5, Warszawa' },
+    '',
+    'pl',
+  ],
+  ['ul. Długa 5, żydowska dzielnica.', { listing_location: 'ul. Długa 5, Warszawa' }, '', 'pl'],
+  ['Most residents of ul. Długa are Catholic.', { listing_location: 'Warszawa' }, '', 'en'],
+  ['Większość mieszkańców ul. Długiej to katolicy.', { listing_location: 'Warszawa' }, '', 'pl'],
+  ['Birkenau is near ul. Długa 5.', { listing_location: 'ul. Długa 5, Warszawa' }, '', 'en'],
+];
+
+const adaptContext = (context: Context, original: string): Context =>
+  original ? { listing_description: original, ...context } : context;
+
+describe('FOLLOW-1431: the listing own address, narrowly', () => {
   beforeEach(() => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'test-key-'.repeat(3));
     process.env.ANTHROPIC_API_KEY = 'test-key-follow-1431';
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  describe.each(OWN)('%j on the listing at %j', (text, location, locale) => {
-    const context = { listing_location: location };
+  describe.each(SERVED)('served: %j on %j', (text, context, original, locale) => {
     it('description body', async () => {
-      expect(await body(text, '', context, locale)).toBe('FIT');
+      expect(await body(text, original, context, locale)).toBe('FIT');
     });
     it('description headline', async () => {
-      expect(await headline(text, '', context, locale)).toBe('served');
+      expect(await headline(text, original, context, locale)).toBe('served');
     });
     it('/api/adapt', async () => {
-      expect(await adapt(text, context)).toBe('served');
+      expect(await adapt(text, adaptContext(context, original))).toBe('served');
     });
   });
 
-  // A model inventing such a street has written no address of this listing (CEO, PM on 1431).
-  describe.each<[string, Locale]>([
-    ['Holocaust Memorial Drive.', 'en'],
-    ['Plaza del Gueto.', 'es'],
-    ['Jewish Quarter Road.', 'en'],
-    ['os. Bohaterów Getta.', 'pl'],
-    ['Calle de la Judería 5.', 'es'],
-    ['przy alei Katyńskiej.', 'pl'],
-    ['Calle del Gueto.', 'es'],
-    ['Bohaterów Getta 5, Warszawa.', 'pl'],
-    ['Mieszkanie przy Katyńskiej 5.', 'pl'],
-  ])('%j on a listing in Warszawa is refused', (text, locale) => {
+  describe.each(REFUSED)('refused: %j on %j', (text, context, original, locale) => {
+    it('description body', async () => {
+      expect(await body(text, original, context, locale)).toBe('protected_ground');
+    });
+    it('description headline', async () => {
+      expect(await headline(text, original, context, locale)).toBe('protected_ground');
+    });
+    it('/api/adapt', async () => {
+      expect(await adapt(text, adaptContext(context, original))).toBe('protected_ground');
+    });
+  });
+
+  it('the guard passes "przy Katynskiej 5" on ul. Katyńska 5; the name rule still reads it', async () => {
+    const context = { listing_location: 'ul. Katyńska 5, Warszawa' };
+    expect(await body('przy Katynskiej 5.', '', context, 'pl')).toBe('FIT');
+    expect(await headline('przy Katynskiej 5.', '', context, 'pl')).toBe(
+      'hallucinated_proper_name',
+    );
+    expect(await adapt('przy Katynskiej 5.', context)).toBe('hallucinated_proper_name');
+  });
+
+  it('other sensitive terms keep the exemption, for a follow-up', async () => {
     const context = { listing_location: 'Warszawa' };
-    it('description body', async () => {
-      expect(await body(text, '', context, locale)).toBe('protected_ground');
-    });
-    it('description headline', async () => {
-      expect(await headline(text, '', context, locale)).toBe('protected_ground');
-    });
-    it('/api/adapt', async () => {
-      expect(await adapt(text, context)).toBe('protected_ground');
-    });
-  });
-
-  // origin/main served this body, and no tightening here: listed for a follow-up.
-  it('"Treblinka Road." on Warszawa keeps what origin/main did', async () => {
-    const context = { listing_location: 'Warszawa' };
-    expect(await body('Treblinka Road.', '', context, 'en')).toBe('FIT');
-    expect(await headline('Treblinka Road.', '', context, 'en')).toBe('hallucinated_proper_name');
-    expect(await adapt('Treblinka Road.', context)).toBe('hallucinated_proper_name');
-  });
-
-  // Each holds the sensitive word outside the listing's own address.
-  const STAYS: [string, string, Locale][] = [
-    ['Obok Pomnika Zbrodni Katyńskiej.', 'ul. Katyńska 5, Warszawa', 'pl'],
-    ['Blisko Katyńskiej 5 minut pieszo.', 'ul. Katyńska 5, Warszawa', 'pl'],
-    ['Widok na Zbrodnię Katyńską.', 'ul. Katyńska 5, Warszawa', 'pl'],
-    ['Na Katyńskiej zbrodni.', 'ul. Katyńska 5, Warszawa', 'pl'],
-    ['Obok Pomnika Bohaterów Getta.', 'Bohaterów Getta 5, Warszawa', 'pl'],
-    ['Obok Getta 5.', 'Bohaterów Getta 5, Warszawa', 'pl'],
-    ['Mieszkanie przy ul. Bohaterów Getta 5, obok dawnego getta.', 'ul. Bohaterów Getta 5', 'pl'],
-    ['The former ghetto is nearby.', 'Bohaterów Getta 5, Warszawa', 'en'],
-    ['A short walk from the Holocaust memorial', 'Holocaust Memorial Drive 7', 'en'],
-    // A town is not an address (PM on FOLLOW-1431), even the listing's own.
-    ['Dom w Treblince.', 'Treblinka, mazowieckie', 'pl'],
-    ['Dom w Sobiborze.', 'Sobibór 12, Włodawa', 'pl'],
-    ['Majdanek 1944.', 'Majdanek 12, Lublin', 'pl'],
-    ['Żydowska dzielnica.', 'ul. Żydowska 5, Lublin', 'pl'],
-    // Marker-free, and not this listing's.
-    ['Bohaterów Getta 5, Warszawa.', 'ul. Długa 4, Warszawa', 'pl'],
-    ['Mieszkanie przy Katyńskiej 5.', 'ul. Długa 4, Warszawa', 'pl'],
-  ];
-  describe.each(STAYS)('%j on the listing at %j stays refused', (text, location, locale) => {
-    const context = { listing_location: location };
-    it('description body', async () => {
-      expect(await body(text, '', context, locale)).toBe('protected_ground');
-    });
-    it('description headline', async () => {
-      expect(await headline(text, '', context, locale)).toBe('protected_ground');
-    });
-    it('/api/adapt', async () => {
-      expect(await adapt(text, context)).toBe('protected_ground');
-    });
-  });
-
-  describe('a listing text states its address only with a signal', () => {
-    it.each<[string, string]>([
-      ['Mieszkanie przy Katyńskiej 5.', 'Mieszkanie przy Katyńskiej 5 w Warszawie.'],
-      ['Mieszkanie przy Katyńskiej.', 'Mieszkanie przy Katyńskiej 5 w Warszawie.'],
-      ['Lokal na Bohaterów Getta 5.', 'Lokal na Bohaterów Getta 5, Warszawa.'],
-      ['Holocaust Memorial Drive 7.', 'A home at Holocaust Memorial Drive 7, Miami.'],
-      ['Holocaust Memorial Drive.', 'A home at Holocaust Memorial Drive 7, Miami.'],
-    ])('own: %j on %j', async (text, original) => {
-      expect(await body(text, original, {}, 'pl')).toBe('FIT');
-      expect(await adapt(text, { listing_description: original })).toBe('served');
-    });
-
-    // A mention is no address, and the seller's verbatim sentence gets no pass from this rule:
-    // the guard refuses "whoever wrote the words" (FOLLOW-1411).
-    it.each<[string, string]>([
-      ['Treblinka 12.', 'Dom, 5 min from Treblinka 12.'],
-      ['Near Treblinka 12.', 'Dom, 5 min from Treblinka 12.'],
-      ['Dom, 5 min from Treblinka 12.', 'Dom, 5 min from Treblinka 12.'],
-      ['Sobibór 5.', 'Blisko Sobibór 5.'],
-      ['Obok Pomnika Getta 5.', 'Obok Pomnika Getta 5.'],
-      ['Treblinka 12.', 'Dom przy lesie. Treblinka 12 km stąd.'],
-      ['Getta 2.', 'Obok Getta 2 pokoje.'],
-    ])('a mention spares nothing: %j on %j', async (text, original) => {
-      expect(await body(text, original, {}, 'pl')).toBe('protected_ground');
-      expect(await adapt(text, { listing_description: original })).toBe('protected_ground');
-    });
+    for (const text of ['Ghetto Road.', 'Ghetto Streets', 'Birkenau Road.']) {
+      expect(await body(text, '', context, 'en')).toBe('FIT');
+      expect(await adapt(text, context)).toBe('hallucinated_proper_name');
+    }
   });
 
   it('"dawna" and family wording are served, on both paths', async () => {
@@ -257,7 +391,7 @@ describe('FOLLOW-1431: one address vocabulary', () => {
     'Rua Gueto 2.',
     'Carrer del Gueto 2.',
     '12 Ghetto Way.',
-  ])('the mask reads what the guard reads: %j', (text) => {
+  ])('the mask reads every marker: %j', (text) => {
     expect(maskStreetAddresses(text)).not.toBe(text);
   });
 });

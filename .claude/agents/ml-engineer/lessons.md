@@ -726,3 +726,12 @@ the invoking command.
   (underwriting, obronny, fotogeniczny) alone. · Guardrail: a pl/es closer is written in the
   language first, never a quoted translation of the en closer; replay pins bytes only, so a fresh
   recording is the evidence.
+
+- **2026-11-01 / FOLLOW-1431, third commit** · An independent reader broke my own-address blanking
+  in about 215 cases (town via postcode, free text in a location field, seller's "na X 12", blanks
+  the qualifier saw through). Replaced by one narrow rule: one exact field, a street segment, the
+  listing's own number, the phrase ending there, an inert word in place. Camps lost the marker
+  exemption, composition is read with addresses out: `claims-v11`. · Judgment call: every "form a
+  real listing uses" I added widened what a mention could spare; form tolerance belonged on the name
+  only. · Guardrail: when the safe side of a guard is refusal, sparing logic starts from the
+  narrowest true statement and needs a reason to widen, never the reverse.

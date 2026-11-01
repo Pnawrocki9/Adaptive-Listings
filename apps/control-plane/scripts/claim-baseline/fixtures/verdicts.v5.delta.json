@@ -1,0 +1,16 @@
+{
+  "ticket": "FOLLOW-1431, FOLLOW-1436",
+  "classified_by": "ml-engineer, single rater; nothing to classify",
+  "fit_before": 52,
+  "fit_baseline": 57,
+  "new_body_refusals": 0,
+  "new_body_refusals_since_baseline": 5,
+  "true_positives": 0,
+  "headlines_newly_suppressed": 0,
+  "headlines_newly_served": 0,
+  "adapt_slots_newly_refused": 0,
+  "adapt_slots_total": 84,
+  "un_refused": 0,
+  "note": "claims-v11 moves no verdict of this corpus: no frozen text names a camp, states composition through an address or repeats a sensitive own street. Zero says nothing about the precision of the own-address rule, the camp names, the composition read or the counted words: none of them fired here.",
+  "moved": {}
+}

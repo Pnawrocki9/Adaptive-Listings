@@ -245,8 +245,9 @@ export function traitSlots(addOns: readonly TraitAddOn[]): SlotDirective[] {
  *     former ghetto" stays refused, and so does a sensitive term outside the address.
  *
  * "Adres to adres, ma przechodzić" (CEO) means an address of THIS listing [FOLLOW-1431]. This guard
- * takes text only and cannot know that, so its own exception stays as above, and the callers blank
- * the listing's own address first (`refusesOnProtectedGround`).
+ * takes text only and cannot know that, so its own exception stays as above, the camps named in
+ * {@link CAMP_NAME_RE} lose it, and the callers blank the listing's own address first
+ * (`refusesOnProtectedGround`).
  *
  * A NARROW, closed en / pl / es phrase list, not a classifier: the gateway and the description
  * path refuse a text that matches, whoever wrote the words. What it is NOT: a buyer's nationality
@@ -536,13 +537,9 @@ function isHistoricalMention(text: string, start: number, end: number): boolean 
 
 // ─── The address vocabulary: one, read by `street-address.ts` for the mask [FOLLOW-1431] ───────────
 
-/** A house number makes these a street; they are no ordinary nouns. */
-export const NUMBERED_STREET_WORD =
-  'Street|St\\.?|Road|Rd\\.?|Avenue|Ave\\.?|Lane|Ln\\.?|Drive|Dr\\.?|Pl\\.?|Ct\\.?|' +
-  'Boulevard|Blvd\\.?|Crescent|Square|Mews';
-/** Ordinary nouns too, and a number beside one is often a count: "3 Season Terrace" [FOLLOW-1436]. */
-export const AMBIGUOUS_STREET_WORD = 'Place|Court|Way|Terrace|Close';
-export const STREET_WORD = `${NUMBERED_STREET_WORD}|${AMBIGUOUS_STREET_WORD}`;
+export const STREET_WORD =
+  'Street|St\\.?|Road|Rd\\.?|Avenue|Ave\\.?|Lane|Ln\\.?|Drive|Dr\\.?|Place|Pl\\.?|Court|Ct\\.?|' +
+  'Boulevard|Blvd\\.?|Way|Terrace|Close|Crescent|Square|Mews';
 /** Unambiguous with no number at all. */
 export const BARE_STREET_WORD = 'Street|Road|Rd\\.?|Avenue|Ave\\.?|Boulevard|Blvd\\.?|Lane|Drive';
 /**
@@ -574,12 +571,34 @@ const ADDRESS_AFTER_RE =
   /^(?:\s+\p{Lu}[\p{L}'’-]*){0,3}\s+(?:Street|St\.|Avenue|Ave\.|Road|Rd\.|Square)/u;
 
 /**
+ * "Treblinka and the like refused outright" (CEO): a marker earns these no exemption, so "ul.
+ * Sobibór 5", "Treblinka Road" and "Plac Treblinka" are refused. Only an address of this very
+ * listing, with its number, spares one (`refusesOnProtectedGround`) [FOLLOW-1431]. The five the
+ * ruling named. Other terms in this position ("Ghetto Road") wait for their own ruling.
+ */
+const CAMP_NAME_RE =
+  /^(?:treblin(?:ka|ki|ce|kę|ką)|majdan(?:ek|ka|ku|kiem)|sobib[oó]r\p{L}*|be[lł][zż](?:ec|ca|cu|cem)|auschwitz\p{L}*)$/iu;
+
+/**
  * Is the sensitive term at `[start, end)` part of a street's name in an address (rule 3 spares it:
  * an address is a fact copied from the listing)? The term must be capitalised, as a name is.
  */
 function isStreetName(text: string, start: number, end: number): boolean {
+  if (CAMP_NAME_RE.test(text.slice(start, end))) return false;
   if (!/^\p{Lu}/u.test(text.slice(start, end))) return false;
   return ADDRESS_BEFORE_RE.test(text.slice(0, start)) || ADDRESS_AFTER_RE.test(text.slice(end));
+}
+
+/**
+ * Does `value` state how many residents belong to a group, or that one is absent? The caller reads
+ * this with addresses blanked, whose words otherwise break the phrase: "Most residents at ul. Długa
+ * 5 are Muslim" [FOLLOW-1431].
+ *
+ * @param value - Copy with any address blanked.
+ * @returns `true` when it matches a composition phrase of the closed list.
+ */
+export function statesGroupComposition(value: string): boolean {
+  return COMPOSITION_RE.test(value);
 }
 
 /**

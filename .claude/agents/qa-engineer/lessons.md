@@ -456,3 +456,11 @@ request is NOT the selected one — if selection and grading read the same field
   (`clickCtaWhenReady`), fake-page unit pins · A fake page proves the retry logic only; the real
   race (SDK DOM swap) is verified only by a live run · Guardrail: harness helpers that wrap
   Playwright actions should be exported and pinned with a fake page, not source-grepped.
+
+- **2026-11-01 / FOLLOW-1345 AC(1b)** · Served description graded through the real reader and
+  `checkTypedClaims()`, in a `tsx` subprocess the pin also spawns · Dead-wire risk: the Playwright
+  observer and the fold are only pinned by a stand-in context and a source-order assertion; a served
+  row already passed the same check at generation, so a green says little until a run really reads a
+  text · Guardrail: when a verdict is added to a harness, run its TS dependency through the same
+  subprocess in CI; `tsx/esm/api` `register({tsconfig})` did not resolve `@/`, the CLI did, and a
+  `.mts` entry lost named exports of CJS-mode `.ts` files where a `.cts` entry does not.

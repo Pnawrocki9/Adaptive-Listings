@@ -19,7 +19,7 @@
 const REFUSAL_GUARD_TTL_SECONDS = 3600;
 
 /** The fields that make the generated text differ; all of them are part of the key. */
-export interface RefusalGuardScope {
+interface RefusalGuardScope {
   tenantId: string;
   listingId: string;
   archetype: string;

@@ -5586,3 +5586,77 @@ evidence is not population-scoped, so a second consumer cannot fall outside it. 
 where the docblock's argument is of the form "I looked at all of them and they are all X".
 
 <!-- Rule BC added 2026-08-28 — RETRO-319 §6. 55th permanent rule; third of the B-series. EVIDENCE (>=2 PRIOR numbered retros): RETRO-317 §6 Candidate A (count 1, ESC-077's credit predicate applied to 2 of 5 decision-tree exits) + RETRO-318 §6 (count 2, the ANGLE clause justified on the Haiku band and shipped through a GROUNDING_RULE shared by both builders). PROMOTING SIGHTING = RETRO-319 §4a LG-1: #875 exported isNonAssertiveSlot -- justified by an enumeration of the 17 shipped playbook cta strings -- to checkDirectiveFacts, whose cta values are model-generated; measured both ways across 080662a5, three fabricated proper names went DISCARDED -> SERVED with a headline-slot control unchanged. WHY RETRO-318's GUESSED HOME FAILS: it pre-committed to "an amendment to Rule AC's verification, not Rule BC". Rule AC's instrument is a repo-wide grep for a distinctive member of the set; run on the promoting sighting it SUCCEEDS (all 17 strings found, enumeration complete) because the population that breaks the predicate has no bytes in the repository. A grep cannot reach a population that is not text on disk. FOUR OTHER HOMES TESTED AGAINST THEIR TEXTS: Rule AR (absence claims need two search strategies -- the search here was correct; the claim is a property over a population, not an absence); Rule AV (a probe must share every property with its subject -- governs evidence-gathering artefacts at measurement time, not a shipped predicate gaining a caller); Rule AQ (declared-identical blocks must be extracted or machine-checked -- #875 DID extract correctly, and the failure happened BECAUSE extraction succeeded); Rule AI (documents asserting a prior state -- reaches the stale docblock after the fact, not the scope decision at introduction). SCOPED NARROWLY per RETRO-311's over-broad-letter warning: fires ONLY on a predicate whose docblock argument is an ENUMERATION, only when a PR gives it a new consumer, and the third discharge option is "say the population is unbounded and why that is acceptable" -- so the rule cannot be used to demand an enumeration of the world. The negative case (type/invariant-justified predicates owe nothing) is stated so the rule is falsifiable. LETTER CHOICE: BC, next after BB; the naming-scheme flag Rule BA raised for human review still stands and is still not a reason to defer a promotion that meets the bar. -->
+
+## Rule BD — A coded ruling or a new recogniser is not evidenced by its author's pins or by a replay that moved nothing: state what fired, have a reader who did not write the pins attack the ruling's own words before merge, and run anything backed by a model live once before hand-off
+
+**Pattern:** a CEO ruling, or a new refusal rule, is written as a closed recogniser. The author pins
+the sentences in their head, replays a frozen corpus, and everything is green. The pins pass by
+construction, because the same mind wrote both. The replay stays flat, because a recogniser that
+does not fire on a corpus cannot be wrong on it. Then someone else reads the ruling's words and
+breaks the code in minutes. Zero movement looks like safety and is an absence of evidence. This rule
+is about what a green result is allowed to claim, and it does not ask for more green.
+
+**Evidence (≥2 PRIOR numbered retros; the promoting batch does NOT inflate the count):**
+
+- **RETRO-369 §6 (2026-10-30, count 1, PRIOR):** "every composition statement" coded as a closed
+  list "whose tests enumerate only the list"; "Most residents are Catholic" passed in three locales.
+  Found by the retro's reader, no test could.
+- **RETRO-371 §4c, §6 (2026-10-30, count 2, PRIOR):** "prices are always exact" recorded as "no code
+  change" and false at HEAD; the pin that encoded it "cannot fail".
+- **Live clause, RETRO-321 §2 and RETRO-322 (2026-08-28, PRIOR):** the name judge's budget shipped
+  with "no live per-band number" and hops "pinned by unit tests with a mocked model".
+- **Promoting batch, FOLLOW-1311, not counted:** slice 3, the address ruling broken; two review
+  rounds and 111 pins; replay and corpus unmoved through both (RETRO-375). Slice 4, the address
+  ruling again, in title case; replay unmoved (RETRO-377). Slice 5, a judge built and never called:
+  96 live calls in review showed it true on 4 of 24 harmless cases, which breaks name forms, ESC-089
+  and "dawna"; the street rule refused its own listing's address; 0 of 176 recorded cases fired
+  (RETRO-380). Then, after merge, the same method on two more rules: RETRO-372 LG-1, RETRO-380 LG-1.
+
+**Why a letter and not an amendment. Homes tested against their own texts:** **Rule BC** (a
+predicate gaining a second consumer; RETRO-369 filed this under BC clause 3 at count 1): none of
+these recognisers was exported or given a caller, they are new. **Rule AS** (reports drive a fix,
+the silent direction is missed): here no report exists, and the failure is often the noisy
+direction, a false refusal nobody has seen yet. **Rule AU** (assert behaviour, not presence of a
+name): these pins do assert behaviour, on the author's population. **Rule AV** (a probe shares every
+property with its subject): governs measurement artefacts, and says nothing about who writes them.
+**Rule AI amendment 4** (the implementer re-derives a consequence claim from the producing code):
+the implementer did, and it is still one mind.
+
+**Rule:** a PR that adds a refusal recogniser, a closed lexicon or a model-backed check, or that
+codes or touches a CEO ruling:
+
+1. **Says what fired.** Per recogniser, how many times it fired on each corpus it cites. Zero is
+   reported as "precision unmeasured", in those words, and is not cited as evidence that a budget or
+   a ruling holds. A replay with no delta is evidence only for a change that claims to change
+   nothing.
+2. **Is attacked before merge by a reader who did not write the pins.** That reader gets the
+   ruling's words as given, not the pins. They write sentences in every locale the rule claims, in
+   both directions: what the ruling forbids and the code passes, what it allows and the code
+   refuses, including the forms a real listing uses (no marker, lower case, title case). Results go
+   in the PR; a confirmed defect becomes a pin. A narrowed version gets the same, or the PR says it
+   did not.
+3. **Pins a ruling with a case the ruling changes.** The pin is red on the pre-PR tree (RETRO-371).
+4. **Runs a model-backed check live once before hand-off**, at real settings, on harmless cases as
+   well as positive ones, and reports the rates, malformed replies included. A mocked model tests
+   the wiring only.
+
+Silence is not an outcome: "not attacked", "not run live" and "precision unmeasured" are acceptable
+sentences in a PR body. The PM decides whether they are acceptable for this merge.
+
+**Verification:**
+
+```bash
+# 1. Does this PR add a recogniser, or touch code that names a ruling?
+git diff origin/main... -- 'apps/control-plane/src/lib/*' 'packages/shared/src/playbooks/traits.ts' \
+  | grep -nE '^\+.*(new RegExp\(|_RES?\b|CEO 20[0-9]{2}|ESC-[0-9]+)'
+# 2. The body must answer each of these; a missing answer sends the PR back.
+gh pr view "$PR" --json body --jq .body | grep -inE 'fired|precision unmeasured|independent|attacked|live'
+# 3. A ruling pin: run the new pin file against the merge base; it must be red.
+```
+
+**The negative case, so the rule is falsifiable:** a refactor that claims no verdict moves, like
+#1115, owes none of this. A byte-identical replay is the right instrument for that claim, and the PR
+states what it does not prove. A change of an existing lexicon's wording that moves no refusal class
+and touches no ruling owes clause 1 only.
+
+<!-- Rule BD added 2026-11-01 — RETRO-380 §6. 56th permanent rule; fourth of the B-series. EVIDENCE (>=2 PRIOR numbered retros): RETRO-369 §6 (count 1) + RETRO-371 §4c, §6 (count 2); live clause RETRO-321 §2 + RETRO-322. PROMOTING BATCH, not counted: RETRO-375, RETRO-377, RETRO-380 (FOLLOW-1311 slices 3, 4, 5). The D8 moratorium on new Rules was lifted by ESC-085 D-I. -->

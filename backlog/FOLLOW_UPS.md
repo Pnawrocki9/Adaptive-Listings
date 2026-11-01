@@ -57273,3 +57273,166 @@ slice.
 Refused although it may be fine, pinned: `A flat on Golden Road` for "ul. Złota" (a translation with
 no shared letters), `A flat near Wall Street` (a figure of speech). Slice 4's pins of `South Street`
 and `Calle Solar` now state those streets on the listing: an unlisted one is a street claim here.
+
+## FOLLOW-1431 — [product] the protected-ground address exception is narrower than the CEO's "an address is an address, it passes": two address vocabularies disagree, and the guard cannot see the listing's own address
+
+source_retro: RETRO-372 source_ticket: FOLLOW-1420 recommended_sprint: next recommended_agent:
+ml-engineer (Opus: a CEO ruling, two modules, both paths) priority: P2 estimated_hours: 3 tag:
+product depends_on: [] blocks: [] promoted_to_queue: false
+
+**What.** `isStreetName` (`packages/shared/src/playbooks/traits.ts`) spares a sensitive term only
+with a capital and a marker from its own closed list. Refused at `179b4d4c`, all addresses:
+`Bohaterów Getta 5, Warszawa.`, `Mieszkanie przy Katyńskiej 5.`, `przy alei Katyńskiej.`,
+`os. Bohaterów Getta 3.`, `ul. bohaterów getta 5.`, `Calle del Gueto 5.`,
+`Holocaust Memorial Drive 7.`. `lib/street-address.ts` reads the last four as addresses. The guard
+takes text only, so a body repeating the listing's own address is refused, and since FOLLOW-1427
+that holds for an hour.
+
+AC:
+
+- [ ] Each sentence above passes, and `The former ghetto is nearby.` and
+      `A short walk from the Holocaust memorial` stay refused (red-first on today's code).
+- [ ] One address vocabulary. `@estalara/shared` cannot import from control-plane, so either the
+      shared guard owns it and `street-address.ts` reads it, or a check pins the two equal.
+- [ ] Decide with the PM whether the listing's own address is blanked before the guard on both
+      paths. If so, a test on each path. The marker-free forms depend on this.
+- [ ] `claims-vN` stays unchanged if the change only loosens (a refused body was never cached); the
+      PR states the reasoning.
+
+cross_ref: [RETRO-371, RETRO-372, FOLLOW-1420, FOLLOW-1423, ESC-089, Rule BD]
+
+## FOLLOW-1432 — [product] `recentEvents` is printed in every adapt prompt and set by nothing: the model is told "Buyer's recent actions: none" for every buyer
+
+source_retro: RETRO-374 source_ticket: FOLLOW-1311 recommended_sprint: next recommended_agent:
+ml-engineer (Sonnet: one field, one measured prompt change) priority: P2 (template P0 for a
+consumer-only wire; lowered because it pre-dates #1115 and removes nothing that ever worked; the PM
+may raise it) estimated_hours: 2 tag: product depends_on: [] blocks: [] promoted_to_queue: false
+
+**What.** #1115 deleted the `recentEvents` grounding because "no code ever set" it. The prompt half
+stayed: `llm-gateway.ts:47` (type), `:252` and `:278` (read), `:264` and `:293` (printed).
+`grep -rn recentEvents apps/control-plane/src | grep -v test` → those five lines.
+
+AC:
+
+- [ ] Decide: wire a real producer (session events at `/api/adapt`) or remove the line and the
+      field. Default: remove; wiring is a new data flow into a prompt and needs its own ticket.
+- [ ] If removed: `grep` → 0 in `src`, the prompt tests updated, FOLLOW-819 ×3 `[FRESH]`.
+- [ ] The re-recorded adapt half of the claim baseline, or a stated reason why none is needed;
+      MP-017 lists prompt builders under `revalidate_on`, so its entry is updated in the same PR.
+
+cross_ref: [RETRO-374, FOLLOW-1311, MP-017, Rule BB]
+
+## FOLLOW-1433 — [measurement] discharge MP-012, MP-013 and MP-017 after the tweak band moved off Haiku and the claim rules moved: three `revalidate_on` tripped, none discharged
+
+source_retro: RETRO-376 source_ticket: FOLLOW-1426 recommended_sprint: next recommended_agent:
+qa-engineer (Sonnet: register edit plus one local read) priority: P2 estimated_hours: 2 tag:
+measurement depends_on: [] blocks: [] promoted_to_queue: false
+
+**What.** `docs/ops/MEASURED_PREMISES.md`, untouched by #1115, #1118 and #1125:
+
+- MP-013 `revalidate_on`: "a change of model on either the generation or the judge call" (#1118).
+- MP-017 `revalidate_on`: "the model's tokenizer" and "the prompt builders" (#1118). 902 / 558
+  `tokens_in` was measured on the Haiku band; 5.x tokenizers differ (`generation-models.ts`).
+- MP-012 `revalidate_on`: "`checkDirectiveFacts` or the grounding-text builder" (#1115, #1125). Its
+  text "2 on Haiku, 3 on Sonnet" is false: 3 and 3, and the bands no longer differ by model.
+
+AC:
+
+- [ ] Each entry says, dated, which PR tripped it, what stopped being true and what still holds.
+- [ ] MP-017: `tokens_in` for grounded and ungrounded `llm_tweaked` on Sonnet 5.5, read from local
+      `llm_calls`, marked localhost. The production re-measure is queued behind FOLLOW-820, not
+      done.
+- [ ] MP-013: `llm_tweaked` latency from local `llm_calls` over the K4a series, including the share
+      of calls that think (the 10-case sample of #1118 had none), marked localhost.
+- [ ] Not FOLLOW-1430, which moves dated measurements out of source.
+
+cross_ref: [RETRO-374, RETRO-376, RETRO-380, FOLLOW-1426, FOLLOW-1354, Rule BB]
+
+## FOLLOW-1434 — [product] T8 reads one spelling of the listing: "Single Family Residence" grounds no "detached", "Ventanas al sur" no "orientación sur", "5th floor of 5" no "top floor"
+
+source_retro: RETRO-377 source_ticket: FOLLOW-1311 recommended_sprint: before K4b recommended_agent:
+ml-engineer (Sonnet: table rows and pins) priority: P3 estimated_hours: 2 tag: product depends_on:
+[] blocks: [] promoted_to_queue: false
+
+**What.** `attribute-lexicon.ts` `groundedBy` tables. Refused at `179b4d4c`, on a listing that
+states the fact: `A detached home.` on `Single Family Residence` (the amendment allows it for
+single-family in English; the pattern needs a hyphen), `Orientación sur.` on `Ventanas al sur.`
+(Polish `Okna na południe.` grounds its claim), `A top-floor flat.` on
+`Flat on the 5th floor of 5.`, `Mieszkanie na ostatnim piętrze.` on
+`na 5. piętrze w pięciopiętrowym budynku` (`Piętro 5/5.` works).
+
+AC:
+
+- [ ] Each passes, red-first, and the negative pins of the slice stay (`Dom jednorodzinny.` grounds
+      no "detached"; `A single-family home, a townhouse.` neither).
+- [ ] The replay moves no refusal the wrong way; the delta is classified.
+- [ ] Loosening only, so no stamp bump; the PR says so.
+
+cross_ref: [RETRO-377, FOLLOW-1311, Rule BD]
+
+## FOLLOW-1435 — [measurement] count a refused-description guard hit: today it is one console line, so its first live firing and its cost cannot be read
+
+source_retro: RETRO-378 source_ticket: FOLLOW-1427 recommended_sprint: next recommended_agent:
+backend-engineer (Sonnet: one free row) priority: P3 (template P1 for a producer-only signal; it
+spends nothing and hides nothing from a buyer) estimated_hours: 1 tag: measurement depends_on: []
+blocks: [] promoted_to_queue: false
+
+**What.** `description-generator.ts`: `SKIPPED / refused_guard` writes a `console.warn` and no row;
+`spend_cap` beside it has a Sentry signal. `grep -rn "refused_guard\|descref"` finds no reader.
+K4a's "has not fired live" is read from logs. ADR-0023:124 lists `SKIPPED` as `spend_cap` only.
+
+AC:
+
+- [ ] A free `llm_calls` row (`description_refused_guard`, zero tokens), written through `logCall`.
+- [ ] A test: a hit writes one row and makes no model call.
+- [ ] One live proof that the guard sets and reads through the `:8078` adapter, by forcing a refusal
+      on a throwaway key. Paste the row. This is the end-to-end closure FOLLOW-1427 did not get.
+- [ ] ADR-0023's outcome type updated.
+
+cross_ref: [RETRO-378, FOLLOW-1427, FOLLOW-1428]
+
+## FOLLOW-1436 — [product] `unsupported_street` reads a count in title case as a house number, and `alej…` as a street prefix: false refusals in a rule that has never fired on a recording
+
+source_retro: RETRO-380 source_ticket: FOLLOW-1311 recommended_sprint: before K4b recommended_agent:
+ml-engineer (Opus: an independent reader should attack the fix, Rule BD) priority: P2
+estimated_hours: 2 tag: product depends_on: [] blocks: [] promoted_to_queue: false
+
+**What.** Refused at `179b4d4c` on a listing that states the number: `A 2 Story Terrace.`,
+`3 Season Terrace.`, `360 Degree Terrace.`, `A 20 Foot Terrace.`, `With 2 Separate Terrace.`,
+`1 Acre Close.`. `NUMBERED_CLAIM_RE` takes any digit before capitals and a `STREET_WORD`, which
+holds `Terrace`, `Court`, `Close`. Refused with no street at all:
+`Alejandra Ruiz will show you round.`, `Alejandría Beach is near.`,
+`Alejka Spacerowa prowadzi do parku.`: `STRONG_PREFIX` holds `[Aa]lej\p{L}*`.
+
+AC:
+
+- [ ] Each sentence passes, red-first; `12 Elm St`, `9 Blackberry Pl`, `w Alejach Jerozolimskich`,
+      `przy alei Róż` stay read.
+- [ ] A number the listing states as a count or measure of something else is no house number, or
+      `Terrace`, `Court`, `Close`, `Place`, `Way` need a stronger signal. State which, and pin it.
+- [ ] `alej` as closed forms of "aleja", not a stem.
+- [ ] Rule BD: the fix is attacked by a reader who did not write it; PR body says what fired.
+- [ ] Loosening only, no stamp bump; the replay is unmoved, and the PR does not cite that as
+      evidence.
+
+cross_ref: [RETRO-380, FOLLOW-1311, FOLLOW-1427, Rule BD]
+
+## FOLLOW-1437 — [gate] a piped `git push` hides a failed pre-push hook: the push is rejected, the pipeline exits 0, and the work looks delivered
+
+source_retro: RETRO-380 source_ticket: FOLLOW-1311 recommended_sprint: next recommended_agent:
+qa-engineer (Sonnet) priority: P3 estimated_hours: 1 tag: gate depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What.** `lefthook.yml` pre-push runs Rule H, Rule J and the session-auth check. Reported in the
+PM's brief for this batch: `git push … | tail` lost a hook failure. Same mechanism as RETRO-268
+(`gh-pr-checks-verified.sh | tail`). Rule BA defines delivery as "on `origin`" and is the existing
+check; nothing tells an agent to run it after a push.
+
+AC:
+
+- [ ] One sentence in `docs/AGENT_WORKFLOW.md` and CLAUDE.md's "Lessons": never pipe `git push`; or
+      `set -o pipefail`; then compare `git rev-parse HEAD` with `git ls-remote origin <branch>`.
+- [ ] Reproduce once on a throwaway branch with a failing hook. Paste both exit codes.
+- [ ] No new gate, unless the reproduction shows the sentence is not enough.
+
+cross_ref: [RETRO-268, RETRO-380, Rule BA]

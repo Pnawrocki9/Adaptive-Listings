@@ -88484,3 +88484,900 @@ Wiring Audit — clean ✅ (module-local patterns; the same exported function an
 
 - RETRO-370 (the tolerance's origin), RETRO-369 (rule 2 gap, FOLLOW-1246 amendment), RETRO-368
   (ADR-0023 codes), Rule AI amendment 4, Rule AA amendment 1, Rule BC.
+
+<!-- RETRO-372..380 = one weekly batch (D8), one entry per qualifying PR: #1108, #1112, #1115, #1117, #1118, #1120, #1122, #1123, #1125. #1126 does not qualify: 0 changed lines under apps/*/src or packages/*/src, and no failure before it other than the documented pre-existing-red Rule I on every PR rollup. Filed against origin/main 5ee8f219. Code at HEAD is 179b4d4c; #1127 is docs only. Probes EXECUTED in-session with tsx against this tree's own source (no test suite, no model, no :3000): checkTypedClaims, checkClaimClasses, checkNumbers and describesResidentsByProtectedGround on about 120 constructed sentences. A probe is a constructed sentence, not a recording: it shows what the code does with that sentence, not how often a model writes it. Rule I run at HEAD: identical violation set to the slice 3 log, 95 symbols, 0 new. -->
+
+## RETRO-372 — #1108 (FOLLOW-1420 + FOLLOW-1421: majority composition refused, prices exact, address exception; `claims-v7`) — both tickets close end to end on the money axis: "1,15 mln" and "$1.15M" for 1,149,000 are refused by two independent rules on both paths. One finding. **The CEO said "an address is an address, it passes". The code says "a capitalised term after one of a closed list of markers passes".** "Bohaterów Getta 5, Warszawa", "przy Katyńskiej 5", "os. Bohaterów Getta 3", "ul. bohaterów getta 5" and "Calle del Gueto 5" are all refused, while `lib/street-address.ts` (added by #1117, a day later) reads every one of them as an address (FOLLOW-1431, P2) — 2026-11-01
+
+### 1. Summary of change
+
+- **PR:** #1108 (merged 2026-10-30 14:54 UTC, commit 00034ad)
+- **Files changed:** 13 (+605 / -47); 652 lines under `src`, 268 of them outside test files
+- **Modules touched:** shared (`playbooks/traits.ts`), control-plane (`number-groups.ts`,
+  `description-generator.ts`, the description route), parity corpus v20
+- **Key contracts changed:** `describesResidentsByProtectedGround` tightened (majority wording) and
+  loosened (address, "air is expelled"); `stripGroundedMultipliedNumbers` exact for money;
+  `claims-v6` → `claims-v7`. Breaking: no.
+
+### 2. Verification done in PR
+
+- Tests: `llm-gateway.follow1420.test.ts` (new), `playbook-traits.test.ts` +90,
+  `number-groups.follow1397.test.ts` (the non-failing 849 000 pin replaced by 849 600, as RETRO-371
+  asked), parity +80. CI: 69 success, 6 skipped, Rule I the only red (2 runs, pre-existing).
+- FOLLOW-819 §5.49: three GREEN at `9f9f5b9c`, served chunks carry `claims-v7`.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. CHECK A: no new export (`isStreetName`, `NON_MONEY_COUNT_RE` are
+module-local). CHECK B: no new signal.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — the address exception is narrower than the ruling.** QUEUE FOLLOW-1420: "CEO
+  2026-10-30 on the address exception: a street address always passes". `isStreetName`
+  (`packages/shared/src/playbooks/traits.ts:547`) needs a capital term and either a marker before it
+  (`ADDRESS_BEFORE_RE` `:537`) or a street word after it (`ADDRESS_AFTER_RE` `:540`). Probed at HEAD:
+
+  | Text                                     | Guard   | `maskStreetAddresses` reads it as |
+  | ---------------------------------------- | ------- | --------------------------------- |
+  | `Mieszkanie przy ul. Bohaterów Getta 5.` | pass    | address                           |
+  | `Plac Bohaterów Getta 5, Kraków.`        | pass    | address                           |
+  | `12 Ghetto Road.`                        | pass    | address                           |
+  | `Bohaterów Getta 5, Warszawa.`           | REFUSED | not read (no marker)              |
+  | `Mieszkanie przy Katyńskiej 5.`          | REFUSED | not read (no marker)              |
+  | `przy alei Katyńskiej.`                  | REFUSED | not read (`alei` not in its list) |
+  | `os. Bohaterów Getta 3.`                 | REFUSED | address (`os.`)                   |
+  | `ul. bohaterów getta 5.`                 | REFUSED | first word only (lower-case rule) |
+  | `Calle del Gueto 5.`                     | REFUSED | address (`del` is a particle)     |
+  | `Holocaust Memorial Drive 7.`            | REFUSED | address (`Drive`)                 |
+
+  Two closed address vocabularies now exist and disagree, and neither reads an address with no
+  marker. The guard's list has no `os.`, `Drive`,
+  `Lane`, `Way`, `Place`, `Boulevard`, no particle. It also cannot see the listing: `checkTypedClaims`
+  blanks the listing's own address first (`maskListedAddressParts`), this guard takes text only. So a
+  body quoting the listing's own "Bohaterów Getta 5, Warszawa" is `REFUSED / protected_ground`, and
+  since #1122 that holds for an hour. It fails closed and the street names are rare, hence P2, but
+  it is a CEO ruling that reads "always". **This reconciles RETRO-371 LG-2:** that retro asked the
+  question, the CEO answered, and the answer was coded for the sentences in the question. →
+  FOLLOW-1431.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- P2: LG-1 → FOLLOW-1431.
+
+#### 4c. Test coverage gaps
+
+- The address pins are all marker forms, so they pass by construction. No pin writes the address the
+  way a Polish listing commonly writes it, with no marker.
+
+#### 4d. Documentation gaps
+
+- FOLLOW-1422 (READY) still owes the SoT record of these rulings.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1423 (BACKLOG, composition gaps) edits the same patterns; do not fold FOLLOW-1431 into it,
+  the direction is opposite (a false refusal, not a miss).
+
+#### 5b. Future sprint tickets affected
+
+- N/A.
+
+#### 5c. Contracts changed others rely on
+
+- `stripGroundedMultipliedNumbers` runs on both digit paths (`claim-rules.ts`), so the money change
+  moved `/api/adapt` too, and the test file for it exists.
+
+#### 5d. Architectural assumptions affected
+
+- N/A.
+
+### 6. New lesson candidates
+
+- Pattern: "a ruling is coded for the sentences of the question that produced it" — seen in: this,
+  RETRO-369 §6, RETRO-371 §6. Promoted as Rule BD at RETRO-380 §6.
+
+### 7. Follow-ups
+
+- FOLLOW-1431: the guard's address exception follows `lib/street-address.ts` and the listing's own
+  address (ml-engineer, Opus, 3h, priority P2, product).
+- Observations, not filed: **FOLLOW-1421 closure, traced:** `Cena: 1,15 mln PLN.` on 1149000 →
+  `money_mismatch` and `hallucinated_number`; `Priced at $1.15M.` likewise; on 1150000 both pass.
+  Closed. P3: the tolerance kept for people and area has no key, so `1,15 mln mieszkańców` and
+  `1,15 mln m² działki` are grounded by `listing_price: 1149000`.
+
+### 8. Cross-references
+
+- RETRO-369 (rule 2 gap, closed here), RETRO-371 (decision 3 and LG-2, both acted on here), RETRO-375
+  (`street-address.ts`, the second vocabulary).
+
+## RETRO-373 — #1112 (FOLLOW-1168: credit a bandit arm only when served copy depends on it) — clean, and it closes the chain RETRO-317 opened: ESC-077's predicate now holds on all five exits, read off what is served after the page-type filter, and it fails closed for any future branch. Red-first on the old route, the old test that pinned the defect replaced. One latent note on the locale axis: the docblock says the copy follows the arm on "exactly these slots", which is true for English pages only. No slot reaches that state today — 2026-11-01
+
+### 1. Summary of change
+
+- **PR:** #1112 (merged 2026-10-31 11:50 UTC, commit 6d58d1c)
+- **Files changed:** 4 (+228 / -44); 272 lines under `src`, of which 43 outside test files. It
+  qualifies by the letter of the >100-line rule, which counts test files under `src`.
+- **Modules touched:** control-plane (`app/api/adapt/route.ts`, `bandit-flag.ts`)
+- **Key contracts changed:** internal `variant_suppressed` → `armDependentSlots`; the `variant` field
+  of the response and the ClickHouse row now reads `control` on every LLM success. Breaking: no with
+  the flag off (default); with it on, v1/v2 are never recorded on shipped playbooks.
+
+### 2. Verification done in PR
+
+- `route.decision-tree.test.ts` +89, `route.grounding.test.ts` +113/-27. CI: 70 success, 6 skipped,
+  Rule I the only red. FOLLOW-819 §5.53: three GREEN of five at `1c482580`, then §5.54 on `main`.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. CHECK B, traced: `selectedVariant` (`route.ts:831`) → `runDecisionTree` →
+`recordedVariant` (`:857`) → response `variant` (`:970`) and the row (`:993`).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3, latent) — the predicate has no locale.** `armDependentSlots` (`route.ts:170`) is keyed
+  on `variants.en`. The value is
+  `(locale === 'pl' ? s.pl : locale === 'es' ? s.es : undefined) ?? variants ?? s.en` (`:182`), so on
+  a Polish page a slot with `s.pl` serves the same bytes in every arm, and would still be credited.
+  This is ESC-077's defect on the locale axis. Latent: the only slot with variants is `headline`,
+  which §E.7.0 withholds on these branches, so nothing is credited today. Whoever gives a slot
+  variants under FOLLOW-1164 inherits it. The comment at `:169` should say English.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A.
+
+#### 4c. Test coverage gaps
+
+- N/A at today's playbooks: `headline` is the only slot with `variants.en`
+  (`route.decision-tree.test.ts:1982`), and the PR adds a shipped-playbook pin.
+
+#### 4d. Documentation gaps
+
+- N/A. `bandit-flag.ts` corrected in the PR.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- N/A.
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1164 decides what a variant is, and it now owns LG-1. The bandit still draws arms with the
+  flag on and records none of them. Deletion was deferred by D3, and this PR makes the case for it.
+
+#### 5c. Contracts changed others rely on
+
+- With the flag on, a `feedback` event echoing `control` moves that row, which now blends model and
+  template copy. Declared in the PR.
+
+#### 5d. Architectural assumptions affected
+
+- No copy-variant difference is measured on any path. Declared, and QUEUE says it.
+
+### 6. New lesson candidates
+
+- N/A.
+
+### 7. Follow-ups
+
+- N/A as stubs. Observation, not filed: P3 LG-1, a sentence for FOLLOW-1164 when it is picked up.
+
+### 8. Cross-references
+
+- RETRO-316, RETRO-317 (ESC-077, 2 of 5 exits), Rule BC's first evidence.
+
+## RETRO-374 — #1115 (FOLLOW-1311 slice 1: one module for the claim rules) — the refactor is the right use of a frozen replay: byte-identical verdicts on 88 cases, parity 1937 of 1937, and the PR names the three things that are not proven for every input. One finding, a wire closed one hop: **the "dead `recentEvents` grounding" was deleted, and both prompts still tell the model `Buyer's recent actions: none` on every call**, because nothing sets the field (FOLLOW-1432, P2) — 2026-11-01
+
+### 1. Summary of change
+
+- **PR:** #1115 (merged 2026-10-31 15:48 UTC, commit 0cc1778)
+- **Files changed:** 16 (+1267 / -505); 937 lines under `src`, 898 outside test files. The diff
+  carries slice 0's baseline, merged first as #1114.
+- **Modules touched:** control-plane (`claim-rules.ts` new, `claim-containment.ts`,
+  `grounding-check.ts`, `llm-gateway.ts`, `amenity-lexicon.ts`, `condition-lexicon.ts`), ADR-0023,
+  `scripts/claim-baseline/`
+- **Key contracts changed:** `ClaimDialect`, `buildGrounding`, `checkClaimClasses` as the one
+  implementation for both paths. Breaking: no.
+
+### 2. Verification done in PR
+
+- Replay byte-identical (88 lines), parity 1937 of 1937, 47 affected files 2857 passed. CI: Rule I the
+  only red. FOLLOW-819 §5.55 three GREEN at `f704a488`.
+- `replay.test.ts` is collected by the default suite (`vitest.config.ts`,
+  `include: scripts/**/*.test.ts`), so the gate runs in CI. `record.live.test.ts` skips without
+  `CLAIM_BASELINE_RECORD=1`.
+
+### 3. Wiring Audit
+
+- **HALF_WIRE_C, pre-existing, closed one hop by this PR:** `sessionContext.recentEvents`
+  (`llm-gateway.ts:47`). Consumers `:252`, `:278`, printed at `:264`, `:293`. Producer: none.
+  `grep -rn recentEvents apps/control-plane/src | grep -v test` → those five lines only. →
+  FOLLOW-1432. Priority P2, not the template's P0: it pre-dates this merge and nothing is lost that
+  ever existed. The PM may raise it.
+- CHECK A clean: `negatedThroughList` was flagged test-only by Rule I on the first slice run and
+  un-exported before the PR (session log, `rulei.s1.log` vs `rulei.s1b.log`, 96 → 95).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — a false statement in every adapt prompt.** The commit: "Deletes the recentEvents
+  grounding, which no code ever set." The same evidence says the prompt half is dead too. Each call
+  states `Buyer's recent actions: none` to the model, for a buyer who may have acted a lot. Either
+  wire it or remove the line. Removal moves a prompt digest, so it is a measured change of its own.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- P2: LG-1.
+
+#### 4c. Test coverage gaps
+
+- The declared gap stands: the negation window and `stemLoose` now count code points on adapt. Only
+  an emoji in the window differs. Not worth a test.
+
+#### 4d. Documentation gaps
+
+- N/A. ADR-0023 got its note.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1311 slices 2–6 all stand on this module. Clean.
+
+#### 5b. Future sprint tickets affected
+
+- MP-012's `revalidate_on` names "`checkDirectiveFacts` or the grounding-text builder". This PR
+  moved code under both. See FOLLOW-1433 (RETRO-376).
+
+#### 5c. Contracts changed others rely on
+
+- N/A: behaviour-preserving, and shown to be on that corpus.
+
+#### 5d. Architectural assumptions affected
+
+- N/A.
+
+### 6. New lesson candidates
+
+- Pattern: "the dead half of a field is deleted and the other dead half stays" — seen in: this — count
+  1. It is step 7 of this agent's own algorithm, on a small wire.
+
+### 7. Follow-ups
+
+- FOLLOW-1432: `recentEvents` is printed in every adapt prompt and set by nothing (ml-engineer,
+  Sonnet, 2h, priority P2, product).
+
+### 8. Cross-references
+
+- RETRO-375, RETRO-377, RETRO-380 (the replay on later slices; the same instrument, a different
+  question).
+
+## RETRO-375 — #1117 (FOLLOW-1311 slice 3: typed count, money, area, year, negation; `claims-v8`; absorbs FOLLOW-1386) — the strongest verification of the ticket and the clearest evidence for the batch's main pattern. Two independent review rounds found a broken CEO ruling (the address) and more, and produced 111 pinned examples, **and the replay and the corpus did not move once across both rounds**. They could not see any of it. My probes of the result found the money and address axes holding in en / pl / es on every form tried but one. The series discipline was good: §5.57 is marked "not the evidence", §5.58 is — 2026-11-01
+
+### 1. Summary of change
+
+- **PR:** #1117 (merged 2026-10-31 18:14 UTC, commit 643ee4c)
+- **Files changed:** 32 (+2404 / -85); 2271 lines under `src`, 1325 outside test files
+- **Modules touched:** control-plane (`typed-claims.ts`, `street-address.ts`, `count-claims.ts`,
+  `claim-rules.ts`, `number-groups.ts`, `description-generator.ts`), ADR-0023, corpus v22–v24
+- **Key contracts changed:** new `ClaimViolation` codes `count_mismatch`, `money_mismatch`,
+  `year_mismatch`, `negation_contradiction`; `checkTypedClaims` exported; `claims-v8`. Breaking: no.
+
+### 2. Verification done in PR
+
+- `claim-review.follow1311.test.ts` (111 tests, every review example), transformations +236. CI: Rule
+  I the only red. FOLLOW-819: §5.57 at `007105f3` not counted, §5.58 three GREEN at `1feb8a1e`, the
+  final product code.
+- Replay: 4 new refusals of 57 FIT, single rater, all in the count rule. Money, area, year and
+  negation are "proven by unit tests only", and the PR says so.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. CHECK A: `checkTypedClaims` → `claim-rules.ts:308` (`checkClaimClasses`) →
+both paths; `ac1b-claim-check.cts:28,55` since #1126. `readCounts`, `CountKey`, `CountMention` and
+`TypedClaimCheck` were flagged test-only by Rule I during the slices and fixed before the PRs (session
+logs `rulei.s2.log` vs `rulei.s2b.log`, 98 → 95; `rulei.s3.log` vs `rulei.s3final.log`, 96 → 95). CHECK
+B: the four new codes have producers on both paths and consumers in Sentry tags, the CH source row
+(`factCheckSlotRefusedSource`), and AC(1b).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **Multi-axis check of money, by probe at HEAD:** `385.000 €`, `1.150.000 zł`, `1,15 mln zł`, `$385k`,
+  `$1.15 million`, `385 000 zł` on `385000` / `1150000` listings all pass; `$250 a month` on `$250/month`
+  passes. The one miss on the axis: `Cena 1 150 000,00 zł.` on 1150000 → `hallucinated_number` from the
+  digit rule, because of the `00`. P3, an observation.
+- `2.5 bathrooms`, `1.5 baths` pass and are not read (0 claims), so a half bath is not compared.
+  Consistent with "if it cannot tell, it passes", not listed in the amendment.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A beyond the two rounds, which are the point of §6.
+
+#### 4c. Test coverage gaps
+
+- FOLLOW-1386's prompt half: "its effect on what the model writes is unmeasured" (QUEUE). The
+  paragraph is on the description and headline prompts (`ROOM_COUNT_CONVENTION`,
+  `description-generator.ts:583`, used at `:736`, `:778`), not on the adapt prompts, where
+  `count_mismatch` also refuses (`grep -in "room count\|bedroom" llm-gateway.ts` → nothing). 0 of 84
+  slots refused, so this has no cost so far.
+
+#### 4d. Documentation gaps
+
+- N/A. ADR-0023 got its note here. It did not at #1120 and #1125 (RETRO-377, RETRO-380).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1345: AC(1b) is built on `checkTypedClaims`. Wire closed by #1126, with a declared limit:
+  served rows already passed this check at generation, so a green mainly shows the wire and the source
+  agree.
+
+#### 5b. Future sprint tickets affected
+
+- K4b, N3: none of these rules has been seen on the real app (K4a control I3 not run).
+
+#### 5c. Contracts changed others rely on
+
+- `checkTypedClaims` is now the AC(1b) contract: a recogniser change moves a harness verdict.
+
+#### 5d. Architectural assumptions affected
+
+- "The stated count wins over a derived one" refuses a correct-looking +1. A declared choice, in line
+  with the room-count prompt.
+
+### 6. New lesson candidates
+
+- Pattern: "a green replay and green unit tests said nothing about a ruling the review broke in
+  minutes" — seen in: this + RETRO-377, RETRO-380; prior RETRO-369, RETRO-371. See Rule BD,
+  RETRO-380 §6.
+- Pattern: "a symbol exported for its own test, caught by Rule I before the PR" — seen in: this,
+  RETRO-374, RETRO-365, RETRO-370. The gate does its job. See RETRO-380 §6, no rule.
+
+### 7. Follow-ups
+
+- N/A as stubs. Observation, not filed: P3 a price written with zero cents.
+
+### 8. Cross-references
+
+- RETRO-374, RETRO-377, RETRO-380, Rule BD, FOLLOW-1386, FOLLOW-1345.
+
+## RETRO-376 — #1118 (FOLLOW-1426: the tweak band runs the generation model, band read from `similarity`) — a clean refactor with a sound design: the band no longer leaks from a model id, and a test varies the model and asserts the label does not move. One finding: **it tripped a registered `revalidate_on` and did not discharge it.** MP-013 names "a change of model on either the generation or the judge call"; MP-017 names "the model's tokenizer"; MP-012 still says "2 on Haiku, 3 on Sonnet". `docs/ops/MEASURED_PREMISES.md` is not in the diff. That is Rule BB (FOLLOW-1433, P2). The cost figure on record also leaves out the calls that think — 2026-11-01
+
+### 1. Summary of change
+
+- **PR:** #1118 (merged 2026-10-31 18:22 UTC, commit 191909f)
+- **Files changed:** 15 (+224 / -54); 262 lines under `src`, 52 outside test files. It qualifies by
+  the letter of the rule.
+- **Modules touched:** control-plane (`llm-gateway.ts`), ADR-0024, ml-engineer lessons
+- **Key contracts changed:** `llm_tweaked` rows no longer imply Haiku. Source values unchanged.
+  Internal: `bandFor`, `buildHaikuPrompt` → `buildTweakPrompt`. Breaking: no, but every `llm_tweaked`
+  series in ClickHouse changes model at this commit.
+
+### 2. Verification done in PR
+
+- `llm-gateway.follow1426.test.ts` (new, 148 lines), 11 test files re-pinned. CI: Rule I the only red.
+  FOLLOW-819 §5.59 three GREEN at `33a5afb8`.
+- Live: 10 cases, one run per model. "The thinking path was not exercised." Good: stated.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. CHECK A: no new export. CHECK B: no new signal, same `source` values.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — Rule BB, three premises:**
+  - `docs/ops/MEASURED_PREMISES.md:662` MP-013: `revalidate_on` "a change of model on either the
+    generation or the judge call". Tripped. Its latency numbers were taken on the Haiku band.
+  - `:947` MP-017: "the model's tokenizer". Tripped for the tweak band: the 902 / 558 `tokens_in`
+    signature was measured on the Haiku band, and `generation-models.ts:12` records that 5.x tokenizers
+    differ. A reader using 902 / 558 to spot an ungrounded prompt now gets a wrong answer on
+    `llm_tweaked`.
+  - `:538` MP-012: "The budget is also PER BAND now — 2 on Haiku, 3 on Sonnet". It is 3 and 3
+    (`llm-gateway.ts` `JUDGE_CALL_BUDGET_*`), and the bands no longer differ by model.
+    → FOLLOW-1433. A production re-measure is behind the localhost path; the entry can say today that
+    it is tripped and what stopped being true. Not FOLLOW-1430, which is about dated measurements in
+    source.
+- **LG-2 (P3, estimate, not measured) — cost and tail.** The three figures on record are USD 0.0045
+  per call (ADR-0024, local data), USD 0.0053 (PR, list prices, 10 cases) against Haiku 0.0022–0.0023.
+  None includes thinking. FOLLOW-1399 saw Sonnet 5.5 think on 5 of 60 calls, at 1,487 to more than
+  2,720 output tokens. At `llm-pricing.ts:29` (USD 0.01 per 1K out) that is about USD 0.02 on one call
+  in twelve, so about USD 0.002 per call on average: closer to 3× than 2.4×. The latency tail matters
+  more: the route has no budget (`route.ts:245`) and the SDK fetch has no timeout (FOLLOW-1354,
+  BACKLOG, P2). The tweak band is the common one, so that ticket is now worth more than when filed.
+  The CEO agreed to the move; these numbers are for the next cost conversation.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- P2: LG-1.
+
+#### 4c. Test coverage gaps
+
+- The band split now exists twice: `bandFor` (literals 0.6, 0.85) and `llmSource` (`route.ts:247`, the
+  route's constants). The docblock says they split at the same point, and they do for every
+  `similarity` that reaches the gateway. Nothing checks it. P3.
+
+#### 4d. Documentation gaps
+
+- CLAUDE.md's "Haiku 4.5 (workhorse)" and MASTER_DESIGN's "80 % Haiku, 20 % Sonnet" unit economics
+  (`:5216`) no longer describe `/api/adapt`. P3; for the CTO handover pack rather than a ticket now.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1311: the baseline's `adapt_model_note` ("pinned to claude-haiku-4-5") is a record of its
+  time; after this merge the baseline's Sonnet adapt half matches the live band, so #1117's stated
+  limit no longer applies.
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1354 (see LG-2).
+
+#### 5c. Contracts changed others rely on
+
+- Any reader that treats `llm_tweaked` as cheap or as Haiku. `grep -n "HAIKU_MODEL\|claude-haiku"` over
+  `apps/control-plane/src` finds no code that infers one from the other; the premises and docs do.
+
+#### 5d. Architectural assumptions affected
+
+- The "fast path" reason for the tweak band has gone: same model, a shorter prompt. Audit report-B
+  item 6 proposed collapsing the bands. Noted, no action.
+
+### 6. New lesson candidates
+
+- Pattern: "a PR trips a registered `revalidate_on` and does not discharge it" — Rule BB already
+  governs. An application failure, not a new rule. `check-measured-premises.mjs` does not read trigger
+  symbols against a diff, and that would be the enforcing step.
+
+### 7. Follow-ups
+
+- FOLLOW-1433: discharge MP-012, MP-013 and MP-017 for FOLLOW-1426 and the claim module (qa-engineer,
+  Sonnet, 2h, priority P2, measurement).
+- Observations, not filed: P3 LG-2; P3 the band split twice; P3 doc lines.
+
+### 8. Cross-references
+
+- RETRO-374 (MP-012 trigger), RETRO-321, RETRO-322 (the per-band budget this retires), Rule BB.
+
+## RETRO-377 — #1120 (FOLLOW-1311 slice 4: closed attribute lexicon en / pl / es, T8 entailment table; `claims-v9`) — the amendment states honestly what its numbers do not say: 13 of 14 attributes refuse nothing on the corpus, and the one true positive comes from an attribute added after seeing the replay. That is exactly why a review had to find the broken address ruling and the title-case failure, and the replay moved nothing across that round either. Two findings. (1) T8 is written in one spelling: "A detached home" is refused on `Single Family Residence`, although the amendment records that "detached" is allowed for single-family in English; "Orientación sur" is refused on "Ventanas al sur", while the Polish equivalent passes (FOLLOW-1434, P3). (2) K4a's "at least 90 % true positives: met on the classified moves of slices 3 and 4" reads wider than the amendment allows for slice 4 — 2026-11-01
+
+### 1. Summary of change
+
+- **PR:** #1120 (merged 2026-11-01 12:19 UTC, commit 8bc7360)
+- **Files changed:** 17 (+1809 / -32); 1538 lines under `src`, 786 outside test files
+- **Modules touched:** control-plane (`attribute-lexicon.ts` new, `typed-claims.ts`,
+  `street-address.ts`, `amenity-lexicon.ts`, `description-generator.ts`), corpus v25, replay v3
+- **Key contracts changed:** new code `unsupported_attribute`, `kind: 'attribute'` in
+  `checkTypedClaims`; `claims-v9`. Breaking: no.
+
+### 2. Verification done in PR
+
+- `claim-attributes.follow1311.test.ts` (660 lines, with `KNOWN_LIMITS`). CI: Rule I the only red.
+- FOLLOW-819: §5.61 at `6d562e84` marked "not the evidence", because the code changed after it; §5.62
+  three GREEN at `afe6ce91`, the final product code.
+- Replay `verdicts.v3`: 1 new refusal of 53, 5 of 57 since the baseline. "A sixth refusal would miss
+  the target."
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. CHECK A: `ATTRIBUTE_RES`, `assertedAttributes`, `groundsAttribute` →
+`typed-claims.ts:482`. CHECK B: `unsupported_attribute` produced on both paths, read by AC(1b)
+(`AC1B_FAILURE_OF_CLAIM`, default branch) and the adapt source row. Rule I at HEAD: none of these
+symbols listed.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3) — T8 does not read the listing's other spellings.** Probed at HEAD. The real listing has
+  three fields plus its description (`fetchDescriptionGrounding`), so only description wording counts
+  here:
+
+  | Copy                             | Listing says                                  | Verdict                        |
+  | -------------------------------- | --------------------------------------------- | ------------------------------ |
+  | `A detached home.`               | `Single Family Residence` (no hyphen)         | REFUSED, amendment says allowed |
+  | `Orientación sur.`               | `Ventanas al sur.`                            | REFUSED                        |
+  | `Wystawa południowa.`            | `Okna na południe.`                           | pass (the same claim in Polish) |
+  | `A top-floor flat.`              | `Flat on the 5th floor of 5.`                 | REFUSED                        |
+  | `Mieszkanie na ostatnim piętrze.` | `na 5. piętrze w pięciopiętrowym budynku`     | REFUSED                        |
+  | `Mieszkanie na ostatnim piętrze.` | `Piętro 5/5.`                                 | pass                           |
+  | `A one-story home.`              | `Ranch-style home.`                           | REFUSED                        |
+  | `A freehold flat.`               | `Fee simple ownership.`                       | REFUSED                        |
+
+  `attribute-lexicon.ts:364` is `single-family${S}(?:home|house|residence|property)`, and
+  `Single Family Residence` is the common US spelling. Each fails closed, and none appears in the
+  recordings. They are worth one small table edit before the first real-app run (K4b), because the
+  replay's budget has no room for a sixth refusal (6 of 57 is 10.5 %).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A at P0–P2.
+
+#### 4c. Test coverage gaps
+
+- `grep` of the test file for `Single Family`, `Ventanas` → 0. The pins came from the author's and the
+  reviewer's examples. See RETRO-380 §6.
+
+#### 4d. Documentation gaps
+
+- ADR-0023 has no `unsupported_attribute` and no `claims-v9` (`grep` → 0), unlike #1117, which added
+  its note. FOLLOW-1422's AC, "stamp history `claims-v2` … current", covers it; no new stub.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- K4a (`docs/checkpoints/K4a.md`): "New refusals at least 90 % true positives: met on the classified
+  moves of slices 3 and 4". Slice 4's share rests on one case, from a key added because the replay
+  showed it. The amendment says so itself: it "say[s] nothing about the precision of the rest". The
+  checkpoint row should carry that sentence. Severity low: the verdict does not change.
+
+#### 5b. Future sprint tickets affected
+
+- K4b: the first real-app reading of this lexicon.
+
+#### 5c. Contracts changed others rely on
+
+- `amenity-lexicon.ts` `clauseBefore` and the list walk were bounded to a slice, "no verdict moved".
+
+#### 5d. Architectural assumptions affected
+
+- N/A.
+
+### 6. New lesson candidates
+
+- See RETRO-380 §6. The ml-engineer's own guardrail here is the right one: "a diff of zero says
+  nothing until the recogniser is shown to fire."
+
+### 7. Follow-ups
+
+- FOLLOW-1434: T8 reads the listing's other spellings: `single family`, `al sur`, "5th floor of 5"
+  (ml-engineer, Sonnet, 2h, priority P3, product).
+
+### 8. Cross-references
+
+- RETRO-375, RETRO-380, FOLLOW-1422.
+
+## RETRO-378 — #1122 (FOLLOW-1427: a one-hour Redis guard after a refused description) — small, fail-open in both directions, and it states its limits. The replay and the recorder stay isolated (their `fetch` stub makes the guard read "not guarded"), and the harness already treats a guarded run as UNMEASURED `no_description`, neutral in a series. One finding. **The wire has not been run live, and when it runs nothing will count it.** A guard hit writes one `console.warn`; its sibling `spend_cap` has a Sentry signal. The closure "FOLLOW-1427 DONE" is therefore not end to end: no refusal has ever set the guard in a Redis, so no GET has ever answered "guarded", and "it has not fired live" is itself read from logs (FOLLOW-1435, P3) — 2026-11-01
+
+### 1. Summary of change
+
+- **PR:** #1122 (merged 2026-11-01 14:03 UTC, commit cec50c2)
+- **Files changed:** 5 (+300 / -1); 301 lines under `src`, 101 outside test files
+- **Modules touched:** control-plane (`description-refusal-guard.ts` new, `description-generator.ts`)
+- **Key contracts changed:** `DescriptionOutcome` gains `SKIPPED / refused_guard`; new Redis key
+  family `descref:`. Breaking: no.
+
+### 2. Verification done in PR
+
+- `description-refusal-guard.follow1427.test.ts`, 11 passed, with an in-memory fake. CI: Rule I the
+  only red. FOLLOW-819 §5.65: three GREEN, "No description was refused during these runs, so the guard
+  has not fired live".
+
+### 3. Wiring Audit
+
+- **HALF_WIRE_P (P3 by impact, not the template's P1), `description-generator.ts:1169`,
+  `SKIPPED / refused_guard`.** Producer present. Consumer: `grep -rn "refused_guard\|descref"` over
+  `apps packages tests scripts docs` → the generator and the guard's tests only; the route prints
+  `report.outcome` to the console (`description/route.ts:162`). No row, no Sentry tag, no reader. →
+  FOLLOW-1435. P3, because it spends nothing and hides nothing from a buyer.
+- CHECK A clean: both exports have a production importer (`description-generator.ts:72`).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **Closure, traced.** Refusal → `setRefusalGuard` (`:1241`) → next miss → `isRefusalGuarded` (`:1164`)
+  → SKIPPED → the route answers `template_fallback`. Each hop is pinned against a fake. The path form
+  `/set/<key>/1/ex/3600` is the one the local adapter translates generically
+  (`upstash-rest-path-adapter.mjs`), so I expect it to work, but no run has shown it. K4a records this.
+- A refusal now holds a listing, archetype and language for up to an hour, where it used to recover on
+  the next miss. Declared in the PR. At 8.8 % of FIT refused on the replay, this is not rare. The first
+  measure of what it costs needs the counter above.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A.
+
+#### 4c. Test coverage gaps
+
+- No real Redis in any test. Stated in the PR.
+
+#### 4d. Documentation gaps
+
+- ADR-0023:124 still reads `{ verdict: 'SKIPPED'; reason: 'spend_cap' }`. In FOLLOW-1435's scope.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1428 (P3, BACKLOG) is the FAILED half. Not duplicated here.
+
+#### 5b. Future sprint tickets affected
+
+- N/A.
+
+#### 5c. Contracts changed others rely on
+
+- N/A.
+
+#### 5d. Architectural assumptions affected
+
+- FOLLOW-1311's amendment says regeneration "is also how a refused listing gets served copy later".
+  It still is, at one attempt an hour.
+
+### 6. New lesson candidates
+
+- Pattern: "a guard or limiter ships with a log line as its only signal" — count 1 here. Rule AJ is
+  about failure detection, and this is not one.
+
+### 7. Follow-ups
+
+- FOLLOW-1435: count a guard hit, so that the guard's first live firing and its cost can be read
+  (backend-engineer, Sonnet, 1h, priority P3, measurement).
+
+### 8. Cross-references
+
+- RETRO-380 (the judge's 5.2 % cut-off replies would have set this guard, one reason the judge went),
+  FOLLOW-1428.
+
+## RETRO-379 — #1123 (FOLLOW-1311 slice 6: templates, system prompt and personas point at the listing's own words) — the largest measured effect of the ticket on a paired audit (firm external claims 30 → 2, invented facts 18 → 5, appeal unchanged), with its limits stated: one rater, one sample. Three notes for the PM, none needing a stub. (1) `upsizer`'s pl and es templates still tell the model to call the area good for families; the reason given for leaving them, "the quiz no longer assigns `upsizer`", covers one axis, and chat NLP still lists it. That is CEO scope under ESC-089, so I do not propose a change, only the question. (2) This reverses a decision marked "Decyzje Piotra (locked 2026-05-15)", recorded as a PM decision reported to the CEO. (3) With no stamp bump, cached text from the old templates stayed trusted until #1125 bumped it 80 minutes later: harmless by luck of the merge order — 2026-11-01
+
+### 1. Summary of change
+
+- **PR:** #1123 (merged 2026-11-01 14:23 UTC, commit e633a5e)
+- **Files changed:** 24 (+708 / -144); 826 lines under `src`, 533 outside test files
+- **Modules touched:** shared (16 playbooks), control-plane (`description-generator.ts`), MASTER_DESIGN
+  4.29 (§E.7.5 rules 3–4), parity corpus v26
+- **Key contracts changed:** `copy_template` content; system prompt; 16 personas. No code contract, no
+  stamp. Breaking: no.
+
+### 2. Verification done in PR
+
+- `copy-template-external-claims.follow1311.test.ts`: a closed list of removed invitations, en / pl /
+  es. Parity v26 is a prompt-digest re-freeze. CI: Rule I the only red. FOLLOW-819 §5.66: three GREEN at
+  `40a91cde`. Blind audit of 60 pairs.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. No new export. The new test reads `getAllPlaybooks`, so all 18 archetypes are
+in its scope, `family_buyer` and `upsizer` included.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (surfaced to the PM, CEO scope) — `upsizer`, three locales, two behaviours.** en
+  (`upsizer.ts:40`): "Schools within easy reach" only when the listing mentions them. pl (`:42`):
+  "Okolicę nazywaj dobrą dla rodzin, a szkoły wymieniaj tylko wtedy, gdy robi to oferta". es (`:47`):
+  "Llama a la zona apreciada por las familias, y menciona colegios, solo si lo hace el anuncio". On pl
+  the area claim is unconditional. PR: "Left alone under ESC-089; the quiz no longer assigns `upsizer`."
+  True for `quiz-default-v2.ts:8`; but `apps/intent-engine/src/nlp.py:80` still has it in the archetype
+  list, so I read chat as able to assign it (the list, not a live run). ESC-089 says family wording is
+  archetype fit and grounding stays, and an area claim from outside the listing sits on the grounding
+  side of that line. The PM should ask, not change it.
+- **LG-2 (P3, closed by accident) — slice 6 alone would not have reached cached text.**
+  `isTrustedDescriptionHit` (`claim-containment.ts:135`) reads the claims stamp only, and the cache key
+  (`descriptionKey`, `description-cache.ts:43`) holds no template revision. The commit: "No
+  change to the claim check or CLAIMS_VALIDATION_VERSION". So rows generated from the old templates
+  stayed trusted until `claims-v10` (#1125, 15:43). Had slice 5 been dropped, every cached row with an
+  external claim would have kept serving. A future template-only PR gets no such rescue. The stamp is
+  named for claims; nothing names the template revision.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A.
+
+#### 4c. Test coverage gaps
+
+- The ml-engineer's lesson is exact: "the frozen corpus carries its own `copy_template`, so a playbook
+  edit moves no digest and needs its own pin." The pin is a closed list of about 30 phrases and "reads
+  the templates, not what a model writes". A new invitation in other words passes. Only an audit sees
+  it.
+
+#### 4d. Documentation gaps
+
+- N/A: MASTER_DESIGN bumped in the PR. `upsizer.ts:42` is named in the amendment.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- K4a records the cost: `yield_hunter` reads flat (4.29 of 5, small sample), 12 of 56 bodies state no
+  price, 32 firm language errors, many of them translated persona phrases (FOLLOW-1429). The pl and es
+  wording had no native review, and the PR's 136 phrase edits include those locales.
+
+#### 5b. Future sprint tickets affected
+
+- K4b, the CEO's review of what the buyer reads: yield copy is drier by design.
+
+#### 5c. Contracts changed others rely on
+
+- N/A.
+
+#### 5d. Architectural assumptions affected
+
+- **MASTER_DESIGN §E.7.5 rules 3–4 now say the opposite of a locked decision.** `MASTER_DESIGN.md:1325`:
+  "Decyzje Piotra (locked 2026-05-15): … generic positive claims OK ("attractive yield" bez liczb)".
+  The changelog of v4.29: "PM decision on a blind audit of 60 paired texts, reported to the CEO". The
+  PR's reasoning is sound, §E.7.0 / ESC-076 is the later CEO rule. I found no CEO answer in the record,
+  only "reported". Severity medium. Put it on the K4b walkthrough as a named item, with the dryness
+  beside it.
+
+### 6. New lesson candidates
+
+- Pattern: "a limit's stated reason covers one route to the state (quiz) and not the other (chat)" —
+  count 1, RETRO-379.
+
+### 7. Follow-ups
+
+- N/A as stubs: FOLLOW-1429 covers language. Observations, not filed: LG-1 (a CEO question through the
+  PM), P3 LG-2, the §E.7.5 acknowledgement.
+
+### 8. Cross-references
+
+- RETRO-368 (ESC-089), RETRO-380 (the stamp that rescued LG-2), ESC-076, FOLLOW-1429.
+
+## RETRO-380 — #1125 (FOLLOW-1311 slice 5, narrowed: `unsupported_street`, name forms; `claims-v10`) — and the batch's question. An independent review with 96 live calls stopped this slice's judge, which had never been called: true on only 4 of 24 harmless cases, which breaks name forms, ESC-089 and the "dawna" ruling. The narrowed version had no third review, its rule fired on 0 of 176 recorded cases, and the PR says precision is unmeasured. I probed it. **A digit with a title-case word before a street word reads as a house number: "A 2 Story Terrace", "360 Degree Terrace" and "A 20 Foot Terrace" are refused on listings that state those numbers, which contradicts the PR's "title case alone is never a signal"; and `[Aa]lej\p{L}*` reads "Alejandra Ruiz" and "Alejka Spacerowa" as streets** (FOLLOW-1436, P2). **Rule BD promoted:** a coded ruling or new recogniser is not evidenced by its author's pins or a zero-delta replay. Evidence: RETRO-369 §6, RETRO-371 §6, promoted on this batch — 2026-11-01
+
+### 1. Summary of change
+
+- **PR:** #1125 (merged 2026-11-01 15:43 UTC, commit 28fdc55)
+- **Files changed:** 18 (+1025 / -29); 793 lines under `src`, 441 outside test files
+- **Modules touched:** control-plane (`street-address.ts`, `name-forms.ts`, `typed-claims.ts`,
+  `description-generator.ts`), corpus v27, replay v4
+- **Key contracts changed:** new code `unsupported_street`, `kind: 'street'`; `readStreetClaims`;
+  `claims-v10`. Breaking: no.
+
+### 2. Verification done in PR
+
+- `claim-streets-names.follow1311.test.ts` (106 per K4a, with `KNOWN_LIMITS`). CI: Rule I the only red.
+  FOLLOW-819 §5.67: three GREEN (244, 247, 248) at `de338228`.
+- Replay `verdicts.v4` and a fresh recording: 0 new refusals. "The street rule refused nothing on 176
+  recorded cases, so its precision is unmeasured."
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. `readStreetClaims` → `checkStreets` (`typed-claims.ts:510`) → both paths and
+AC(1b), which maps `street` to its own failure kind. Rule I at HEAD: none listed.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — the house-number signal fires on a count in title case.** `NUMBERED_CLAIM_RE`
+  (`street-address.ts:101`) runs with `titleCaseCounts: false` (`:196`) and no check that the number is
+  a house number. `STREET_WORD` holds `Terrace`, `Court`, `Close`, `Place`, `Way`. English headlines
+  are in title case. Probed at HEAD, each on a listing that states the number, so the digit rule passes:
+
+  | Copy                       | Listing                            | Read as street |
+  | -------------------------- | ---------------------------------- | -------------- |
+  | `A 2 Story Terrace.`       | `A 2 story home with a terrace.`   | `Story`        |
+  | `3 Season Terrace.`        | `3 season room and terrace.`       | `Season`       |
+  | `360 Degree Terrace.`      | `360 degree views from the terrace.` | `Degree`     |
+  | `A 20 Foot Terrace.`       | `20 foot terrace.`                 | `Foot`         |
+  | `With 2 Separate Terrace.` | `2 separate terraces.`             | `Separate`     |
+  | `1 Acre Close.`            | `1 acre lot.`                      | `Acre`         |
+
+  `GENERIC_STREET_WORDS` covers `minute`, `mile`, `car`, `star`, so the class was seen; the list stops
+  there. Constructed sentences, so this says nothing about frequency. It does show the failure shape of
+  the first version of this rule surviving into the narrowed one.
+- **LG-2 (P2) — a prefix with no word end.** `STRONG_PREFIX` (`:93`) holds `[Aa]lej\p{L}*`, for
+  declined forms of "aleja". It also matches `Alejandra Ruiz will show you round.` (→ `Ruiz`),
+  `Alejandría Beach is near.` and `Alejka Spacerowa prowadzi do parku.`. A Spanish first name refuses a
+  body. In the same FOLLOW-1436.
+- **Own street, checked in nine forms, all pass:** declined, `św.`, `T. Kościuszki`, `Aleja` vs `al.`,
+  `C/ Paz`, `Carrer de Provença` for `Calle Provenza`. The ruling holds here.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- P2: LG-1 and LG-2 → FOLLOW-1436. Both fail closed, and since #1122 each refused body stays for an
+  hour.
+
+#### 4c. Test coverage gaps
+
+- `grep -n "Story\|Season\|Degree\|Foot\|Alej"` in the test file → only the `Alejach` / `Aleje` pass
+  pins, in the sense the author meant. The review pins were written for the first version.
+
+#### 4d. Documentation gaps
+
+- ADR-0023 has no `unsupported_street` and no `claims-v10`. FOLLOW-1422 covers it, as RETRO-377.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-1311 closure, traced end to end:** `checkTypedClaims` → `checkClaimClasses`
+  (`claim-rules.ts:308`) → `checkUnsupportedClaims` (adapt, `llm-gateway.ts:758`) and the body and
+  headline checks → the refused slot or body → the served copy, read by AC(1b)
+  (`differentiator-e2e.mjs`, §5.68). The wire is closed. The promise is closed with limits, and #1127
+  says so ("one target not clearly met and slice 5 narrowed"). **For the PM to weigh:**
+  - The amendment's words were "fall from 13 to ≤ 6" and "the targets do not loosen". K4a read 7 firm of
+    56 as 12.5 % against "6 of 45 = 13.3 %". That is a reasonable normalisation, chosen after the
+    result, and 58 borderline facts sit beside it with no earlier column.
+  - `Located in Miami` on a body was "the one this slice set out to close". It stays open and has no
+    ticket of its own. K4a's firm external claims of 1 suggest the cost is small on this sample. The
+    audit is the only instrument that sees it.
+  Severity medium. I do not read this as a reason to reopen K4a. It should be named at K4b, since N3
+  reads real listings for the first time.
+
+#### 5b. Future sprint tickets affected
+
+- K4b, FOLLOW-1344 (N3): the first reading on real listings of rules that never fired on a recording.
+
+#### 5c. Contracts changed others rely on
+
+- T7 loosening moves the adapt name rule under MP-012's trigger. In FOLLOW-1433.
+
+#### 5d. Architectural assumptions affected
+
+- FOLLOW-1311's stated property, "if the recogniser cannot tell, it passes", is the check's main
+  defence against false refusals, and it cannot be verified by anything recorded when nothing fires.
+
+### 6. New lesson candidates — and the batch question
+
+**Pattern 1: PROMOTED, Rule BD.** "A coded ruling or a new recogniser looks proven by its author's
+pins and a replay that did not move, and an independent reader breaks it in minutes."
+
+- **PRIOR, counted:** RETRO-369 §6 ("a categorical CEO rule … implemented as a closed list whose tests
+  enumerate only the list", count 1; found by a retro, not a test). RETRO-371 §4c and §6 (decision 3,
+  "prices are always exact", false at HEAD, and the pin "cannot fail", count 2). RETRO-368 §6 is the same
+  family but counted separately then (a word-order blind spot), and I do not count it.
+- **This batch, not counted (the promoting retro does not inflate):** slice 3, the address ruling, two
+  rounds, replay and corpus unmoved (RETRO-375). Slice 4, the address ruling again, in title case, plus
+  suggestions read as claims, replay unmoved (RETRO-377). Slice 5, ESC-089, "dawna", name forms, and the
+  rule refusing its own listing's address, 0 of 176 fired (here). RETRO-372 LG-1 and LG-1 above are mine,
+  found by the same method after merge. The method does not always find something: the money axis and
+  the listing's own street held under the same probing (RETRO-375, §4a above).
+- **RETRO-369 declined this as "an application failure" of Rule BC clause 3.** Reconciled: that was fair
+  at count 1. BC fires when a predicate is exported or gains a caller, and none of these did. It does not
+  speak to a new recogniser at all, or to what a zero-delta replay means. Hence a letter.
+- **Evidence for the live clause:** RETRO-321 §2 ("no live per-band number ships with this PR") and
+  RETRO-322 ("Hops 1–6 are pinned by unit tests with a mocked model"), both on this same judge; then the
+  judge built here that "has never run" (first commit of this PR).
+
+**Pattern 2: not promoted. Hooks failing silently in a piped push.** Prior: RETRO-268 only (the
+verifier piped into `tail`, the exit code lost). Count 1 prior, 2 with this batch: below threshold. The
+batch sighting comes from the PM's brief. I found no artefact of it in the repo, so I record it as
+reported. RETRO-371's failed `git checkout` in an `&&` chain is a neighbour, a different mechanism, not
+counted. It costs little and is cheap to fix → FOLLOW-1437. Rule BA already says delivery means "on
+`origin`", and that check catches it.
+
+**Pattern 3: threshold met, not promoted on purpose. Test-only exports caught by Rule H / Rule I.** Prior:
+RETRO-365 (`applyArchetypeHints`), RETRO-370 (the un-export). In this ticket, by the session's Rule I
+logs: `negatedThroughList` (slice 1), `CountKey`, `CountMention`, `readCounts` (slice 2),
+`TypedClaimCheck` (slice 3): three slices, five symbols, each fixed before its PR. The brief said twice;
+the logs show three, and I did not find a Rule H firing in them (`ruleh.txt` passes). The rule exists and
+the gate works. A second rule would add nothing. For the ml-engineer's lessons: run
+`scripts/check-rule-i.sh` before the first push, not after.
+
+**Agent-definition drift.** `.claude/agents/retrospective-analyst.md` steps 10–11 still state the D8
+moratorium "until FOLLOW-820 GO". ESC-085 decision D-I lifted it (`backlog/ESCALATIONS.md:303`), and
+CLAUDE.md says so. I followed the ruling. The file wants the edit; I may not make it.
+
+### 7. Follow-ups
+
+- FOLLOW-1436: a count in title case is no house number; `alej` is not a prefix of every word
+  (ml-engineer, Opus, 2h, priority P2, product).
+- FOLLOW-1437: a piped `git push` hides a failed hook (qa-engineer, Sonnet, 1h, priority P3, gate).
+- Observations, not filed: `Walk along Memory Lane` is refused (an idiom, like the pinned `Wall Street`);
+  `Located in Miami` has no ticket (§5a, for the PM).
+
+### 8. Cross-references
+
+- RETRO-369, RETRO-371 (Rule BD's evidence), RETRO-321, RETRO-322 (live clause), RETRO-375, RETRO-377,
+  RETRO-378 (the guard a cut-off reply would have set), RETRO-268, Rule BA, Rule BC, Rule H, Rule I.

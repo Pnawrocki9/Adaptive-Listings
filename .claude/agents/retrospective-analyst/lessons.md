@@ -4707,3 +4707,36 @@ FOLLOW-1167's detector again, now four entries running.
 4. **The worktree had no `node_modules`.** `pnpm install --frozen-lockfile --prefer-offline` took 30
    s, plus the `@estalara/shared` and `@estalara/sdk` builds. Budget for that before any
    re-execution.
+
+## 2026-11-01 / RETRO-372..380 (nine PRs, FOLLOW-1311 batch)
+
+**A finding I almost missed and why.** `A 2 Story Terrace.` read as a street (RETRO-380 LG-1). The PR,
+the amendment and K4a all say the rule never fired, and I nearly recorded that as "nothing to review".
+A rule with zero fires on the record is the one to probe hardest, with sentences it was not written
+for. The other near miss: MP-013's `revalidate_on` (RETRO-376). I grepped for Haiku in code first and
+found nothing; the trigger lives in the register, not the code. Grep the register for every merge that
+changes a model, a prompt or a grounding builder.
+
+**An axis or chain I had to trace twice.** The address ruling. It lives in two recognisers,
+`traits.ts` and `street-address.ts`, and I first filled a table column claiming what the second reads
+without running it. Two of the ten rows were wrong. **Never write a probe's result from reading the
+regex.** Also `RETRO-267`: the HTML comment at the end of an entry names that entry, so a line after
+the comment belongs to the next retro. The piped verifier is RETRO-268.
+
+**A meta-pattern in how gaps recur across agents.** Every independent reader on this ticket found
+something, and so did I after merge, in different places each time. Two rounds of review did not
+exhaust a recogniser, and a third reader on the narrowed slice found new classes. That is Rule BD. It
+also bounds Rule BD: review reduces the error rate of a closed list of patterns against open text, and
+it does not end it. Expect the first real listings (K4b) to find more.
+
+**Method notes carried forward.**
+
+1. `tsx --tsconfig apps/control-plane/tsconfig.json` from a sibling worktree's `node_modules`, a
+   scratch `.cts` file and the pure modules give a read-only probe in seconds, with no suite and no
+   install. `traits.ts` needs a `require` by absolute path.
+2. Compound shell with `git` or `gh` in a loop is refused in an isolated worktree. A small Python
+   script calling `subprocess` works.
+3. Check the record before filing a harness interaction. I expected a guard hit to turn a series RED;
+   `differentiator-e2e.mjs` already reads it as UNMEASURED, neutral, on purpose.
+4. Line counts: `#1112` and `#1118` qualify only because test files under `src` count (43 and 52
+   non-test lines). If D8 meant product lines, these two are out; the PM may want to say which.

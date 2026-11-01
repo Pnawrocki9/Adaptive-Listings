@@ -16,7 +16,7 @@
  */
 
 /** How long a refusal suppresses regeneration (seconds). */
-export const REFUSAL_GUARD_TTL_SECONDS = 3600;
+const REFUSAL_GUARD_TTL_SECONDS = 3600;
 
 /** The fields that make the generated text differ; all of them are part of the key. */
 export interface RefusalGuardScope {
@@ -31,7 +31,7 @@ export interface RefusalGuardScope {
 }
 
 /** Redis key of one guard (`descref:` never matches the `desc:{tenant}:{listing}:*` invalidation scan). */
-export function refusalGuardKey(s: RefusalGuardScope): string {
+function refusalGuardKey(s: RefusalGuardScope): string {
   return [
     'descref',
     s.tenantId,

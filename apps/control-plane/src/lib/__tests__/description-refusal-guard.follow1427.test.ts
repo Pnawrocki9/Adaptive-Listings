@@ -31,7 +31,9 @@ vi.mock('@/lib/llm-spend-counter', () => ({
 
 import type { DescriptionRequestedEvent } from '@estalara/shared';
 import { generateDescription } from '@/lib/description-generator';
-import { REFUSAL_GUARD_TTL_SECONDS, refusalGuardKey } from '@/lib/description-refusal-guard';
+import { isRefusalGuarded, setRefusalGuard } from '@/lib/description-refusal-guard';
+
+const TTL_SECONDS = 3600;
 
 const EVENT: DescriptionRequestedEvent = {
   tenant_id: '00000000-0000-4000-8000-000000001427',
@@ -105,9 +107,7 @@ describe('refused-description repeat guard (FOLLOW-1427)', () => {
     mockCreate.mockResolvedValue(reply(REFUSED_RAW));
     expect((await generateDescription(EVENT)).outcome.verdict).toBe('REFUSED');
     expect(mockCreate).toHaveBeenCalledTimes(1);
-    expect(redis.calls.some((c) => c.includes(`/ex/${String(REFUSAL_GUARD_TTL_SECONDS)}`))).toBe(
-      true,
-    );
+    expect(redis.calls.some((c) => c.includes(`/ex/${String(TTL_SECONDS)}`))).toBe(true);
 
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const second = await generateDescription(EVENT);
@@ -122,7 +122,7 @@ describe('refused-description repeat guard (FOLLOW-1427)', () => {
     vi.useFakeTimers();
     mockCreate.mockResolvedValue(reply(REFUSED_RAW));
     await generateDescription(EVENT);
-    vi.advanceTimersByTime((REFUSAL_GUARD_TTL_SECONDS + 1) * 1000);
+    vi.advanceTimersByTime((TTL_SECONDS + 1) * 1000);
     await generateDescription(EVENT);
     expect(mockCreate).toHaveBeenCalledTimes(2);
   });
@@ -139,7 +139,7 @@ describe('refused-description repeat guard (FOLLOW-1427)', () => {
     expect(mockCreate).toHaveBeenCalledTimes(2);
   });
 
-  it('the key carries the claims version, so a new version is a different key', () => {
+  it('the key carries the claims version, so a new version is not blocked', async () => {
     const scope = {
       tenantId: 't',
       listingId: 'l',
@@ -149,9 +149,9 @@ describe('refused-description repeat guard (FOLLOW-1427)', () => {
       listingRevision: 1,
       claimsVersion: 'claims-v9',
     };
-    expect(refusalGuardKey(scope)).not.toBe(
-      refusalGuardKey({ ...scope, claimsVersion: 'claims-v10' }),
-    );
+    await setRefusalGuard(scope);
+    expect(await isRefusalGuarded(scope)).toBe(true);
+    expect(await isRefusalGuarded({ ...scope, claimsVersion: 'claims-v10' })).toBe(false);
   });
 
   it('store failure: the model is called every time, never a refusal for the buyer', async () => {

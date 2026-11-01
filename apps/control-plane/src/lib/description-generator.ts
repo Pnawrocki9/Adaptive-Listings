@@ -132,8 +132,13 @@ import {
  *   unit and a year are read with what they are about (a room count is not a bedroom count, "$32,137"
  *   is not a price, "64 sq ft" is not "64 m²"), and a denied amenity the listing has is refused. No
  *   `claims-v7` row was checked against those; it is regenerated once instead of served.
+ * - `claims-v9` — 2026-10-31, FOLLOW-1311 slice 4: physical and tenure attributes (storeys, detached,
+ *   orientation, furnished, solar, vacant possession, freehold, low fees, new installations) with no
+ *   matching fact in the listing are refused, by a closed lexicon with a closed entailment table
+ *   (`lib/attribute-lexicon.ts`). No `claims-v8` row was checked against those; it is regenerated
+ *   once instead of served.
  */
-export const CLAIMS_VALIDATION_VERSION = 'claims-v8';
+export const CLAIMS_VALIDATION_VERSION = 'claims-v9';
 
 /** G-03: total budget per call (deadline on the whole, retries included). */
 const DESCRIPTION_DEADLINE_MS = 75_000;

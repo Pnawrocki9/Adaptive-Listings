@@ -194,7 +194,8 @@ const CLAUSE_BREAK_RE = /[.;:!?\n,]/gu;
  * @returns The part of the window after the last clause mark.
  */
 export function clauseBefore(text: string, start: number): string {
-  const before = Array.from(text.slice(0, start));
+  // Two code units at most per code point: the slice keeps a saturated text from going quadratic.
+  const before = Array.from(text.slice(Math.max(0, start - 2 * NEGATION_WINDOW), start));
   const window = before.slice(Math.max(0, before.length - NEGATION_WINDOW)).join('');
   let cut = 0;
   for (const m of window.matchAll(CLAUSE_BREAK_RE)) cut = m.index + m[0].length;
@@ -215,12 +216,24 @@ function isNegated(text: string, start: number): boolean {
  * @returns `true` when the text asserts what the pattern names.
  */
 export function asserted(pattern: RegExp, text: string): boolean {
+  return assertedMatches(pattern, text).length > 0;
+}
+
+/**
+ * Every non-negated match of `pattern`, by the rule of {@link asserted}.
+ *
+ * @param pattern - A global pattern.
+ * @param text - The text to read.
+ * @returns The matches the text asserts.
+ */
+export function assertedMatches(pattern: RegExp, text: string): RegExpExecArray[] {
+  const out: RegExpExecArray[] = [];
   for (const m of text.matchAll(pattern)) {
     if (isNegated(text, m.index) || negatedThroughList(text, m.index, isNegated)) continue;
     if (NEGATED_AFTER_RE.test(text.slice(m.index + m[0].length))) continue;
-    return true;
+    out.push(m);
   }
-  return false;
+  return out;
 }
 
 /**
@@ -233,6 +246,8 @@ const LIST_SEPARATOR_END_RE = new RegExp(
   `(?:[ \\t]*,[ \\t]*(?:(?:${LIST_COORDINATORS})[ \\t]+)?|[ \\t]+(?:${LIST_COORDINATORS})[ \\t]+)$`,
   'iu',
 );
+/** A separator is a comma and a word at most, so a list walk need not read the whole prefix. */
+const LIST_SEPARATOR_REACH = 40;
 /** One word of a bare list item (letters, hyphen). */
 const LIST_WORD_END_RE = /(?<![\p{L}\p{N}_-])[\p{L}-]+$/u;
 /**
@@ -290,10 +305,11 @@ function negatedThroughList(
   // The start of the negated first item, or -1.
   const walk = (end: number, items: number): number => {
     if (items >= LIST_MAX_ITEMS) return -1;
-    const sep = LIST_SEPARATOR_END_RE.exec(text.slice(0, end));
+    const from = Math.max(0, end - LIST_SEPARATOR_REACH);
+    const sep = LIST_SEPARATOR_END_RE.exec(text.slice(from, end));
     if (sep === null) return -1;
     // Grow the item one word at a time, leftwards from the separator: 1, 2, then 3 words.
-    let itemStart = sep.index;
+    let itemStart = from + sep.index;
     for (let words = 0; words < LIST_ITEM_MAX_WORDS; words += 1) {
       const head = text.slice(0, itemStart).replace(/[ \t]+$/u, '');
       if (words > 0 && head.length === itemStart) break;

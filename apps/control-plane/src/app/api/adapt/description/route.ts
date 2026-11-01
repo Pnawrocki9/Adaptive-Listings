@@ -54,7 +54,7 @@
  * the bump to `claims-v4`; FOLLOW-1414: `claims-v4` rows after the bump to `claims-v5`;
  * FOLLOW-1419: `claims-v5` rows after the bump to `claims-v6`; FOLLOW-1420 / FOLLOW-1421:
  * `claims-v6` rows after the bump to `claims-v7`; FOLLOW-1311: `claims-v7` rows after the bump to
- * `claims-v8`).
+ * `claims-v8`, and `claims-v8` rows after the bump to `claims-v9`).
  *
  * FOLLOW-1291 (revision fence, Codex F-03/F-17): every layer is fenced by the listing's revision
  * (`listing_revisions`, advanced by the listing.updated webhook — a LOCAL revision, see

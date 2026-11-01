@@ -1,0 +1,21 @@
+{
+  "ticket": "FOLLOW-1311 slice 4",
+  "classified_by": "ml-engineer, single rater, by hand against the listing",
+  "fit_before": 53,
+  "fit_baseline": 57,
+  "new_body_refusals": 1,
+  "new_body_refusals_since_baseline": 5,
+  "true_positives": 1,
+  "headlines_newly_suppressed": 0,
+  "adapt_slots_newly_refused": 0,
+  "adapt_slots_total": 84,
+  "un_refused": 0,
+  "moved": {
+    "description.kat.flip_investor.en": {
+      "from": "FIT",
+      "to": "REFUSED unsupported_attribute",
+      "classified": "true",
+      "why": "\"A retail buyer sees a top-floor walk-up\" for a listing that says \"4. piętro bez windy\" and never that the fourth floor is the top one. The served headline goes with the body."
+    }
+  }
+}

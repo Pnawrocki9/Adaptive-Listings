@@ -33,6 +33,13 @@ const STREET_PREFIX =
   '[Uu]l\\.|[Uu]lic[aąęy]|[Aa]l\\.|[Aa]lej[aąęie]|[Pp]l\\.|[Pp]lac(?:u|em)?|[Oo]s\\.|[Oo]siedl[aeu]|' +
   '[Cc]alle|[Cc]/|[Aa]venida|[Aa]vda\\.|[Pp]aseo|[Pp]laza|[Cc]arrer|[Rr]ua';
 const PARTICLE = '(?:de|del|la|las|los|im\\.)';
+/**
+ * The prefixes a street name may follow in lower case ("przy ul. parterowa"). Not "plac", "plaza",
+ * "paseo": "plac zabaw" and "plaza de parking" are claims. The first word only, and never a word
+ * that joins a clause: "cicha ulica z basenem" keeps its pool.
+ */
+const LOWER_NAME_PREFIX = '[Uu]l\\.|[Uu]lic[aąęy]|[Aa]l\\.|[Cc]alle|[Cc]/|[Aa]vda\\.';
+const NOT_A_STREET_NAME = '(?:z|ze|bez|i|w|na|przy|o|con|sin|y|en|a|e)(?![\\p{L}\\p{N}])';
 
 const ADDRESS_RES: readonly RegExp[] = [
   // "12 Bath Road", "2015 Ocean Drive"; a number with a currency on it is no house number
@@ -53,6 +60,11 @@ const ADDRESS_RES: readonly RegExp[] = [
   // "ul. Złota 44", "przy ul. 3 Maja 12", "calle de la Paz 7", "Aleje 12 Bath"
   new RegExp(
     `(?<![\\p{L}\\p{N}])(?:${STREET_PREFIX})\\s+(?:${PARTICLE}\\s+){0,2}${FIRST_NAME}(?:\\s+(?:${PARTICLE}\\s+)?${NAME}){0,3}(?:\\s+${HOUSE_NUMBER})?`,
+    'gu',
+  ),
+  // "ul. parterowa", "calle solar 7"
+  new RegExp(
+    `(?<![\\p{L}\\p{N}])(?:${LOWER_NAME_PREFIX})\\s+(?:${PARTICLE}\\s+){0,2}(?!${CLAIM_WORD}|${NOT_A_STREET_NAME})\\p{Ll}[\\p{L}'’.-]*(?:\\s+${HOUSE_NUMBER})?`,
     'gu',
   ),
   // Postcodes: "FL 32137", "30-001"
@@ -86,13 +98,21 @@ export function isAddressField(field: string): boolean {
 
 const escapeRe = (t: string): string => t.replace(/[.*+?^${}()|[\]\\/]/gu, '\\$&');
 
+/** A listed part that is a street by its own words; a town named like an attribute is not. */
+const LISTED_STREET_RE = new RegExp(
+  `^(?:(?:${STREET_PREFIX})\\s+\\S.*|.*\\S\\s+(?:${STREET_WORD}))$`,
+  'iu',
+);
+
 /**
- * Blank what `text` repeats of a listed address: a part with a letter and a digit ("Rynek 5"), or a
+ * Blank what `text` repeats of a listed address, in any case: a part with a letter and a digit
+ * ("Rynek 5"), a part that is a street by its own words ("Freehold Road", "ul. parterowa"), or a
  * street with the number the field keeps apart ("Calle Mayor, 12" as "Calle Mayor 12" or "Calle
  * Mayor, 12"). A bare number is never masked on its own: the listing's "12" says nothing about any
- * other 12 in the copy. Whole words only.
+ * other 12 in the copy. Nor is a lettered part that names no street: a location "Bungalow" leaves
+ * "a bungalow" a claim. Whole words only.
  *
- * @param text - Generated copy.
+ * @param text - Generated copy, or a listing's words.
  * @param addresses - The values of the listing's address fields.
  * @returns `text`, same length, with each repeated address replaced by spaces.
  */
@@ -106,7 +126,7 @@ export function maskListedAddressParts(text: string, addresses: readonly string[
     const parts = address.split(',').map((part) => part.trim());
     for (const [i, part] of parts.entries()) {
       if (!/\p{L}/u.test(part)) continue;
-      if (/\p{Nd}/u.test(part)) mask(part);
+      if (/\p{Nd}/u.test(part) || LISTED_STREET_RE.test(part)) mask(part);
       const next = parts[i + 1];
       if (next !== undefined && /^\p{Nd}+\p{L}?$/u.test(next)) {
         mask(`${part}, ${next}`);

@@ -2330,6 +2330,30 @@ async function closeQuizCardBeforeCta(page) {
 /** Total budget for AC(5)'s CTA click, across all attempts (FOLLOW-1398). */
 export const CTA_CLICK_BUDGET_MS = 15000;
 
+/** Cap on the text kept per failed CTA click attempt (FOLLOW-1425). */
+export const CTA_CLICK_ERROR_MAX_CHARS = 1200;
+/** Cap on failed attempts whose text is kept; the newest are kept (FOLLOW-1425). */
+export const CTA_CLICK_ERRORS_MAX_KEPT = 10;
+
+/**
+ * Evidence text for one failed click attempt (FOLLOW-1425): the whole Playwright message, which
+ * carries the call log that says WHY the call failed (run 188, README §5.54, kept only line 1).
+ * Newlines become ` ¦ ` so the entry stays one log line; the entry is cut at `maxChars`.
+ * Pure; evidence only, it never decides pass or fail.
+ *
+ * @param {unknown} err
+ * @param {number} [maxChars]
+ * @returns {string}
+ */
+export function ctaClickErrorText(err, maxChars = CTA_CLICK_ERROR_MAX_CHARS) {
+  const text = String(err)
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .join(' ¦ ');
+  return text.length > maxChars ? `${text.slice(0, maxChars)}…[truncated]` : text;
+}
+
 /**
  * Click the fixture CTA once it is attached, visible, scrolled into view and stable (FOLLOW-1398).
  *
@@ -2366,7 +2390,8 @@ export async function clickCtaWhenReady(page, opts = {}) {
       await cta.click({ timeout: 3000 });
       return { clicked: true, attempts, error: null, errors };
     } catch (err) {
-      errors.push(String(err).split('\n')[0]);
+      errors.push(ctaClickErrorText(err));
+      if (errors.length > CTA_CLICK_ERRORS_MAX_KEPT) errors.shift();
     }
     if (now() < deadline) await sleepFn(250);
   } while (now() < deadline);

@@ -35,6 +35,11 @@ vi.mock('@anthropic-ai/sdk', () => ({
 vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn(), captureMessage: vi.fn() }));
 vi.mock('@/lib/description-pg-cache', () => ({ publishPgCachedDescription: mockPublishPg }));
 vi.mock('@/lib/description-cache', () => ({ setCachedDescription: mockSetCached }));
+// FOLLOW-1427: the repeat guard talks to Redis; this suite stubs the Redis URL, so keep it off the network.
+vi.mock('@/lib/description-refusal-guard', () => ({
+  isRefusalGuarded: vi.fn().mockResolvedValue(false),
+  setRefusalGuard: vi.fn().mockResolvedValue(true),
+}));
 vi.mock('@/lib/description-generation-audit', () => ({
   writeDescriptionGenerationAudit: mockAudit,
 }));

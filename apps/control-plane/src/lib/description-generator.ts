@@ -69,6 +69,7 @@ import { computeCost } from '@/lib/llm-pricing';
 import { generationRequestFor, type GenerationRequestExtras } from '@/lib/generation-models';
 import { publishPgCachedDescription } from '@/lib/description-pg-cache';
 import { setCachedDescription } from '@/lib/description-cache';
+import { isRefusalGuarded, setRefusalGuard } from '@/lib/description-refusal-guard';
 import { writeDescriptionGenerationAudit } from '@/lib/description-generation-audit';
 import { checkOutputLanguage } from '@/lib/output-language';
 import { hasMetaCommentary } from '@/lib/meta-commentary';
@@ -598,7 +599,7 @@ function descriptionAboutTheHomeInstruction(locale: DescriptionRequestedEvent['l
 type ProtectedGround = 'protected_ground';
 
 type DescriptionOutcome =
-  | { verdict: 'SKIPPED'; reason: 'spend_cap' }
+  | { verdict: 'SKIPPED'; reason: 'spend_cap' | 'refused_guard' }
   | {
       verdict: 'FAILED';
       reason:
@@ -1137,6 +1138,30 @@ async function generateValidated(e: DescriptionRequestedEvent): Promise<Generati
     writes: NO_WRITES,
   });
 
+  // FOLLOW-1427: a refusal writes no cache entry, so without this every miss paid for the model
+  // again. Fail-open: an unavailable store reads as "not guarded" and we generate as before.
+  const guardScope = {
+    tenantId: e.tenant_id,
+    listingId: e.listing_id,
+    archetype: e.archetype,
+    locale: e.locale,
+    model,
+    listingRevision: e.listing_revision,
+    claimsVersion: CLAIMS_VALIDATION_VERSION,
+  };
+  if (await isRefusalGuarded(guardScope)) {
+    console.warn(
+      `[description-generator] refused_guard_hit tenant=${e.tenant_id} listing=${e.listing_id} archetype=${e.archetype} locale=${e.locale} — no model call`,
+    );
+    return {
+      outcome: { verdict: 'SKIPPED', reason: 'refused_guard' },
+      headline: null,
+      headlineViolation: null,
+      claimsValidation: null,
+      writes: NO_WRITES,
+    };
+  }
+
   // Spend gate BEFORE the description call — covers the headline call too (FOLLOW-556).
   const spend = await getDailySpend();
   if (spend >= DAILY_SPEND_CAP_USD) {
@@ -1201,6 +1226,7 @@ async function generateValidated(e: DescriptionRequestedEvent): Promise<Generati
       tokensOut: 0,
       latencyMs: 0,
     });
+    await setRefusalGuard(guardScope);
     console.warn(
       `[description-generator] refused_not_cached tenant=${e.tenant_id} listing=${e.listing_id} archetype=${e.archetype} violation=${outcome.violation}`,
     );

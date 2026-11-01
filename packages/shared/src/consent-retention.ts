@@ -70,6 +70,14 @@
 export const CONSENT_LOG_RETENTION_DAYS = 180;
 
 /**
+ * Days a cross-session identifier (`__estalara_xid__`) lives, and so the longest a buyer profile
+ * stored under it can live (FOLLOW-1316, ESC-090 item 1). SDK rotation and the server's absolute
+ * expiry read this one value; `scripts/check-consent-retention-sync.mjs` also compares it with the
+ * sentence served to visitors (`disclosure13_2`).
+ */
+export const XID_RETENTION_DAYS = 90;
+
+/**
  * The event types that make up the consent-decision audit log — the ONLY rows the retention
  * cron deletes.
  *

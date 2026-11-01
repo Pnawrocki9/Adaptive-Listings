@@ -95,6 +95,23 @@ vi.mock('@sentry/nextjs', () => ({
   captureMessage: vi.fn(),
 }));
 
+// FOLLOW-1316: the buyer-profile describe below restores through the real `/api/adapt`. These only
+// replace what that route reads beyond the store; the erase route uses none of them.
+vi.mock('@/lib/llm-gateway', () => ({
+  callLlmGateway: vi.fn().mockResolvedValue({
+    directives: [{ type: 'text', slot: 'cta', value: 'copy', archetype: 'x', confidence: 0.9 }],
+  }),
+}));
+vi.mock('@/lib/al-enablement', () => ({
+  resolveAlEnablement: vi.fn().mockResolvedValue({ off: false, reason: null }),
+}));
+vi.mock('@/lib/rag-retrieval', () => ({ retrieveListingContext: vi.fn().mockResolvedValue({}) }));
+vi.mock('@/lib/tenant-schema', () => ({ getTenantSchema: vi.fn().mockResolvedValue(null) }));
+vi.mock('@/lib/demo-override-store', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getDemoOverride: vi.fn().mockResolvedValue({ enabled: false }),
+}));
+
 // ─── Fixture DDL ──────────────────────────────────────────────────────────────
 //
 // All tables touched by the erase route:
@@ -314,6 +331,10 @@ afterEach(() => {
 // ─── Import production handler ────────────────────────────────────────────────
 
 import { POST as postErase } from './route';
+import { POST as postAdapt } from '../../adapt/route';
+import { writeDsrAuditLog } from '../_clickhouse';
+import * as Sentry from '@sentry/nextjs';
+import { createRedisTestDouble, type RedisTestDouble } from '@/lib/__tests__/redis-test-double';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -741,5 +762,171 @@ describe('FOLLOW-1108: consent_records erasure is tenant-scoped', () => {
 
     // Both rows survive: the empty key matches nothing.
     expect(await getConsent(TENANT_ID)).toHaveLength(2);
+  });
+});
+
+// ─── FOLLOW-1316 (R31, R34, NC-4): optional `xid`, awaited inline ─────────────
+
+describe('FOLLOW-1316: POST /api/dsr/erase with an xid', () => {
+  const OPS_KEY = 'buyer-profile-ops-key';
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const XID = '7f3f1c6e-2b1a-4c3d-9e8f-1a2b3c4d5e6f';
+  const createdAt = Date.now() - DAY_MS;
+  // TENANT_ID is assigned in beforeAll, so this runs per test, not at collection.
+  const key = (): string =>
+    `buyer_profile:${TENANT_ID}:${createHash('sha256').update(XID).digest('hex')}`;
+  const realFetch = globalThis.fetch;
+  let redis: RedisTestDouble;
+
+  const adapt = async (body: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    const res = await postAdapt(
+      new NextRequest('http://localhost/api/adapt', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${OPS_KEY}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          tenant_id: TENANT_ID,
+          session_id: `s${String(Math.random()).slice(2)}`,
+          page_type: 'listing_list',
+          holdout_pct: 0,
+          consent_state: 'consented',
+          xid: XID,
+          xid_created_at: createdAt,
+          ...body,
+        }),
+      }),
+    );
+    return (await res.json()) as Record<string, unknown>;
+  };
+
+  const seedAndProveRestore = async (): Promise<void> => {
+    await adapt({ archetype_hint: 'yield_hunter', confidence: 0.86, archetype_source: 'quiz' });
+    await vi.waitFor(
+      async () => {
+        expect(await redis.raw(['EXISTS', key()])).toBe(1);
+      },
+      { timeout: 10_000 },
+    );
+    const restored = await adapt({});
+    expect(restored.archetype).toBe('yield_hunter');
+    expect(restored.profile_restore).toBe('restored');
+  };
+
+  const eraseWith = async (body: Record<string, unknown>): Promise<Response> => {
+    const { otp, verificationId } = await seedDsrVerification({ sessionId: 'dsr-session' });
+    return postErase(
+      new NextRequest('http://localhost/api/dsr/erase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_id: verificationId, token: otp, ...body }),
+      }),
+    );
+  };
+
+  beforeEach(() => {
+    redis = createRedisTestDouble(realFetch);
+    vi.mocked(writeDsrAuditLog).mockClear();
+    vi.mocked(Sentry.captureException).mockClear();
+    vi.stubEnv('BUYER_PROFILE_ENABLED', 'true');
+    vi.stubEnv('UPSTASH_REDIS_URL', redis.url);
+    vi.stubEnv('UPSTASH_REDIS_TOKEN', 'local-dev-token');
+    vi.stubEnv('ADAPT_API_KEY', OPS_KEY);
+    vi.stubEnv('OPS_TENANT_ID', TENANT_ID);
+    vi.stubEnv('DEMO_MODE', '1');
+    vi.stubEnv('DEMO_MODE_JWT_SECRET', 'x'.repeat(40));
+    vi.stubEnv('CLICKHOUSE_URL', '');
+    vi.stubGlobal('fetch', (input: string | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url.startsWith(redis.url)) return redis.handle(url, init);
+      return Promise.reject(new Error(`unexpected fetch ${url}`));
+    });
+  });
+
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    await redis.cleanup([
+      key(),
+      `buyer_profile_tombstone:${TENANT_ID}:${createHash('sha256').update(XID).digest('hex')}`,
+    ]);
+  });
+
+  it('deletes the key before answering, and the same xid then gets neutral (NC-4)', async () => {
+    await seedAndProveRestore();
+
+    const res = await eraseWith({ xid: XID });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.buyer_profile_erasure).toBe('deleted');
+    expect(body.deleted_at).toBeDefined();
+    // Inline: gone at the moment the response exists, no settling needed.
+    expect(await redis.raw(['EXISTS', key()])).toBe(0);
+    const replay = await adapt({});
+    expect(replay.archetype).toBe('neutral');
+    expect(replay.directives).toEqual([]);
+  });
+
+  it('with no xid the profile stays and the response says none was asked for', async () => {
+    await seedAndProveRestore();
+
+    const res = await eraseWith({});
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Record<string, unknown>).buyer_profile_erasure).toBe(
+      'not_requested',
+    );
+    expect(await redis.raw(['EXISTS', key()])).toBe(1);
+  });
+
+  it('a store failure answers non-2xx, does not read as completed, and audits failed', async () => {
+    if (redis.real) return;
+    await seedAndProveRestore();
+    redis.failHttp(403);
+
+    const res = await eraseWith({ xid: XID });
+
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.buyer_profile_erasure).toBe('failed');
+    expect(body.deleted_at).toBeUndefined();
+    await vi.waitFor(() => {
+      expect(vi.mocked(writeDsrAuditLog)).toHaveBeenCalled();
+    });
+    expect(vi.mocked(writeDsrAuditLog).mock.lastCall?.[0].action).toBe('failed');
+    redis.failHttp(null);
+    expect(await redis.raw(['EXISTS', key()])).toBe(1);
+  });
+
+  it('the audit call and Sentry carry no xid and no hash of it (R34, R16)', async () => {
+    await seedAndProveRestore();
+    await eraseWith({ xid: XID });
+    await vi.waitFor(() => {
+      expect(vi.mocked(writeDsrAuditLog)).toHaveBeenCalled();
+    });
+
+    const sinks = JSON.stringify([
+      vi.mocked(writeDsrAuditLog).mock.calls as unknown,
+      vi.mocked(Sentry.captureException).mock.calls.map((c) => String(c[0])),
+    ]);
+    expect(sinks).not.toContain(XID);
+    expect(sinks).not.toContain(createHash('sha256').update(XID).digest('hex'));
+    expect(vi.mocked(writeDsrAuditLog).mock.lastCall?.[0].action).toBe('completed');
+  });
+
+  it('an xid that is not a strict v4 is a 400 and the OTP is not spent', async () => {
+    const { otp, verificationId } = await seedDsrVerification({ sessionId: 'dsr-session' });
+    const res = await postErase(
+      new NextRequest('http://localhost/api/dsr/erase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_id: verificationId, token: otp, xid: 'nope' }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(await res.json())).not.toContain('nope');
+    const row = await pg.query<{ used_at: unknown }>(
+      'SELECT used_at FROM dsr_verifications WHERE id = $1',
+      [verificationId],
+    );
+    expect(row.rows[0]?.used_at).toBeNull();
   });
 });

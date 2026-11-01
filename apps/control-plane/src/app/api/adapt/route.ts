@@ -54,6 +54,12 @@ import {
 import { resolveAlEnablement } from '@/lib/al-enablement';
 import { readShadowChatIntent, flattenIntentDimensions } from '@/lib/chat-intent-cache';
 import { VARIANT_INDEX } from '@/lib/variant-index';
+import {
+  honourConsentedXid,
+  readBuyerProfile,
+  roundProfileConfidence,
+  writeBuyerProfile,
+} from '@/lib/buyer-profile-store';
 import * as Sentry from '@sentry/nextjs';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -61,6 +67,8 @@ import * as Sentry from '@sentry/nextjs';
 const CONFIDENCE_THRESHOLD = 0.6;
 const HIGH_SIMILARITY_THRESHOLD = 0.85;
 const LOW_SIMILARITY_THRESHOLD = 0.6;
+/** Similarity of a restored profile: no signal this session, so the route's own default. */
+const RESTORED_SIMILARITY = 0.5;
 
 // ─── POST body schema ─────────────────────────────────────────────────────────
 
@@ -95,6 +103,17 @@ const AdaptPostBodySchema = z.object({
     .max(32)
     .transform((ids) => ids.filter(isTraitId).slice(0, 7))
     .optional(),
+  /**
+   * The returning buyer's id and its creation time in ms [FOLLOW-1316, R5, R21]. POST body only.
+   * A wrong shape behaves as if it was not sent, never a 400; `honourConsentedXid` decides the rest.
+   */
+  xid: z.string().max(64).optional().catch(undefined),
+  xid_created_at: z.number().optional().catch(undefined),
+  /**
+   * Where `archetype_hint` came from, for the profile write [FOLLOW-1316, R13]. The SDK omits it for
+   * a label the chat prior moved, and anything else writes nothing.
+   */
+  archetype_source: z.enum(['quiz', 'behavior']).optional().catch(undefined),
 });
 
 // ─── Decision logic ───────────────────────────────────────────────────────────
@@ -335,6 +354,10 @@ function logDecisionAsync(
   scoringPath: ScoringPath = 'not_applicable',
   /** Why a reorder-capable request got no `reorder`, or null [FOLLOW-1202]. */
   reorderWithheld: ReorderWithheldReason | null = null,
+  /** What the arm was keyed on; the xid itself is never logged [FOLLOW-1316, R16, R41]. */
+  assignmentUnit: 'xid' | 'session' = 'session',
+  /** This decision served a stored profile [FOLLOW-1316, R16]. */
+  profileRestored = false,
 ): Promise<void> {
   // Returns a promise for `after()`; no-op without CLICKHOUSE_URL [FOLLOW-431].
   const clickhouseUrl = process.env.CLICKHOUSE_URL;
@@ -359,6 +382,8 @@ function logDecisionAsync(
     holdout: holdoutGroup,
     variant,
     ...(reorderWithheld !== null ? { reorder_withheld: reorderWithheld } : {}),
+    assignment_unit: assignmentUnit,
+    ...(assignmentUnit === 'xid' ? { profile_restored: profileRestored } : {}),
   });
 
   // Invariant: the column list stays one literal line and is never quoted in a comment here —
@@ -711,11 +736,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Demo override (DEMO_MODE=1) before the holdout gate, to log would-be values [FOLLOW-452].
   const demoOverride = demoMode ? await resolveDemoArchetypeOverride(tenantId) : null;
   const demoActive = demoOverride !== null;
-  const archetypeId = (demoOverride?.archetypeId ??
-    body.archetype_hint ??
-    'neutral') as ArchetypeId;
-  const confidence = demoOverride?.confidence ?? body.confidence ?? 0.5;
-  const similarity = demoOverride?.similarity ?? body.similarity ?? 0.5;
+  let archetypeId = (demoOverride?.archetypeId ?? body.archetype_hint ?? 'neutral') as ArchetypeId;
+  let confidence = demoOverride?.confidence ?? body.confidence ?? 0.5;
+  let similarity = demoOverride?.similarity ?? body.similarity ?? 0.5;
+  let traits = body.traits;
+
+  // Consent gate of the returning-buyer profile; null means as if no xid was sent [FOLLOW-1316, R5].
+  const consentedXid = honourConsentedXid(
+    { xid: body.xid, xidCreatedAt: body.xid_created_at, consentState: body.consent_state },
+    Date.now(),
+  );
+  const assignmentUnit = consentedXid ? ('xid' as const) : ('session' as const);
 
   // Holdout gate: rate and arm key are configuration, fail loud when unset [FOLLOW-1201].
   let effectiveHoldoutPct: number;
@@ -738,6 +769,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const assignment = await assignHoldout({
     tenant_id: tenantId,
     session_id: body.session_id,
+    ...(consentedXid ? { assignment_unit_id: consentedXid.xid } : {}),
     ...(body.consent_state !== undefined ? { consent_state: body.consent_state } : {}),
     consent_mode_enabled: body.consent_mode_enabled ?? false,
     holdout_pct: effectiveHoldoutPct,
@@ -782,6 +814,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         '', // leadId — not wired via POST body yet (FOLLOW-170)
         'page_type_derived', // pageContextSource (FOLLOW-358): POST derives from page_type
         effectiveHoldoutPct, // holdoutPct (FOLLOW-988) — the EFFECTIVE rate: configured, or ops override (FOLLOW-1201)
+        'not_applicable', // scoringPath — no reorder on the holdout path
+        null, // reorderWithheld
+        assignmentUnit,
       ),
     );
 
@@ -801,6 +836,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // Treatment arm: continue building directives [ADR-0022].
+
+  // Returning buyer: this session's own qualifying signal wins, otherwise the stored profile. Past
+  // the opt-out, AL and holdout returns, so none of those reads the store [FOLLOW-1316, R36, R40].
+  const sessionHasSignal = archetypeId !== 'neutral' && confidence > CONFIDENCE_THRESHOLD;
+  let profileRestore: AdaptationDirectives['profile_restore'];
+  if (consentedXid && !demoActive && !sessionHasSignal) {
+    const stored = await readBuyerProfile(tenantId, consentedXid.xid);
+    if (stored.result === 'hit') {
+      profileRestore = 'restored';
+      archetypeId = stored.profile.archetype;
+      confidence = stored.profile.confidence;
+      similarity = RESTORED_SIMILARITY;
+      if (!traits?.length) traits = stored.profile.traits;
+    } else {
+      profileRestore = stored.result;
+    }
+  }
 
   // RAG: top-3 FAQ answers for this listing [TICKET-AGENCY-001].
 
@@ -847,7 +899,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     selectedVariant,
     groundingMissing,
     body.listing_id,
-    body.traits,
+    traits,
   );
 
   // No per-listing headline off detail pages [FOLLOW-345].
@@ -975,8 +1027,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ...(chatIntentDetectedAt !== null ? { chat_intent_detected_at: chatIntentDetectedAt } : {}),
     // FOLLOW-340: include resolved slot selectors for SDK self-annotation.
     ...(slotSelectors !== undefined ? { slot_selectors: slotSelectors } : {}),
+    ...(profileRestore !== undefined ? { profile_restore: profileRestore } : {}),
     generated_at: new Date().toISOString(),
   };
+
+  // The profile write [FOLLOW-1316, R14, R13]: past every early return, so not opted out, AL on, in
+  // treatment. A restored call has no new state; a behaviour label stops once the session has chat.
+  const profileSource = body.archetype_source;
+  if (
+    consentedXid &&
+    !demoActive &&
+    profileRestore === undefined &&
+    profileSource !== undefined &&
+    (profileSource === 'quiz' || chatIntentDimensions === null) &&
+    roundProfileConfidence(confidence) > CONFIDENCE_THRESHOLD
+  ) {
+    const candidate = { archetype: archetypeId, confidence, source: profileSource, traits };
+    afterResponse(() => writeBuyerProfile(tenantId, consentedXid, candidate));
+  }
 
   // page_context_source='page_type_derived'; registered via after() [FOLLOW-358, FOLLOW-431].
   afterResponse(() =>
@@ -999,6 +1067,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       effectiveHoldoutPct, // holdoutPct (FOLLOW-988) — the EFFECTIVE rate: configured, or ops override (FOLLOW-1201)
       scoringPath, // FOLLOW-560: 'not_applicable' unless a reorder was attempted above
       reorderWithheld, // FOLLOW-1202: why no reorder was appended, or null
+      assignmentUnit,
+      profileRestore === 'restored',
     ),
   );
 

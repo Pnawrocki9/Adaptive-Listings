@@ -296,6 +296,12 @@ export interface AdaptationDirectives {
    */
   chat_intent_detected_at?: string | null;
   /**
+   * What the returning-buyer restore did on this call (FOLLOW-1316). Absent when no store read
+   * happened: no honoured xid, this session's own signal already qualifies, or a demo override.
+   * `error` means the store failed and the buyer got neutral (Rule K.2, R18).
+   */
+  profile_restore?: 'restored' | 'miss' | 'error';
+  /**
    * Resolved slot selector map from `detail_schema.slot_selectors` (FOLLOW-340).
    *
    * A flat `{ slotName → CSS_selector }` mapping derived from the active tenant's

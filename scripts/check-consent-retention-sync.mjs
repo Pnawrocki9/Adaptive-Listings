@@ -42,6 +42,9 @@
  *       languages — including the prose in dpia.md and PRIVACY_NOTICE_TEMPLATE.md.
  *   G7  ropa.md and dpia.md name the constant, so the corpus points at code rather than
  *       restating a number that can drift again.
+ *   G8  FOLLOW-1316 (R22): the xid's retention. `XID_RETENTION_DAYS` == every number in the served
+ *       `disclosure13_2`, in both JSON artefacts and every locale; == the SDK's rotation period; and
+ *       the profile store derives its expiry from the constant, with no literal of its own.
  *
  * Modes:
  *   (no args)     check; exit 0 on pass, 1 on violation
@@ -59,6 +62,7 @@ import path from 'node:path';
 import {
   CONSENT_DISCLOSURE_LOCALES,
   CONSENT_LOG_RETENTION_DAYS,
+  XID_RETENTION_DAYS,
   buildConsentLogRetentionSql,
   renderDisclosure13_1,
 } from '../packages/shared/src/consent-retention.ts';
@@ -74,6 +78,8 @@ const P = {
   dpia: 'docs/compliance/dpia.md',
   notice: 'docs/compliance/PRIVACY_NOTICE_TEMPLATE.md',
   example: 'packages/shared/src/examples/consent-text.ts',
+  sdkSession: 'packages/sdk/src/core/session.ts',
+  profileStore: 'apps/control-plane/src/lib/buyer-profile-store.ts',
 };
 
 /** The route path the cron must be scheduled on. */
@@ -322,6 +328,43 @@ function check(base) {
   }
   notes.push(`G7: ropa.md and dpia.md name the enforcing constant.`);
 
+  // ── G8 — the xid's retention: one value across the sentence, the SDK and the store ──
+  for (const rel of [P.canonical, P.served]) {
+    const raw = read(base, rel);
+    if (raw === null) continue; // G1/G2 already report a missing artefact.
+    for (const locale of CONSENT_DISCLOSURE_LOCALES) {
+      const sentence = JSON.parse(raw)?.locales?.[locale]?.disclosure13_2;
+      const digits = String(sentence ?? '').match(/\b(\d+)\b/g) ?? [];
+      if (digits.length === 0 || digits.some((d) => Number(d) !== XID_RETENTION_DAYS)) {
+        problems.push(
+          `G8: ${rel} locale '${locale}' 'disclosure13_2' does not state XID_RETENTION_DAYS ` +
+            `(${String(XID_RETENTION_DAYS)}): ${JSON.stringify(sentence)}.`,
+        );
+      }
+    }
+  }
+  const sdkSrc = read(base, P.sdkSession);
+  const rotation = sdkSrc?.match(
+    /const XID_TTL_MS = (XID_RETENTION_DAYS|\d+) \* 24 \* 60 \* 60 \* 1000/,
+  );
+  if (!rotation) {
+    problems.push(`G8: ${P.sdkSession} has no recognisable XID_TTL_MS rotation period.`);
+  } else if (rotation[1] !== 'XID_RETENTION_DAYS' && Number(rotation[1]) !== XID_RETENTION_DAYS) {
+    problems.push(
+      `G8: the SDK rotates the xid after ${rotation[1]} days but XID_RETENTION_DAYS is ` +
+        `${String(XID_RETENTION_DAYS)}; a profile could outlive, or die before, its id.`,
+    );
+  }
+  const storeSrc = read(base, P.profileStore);
+  if (storeSrc === null) {
+    problems.push(`G8: the profile store ${P.profileStore} is MISSING.`);
+  } else if (!/XID_RETENTION_MS = XID_RETENTION_DAYS \* DAY_MS/.test(stripComments(storeSrc))) {
+    problems.push(`G8: ${P.profileStore} does not derive its expiry from XID_RETENTION_DAYS.`);
+  }
+  notes.push(
+    `G8: xid retention ${String(XID_RETENTION_DAYS)}d agrees across the sentence, SDK and store.`,
+  );
+
   return { problems, notes };
 }
 
@@ -495,6 +538,33 @@ function selfTest() {
     (base) =>
       patch(base, P.ropa, (s) => s.replaceAll('CONSENT_LOG_RETENTION_DAYS', 'the constant')),
     'never names CONSENT_LOG_RETENTION_DAYS',
+  );
+
+  run(
+    'T11 the served xid sentence states another period',
+    (base) => patch(base, P.served, (s) => s.replace('for up to 90 days', 'for up to 30 days')),
+    "locale 'en' 'disclosure13_2' does not state XID_RETENTION_DAYS",
+  );
+
+  run(
+    'T12 the SDK rotates the xid on a different period',
+    (base) =>
+      patch(base, P.sdkSession, (s) =>
+        s.replace(/const XID_TTL_MS = [^;]+;/, 'const XID_TTL_MS = 30 * 24 * 60 * 60 * 1000;'),
+      ),
+    'the SDK rotates the xid after 30 days',
+  );
+
+  run(
+    'T13 the store types its own expiry instead of deriving it',
+    (base) =>
+      patch(base, P.profileStore, (s) =>
+        s.replace(
+          'XID_RETENTION_MS = XID_RETENTION_DAYS * DAY_MS',
+          'XID_RETENTION_MS = 90 * DAY_MS',
+        ),
+      ),
+    'does not derive its expiry from XID_RETENTION_DAYS',
   );
 
   console.log(`\n${String(passes)} passed, ${String(failures)} failed.`);

@@ -149,3 +149,37 @@ describe('assignHoldout — server-side secret keying [FOLLOW-1201 AC(2)]', () =
     ).rejects.toThrow(/assignment_secret/);
   });
 });
+
+describe('assignment_unit_id (FOLLOW-1316, ESC-090 item 2)', () => {
+  const base = {
+    tenant_id: '00000000-0000-4000-8000-0000000000aa',
+    assignment_secret: 'unit-id-test-secret-'.repeat(2),
+    holdout_pct: 0.5,
+  };
+  const armOf = async (session_id: string, assignment_unit_id?: string): Promise<boolean> => {
+    const outcome = await assignHoldout({
+      ...base,
+      session_id,
+      ...(assignment_unit_id !== undefined ? { assignment_unit_id } : {}),
+    });
+    if (outcome.skipped) throw new Error('unexpected skip');
+    return outcome.holdout_group;
+  };
+
+  it('the same unit id gets one arm whatever the session, and both arms occur', async () => {
+    const arms = new Set<boolean>();
+    for (let i = 0; i < 32; i++) {
+      const unit = `xid-${String(i)}`;
+      const arm = await armOf('session-a', unit);
+      expect(await armOf('session-b', unit)).toBe(arm);
+      arms.add(arm);
+    }
+    expect(arms.size).toBe(2);
+  });
+
+  it('a unit id draws exactly what a session of that id would, and absent falls back per session', async () => {
+    for (let i = 0; i < 16; i++) {
+      expect(await armOf('ignored', `id-${String(i)}`)).toBe(await armOf(`id-${String(i)}`));
+    }
+  });
+});

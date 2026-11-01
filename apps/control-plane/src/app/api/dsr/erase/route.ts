@@ -39,7 +39,10 @@
  *      Cron polls `system.mutations` and finalises the audit log.
  *   5. Idempotency: re-running for an already-erased session inspects
  *      `dsr_clickhouse_mutations` and returns current status without reissuing.
- *   6. Return 200 { deleted_at, clickhouse_deletion: { status, mutations: [...] } }.
+ *   6. FOLLOW-1316 (R31, R34): an optional body `xid` deletes the returning-buyer profile, awaited
+ *      inline. The result is `buyer_profile_erasure` on the wire; a store failure answers 503 with
+ *      the rest of this erase still reported, and audits `failed`. The xid reaches no log or audit row.
+ *   7. Return 200 { deleted_at, clickhouse_deletion: { status, mutations: [...] } }.
  *
  * @module apps/control-plane/src/app/api/dsr/erase/route
  */
@@ -60,6 +63,7 @@ import {
 } from '@estalara/db';
 import { verifyAndConsumeOtp, dsrVerifyFailureResponse } from '@/lib/dsr-verify';
 import { eraseQuizRunsForSession } from '@/lib/quiz-runs';
+import { deleteBuyerProfile, isStrictXid } from '@/lib/buyer-profile-store';
 import { deleteShadowChatIntent } from '@/lib/chat-intent-cache';
 import { DSR_AUDIT_ACTIONS, writeDsrAuditLog } from '../_clickhouse';
 import {
@@ -73,6 +77,8 @@ import {
 const EraseBodySchema = z.object({
   request_id: z.string().min(1),
   token: z.string().min(1),
+  /** The buyer's cross-visit id, in the body only; its profile is erased too [FOLLOW-1316, R31]. */
+  xid: z.string().refine(isStrictXid).optional(),
 });
 
 // ─── Redis session DEL (fire-and-forget) ─────────────────────────────────────
@@ -269,11 +275,12 @@ async function issueClickHouseEraseMutations(args: {
 /**
  * POST /api/dsr/erase
  *
- * Body: `{ request_id: string, token: string }` — the DSR request id and the
- * 6-digit OTP.
+ * Body: `{ request_id: string, token: string, xid?: string }` — the DSR request id, the 6-digit
+ * OTP, and optionally the buyer's cross-visit id.
  *
  * @returns 200 `{ deleted_at, clickhouse_deletion: { status, mutations } }` on success.
  * @returns 400 on invalid body.
+ * @returns 503 when `xid` was given and the profile store failed: the rest ran, this did not.
  * @returns 401 when OTP is expired, already used, or incorrect.
  * @returns 404 when request_id is not found or is a different capability.
  * @returns 429 when the request has been locked out after too many wrong guesses.
@@ -304,7 +311,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const { request_id: requestId, token } = parsed.data;
+  const { request_id: requestId, token, xid } = parsed.data;
   const db = createAdminClient();
 
   // ── Verify (request-scoped lookup + attempt cap/lockout + atomic mark-used) ─
@@ -619,6 +626,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     clickhouseDeletion = { status: 'failed', mutations: [] };
   }
 
+  // ── FOLLOW-1316 (R31): the returning-buyer profile, awaited inline ─────────
+  // Not in `afterResponse`: the response has to say whether it happened.
+  const buyerProfileErasure = xid
+    ? await deleteBuyerProfile(record.tenantId, xid)
+    : 'not_requested';
+  const profileEraseFailed = buyerProfileErasure === 'failed';
+
   // ── Audit log (fire-and-forget) ────────────────────────────────────────────
   // We persist the audit row immediately. The poller will later update the
   // clickhouse_mutation_* columns once mutations resolve.
@@ -629,7 +643,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       tenant_id: record.tenantId,
       session_id: record.sessionId,
       dsr_type: 'erase',
-      action: DSR_AUDIT_ACTIONS.completed,
+      action: profileEraseFailed ? DSR_AUDIT_ACTIONS.failed : DSR_AUDIT_ACTIONS.completed,
       email: record.email,
       requested_at: record.createdAt,
       completed_at: now,
@@ -638,7 +652,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   return NextResponse.json(
     {
-      deleted_at: now.toISOString(),
+      // A failed profile delete must not read as a completed erase (R31).
+      ...(profileEraseFailed
+        ? {
+            error: {
+              code: 'buyer_profile_erase_failed',
+              message: 'The buyer profile could not be deleted; the other stores below were.',
+            },
+          }
+        : { deleted_at: now.toISOString() }),
+      // FOLLOW-1316: deleted | not_found | not_configured | failed | not_requested.
+      buyer_profile_erasure: buyerProfileErasure,
       // FOLLOW-238 / FOLLOW-239: observable CRM capability provenance (Rule K.2 — not silent).
       // 'complete'                 — Pass B ran, or no CRM-namespace rows exist for this tenant.
       // 'crm_tenant_unverifiable'  — Pass B skipped; tenant has CRM rows but subject membership
@@ -651,6 +675,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       quiz_runs_erasure: quizRunsErasure,
       clickhouse_deletion: clickhouseDeletion,
     },
-    { status: 200 },
+    { status: profileEraseFailed ? 503 : 200 },
   );
 }

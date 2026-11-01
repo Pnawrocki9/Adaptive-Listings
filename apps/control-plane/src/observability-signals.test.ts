@@ -222,6 +222,10 @@
  * FOLLOW-1364 (quiz data retention, ESC-086 C6) added one row: `app/api/cron/quiz-retention/route.ts`
  * (1 site - the daily purge of `quiz_runs` / `quiz_completions` failing; a missing `quiz_runs` is
  * tolerated and not captured). No existing row moved. It is now **111 in 71**.
+ *
+ * FOLLOW-1316 (returning buyer profile) added one row, one site: `lib/buyer-profile-store.ts`, whose
+ * single reporter carries a failure code and nothing else (design review R16, R18). It is now
+ * **112 in 72**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -235,7 +239,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 111;
+const TOTAL_SITES = 112;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -627,6 +631,13 @@ const REGISTER: CaptureSiteGroup[] = [
     file: 'app/api/quiz/config/route.ts',
     sites: 1,
     meaning: 'The quiz configuration could not be served.',
+    consumer: NO_CHANNEL,
+  },
+  {
+    file: 'lib/buyer-profile-store.ts',
+    sites: 1,
+    meaning:
+      'The returning-buyer profile store failed: the read served neutral with `profile_restore: error`, the write was lost, or the delete answered non-2xx so the browser keeps the xid and retries. `redis_unconfigured` with BUYER_PROFILE_ENABLED on means the deployment is misconfigured. Code only, no xid. (FOLLOW-1316)',
     consumer: NO_CHANNEL,
   },
   {

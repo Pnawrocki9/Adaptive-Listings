@@ -56161,6 +56161,15 @@ compliance-engineer review recorded in ESC (consent, DPIA/ROPA, retention, DSR, 
 checkpoint K4b (AC(9) with negative control). Source: approved plan
 `~/.claude/plans/teraz-przerwa-i-czs-smooth-elephant.md`; ESC-085.
 
+## AMENDMENT to FOLLOW-1316 — 2026-11-01: narrowed by the design review and ESC-090
+
+**AMENDMENT (2026-11-01).** The build follows `docs/compliance/FOLLOW-1316-design-review.md`, R1 to
+R46 and NC-1 to NC-14, with the CEO's rulings in ESC-090. "Send `xid` with events" is withdrawn: the
+xid goes in the `/api/adapt` and profile route bodies only. A visible withdrawal control and the
+`/api/adapt` consent gate ship with this ticket. K4b drives "revoked through DSR" with a seeded row,
+because `/api/dsr/initiate` refuses every caller today, and the evidence says so. AC(9) makes TALLY
+`total=9`, not 8 as written earlier: AC(10) already made it 8.
+
 ## AMENDMENT to FOLLOW-1307 — 2026-10-18 by FOLLOW-1320: plan phase and order
 
 **AMENDMENT (2026-10-18).** Phase 6 S1 (Opus, `/security-review`). Re-scoped from post-GO to

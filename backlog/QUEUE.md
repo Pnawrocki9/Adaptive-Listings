@@ -143,7 +143,29 @@
   not fired live yet.
 - **FOLLOW-1428** — status: BACKLOG # P3 product. FAILED descriptions (truncated, empty, wrong
   language) also follow a billed call, write nothing and regenerate on every miss; FOLLOW-1427
-  guards REFUSED only. Next free: FOLLOW-1431, RETRO-372, ESC-090.
+  guards REFUSED only.
+- **FOLLOW-1431** — status: IN_PROGRESS # P2 product, RETRO-372. Own address refused by the
+  protected-ground guard. Own-address blanking was tried three times and stopped by independent
+  readers each time (#1130 not merged): it spares sensitive copy. Being reduced to tightenings only;
+  the ticket stays open.
+- **FOLLOW-1436** — status: IN_PROGRESS # P2 product, RETRO-380, in #1130.
+- **FOLLOW-1432** — status: BACKLOG # P2 product. `recentEvents` is printed in every adapt prompt
+  and set by nothing.
+- **FOLLOW-1433** — status: BACKLOG # P2 measurement. Discharge MP-012, MP-013, MP-017.
+- **FOLLOW-1434** — status: BACKLOG # P3 product. T8 spellings.
+- **FOLLOW-1435** — status: BACKLOG # P3 measurement. Count a FOLLOW-1427 guard hit, one live proof.
+- **FOLLOW-1437** — status: BACKLOG # P3 gate. Piped `git push` hides a failed pre-push hook.
+- **FOLLOW-1438** — status: READY # P2 compliance. ROPA line 159 and DPIA lines 1215 and 1295 say
+  GPC is honoured; no code reads it. FOLLOW-1316 R7 fixes this for that feature only.
+- **FOLLOW-1439** — status: BACKLOG # P3 compliance. `intent_sessions` has no ROPA retention row,
+  and ingest accepts a client-supplied `cross_session_id` into it.
+- **FOLLOW-1440** — status: BACKLOG # P2 product. Guard gaps served at origin/main: statements about
+  residents outside the closed list (`Mieszkańcy to katolicy.`, `The residents are Muslim.`), other
+  terms with the marker exemption (`Ghetto Road.`, `Birkenau Road.`),
+  `ul. Treblinki 3. Tu był obóz.`. Closing them tightens.
+- **FOLLOW-1441** — status: BACKLOG # P3 product. Body names: `Located in Miami` passes (slice 5
+  limit). A judge was tried and removed: 4 of 24 harmless cases passed. Next free: FOLLOW-1442,
+  RETRO-381, ESC-091.
 - **FOLLOW-1429** — status: READY # P2 product. Blind audit of 2026-11-01: 32 firm language errors
   on PL and ES pages, in 21 of 56 texts, many of them translated persona phrases ("matematyka
   wyjścia", "ogon najmu", "zaprojektowany pod więcej weekendów"), plus "sqm" and "Lisbon" on Polish
@@ -391,9 +413,10 @@
 - **FOLLOW-820** — status: READY_FOR_REVIEW # every condition measured: 1 (README §5.24, `main` HEAD
   `e8d1a04d`, 3× GREEN `[FRESH]`, not ruled on), 1b MET, 1c MET, 2 DONE. Awaiting the CEO GO/NO-GO.
   CEO 2026-10-16: ruling deferred until localhost completion.
-- **FOLLOW-1316** — status: READY # P1, NEXT UP, CEO-approved 2026-10-16. Cross-visit buyer profile
-  persistence (`xid` to the server, profile restored on a new session); compliance-engineer review
-  is a gate. sdk + backend. Plan 2026-10-17: Phase 4 P7, gate K4b.
+- **FOLLOW-1316** — status: IN_PROGRESS # P1, ESC-090 RESOLVED 2026-11-01, build to
+  docs/compliance/FOLLOW-1316-design-review.md R1-R46. CEO-approved 2026-10-16. Cross-visit buyer
+  profile persistence (`xid` to the server, profile restored on a new session); compliance-engineer
+  review is a gate. sdk + backend. Plan 2026-10-17: Phase 4 P7, gate K4b.
 - **FOLLOW-1317** — status: DONE # PR #1092, merged as `080ccef5` (2026-10-29), re-checked against
   `core-master` `ListingResponseTO.kt` 2026-10-30; AC(1b) still owed at K4a; was READY # P1.
   Grounding loses price and street address on the real Estalara backend (`priceUsd`/`priceEur`, no

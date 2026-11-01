@@ -1,0 +1,60 @@
+{
+  "case_count": 98,
+  "change": "FOLLOW-1429 (pl/es language errors): a Polish or Spanish description USER prompt ends with one more paragraph (NATURAL POLISH / NATURAL SPANISH: idiomatic copy, not a translation of the voice pattern's stock phrases; m2, local thousands separator and currency sign, local city names; no figure changes). English pages and every headline prompt are unchanged. v28 is a prompt-digest re-freeze of v27: only description_user digests of the pl/es cases moved, no verdict, no stamp. The pl/es copy_template lines (packages/shared playbooks) are not in the corpus: each case carries its own copy_template. The v28 guard strips the appended paragraph and proves the v27 prompt, byte for byte.",
+  "claims_validation_version": "claims-v10",
+  "corpus": "corpus.v28.jsonl",
+  "corpus_sha256": "04110aca:0d1ef6dc:1a35efec:ff08cdba:422b7505:842949ab:8f29ceba:fcea359e",
+  "delta": [],
+  "derived_from": {
+    "corpus": "corpus.v27.jsonl",
+    "corpus_sha256": "30021743:5690c67a:c1e6c666:5874b9b4:3cd29b04:f9666072:bb1b8f83:f1da2e85",
+    "manifest": "MANIFEST.v27.json"
+  },
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-11-01",
+  "headline_called": 62,
+  "headline_suppressed": 29,
+  "kind": "prompt_refreeze",
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "FAILED/empty": 2,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/meta_commentary": 1,
+    "FAILED/residual_tag": 3,
+    "FAILED/truncated": 1,
+    "NEUTRAL/with_reason": 8,
+    "NEUTRAL/without_reason": 1,
+    "REFUSED/count_mismatch": 1,
+    "REFUSED/hallucinated_number": 5,
+    "REFUSED/unit_mismatch": 2,
+    "REFUSED/unsupported_amenity": 6,
+    "REFUSED/unsupported_guarantee": 2
+  },
+  "per_verdict": {
+    "FAILED": 11,
+    "FIT": 62,
+    "NEUTRAL": 9,
+    "REFUSED": 16
+  },
+  "recorded_outputs_predate_prompt": "Every raw output in this corpus was produced by an older prompt. They are replayed through the unchanged checks, so they pin the checks and the new prompt bytes, NOT what the new prompt makes the model write.",
+  "refrozen": [
+    "live.012.listing-005.student_parent.es",
+    "live.019.listing-008.upsizer.es",
+    "live.027.listing-012.downsizer.pl",
+    "refused.non.ascii.body.with.invented.number",
+    "fit.non.ascii.body.pl"
+  ],
+  "user_prompt_change": {
+    "appended_after_room_count_convention": {
+      "es": "NATURAL SPANISH: write idiomatic copy of a Spanish estate agent, not a translation. The voice pattern and the phrases it quotes set a register, they are not sentences to translate: say the idea in your own words. Use Spanish forms: m² (not sqm), the Spanish thousands separator and currency sign when the listing gives the currency — only the spelling changes, never a digit or an amount — and the Spanish name of a city or region that has one (\"Lisboa\", not \"Lisbon\"; this refines the place-name sentence above), while street, building and business names stay as the listing writes them. Check gender and agreement.",
+      "pl": "NATURAL POLISH: write idiomatic copy of a Polish estate agent, not a translation. The voice pattern and the phrases it quotes set a register, they are not sentences to translate: say the idea in your own words. Use Polish forms: m² (not sqm), the Polish thousands separator and currency sign when the listing gives the currency (\"4 200 zł\" for 4,200 PLN) — only the spelling changes, never a digit or an amount — and the Polish name of a city or region that has one (\"Lizbona\", not \"Lisbon\"; this refines the place-name sentence above), while street, building and business names stay as the listing writes them. Check gender and case agreement."
+    }
+  }
+}

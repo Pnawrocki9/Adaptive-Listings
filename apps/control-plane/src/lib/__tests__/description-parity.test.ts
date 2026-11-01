@@ -117,7 +117,14 @@
  *     for byte. Every guard replays with the CURRENT system and headline digests (v26's); the guards
  *     of older prompt changes read the headline prompt with the personas as they were.
  *   - `corpus.v27.jsonl` + `MANIFEST.v27.json` — FOLLOW-1311 slice 5, `claims-v10`, a stamp-only
- *     re-freeze of v26, the current contract: the street claim moves no verdict of the corpus.
+ *     re-freeze of v26: the street claim moves no verdict of the corpus.
+ *   - `corpus.v28.jsonl` + `MANIFEST.v28.json` — FOLLOW-1429 appended one paragraph (idiomatic
+ *     copy, local units and place names) to the description USER prompt of a Polish or Spanish
+ *     page, so v28 is a prompt-digest re-freeze of v27, the current contract: the v28 guard strips
+ *     the paragraph and proves the v27 prompt, byte for byte. Every guard replays with the CURRENT
+ *     user digests (v28's); the guards of older prompt changes read the prompt without it. Replay
+ *     and parity pin BYTES only: the recorded outputs predate the prompt, so a fresh recording is
+ *     needed to show what the model now writes.
  *
  * No other I/O happens: the test env configures no Redis, ClickHouse, Postgres or Sentry, so the
  * spend gate reads 0, every write reports `not_configured` and no row is written.
@@ -313,6 +320,13 @@ const MANIFEST_V27 = JSON.parse(
   readFileSync(join(FIXTURE_DIR, 'MANIFEST.v27.json'), 'utf8'),
 ) as ManifestV3 & { stamp_refreeze: { from: string; to: string; cases: number } };
 const STAMP = new Map(CASES_V27.map((c) => [c.id, c.expected.claims_validation] as const));
+const CASES_V28: Case[] = readCorpus('corpus.v28.jsonl');
+const MANIFEST_V28 = JSON.parse(
+  readFileSync(join(FIXTURE_DIR, 'MANIFEST.v28.json'), 'utf8'),
+) as ManifestV3 & {
+  user_prompt_change: { appended_after_room_count_convention: Record<string, string> };
+  refrozen: string[];
+};
 const CASES_V26: Case[] = readCorpus('corpus.v26.jsonl');
 const MANIFEST_V26 = JSON.parse(
   readFileSync(join(FIXTURE_DIR, 'MANIFEST.v26.json'), 'utf8'),
@@ -323,11 +337,11 @@ const MANIFEST_V26 = JSON.parse(
   voice_fallback_refrozen: string[];
 };
 /**
- * FOLLOW-1414 (v17) and FOLLOW-1311 (v23, v26) re-froze them again; each guard asserts its only
- * change.
+ * FOLLOW-1414 (v17), FOLLOW-1311 (v23, v26) and FOLLOW-1429 (v28) re-froze them again; each guard
+ * asserts its only change.
  */
 const DESCRIPTION_USER_SHA = new Map(
-  CASES_V26.map((c) => [c.id, c.expected.prompt_sha256.description_user] as const),
+  CASES_V28.map((c) => [c.id, c.expected.prompt_sha256.description_user] as const),
 );
 /** The CURRENT description system digests, by case id: v1's until FOLLOW-1311 slice 6 (v26). */
 const DESCRIPTION_SYSTEM_SHA = new Map(
@@ -1057,8 +1071,19 @@ const ROOM_COUNT_CONVENTION =
   '"two-bedroom" is not "dwupokojowe". Keep the count the listing states, under the word it ' +
   'uses: translate pokoje as rooms and sypialnie as bedrooms, never one as the other. In ' +
   'Spanish, write dormitorios for bedrooms and never habitaciones for a room count.';
+/** A user prompt as it was before FOLLOW-1429 appended a paragraph to a pl/es page (corpus v28). */
+function withoutNativeCopy(prompt: string): string {
+  for (const paragraph of Object.values(
+    MANIFEST_V28.user_prompt_change.appended_after_room_count_convention,
+  )) {
+    const tail = `\n\n${paragraph}`;
+    if (prompt.endsWith(tail)) return prompt.slice(0, -tail.length);
+  }
+  return prompt;
+}
 /** A user prompt as it was before FOLLOW-1311 appended the room-count paragraph (corpus v23). */
 function withoutRoomConvention(prompt: string): string {
+  prompt = withoutNativeCopy(prompt);
   const tail = `\n\n${ROOM_COUNT_CONVENTION}`;
   expect(prompt.endsWith(tail)).toBe(true);
   return prompt.slice(0, -tail.length);
@@ -2096,9 +2121,10 @@ describe('description parity corpus v26 (FOLLOW-1311 slice 6 — external claims
         system = system.replace(to, from);
       }
       expect(sha(system), c.id).toBe(prev.expected.prompt_sha256.description_system);
-      expect(sha(beforeV26Voice(calls[0]![0].messages[0]!.content, c)), c.id).toBe(
-        prev.expected.prompt_sha256.description_user,
-      );
+      expect(
+        sha(beforeV26Voice(withoutNativeCopy(calls[0]![0].messages[0]!.content), c)),
+        c.id,
+      ).toBe(prev.expected.prompt_sha256.description_user);
       if (c.expected.headline_called) {
         expect(sha(beforeV26Persona(calls[1]![0].messages[0]!.content, c)), c.id).toBe(
           prev.expected.prompt_sha256.headline_user,
@@ -2140,7 +2166,7 @@ describe('description parity corpus v26 (FOLLOW-1311 slice 6 — external claims
   });
 });
 
-describe('description parity corpus v27 (FOLLOW-1311 slice 5 — claims-v10, stamp-only re-freeze, the current contract)', () => {
+describe('description parity corpus v27 (FOLLOW-1311 slice 5 — claims-v10, stamp-only re-freeze)', () => {
   const V26_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v26.jsonl'), 'utf8');
   const V27_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v27.jsonl'), 'utf8');
   const OLD = `"claims_validation": "${V25_STAMP}"`;
@@ -2177,6 +2203,79 @@ describe('description parity corpus v27 (FOLLOW-1311 slice 5 — claims-v10, sta
 
   describe.each(CASES_V27.map((c) => [c.id, c] as const))('%s', (_id, c) => {
     it('generates identically to the v27 record', async () => {
+      await expectIdentical(c);
+    });
+  });
+});
+
+describe('description parity corpus v28 (FOLLOW-1429 — pl/es idiomatic copy, prompt re-freeze, the current contract)', () => {
+  const V27_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v27.jsonl'), 'utf8');
+  const V28_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v28.jsonl'), 'utf8');
+  const PARAGRAPHS = MANIFEST_V28.user_prompt_change.appended_after_room_count_convention;
+
+  beforeEach(() => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'parity-'.repeat(4));
+    mockCreate.mockReset();
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('v28 is v27 with ONLY the description user digests of the pl/es cases changed', () => {
+    expect(MANIFEST_V28.corpus).toBe('corpus.v28.jsonl');
+    expect(MANIFEST_V28.kind).toBe('prompt_refreeze');
+    expect(MANIFEST_V28.delta).toEqual([]);
+    expect(MANIFEST_V28.derived_from.corpus_sha256).toBe(MANIFEST_V27.corpus_sha256);
+    expect(sha(V27_TEXT)).toBe(MANIFEST_V28.derived_from.corpus_sha256);
+    expect(sha(V28_TEXT)).toBe(MANIFEST_V28.corpus_sha256);
+    expect(MANIFEST_V28.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(MANIFEST_V28.case_count).toBe(CASES_V28.length);
+    expect(CASES_V28.map((c) => c.id)).toEqual(CASES_V27.map((c) => c.id));
+    const refrozen = new Set(MANIFEST_V28.refrozen);
+    for (const [i, v28] of CASES_V28.entries()) {
+      const prev = CASES_V27[i]!;
+      const { prompt_sha256: pNew, ...restNew } = v28.expected;
+      const { prompt_sha256: pOld, ...restOld } = prev.expected;
+      expect({ ...v28, expected: restNew }, v28.id).toEqual({ ...prev, expected: restOld });
+      expect({ ...pNew, description_user: '' }, v28.id).toEqual({ ...pOld, description_user: '' });
+      if (refrozen.has(v28.id))
+        expect(pNew.description_user, v28.id).not.toBe(pOld.description_user);
+      else expect(pNew.description_user, v28.id).toBe(pOld.description_user);
+    }
+    // Exactly the Polish and Spanish pages, never an English one.
+    expect(refrozen).toEqual(
+      new Set(CASES_V28.filter((c) => c.input.locale !== 'en').map((c) => c.id)),
+    );
+  });
+
+  it('every new prompt is the v27 prompt plus the listed paragraph, byte for byte', async () => {
+    expect(Object.keys(PARAGRAPHS).sort()).toEqual(['es', 'pl']);
+    for (const c of CASES_V28) {
+      const prev = CASES_V27.find((x) => x.id === c.id)!;
+      mockCreate.mockReset();
+      mockCreate
+        .mockResolvedValueOnce(response(c.raw_description.text, c.raw_description.stop_reason))
+        .mockResolvedValueOnce(response(c.raw_headline ?? '', 'end_turn'));
+      await generateDescription(c.input);
+      const calls = mockCreate.mock.calls as unknown as [CreateParams][];
+      let user = calls[0]![0].messages[0]!.content;
+      const paragraph = PARAGRAPHS[c.input.locale];
+      if (paragraph === undefined) {
+        expect(user, c.id).not.toContain('NATURAL ');
+      } else {
+        const tail = `\n\n${paragraph}`;
+        expect(user.endsWith(tail), c.id).toBe(true);
+        user = user.slice(0, -tail.length);
+      }
+      expect(sha(user), c.id).toBe(prev.expected.prompt_sha256.description_user);
+      if (c.expected.headline_called) {
+        expect(sha(calls[1]![0].messages[0]!.content), c.id).toBe(
+          prev.expected.prompt_sha256.headline_user,
+        );
+      }
+    }
+  });
+
+  describe.each(CASES_V28.map((c) => [c.id, c] as const))('%s', (_id, c) => {
+    it('generates identically to the v28 record', async () => {
       await expectIdentical(c);
     });
   });

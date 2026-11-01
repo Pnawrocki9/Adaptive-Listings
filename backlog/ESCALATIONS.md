@@ -21,6 +21,49 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## RESOLVED — ESC-090: FOLLOW-1316 changes the lawful basis of `__estalara_xid__`, the holdout unit and public surfaces; §E.7.5 reversal confirmed [FOLLOW-1316]
+
+**Filed by:** compliance-engineer via PM **Date:** 2026-11-01 **Resolved:** 2026-11-01, CEO wrote
+"zgoda" to the five items as the PM set them out. **Affects:** FOLLOW-1316, FOLLOW-146, FOLLOW-1204,
+FOLLOW-1308, ADR-0014 §5, MASTER_DESIGN "Decision #5", §H.9 and §E.7.5, DPIA §13.2/§13.5, ROPA,
+Privacy Notice §1/§3/§4, `packages/sdk` (new withdrawal control), `/api/adapt` request,
+`consent.granted` payload, new profile routes. **Type:** compliance posture + public API surface.
+
+**Description.** The design review `docs/compliance/FOLLOW-1316-design-review.md` found that the
+approved feature (ESC-085 D-E, not reopened) cannot rest on the current record. DPIA §13.2 assessed
+the xid under legitimate interest, as browser-only, and says it does not pre-approve server-side
+linking. No in-product withdrawal exists, although disclosure 13.2 promises deletion on withdrawal.
+Decision #5 makes the tab session the unit of assignment, while the ticket requires an arm stable
+across sessions.
+
+**CEO rulings.**
+
+1. **Lawful basis and production gate.** Sending the xid and the server-side profile rest on consent
+   only, never legitimate interest. Up to 90 days, ending with the xid, non-sliding. A server flag,
+   default off and on only in `localhost-up.sh`, plus a CTO_HANDOVER §4 row. Not enabled in
+   production until counsel answers L-1 to L-6, the DPO signs off §13.2 and §13.5, and the
+   production Upstash database is confirmed EU-only (otherwise an H003 table with a cron).
+2. **D-1, holdout.** The arm is keyed per xid for consented sessions, with `session_id` as fallback.
+   This supersedes decision #5 for those sessions; denominators stay per session and correlated rows
+   are recorded in the SoT.
+3. **D-2 and D-3, stored fields.** `has_children`, `residency_goal`, `buying_from_abroad`, the
+   `diaspora_buyer` result and labels moved by the chat prior are not persisted in v1. In-session
+   copy is unchanged; ESC-089 stands. Those returning buyers lose that continuity. `family_buyer` is
+   persisted although it implies family status (L-3).
+4. **D-4.** The xid goes in the `/api/adapt` and profile route bodies only, not on events, and no
+   ClickHouse column is added. This narrows the ticket and FOLLOW-146 AC2. No cross-session
+   conversion linkage; lift stays per session.
+5. **§E.7.5.** The reversal of the decision of 2026-05-15 by #1123 is confirmed: generic descriptors
+   only where the listing states what they describe. The drier investor copy is accepted.
+
+**Surfaces approved, all additive:** `xid` and `xid_created_at` on `/api/adapt`; canonical
+`consented` replaces `granted`; `text_version` on `consent.granted`; a withdrawal control and a
+localStorage key in the SDK; self-service profile routes; optional `xid` on `/api/dsr/erase`.
+
+**Still open, not a build blocker:** L-1 to L-7 go to outside counsel with the ESC-086(b) question
+before production. The banner sentence changes only after counsel. The merge gate of FOLLOW-1316
+stays a signed compliance review of the finished PR.
+
 ## RESOLVED — ESC-089: fair-housing restrictions on copy — CEO ruling: archetype fit first, familial-status limits lifted [FOLLOW-1411]
 
 **Filed by:** pm-orchestrator (CEO ruling in chat, 2026-10-29) **Date:** 2026-10-29 **Affects:** the

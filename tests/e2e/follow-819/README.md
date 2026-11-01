@@ -3750,6 +3750,81 @@ The PR head later became `1e42b4fd`, a merge of `main` that changed no file unde
 No RED in §5.55 to §5.60. The AC(5) failure of §5.54 did not recur. The caveats of §5.23 (a)–(d)
 apply.
 
+### 5.61 — 2026-10-31 (FOLLOW-1311 slice 4 at `6d562e84`, before the last review round) — **not the evidence for #1120**
+
+| Run | Started (UTC)            | Result                                                    | Note                             |
+| --- | ------------------------ | --------------------------------------------------------- | -------------------------------- |
+| 214 | 2026-10-31T19:17:22.769Z | `TALLY green=7 red=0 unmeasured=1 total=8 run=UNMEASURED` | `[FRESH]` harnessSha `6d562e84…` |
+| 215 | 2026-10-31T19:19:59.299Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `6d562e84…` |
+| 216 | 2026-10-31T19:22:11.309Z | `TALLY green=7 red=0 unmeasured=1 total=8 run=UNMEASURED` | `[FRESH]` harnessSha `6d562e84…` |
+| 217 | 2026-10-31T19:23:25.197Z | `TALLY green=7 red=0 unmeasured=1 total=8 run=UNMEASURED` | `[FRESH]` harnessSha `6d562e84…` |
+| 218 | 2026-10-31T19:24:27.909Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `6d562e84…` |
+| 219 | 2026-10-31T19:26:35.459Z | `TALLY green=7 red=0 unmeasured=1 total=8 run=UNMEASURED` | `[FRESH]` harnessSha `6d562e84…` |
+| 220 | 2026-10-31T19:28:00.025Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `6d562e84…` |
+
+Runs 214, 216, 217 and 219 drew holdout in the chat arm. The code changed after this series.
+
+### 5.62 — 2026-11-01 (FOLLOW-1311 slice 4 at `afe6ce91`, the final product code) — **three consecutive `run=GREEN` with `total=8` (221, 222, 224; 223 drew holdout) — the per-PR series of #1120**
+
+| Run | Started (UTC)            | Result                                                    | Note                             |
+| --- | ------------------------ | --------------------------------------------------------- | -------------------------------- |
+| 221 | 2026-10-31T19:39:31.637Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `afe6ce91…` |
+| 222 | 2026-10-31T19:41:30.555Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `afe6ce91…` |
+| 223 | 2026-10-31T19:43:17.830Z | `TALLY green=3 red=0 unmeasured=5 total=8 run=UNMEASURED` | `[FRESH]` harnessSha `afe6ce91…` |
+| 224 | 2026-10-31T19:44:59.779Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `afe6ce91…` |
+
+### 5.63 — 2026-11-01 (post-merge series on `main` at `8bc73600`) — **three `run=GREEN` with `total=8` (225, 231, 232; the others drew holdout)**
+
+| Run | Started (UTC)            | Result                                                    | Note                             |
+| --- | ------------------------ | --------------------------------------------------------- | -------------------------------- |
+| 225 | 2026-11-01T12:50:56.383Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `8bc73600…` |
+| 226 | 2026-11-01T12:53:17.809Z | `TALLY green=7 red=0 unmeasured=1 total=8 run=UNMEASURED` | `[FRESH]` harnessSha `8bc73600…` |
+| 227 | 2026-11-01T12:54:22.726Z | `TALLY green=2 red=0 unmeasured=6 total=8 run=UNMEASURED` | `[FRESH]` harnessSha `8bc73600…` |
+| 228 | 2026-11-01T12:55:21.851Z | `TALLY green=7 red=0 unmeasured=1 total=8 run=UNMEASURED` | `[FRESH]` harnessSha `8bc73600…` |
+| 229 | 2026-11-01T12:56:32.603Z | `TALLY green=2 red=0 unmeasured=6 total=8 run=UNMEASURED` | `[FRESH]` harnessSha `8bc73600…` |
+| 230 | 2026-11-01T12:57:39.942Z | `TALLY green=7 red=0 unmeasured=1 total=8 run=UNMEASURED` | `[FRESH]` harnessSha `8bc73600…` |
+| 231 | 2026-11-01T12:58:52.746Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `8bc73600…` |
+| 232 | 2026-11-01T13:00:35.286Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `8bc73600…` |
+
+Five of these eight runs drew holdout in the chat arm, and 9 of the 19 runs from 214 to 232.
+Checked: the server logged each of those sessions with `holdout_group` true at `holdout_pct` 0.1,
+sessions logged at 0.1 were held at 10 % on 2026-10-30 and 12 % on 2026-10-31, and the chat arm drew
+it in 14 of about 165 runs overall (8.5 %). No mechanism was found and no failure is masked. The
+cluster stays unexplained.
+
+### 5.64 — 2026-11-01 (FOLLOW-1425 at `89ebb305`) — **three consecutive `run=GREEN` with `total=8` — the per-PR series of #1121**
+
+| Run | Started (UTC)            | Result                                               | Note                             |
+| --- | ------------------------ | ---------------------------------------------------- | -------------------------------- |
+| 233 | 2026-11-01T13:28:18.738Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `89ebb305…` |
+| 234 | 2026-11-01T13:30:16.004Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `89ebb305…` |
+| 235 | 2026-11-01T13:32:11.124Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `89ebb305…` |
+
+### 5.65 — 2026-11-01 (FOLLOW-1427 at `dc80bbea`) — **three consecutive `run=GREEN` with `total=8` (237 to 239; 236 drew holdout) — the series of #1122**
+
+| Run | Started (UTC)            | Result                                                    | Note                             |
+| --- | ------------------------ | --------------------------------------------------------- | -------------------------------- |
+| 236 | 2026-11-01T13:46:37.767Z | `TALLY green=3 red=0 unmeasured=5 total=8 run=UNMEASURED` | `[FRESH]` harnessSha `dc80bbea…` |
+| 237 | 2026-11-01T13:48:30.821Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `dc80bbea…` |
+| 238 | 2026-11-01T13:50:23.697Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `dc80bbea…` |
+| 239 | 2026-11-01T13:52:01.151Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `dc80bbea…` |
+
+#1122 then removed one `export` from a type (`1ef250fe`), with no runtime change and no new series.
+§5.66 ran on top of it. No description was refused during these runs, so the guard has not fired
+live.
+
+### 5.66 — 2026-11-01 (FOLLOW-1311 slice 6 at `40a91cde`, main merged in) — **three `run=GREEN` with `total=8` (240, 242, 243; 241 drew holdout) — the per-PR series of #1123**
+
+| Run | Started (UTC)            | Result                                                    | Note                             |
+| --- | ------------------------ | --------------------------------------------------------- | -------------------------------- |
+| 240 | 2026-11-01T14:15:54.992Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `40a91cde…` |
+| 241 | 2026-11-01T14:17:36.231Z | `TALLY green=3 red=0 unmeasured=5 total=8 run=UNMEASURED` | `[FRESH]` harnessSha `40a91cde…` |
+| 242 | 2026-11-01T14:19:17.099Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `40a91cde…` |
+| 243 | 2026-11-01T14:20:48.702Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `40a91cde…` |
+
+The squash of #1123 on `main` (`e633a5e6`) has the same tree as `40a91cde`, so no post-merge series
+was run. No RED in §5.61 to §5.66.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

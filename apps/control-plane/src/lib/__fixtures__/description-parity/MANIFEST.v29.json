@@ -1,6 +1,6 @@
 {
   "case_count": 98,
-  "change": "FOLLOW-1431: CLAIMS_VALIDATION_VERSION is bumped from claims-v10 to claims-v11, because no claims-v10 row was checked against the camp names losing the street-marker exemption or against composition read with addresses out of the way; it is regenerated once instead of served. v29 is a stamp-only re-freeze of v28: no verdict of the corpus moved.",
+  "change": "FOLLOW-1431: CLAIMS_VALIDATION_VERSION is bumped from claims-v10 to claims-v11, because no claims-v10 row was checked against the camp names keeping the street exemption only on their own listing_location, or against composition read past an address's abbreviation; it is regenerated once instead of served. v29 is a stamp-only re-freeze of v28: no verdict of the corpus moved.",
   "claims_validation_version": "claims-v11",
   "corpus": "corpus.v29.jsonl",
   "corpus_sha256": "43b004b4:0657ce93:0c7fc671:fefe5df2:fb6ba766:adac721d:1a857ff7:ef9cf811",

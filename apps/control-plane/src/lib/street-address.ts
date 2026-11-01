@@ -12,15 +12,6 @@
  * @module apps/control-plane/src/lib/street-address
  */
 
-import {
-  ALEJA_FORM,
-  BARE_STREET_WORD,
-  NOT_A_STREET_NAME,
-  STREET_PARTICLE,
-  STREET_PREFIX,
-  STREET_WORD,
-} from '@estalara/shared/playbook-traits';
-
 /** Case-insensitive by hand: the masks are case-sensitive on purpose, a name is capitalised. */
 const anyCase = (word: string): string =>
   Array.from(word, (c) => `[${c.toUpperCase()}${c.toLowerCase()}]`).join('');
@@ -35,12 +26,24 @@ const NAME = `(?!${CLAIM_WORD})\\p{Lu}[\\p{L}'’.-]*`;
 const FIRST_NAME = `(?!${CLAIM_WORD})[\\p{Lu}\\p{Nd}][\\p{L}\\p{N}'’.-]*`;
 /** A house number, never a count or a sum: "ul. Długa 4 Sypialnie" keeps its "4 Sypialnie". */
 const HOUSE_NUMBER = `\\p{Nd}+\\p{L}?(?:/\\p{Nd}+\\p{L}?)?(?![\\p{N}]|\\s*${CURRENCY_WORD}|\\s+${CLAIM_WORD})`;
-const PARTICLE = STREET_PARTICLE;
+const STREET_WORD =
+  'Street|St\\.?|Road|Rd\\.?|Avenue|Ave\\.?|Lane|Ln\\.?|Drive|Dr\\.?|Place|Pl\\.?|Court|Ct\\.?|' +
+  'Boulevard|Blvd\\.?|Way|Terrace|Close|Crescent|Square|Mews';
+/**
+ * Every case of "aleja", singular and plural; closed, so "Alejandra" and "alejka" are no street.
+ * Not the vocative "alejo": nobody addresses a street, and "Alejo" is a name [FOLLOW-1436].
+ */
+const ALEJA_FORM = '[Aa]lej(?:a|ą|ę|e|i|om|ami|ach)?|[Aa]lei';
+const STREET_PREFIX =
+  `[Uu]l\\.|[Uu]lic[aąęy]|[Aa]l\\.|${ALEJA_FORM}|[Pp]l\\.|[Pp]lac(?:u|em)?|[Oo]s\\.|[Oo]siedl[aeu]|` +
+  '[Cc]alle|[Cc]/|[Aa]venida|[Aa]vda\\.|[Pp]aseo|[Pp]laza|[Cc]arrer|[Rr]ua';
+const PARTICLE = '(?:de|del|la|las|los|im\\.)';
 /**
  * The prefixes a street name may follow in lower case ("przy ul. parterowa"). Not "plac", "plaza",
  * "paseo": "plac zabaw" and "plaza de parking" are claims. The first word only, and never a word
  * that joins a clause: "cicha ulica z basenem" keeps its pool.
  */
+const NOT_A_STREET_NAME = '(?:z|ze|bez|i|w|na|przy|o|con|sin|y|en|a|e)(?![\\p{L}\\p{N}])';
 const LOWER_NAME_PREFIX = '[Uu]l\\.|[Uu]lic[aąęy]|[Aa]l\\.|[Cc]alle|[Cc]/|[Aa]vda\\.';
 
 const addressRes = (prefix: string): readonly RegExp[] => [
@@ -76,7 +79,7 @@ const addressRes = (prefix: string): readonly RegExp[] => [
 
 const ADDRESS_RES = addressRes(STREET_PREFIX);
 /**
- * A listing keeps the reach it had under `claims-v10`. Blanking a listing's words takes away what
+ * A listing keeps the reach it had before the closed forms of "aleja". Blanking a listing's words takes away what
  * grounds a claim, so reading "Przy Alejach Umeblowane Mieszkanie" as an address would refuse
  * "Umeblowane mieszkanie". Copy reads every form, which only lets a claim pass [FOLLOW-1431].
  */
@@ -97,6 +100,8 @@ const CLAIM_PIECE = `(?:${ABBREVIATION}|${CLAIM_NAME})`;
 const CLAIM_FIRST = `(?:${ABBREVIATION}|(?!${CLAIM_WORD})[\\p{Lu}\\p{Nd}][\\p{L}\\p{N}'’-]*)`;
 /** Nothing that goes on naming something else follows: "on Google Street View" is no street. */
 const CLAUSE_GOES_ON = `(?=[ \\t]*(?:[.,;:!?)\\n]|$)|${GAP}(?:in|near|and|or|with|to|at|from|for|is|has|which|w|i|z|na|en|y)(?![\\p{L}\\p{N}]))`;
+/** Unambiguous without a number: not "Way", "Place", "Close", "Terrace", "Square", "Court", "St". */
+const BARE_STREET_WORD = 'Street|Road|Rd\\.?|Avenue|Ave\\.?|Boulevard|Blvd\\.?|Lane|Drive';
 const LOCATING_WORD = '(?:on|at|off|near|along|przy)';
 const STRONG_PREFIX =
   `[Uu]l\\.|[Uu]lic[aąęy]|[Aa]l\\.|${ALEJA_FORM}|[Cc]alle|[Cc]/|[Aa]venida|[Aa]vda\\.|` +

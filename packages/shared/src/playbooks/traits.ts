@@ -244,10 +244,10 @@ export function traitSlots(addOns: readonly TraitAddOn[]): SlotDirective[] {
  *     Katyńskiej"): an address is a fact copied from the listing, {@link isStreetName}. "The
  *     former ghetto" stays refused, and so does a sensitive term outside the address.
  *
- * "Adres to adres, ma przechodzić" (CEO) means an address of THIS listing [FOLLOW-1431]. This guard
- * takes text only and cannot know that, so its own exception stays as above, the camps named in
- * {@link CAMP_NAME_RE} lose it, and the callers blank the listing's own address first
- * (`refusesOnProtectedGround`).
+ * "Treblinka and the like refused outright" (CEO) [FOLLOW-1431]: Treblinka, Sobibór, Bełżec, Majdanek
+ * and Auschwitz keep the street exemption only when the listing's `listing_location` names the same
+ * camp, and composition is also read past an address's abbreviation. This guard spares nothing it
+ * did not spare before; "Adres to adres" for the rest of a listing's own address is an open limit.
  *
  * A NARROW, closed en / pl / es phrase list, not a classifier: the gateway and the description
  * path refuse a text that matches, whoever wrote the words. What it is NOT: a buyer's nationality
@@ -535,32 +535,32 @@ function isHistoricalMention(text: string, start: number, end: number): boolean 
   return between.split(/\s+/u).filter(Boolean).length <= HISTORICAL_ADVERB_REACH;
 }
 
-// ─── The address vocabulary: one, read by `street-address.ts` for the mask [FOLLOW-1431] ───────────
-
-export const STREET_WORD =
-  'Street|St\\.?|Road|Rd\\.?|Avenue|Ave\\.?|Lane|Ln\\.?|Drive|Dr\\.?|Place|Pl\\.?|Court|Ct\\.?|' +
-  'Boulevard|Blvd\\.?|Way|Terrace|Close|Crescent|Square|Mews';
-/** Unambiguous with no number at all. */
-export const BARE_STREET_WORD = 'Street|Road|Rd\\.?|Avenue|Ave\\.?|Boulevard|Blvd\\.?|Lane|Drive';
 /**
- * Every case of "aleja", singular and plural; closed, so "Alejandra" and "alejka" are no street.
- * Not the vocative "alejo": nobody addresses a street, and "Alejo" is a name.
+ * "Treblinka and the like refused outright" (CEO): the five camps the ruling named keep the street
+ * exemption below only when the listing's own location names the same camp [FOLLOW-1431]. Every
+ * closed form of a name is one camp: "Treblinki" and "Treblinka", "Bełżca" and "Belzec".
  */
-export const ALEJA_FORM = '[Aa]lej(?:a|ą|ę|e|i|om|ami|ach)?|[Aa]lei';
-export const STREET_PREFIX =
-  `[Uu]l\\.|[Uu]lic[aąęy]|[Aa]l\\.|${ALEJA_FORM}|[Pp]l\\.|[Pp]lac(?:u|em)?|[Oo]s\\.|[Oo]siedl[aeu]|` +
-  '[Cc]alle|[Cc]/|[Aa]venida|[Aa]vda\\.|[Pp]aseo|[Pp]laza|[Cc]arrer|[Rr]ua';
-export const STREET_PARTICLE = '(?:de|del|la|las|los|im\\.)';
-/** Joins a clause, so it names no street: "cicha ulica z basenem" keeps its pool. */
-export const NOT_A_STREET_NAME = `(?:z|ze|bez|i|w|na|przy|o|con|sin|y|en|a|e)${E}`;
+const CAMP_NAME = String.raw`treblin(?:ka|ki|ce|kę|ką)|majdan(?:ek|ka|ku|kiem)|sobib[oó]r\p{L}*|be[lł][zż](?:ec|ca|cu|cem)|auschwitz\p{L}*`;
+const IS_CAMP_NAME_RE = new RegExp(`^(?:${CAMP_NAME})$`, 'iu');
+const CAMP_NAME_RE = anyOf([CAMP_NAME], 'giu');
+const campOf = (term: string): string =>
+  term.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/ł/gu, 'l').slice(0, 4);
+
+/** Does this camp name lose the street exemption: not the camp the listing's location names? */
+function isUnlistedCamp(term: string, listingLocation: string): boolean {
+  if (!IS_CAMP_NAME_RE.test(term)) return false;
+  return !Array.from(listingLocation.matchAll(CAMP_NAME_RE)).some(
+    (m) => campOf(m[0]) === campOf(term),
+  );
+}
 
 /**
- * What the guard spares in text that is not the listing's own: a NARROWER subset of the vocabulary,
- * and deliberately so. A model that invents "Holocaust Memorial Drive" has written no address of
- * this listing, so "Adres to adres" gives it nothing, and "Treblinka" stays refused outright (CEO,
- * PM ruling on FOLLOW-1431). Anything else the listing's own address needs is blanked by the caller
- * first (`refusesOnProtectedGround`); never widen these two for that.
- *
+ * An address's abbreviation breaks a composition phrase, with its dot and its extra word: "Most
+ * residents at ul. Długa 5 are Muslim" [FOLLOW-1431]. Composition is read without it as well.
+ */
+const ADDRESS_ABBREVIATION_RE = /(?<![\p{L}\p{N}])(?:[Uu]l|[Aa]l|[Cc])\.\s+/gu;
+
+/**
  * An address marker, then up to three capitalised words of the street's name, ending where the
  * sensitive term starts ("ul. Bohaterów ", "przy ul. ", "calle ") [FOLLOW-1420].
  */
@@ -571,34 +571,12 @@ const ADDRESS_AFTER_RE =
   /^(?:\s+\p{Lu}[\p{L}'’-]*){0,3}\s+(?:Street|St\.|Avenue|Ave\.|Road|Rd\.|Square)/u;
 
 /**
- * "Treblinka and the like refused outright" (CEO): a marker earns these no exemption, so "ul.
- * Sobibór 5", "Treblinka Road" and "Plac Treblinka" are refused. Only an address of this very
- * listing, with its number, spares one (`refusesOnProtectedGround`) [FOLLOW-1431]. The five the
- * ruling named. Other terms in this position ("Ghetto Road") wait for their own ruling.
- */
-const CAMP_NAME_RE =
-  /^(?:treblin(?:ka|ki|ce|kę|ką)|majdan(?:ek|ka|ku|kiem)|sobib[oó]r\p{L}*|be[lł][zż](?:ec|ca|cu|cem)|auschwitz\p{L}*)$/iu;
-
-/**
  * Is the sensitive term at `[start, end)` part of a street's name in an address (rule 3 spares it:
  * an address is a fact copied from the listing)? The term must be capitalised, as a name is.
  */
 function isStreetName(text: string, start: number, end: number): boolean {
-  if (CAMP_NAME_RE.test(text.slice(start, end))) return false;
   if (!/^\p{Lu}/u.test(text.slice(start, end))) return false;
   return ADDRESS_BEFORE_RE.test(text.slice(0, start)) || ADDRESS_AFTER_RE.test(text.slice(end));
-}
-
-/**
- * Does `value` state how many residents belong to a group, or that one is absent? The caller reads
- * this with addresses blanked, whose words otherwise break the phrase: "Most residents at ul. Długa
- * 5 are Muslim" [FOLLOW-1431].
- *
- * @param value - Copy with any address blanked.
- * @returns `true` when it matches a composition phrase of the closed list.
- */
-export function statesGroupComposition(value: string): boolean {
-  return COMPOSITION_RE.test(value);
 }
 
 /**
@@ -606,15 +584,18 @@ export function statesGroupComposition(value: string): boolean {
  * neighbours, or recount sensitive history? [FOLLOW-1411, ESC-089; FOLLOW-1415]
  *
  * @param value - Copy as the model wrote it (a directive, a description body or a headline).
+ * @param listingLocation - The listing's `listing_location`: a camp's name in a street needs it.
  * @returns `true` when it matches a phrase of the closed en / pl / es list: a sensitive-history
  *          term (rule 3), a composition or exclusion statement (rule 2), a group of residents not
  *          put in the past by a historical qualifier (rules 1 and 2), or a place named by a group
  *          with no historical adjective directly before it [FOLLOW-1419].
  */
-export function describesResidentsByProtectedGround(value: string): boolean {
+export function describesResidentsByProtectedGround(value: string, listingLocation = ''): boolean {
   if (COMPOSITION_RE.test(value)) return true;
+  if (COMPOSITION_RE.test(value.replace(ADDRESS_ABBREVIATION_RE, ''))) return true;
   for (const m of value.matchAll(SENSITIVE_HISTORY_RE)) {
     if (!isStreetName(value, m.index, m.index + m[0].length)) return true;
+    if (isUnlistedCamp(m[0], listingLocation)) return true;
   }
   for (const m of value.matchAll(RESIDENT_GROUND_RE)) {
     if (!isHistoricalMention(value, m.index, m.index + m[0].length)) return true;

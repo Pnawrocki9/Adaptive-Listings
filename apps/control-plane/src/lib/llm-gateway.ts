@@ -8,8 +8,11 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import type { AdaptationDirectives, ArchetypeId, TextDirective } from '@estalara/shared';
 import type { PlaybookEntry } from '@estalara/shared/playbooks';
-import { getTraitAddOns, renderTraitRules } from '@estalara/shared/playbook-traits';
-import { refusesOnProtectedGround } from '@/lib/name-forms';
+import {
+  getTraitAddOns,
+  renderTraitRules,
+  describesResidentsByProtectedGround,
+} from '@estalara/shared/playbook-traits';
 import { getGlobalGenerationModel } from '@/lib/global-config-store';
 import { DAILY_SPEND_CAP_USD, getDailySpend } from '@/lib/llm-spend-counter';
 // FOLLOW-1297: one price table for the adapt and description paths (ADR-0023 §3).
@@ -765,9 +768,9 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
         ((isNonAssertiveSlot(directive.slot) &&
           isTemplateAuthoredValue(input.basePlaybook, directive.slot, directive.value)) ||
           isAuthoredSectionLabel(input.basePlaybook, directive.slot, directive.value));
-      const protectedGround: ProtectedGroundViolation | null = refusesOnProtectedGround(
+      const protectedGround: ProtectedGroundViolation | null = describesResidentsByProtectedGround(
         directive.value,
-        input.listingContext ?? {},
+        input.listingContext?.listing_location,
       )
         ? 'protected_ground'
         : null;

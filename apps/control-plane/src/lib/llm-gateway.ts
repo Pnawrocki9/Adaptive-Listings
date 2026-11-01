@@ -19,6 +19,7 @@ import { DAILY_SPEND_CAP_USD, getDailySpend } from '@/lib/llm-spend-counter';
 import { computeCost } from '@/lib/llm-pricing';
 import { generationRequestFor } from '@/lib/generation-models';
 import { STOP_CAPS, checkNumbers, stemLoose } from '@/lib/claim-rules';
+import { HEADLINE_OPENING_WORDS } from '@/lib/grounding-check';
 import { isOtherNameOfListingPlace, isPolishCaseFormOfFact } from '@/lib/name-forms';
 import { hasMetaCommentary } from '@/lib/meta-commentary';
 import { hasModelControlTag } from '@/lib/model-control-tags';
@@ -419,6 +420,37 @@ function isTemplateAuthoredValue(playbook: PlaybookEntry, slot: string, value: s
 }
 
 /**
+ * What a `headline` slot opens with that names nothing, beside `HEADLINE_OPENING_WORDS`: an
+ * imperative, a determiner, in en / pl / es [FOLLOW-1311 slice 5]. A closed list only saves the
+ * judge's round trip; a first word outside it goes to the judge, it is not refused.
+ */
+const HEADLINE_OPENERS: ReadonlySet<string> = new Set(
+  (
+    'make live enjoy imagine wake step move welcome invest find see ask buy meet picture come ' +
+    'retire escape settle stay own ready ' +
+    'zamieszkaj zobacz sprawdź poznaj odkryj zainwestuj twój twoje twoja ten ta to ' +
+    'vive descubre disfruta invierte tu tus su sus un una el la los las'
+  ).split(' '),
+);
+
+/**
+ * A headline's first word states a fact like any other: "Miami flat" [FOLLOW-1311 slice 5]. These
+ * name nothing: the closed lists, and what this archetype's own headline opens with (provenance, as
+ * in {@link isTemplateAuthoredValue}: "Rental Yield: …").
+ */
+function isHeadlineOpener(word: string, playbook: PlaybookEntry): boolean {
+  const lower = word.toLowerCase();
+  return (
+    HEADLINE_OPENERS.has(lower) ||
+    Object.values(HEADLINE_OPENING_WORDS).some((re) => re.test(word)) ||
+    playbook.slots
+      .filter((s) => s.slot === 'headline')
+      .flatMap((s) => [s.en, ...(s.variants?.en ?? [])])
+      .some((authored) => authored.split(/\s+/)[0]?.toLowerCase() === lower)
+  );
+}
+
+/**
  * Fact check for one directive value: canonical digits, then capitalised words [FOLLOW-457].
  * @returns A violation reason code, or null when the value is fully grounded.
  */
@@ -426,6 +458,8 @@ function checkDirectiveFacts(
   value: string,
   grounding: string,
   listingContext: Readonly<Record<string, string>>,
+  slot: string,
+  playbook: PlaybookEntry,
 ): DirectiveFactViolation | null {
   if (checkNumbers(value, grounding, ADAPT_CLAIM_DIALECT) !== null) return 'hallucinated_number';
 
@@ -433,13 +467,16 @@ function checkDirectiveFacts(
   const groundingStems = new Set(grounding.split(/[^\p{L}\p{N}-]+/u).map(stemLoose));
   // Segment-initial capitals carry no proper-name signal [MP-012].
   let segmentInitial = true;
-  for (const word of value.split(/\s+/)) {
+  for (const [i, word] of value.split(/\s+/).entries()) {
     const startsSegment = segmentInitial;
     segmentInitial = /[|:;•—.!?]$/.test(word) || /^[|•—]$/.test(word);
     const clean = word.replace(/["'.,;:!?)]+$/, '');
+    // Not the first word of a headline: it is where a name goes [FOLLOW-1311 slice 5].
+    const exemptAsInitial =
+      startsSegment && !(i === 0 && slot === 'headline' && !isHeadlineOpener(clean, playbook));
     // `\p{Lu}`, not `[A-Z]`, so accented capitals are checked [FOLLOW-1054].
     if (
-      startsSegment ||
+      exemptAsInitial ||
       clean.length < 2 ||
       !/^\p{Lu}/u.test(clean) ||
       FACT_CHECK_STOP_CAPS.has(clean)
@@ -751,6 +788,8 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
         directive.value,
         grounding,
         input.listingContext ?? {},
+        directive.slot,
+        input.basePlaybook,
       );
       const claimViolation: ClaimViolation | null =
         factViolation === 'hallucinated_number'

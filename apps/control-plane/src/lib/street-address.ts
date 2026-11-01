@@ -72,6 +72,95 @@ const ADDRESS_RES: readonly RegExp[] = [
   /(?<![\p{L}\p{N}-])\p{Nd}{2}-\p{Nd}{3}(?![\p{L}\p{N}-])/gu,
 ];
 
+/** One word of a name a street claim states: no dot, "near Bath. Road access" is no "Bath Road". */
+const CLAIM_NAME = `(?!${CLAIM_WORD})\\p{Lu}[\\p{L}'’-]+`;
+/**
+ * Unambiguous without a number: not "Way", "Place", "Close", "Terrace", "Square", "Court", "Mews",
+ * and not "St.": "Visit St. Augustine".
+ */
+const BARE_STREET_WORD = 'Street|Road|Rd\\.?|Avenue|Ave\\.?|Boulevard|Blvd\\.?|Lane|Drive';
+/** {@link STREET_PREFIX} without the estate words: "osiedle" names no street. */
+const CLAIM_PREFIX =
+  '[Uu]l\\.|[Uu]lic[aąęy]|[Aa]l\\.|[Aa]lej\\p{L}*|[Aa]lei|[Pp]l\\.|[Pp]lac(?:u|em)?|' +
+  '[Cc]alle|[Cc]/|[Aa]venida|[Aa]vda\\.|[Pp]aseo|[Pp]laza|[Cc]arrer|[Rr]ua';
+/** The first word after a prefix may be a number ("ul. 3 Maja"); no dot, as in {@link CLAIM_NAME}. */
+const CLAIM_FIRST_NAME = `(?!${CLAIM_WORD})[\\p{Lu}\\p{Nd}][\\p{L}\\p{N}'’-]*`;
+const STREET_CLAIM_RES: readonly RegExp[] = [
+  // "12 Ocean Drive", "9 Blackberry Pl": a number makes every street word a street
+  new RegExp(
+    `(?<![\\p{L}\\p{N}.,€$£])${HOUSE_NUMBER}\\s+((?:${CLAIM_NAME}\\s+){1,3})(?:${STREET_WORD})(?![\\p{L}\\p{N}])`,
+    'gu',
+  ),
+  // "Ocean Drive", "Collins Avenue"
+  new RegExp(
+    `(?<![\\p{L}\\p{N}'’-])((?:${CLAIM_NAME}\\s+){1,3})(?:${BARE_STREET_WORD})(?![\\p{L}\\p{N}])`,
+    'gu',
+  ),
+  // "ul. Złota", "przy ulicy Długiej", "calle de la Paz", "ul. 3 Maja"
+  new RegExp(
+    `(?<![\\p{L}\\p{N}])(?:${CLAIM_PREFIX})\\s+(?:${PARTICLE}\\s+){0,2}(${CLAIM_FIRST_NAME}(?:\\s+(?:${PARTICLE}\\s+)?${CLAIM_NAME}){0,3})`,
+    'gu',
+  ),
+];
+/**
+ * Words that make no street's name: "A Quiet Road", "Main Street", "Plac Zabaw". In title-case copy
+ * the name is only what follows the last of them: "Easy Access To The Main Road" names none.
+ */
+const GENERIC_STREET_WORDS: ReadonlySet<string> = new Set(
+  (
+    'a an the this that these those your our its their every each no one to of in on at by for ' +
+    'from with and or near off along just quiet peaceful private main high side back country ' +
+    'residential ring service access open scenic coastal long short test hard tree-lined zabaw ' +
+    'marítimo maritimo'
+  ).split(' '),
+);
+/** The lower-case names of a listing's text: "ul. parterowa", "coast road". */
+const LOWER_STREET_NAME_RES: readonly RegExp[] = [
+  new RegExp(
+    `(?<![\\p{L}\\p{N}])(?:${LOWER_NAME_PREFIX})\\s+(?:${PARTICLE}\\s+){0,2}(?!${NOT_A_STREET_NAME})(\\p{Ll}[\\p{L}'’-]*)`,
+    'gu',
+  ),
+  /(?<![\p{L}\p{N}])(\p{Ll}[\p{L}'’-]*)\s+(?:street|road|avenue|boulevard|lane|drive|st\.|rd\.?|ave\.?|blvd\.?|dr\.?|pl\.?)(?![\p{L}\p{N}])/gu,
+];
+
+/** One street a text states by name. */
+interface StreetClaim {
+  /** As written, without the street word: "Ocean", "Długiej". */
+  readonly name: string;
+  /** The words a listing's name has to match; none when only generic words are left. */
+  readonly words: readonly string[];
+}
+
+/**
+ * Every street `text` states by a capitalised name. A name in lower case, a street word outside the
+ * closed lists and a number with no name ("42nd Street") are not read, and pass.
+ *
+ * @param text - Generated copy, as written.
+ * @returns The claims; each is one street.
+ */
+export function readStreetClaims(text: string): StreetClaim[] {
+  return STREET_CLAIM_RES.flatMap((re) =>
+    Array.from(text.matchAll(re), (m): StreetClaim => {
+      const name = (m[1] ?? '').trim();
+      const all = name.split(/\s+/u);
+      const lastGeneric = all
+        .map((w) => GENERIC_STREET_WORDS.has(w.toLowerCase()))
+        .lastIndexOf(true);
+      return { name, words: all.slice(lastGeneric + 1).filter((w) => /^\p{Lu}/u.test(w)) };
+    }),
+  );
+}
+
+/**
+ * The names a listing's text writes in lower case right beside a street word.
+ *
+ * @param listing - The listing's own words.
+ * @returns Each such name.
+ */
+export function readLowerCaseStreetNames(listing: string): string[] {
+  return LOWER_STREET_NAME_RES.flatMap((re) => Array.from(listing.matchAll(re), (m) => m[1] ?? ''));
+}
+
 const blank = (match: string): string => ' '.repeat(match.length);
 
 /**

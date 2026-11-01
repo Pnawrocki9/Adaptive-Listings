@@ -306,7 +306,11 @@ describe('negation', () => {
 
 describe('a street address always passes, and grounds nothing', () => {
   it.each<[string, Listing, string]>([
-    ['South Street', PLAIN_EN, 'A flat on South Street'],
+    [
+      'South Street, listed',
+      { original: 'Flat.', ctx: { listing_location: 'South Street' } },
+      'A flat on South Street',
+    ],
     [
       'a house number',
       { original: 'Flat.', ctx: { listing_location: '12 South Street' } },
@@ -318,7 +322,11 @@ describe('a street address always passes, and grounds nothing', () => {
       'Mieszkanie przy ul. Parterowa 5',
     ],
     ['pl: a name form', PLAIN_PL, 'Mieszkanie przy Parterowej'],
-    ['es: Calle Solar', PLAIN_ES, 'Piso en la Calle Solar'],
+    [
+      'es: Calle Solar, listed',
+      { original: 'Piso.', ctx: { listing_location: 'Calle Solar' } },
+      'Piso en la Calle Solar',
+    ],
     [
       'es: Calle Solar, a claim word',
       { original: 'Piso.', ctx: { listing_location: 'Calle Energía Solar 12' } },
@@ -633,7 +641,6 @@ describe('KNOWN_LIMITS: these pass although they are wrong', () => {
     ['sold with furniture', PLAIN_EN, 'Sold with all its furniture'],
     ['"low" on other costs', PLAIN_PL, 'Niskie koszty stałe'],
     ['a capital right after a preposition', PLAIN_EN, 'A flat in Detached Villa country'],
-    ['a street word after the claim, unlisted', PLAIN_EN, 'A Detached House Lane flat'],
     ['a question', PLAIN_EN, 'Why not this fully furnished flat?'],
     ['"if" with a real claim after it', PLAIN_EN, 'If you like this fully furnished flat, call.'],
     ['a plural', PLAIN_EN, 'Modern south-facing flats'],

@@ -57207,3 +57207,69 @@ does a lower-case name after `ul.`, `calle`).
 The review round of 2026-10-31 also bounded `clauseBefore` and the list walk of the shared amenity
 rule to a slice of the text: both read the whole prefix per match, which was the larger share of the
 cost on saturated text. No verdict moved by it.
+
+**Slice 5, streets and names (2026-11-01).** `claims-v10`. Three parts.
+
+1. A street the listing does not state is refused as `unsupported_street` on both paths and in
+   `checkTypedClaims` (`kind: 'street'`), final, no judge: "12 Ocean Drive", "Ocean Drive", "przy
+   ul. Złotej", "calle Mayor". The listing's own street passes in any form, its words read from
+   every field (`przy ulicy Długiej` on `ul. Długa 4`, CEO 2026-10-30). A word of the listing counts
+   only with a capital or right beside a street word, so "Beach Road" takes no support from "close
+   to the beach".
+2. A body has a name rule, narrow: a capitalised word in a place frame ("Located in Miami", "w
+   Gdyni", "cerca de Málaga", "the Brickell district") that is not the listing's own in a known form
+   goes to one judge call. Haiku, 2 s, 50 tokens, the flagged words and their sentences only, not
+   the body: it is no auditor of the rest of the text, which this amendment dropped. A judge that
+   says no, fails, times out or answers something else leaves the flag standing, as on `/api/adapt`:
+   `REFUSED / hallucinated_proper_name`, and the FOLLOW-1427 guard then holds it for its TTL. New
+   `llm_calls` sources: `description_name_judge_grounded`, `_refused`, `_unavailable`.
+3. The first word of the adapt `headline` slot is read like any other capital and goes to the judge.
+   Exempt, so no round trip: the opening words of FOLLOW-1389, a closed list of imperatives and
+   determiners, and what the archetype's own headline opens with (provenance, "Rental Yield: …").
+   Other slots, and a segment after a colon or a bar, keep the exemption.
+
+T7 grew because the body needs it: adjectives as names (`Piotrkowskiej`, `Dolnym`, `Starego`),
+plural places (`Katowicach`), `Wrocławiu`, `Poznaniu`, `Łodzi`, `Gdyni`, and rows for `Wisła`,
+`Valencian`, `FL`. These are loosenings of the headline rule too.
+
+**Replay `verdicts.v4`.** 0 new body refusals, 5 of 57 since the baseline (8.8 %), 0 headlines
+suppressed, 2 served that were suppressed (`w Poznaniu`, `we Wrocławiu`, both the listing's own
+town), 0 of 84 slots, 0 un-refused, 0 judge calls. The replay answers the judge
+`{"grounded": false}`, the worst it can do, so a flag there is a refusal, and the test requires that
+no frozen body is flagged. Live recording of slice 6, by the same rules: 0 new body refusals of 55
+FIT, 0 slots, 0 judge calls, 1 headline served that was suppressed (`w Katowicach Załężu`, true). 29
+and 26 street claims read, all the listing's own. Parity corpus v27: stamp only.
+
+**What these numbers do not say.** Not one recogniser of this slice fired on 176 recorded cases, so
+the 0 and the budget are met and the precision is unmeasured; the pinned cases are constructed. The
+judge has never run: no live call was made, so its answers on the prompt are unknown, and the tests
+answer for it. A true invented name would have had no room in this budget in any case.
+
+**Given up to stay at zero.** Every capital in a body would flag almost half of them (28 and 27 of
+60 before the forms and lists), a judge call each and a refusal the replay could not rule out; hence
+the frames. A possessive frame ("Miami's nightlife") went too: it flagged "Portugal's most
+established short-let markets" in parity case `live.005.listing-002.vacation_rental_investor.en`,
+which is true of the home and external to the listing, and has no budget.
+
+**Declared limits of slice 5.** Wrong copy that still passes, pinned by name in `KNOWN_LIMITS` of
+`apps/control-plane/src/lib/__tests__/claim-streets-names.follow1311.test.ts`:
+
+- Streets: `the High Street`, `Main Street` (generic names); `Palm Street` on Palm Coast (one word
+  of the name found is enough); `Blackberry Lane` for Blackberry Pl (the street type is not
+  compared); `On Beach Road` on "Beach 200 m." (a sentence opening has a capital); `12 bath road`,
+  `przy ul. parterowa` (lower case); `42nd Street` (no name word); `Palm Coast Parkway`,
+  `Ocean Highway` (outside the closed street words); `Ocean Way`, `Bath Place`, `Bath St.`
+  (ambiguous with no number before them); `Bath Place 12` (a number after an ambiguous word).
+- Body names: `The Brickell Market` (no frame); `At Miami Beach`, `on Brickell`, `to Orlando`,
+  `Do Gdyni` (these prepositions are mostly dates and directions); `in USA`, `near JFK` (an acronym
+  is not read); `Miami's nightlife`, `Brickell's cafes` (no possessive frame); `A flat in Portugal`
+  on a Kraków listing (countries of our markets are not read: a diaspora body says "w Polsce");
+  `in Palm Beach` on a listing with "beach" (each word is looked up in any case); `in sunny Miami`,
+  `W nadmorskiej Gdyni` (a word between the frame and the name); `w gdyni`.
+- Adapt headline: `Home: Miami views`: a word after a colon carries no name signal, as before.
+
+Refused although it may be fine, pinned: `A flat on Golden Road` for "ul. Złota" (a translated
+street is not a known form), `A flat for Wall Street money` (a figure of speech). Slice 4's limit
+`A Detached House Lane flat` is now refused as a street, and its pins of `South Street` and
+`Calle Solar` now state those streets on the listing: an unlisted one is this slice's refusal, not
+an attribute.

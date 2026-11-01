@@ -53,6 +53,16 @@ const POLISH_CASE_ENDINGS: readonly (readonly [string, string])[] = [
   ['cie', 't'],
   ['dzie', 'd'],
   ['le', 'ł'],
+  // FOLLOW-1311 slice 5: `Wrocław` → `we Wrocławiu`, `Poznań` → `w Poznaniu`, `Łódź` → `w Łodzi`,
+  // `Bydgoszcz` → `w Bydgoszczy`
+  ['iu', ''],
+  ['ia', ''],
+  ['y', ''],
+  ['niu', 'ń'],
+  ['nia', 'ń'],
+  ['niem', 'ń'],
+  ['dzi', 'dź'],
+  ['dzią', 'dź'],
   // feminine, -a nominative
   ['y', 'a'],
   ['i', 'a'],
@@ -63,6 +73,24 @@ const POLISH_CASE_ENDINGS: readonly (readonly [string, string])[] = [
   ['ce', 'ka'],
   ['dze', 'ga'],
   ['le', 'ła'],
+  ['dzie', 'da'],
+  ['i', 'ia'],
+  // an adjective as a name, FOLLOW-1311 slice 5: `ul. Długa` → `przy ulicy Długiej`, `Dolny Sopot`
+  // → `w Dolnym Sopocie`, `Stare Miasto` → `do Starego Miasta`, `Aleje Jerozolimskie` → `w Alejach
+  // Jerozolimskich`
+  ['ej', 'a'],
+  ['iej', 'a'],
+  ['ego', 'i'],
+  ['m', 'i'],
+  ['ego', 'y'],
+  ['ym', 'y'],
+  ['ego', 'e'],
+  ['ym', 'e'],
+  ['ich', 'ie'],
+  // a plural place, FOLLOW-1311 slice 5: `Katowice` → `w Katowicach`, `Katowic`; `Tychy` → `w Tychach`
+  ['ach', 'e'],
+  ['ach', 'y'],
+  ['', 'e'],
   // neuter, -e / -o nominative
   ['u', 'e'],
   ['a', 'e'],
@@ -129,6 +157,8 @@ const PLACE_EXONYMS: readonly (readonly string[])[] = [
   ['Warszawa', 'Warsaw', 'Varsovia'],
   ['Kraków', 'Cracow', 'Cracovia'],
   ['Wrocław', 'Breslavia'],
+  // Its stem is too short for the endings [FOLLOW-1311 slice 5].
+  ['Łódź', 'Łodzi', 'Łodzią'],
   ['Poznań', 'Posnania'],
   ['Śląsk', 'Silesia'],
   ['Pomorze', 'Pomerania'],
@@ -136,6 +166,7 @@ const PLACE_EXONYMS: readonly (readonly string[])[] = [
   ['Mazowsze', 'Masovia', 'Mazovia'],
   ['Kaszuby', 'Kashubia'],
   ['Tatry', 'Tatras'],
+  ['Wisła', 'Vistula', 'Vístula'],
   // Spain
   ['Sevilla', 'Seville', 'Sewilla'],
   ['Zaragoza', 'Saragossa'],
@@ -159,6 +190,9 @@ const PLACE_EXONYMS: readonly (readonly string[])[] = [
   // Portugal
   ['Lisboa', 'Lisbon', 'Lizbona'],
   ['Porto', 'Oporto'],
+  // Regions and states a listing names short or in another language [FOLLOW-1311 slice 5]
+  ['Valencian', 'Walencka', 'Valenciana'],
+  ['FL', 'Florida', 'Floryda'],
 ];
 
 /**
@@ -183,4 +217,47 @@ export function isOtherNameOfListingPlace(
     }
   }
   return false;
+}
+
+/**
+ * Does a capitalised word of `listing` name what `word` names: the same word in any case, without
+ * its diacritics, or a Polish case form of it? No other table and no lower-case word of the listing,
+ * so "Beach Road" takes no support from "close to the beach". `extra` adds the lower-case names the
+ * caller has read as names ("ul. parterowa").
+ *
+ * @param word - A word of a name in generated copy.
+ * @param listing - The listing's own words.
+ * @param extra - Further names of the listing, whatever their case.
+ * @returns `true` when the listing states that name.
+ */
+export function isCapitalisedNameOfListing(
+  word: string,
+  listing: string,
+  extra: readonly string[],
+): boolean {
+  const folded = foldDiacritics(word);
+  const same = (name: string): boolean =>
+    foldDiacritics(name).toLowerCase() === folded.toLowerCase() ||
+    polishCaseForms(word, name) ||
+    polishCaseForms(folded, foldDiacritics(name));
+  if (extra.some(same)) return true;
+  return Array.from(listing.matchAll(CAPITALISED_FACT_TOKEN_RE), (m) => m[0]).some(same);
+}
+
+/**
+ * The listing's own place under any other name, whichever side carries the case form: the copy's
+ * "Warsaw" on a listing that only says "w Warszawie".
+ *
+ * @param word - A word of a name in generated copy.
+ * @param listing - The listing's own words.
+ * @returns `true` when a row of the closed table holds `word` and a form the listing uses.
+ */
+export function isExonymOfInflectedListingName(word: string, listing: string): boolean {
+  const folded = foldDiacritics(word).toLowerCase();
+  const listed = Array.from(listing.matchAll(CAPITALISED_FACT_TOKEN_RE), (m) => m[0]);
+  return PLACE_EXONYMS.some(
+    (row) =>
+      row.some((n) => foldDiacritics(n).toLowerCase() === folded) &&
+      row.some((n) => listed.some((l) => polishCaseForms(l, n))),
+  );
 }

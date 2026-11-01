@@ -57,6 +57,7 @@ import {
 } from '@/lib/claim-rules';
 import {
   PY_WORD,
+  isExonymOfInflectedListingName,
   isOtherNameOfListingPlace,
   isPolishCaseFormOfFact,
   pyWordBoundarySearch,
@@ -268,7 +269,7 @@ const HEADLINE_STOP_CAPS: ReadonlySet<string> = new Set(STOP_CAPS);
  * FIRST word only. Its sentence-initial capital is not a name; the same word anywhere else is
  * checked as before, and another language's list never applies.
  */
-const HEADLINE_OPENING_WORDS: Readonly<Record<'en' | 'pl' | 'es', RegExp>> = {
+export const HEADLINE_OPENING_WORDS: Readonly<Record<'en' | 'pl' | 'es', RegExp>> = {
   en: new RegExp(
     '^(?:(?:one|two|three|four|five|six|single|double)-(?:bed|bedroom|bedroomed|room|storey|story|level|family)|' +
       'detached|semi-detached|terraced|end-terrace|end-of-terrace|furnished|unfurnished|renovated|' +
@@ -334,6 +335,93 @@ export function checkHeadlineFacts(
     }
   }
   return null;
+}
+
+// ─── Names in a body (FOLLOW-1311 slice 5) ───────────────────────────────────
+
+/**
+ * A word that says where the home is, then a capitalised word: "Located in Miami", "w Gdyni", "cerca
+ * de Sevilla", "minutes from Brickell". Not "on", "at", "to", "do": "on Friday", "at Christmas" and
+ * "do Starego Miasta" are mostly no claim about a place, and "on Ocean Drive" is the street rule's.
+ * "We" with its capital is the English pronoun. Case by hand: a name is capitalised.
+ */
+const PLACE_FRAME =
+  '[Ii]n|[Nn]ear|[Oo]utside|[Cc]lose to|[Nn]ext to|[Mm]inutes from|[Ww]alk from|[Dd]rive from|' +
+  '[Ss]teps from|[Ww]|we|[Pp]rzy|[Kk]oło|[Oo]bok|[Nn]ad|[Pp]od|[Bb]lisko|[Nn]iedaleko|[Nn]a|' +
+  '[Ee]n|[Cc]erca de|[Jj]unto a|' +
+  // A noun that names a place by what follows it.
+  '[Dd]zielnic\\p{L}*|[Pp]laż\\p{L}*|[Ss]tacj\\p{L}*|[Ll]otnisk\\p{L}*|[Oo]siedl\\p{L}*|' +
+  '[Bb]arrio(?: de)?|[Pp]laya(?: de)?|[Aa]eropuerto(?: de)?|[Ee]staci[oó]n(?: de)?';
+const NAME_WORD = '\\p{Lu}[\\p{L}-]+';
+const NAME_RUN = `${NAME_WORD}(?:\\s+(?:(?:de|del|la|da)\\s+)?${NAME_WORD}){0,2}`;
+const BODY_NAME_RES: readonly RegExp[] = [
+  new RegExp(`(?<![\\p{L}\\p{N}])(?:${PLACE_FRAME})\\s+(${NAME_RUN})`, 'gu'),
+  // "the Brickell district", "Miami Beach airport"
+  new RegExp(
+    `(?<![\\p{L}\\p{N}-])(${NAME_RUN})\\s+(?:district|neighbou?rhood|quarter|beach|airport|station|marina|harbou?r|university|hospital|mall)(?![\\p{L}\\p{N}])`,
+    'gu',
+  ),
+];
+/**
+ * Capitalised, and no invented place: dates, languages, a polite pronoun, a noun inside a name, and
+ * the countries a listing is in ("w Polsce" on a Wrocław listing states nothing the buyer can be
+ * misled by, and a diaspora body says it).
+ */
+const NOT_A_NAME: ReadonlySet<string> = new Set(
+  (
+    'january february march april may june july august september october november december ' +
+    'monday tuesday wednesday thursday friday saturday sunday ' +
+    'english polish spanish portuguese german french ' +
+    'twój twoja twoje twojej twoim twoją twojego twoich tobie tobą ciebie ' +
+    'państwa państwu państwo pan pani panu wasz wasza wasze waszym waszej ' +
+    'wspólnota wspólnoty wspólnocie wspólnotą comunidad comunitat community region ' +
+    'miasto miasta mieście miastem ' +
+    'polska polski polsce polskę polską poland polonia hiszpania hiszpanii hiszpanię hiszpanią ' +
+    'spain españa espana portugalia portugalii portugalię portugalią portugal'
+  ).split(' '),
+);
+/** An acronym names no place: "USA" passes with "ROI", "AGD", "TIR", "WCs". */
+const ACRONYM_RE = /^\p{Lu}{2,}s?$/u;
+
+/**
+ * The capitalised words of `body` that a place frame reads as a name, and that are not the listing's
+ * own in any form this check knows. They go to the judge; nothing here refuses. Outside the frames a
+ * capital is not read at all: "Jeżyce Market" and "the Tri-City ring road" are translations, and
+ * reading every capital would send the judge almost half of all bodies.
+ *
+ * @param body - The description body.
+ * @param original - The listing's description.
+ * @param ctx - The listing's own fields.
+ * @returns The words, unique, in order of appearance.
+ */
+export function bodyNamesForJudge(
+  body: string,
+  original: string,
+  ctx: Readonly<Record<string, string>>,
+): string[] {
+  const words = BODY_NAME_RES.flatMap((re) =>
+    Array.from(body.matchAll(re), (m) => (m[1] ?? '').split(/\s+/u)).flat(),
+  ).filter(
+    (word) =>
+      /^\p{Lu}/u.test(word) &&
+      !ACRONYM_RE.test(word) &&
+      !HEADLINE_STOP_CAPS.has(word) &&
+      !NOT_A_NAME.has(word.toLowerCase()),
+  );
+  if (words.length === 0) return [];
+  const grounding = factGrounding(original, ctx);
+  const listing = [original, ...Object.values(ctx)].join(' ');
+  const stems = new Set<string>();
+  for (const m of grounding.matchAll(GROUNDING_WORD_RE)) stems.add(stemLoose(m[0]));
+  const flagged = words.filter(
+    (word) =>
+      !pyWordBoundarySearch(word, grounding) &&
+      !stems.has(stemLoose(word)) &&
+      !isPolishCaseFormOfFact(word, original, ctx) &&
+      !isOtherNameOfListingPlace(word, grounding, 'pl') &&
+      !isExonymOfInflectedListingName(word, listing),
+  );
+  return Array.from(new Set(flagged));
 }
 
 // ─── Output-contract check (`_body_violates_contract`, FOLLOW-188) ───────────

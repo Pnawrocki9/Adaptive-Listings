@@ -76,6 +76,7 @@ import { hasMetaCommentary } from '@/lib/meta-commentary';
 import { hasModelControlTag } from '@/lib/model-control-tags';
 import {
   PY_WS,
+  bodyNamesForJudge,
   bodyViolatesContract,
   checkBodyClaims,
   checkHeadlineFacts,
@@ -138,12 +139,19 @@ import {
  *   matching fact in the listing are refused, by a closed lexicon with a closed entailment table
  *   (`lib/attribute-lexicon.ts`). No `claims-v8` row was checked against those; it is regenerated
  *   once instead of served.
+ * - `claims-v10` — 2026-11-01, FOLLOW-1311 slice 5: a street the listing does not state is refused
+ *   (`unsupported_street`), and a place named in a body that the listing does not name goes to a
+ *   judge (`hallucinated_proper_name`). No `claims-v9` row was checked against those; it is
+ *   regenerated once instead of served.
  */
-export const CLAIMS_VALIDATION_VERSION = 'claims-v9';
+export const CLAIMS_VALIDATION_VERSION = 'claims-v10';
 
 /** G-03: total budget per call (deadline on the whole, retries included). */
 const DESCRIPTION_DEADLINE_MS = 75_000;
 const HEADLINE_DEADLINE_MS = 20_000;
+/** One judge round trip, as on `/api/adapt`: the three deadlines stay under `maxDuration` 120 s. */
+const NAME_JUDGE_DEADLINE_MS = 2_000;
+const NAME_JUDGE_MODEL = 'claude-haiku-4-5';
 const ANTHROPIC_MAX_RETRIES = 1;
 
 /** `_max_tokens_for` (FOLLOW-162): floor, per-word estimate, audit-block reserve, ceiling. */
@@ -621,7 +629,10 @@ type DescriptionOutcome =
         | 'invalid_event';
     }
   | { verdict: 'NEUTRAL'; neutralReason: string | null }
-  | { verdict: 'REFUSED'; violation: NumberViolation | ClaimViolation | ProtectedGround }
+  | {
+      verdict: 'REFUSED';
+      violation: NumberViolation | ClaimViolation | ProtectedGround | 'hallucinated_proper_name';
+    }
   | { verdict: 'FIT'; description: string; verifiedFacts: string[] };
 
 /** The outcomes the pure interpreter can produce (no I/O, so no SKIPPED / timeout / api_error). */
@@ -1001,7 +1012,13 @@ async function callModel(
 function logCall(
   e: DescriptionRequestedEvent,
   model: string,
-  source: 'description' | 'headline' | 'description_claim_refused',
+  source:
+    | 'description'
+    | 'headline'
+    | 'description_claim_refused'
+    | 'description_name_judge_grounded'
+    | 'description_name_judge_refused'
+    | 'description_name_judge_unavailable',
   usage: { tokensIn: number; tokensOut: number; latencyMs: number },
 ): Promise<void> {
   return logLlmCallAsync({
@@ -1135,6 +1152,68 @@ export async function generateDescription(
   }
 }
 
+/**
+ * FOLLOW-1311 slice 5, what `/api/adapt` does for a name: the flagged words go to a judge, and any
+ * failure leaves the flag standing. Scoped to those words and their sentences, not the body: this is
+ * no auditor of the rest of the text (the amendment dropped one), and that keeps it near USD 0.001
+ * against USD 0.025 for the body it may refuse.
+ */
+const NAME_JUDGE_SYSTEM = `You check place names in real-estate marketing copy against the listing it was written from. The listing is the only source of truth.
+
+For each flagged word answer one question: is it a name the listing itself uses, in another form? The same name inflected, translated, abbreviated or spelled another way counts as the listing's own ("Warsaw" for "Warszawa", "Florida" for "FL"). So does a word that names no place at all (a style, an ordinary word with a capital).
+
+A place, building, school, district or landmark the listing does not name is NOT its own, even if you know the home is really there. Judge only the flagged words; nothing else in the sentences.
+
+Answer with ONLY this JSON, nothing else:
+{"grounded": true} if every flagged word is the listing's own, otherwise {"grounded": false}`;
+
+async function judgeBodyNames(
+  client: Anthropic,
+  e: DescriptionRequestedEvent,
+  body: string,
+  flagged: readonly string[],
+): Promise<boolean> {
+  const sentences = body
+    .split(/(?<=[.!?])\s+|\n+/u)
+    .filter((sentence) => flagged.some((word) => sentence.includes(word)));
+  const user =
+    `LISTING:\n<<<\n${e.original_description || ''}\n${JSON.stringify(e.listing_context)}\n>>>\n\n` +
+    `SENTENCES:\n<<<\n${sentences.join('\n')}\n>>>\n\nFLAGGED WORDS: ${flagged.join(', ')}`;
+  try {
+    const reply = await callModel(
+      client,
+      {
+        model: NAME_JUDGE_MODEL,
+        max_tokens: 50,
+        system: NAME_JUDGE_SYSTEM,
+        user,
+        extras: {},
+      },
+      NAME_JUDGE_DEADLINE_MS,
+    );
+    const answer = /\{\s*"grounded"\s*:\s*(true|false)\s*\}/u.exec(reply.text)?.[1];
+    await logCall(
+      e,
+      NAME_JUDGE_MODEL,
+      answer === 'true'
+        ? 'description_name_judge_grounded'
+        : answer === 'false'
+          ? 'description_name_judge_refused'
+          : 'description_name_judge_unavailable',
+      reply,
+    );
+    return answer === 'true';
+  } catch (err: unknown) {
+    captureFailure(e, 'name_judge_call', err);
+    await logCall(e, NAME_JUDGE_MODEL, 'description_name_judge_unavailable', {
+      tokensIn: 0,
+      tokensOut: 0,
+      latencyMs: 0,
+    });
+    return false;
+  }
+}
+
 async function generateValidated(e: DescriptionRequestedEvent): Promise<GenerationReport> {
   const model = resolveGenerationModel(e.override_model, e.generation_model);
   const failed = (
@@ -1214,7 +1293,18 @@ async function generateValidated(e: DescriptionRequestedEvent): Promise<Generati
   }
   await logCall(e, model, 'description', raw);
 
-  const outcome = interpretDescription({ text: raw.text, stopReason: raw.stopReason }, e);
+  let outcome = interpretDescription({ text: raw.text, stopReason: raw.stopReason }, e);
+
+  if (outcome.verdict === 'FIT') {
+    const flagged = bodyNamesForJudge(
+      outcome.description,
+      e.original_description || '',
+      e.listing_context,
+    );
+    if (flagged.length > 0 && !(await judgeBodyNames(client, e, outcome.description, flagged))) {
+      outcome = { verdict: 'REFUSED', violation: 'hallucinated_proper_name' };
+    }
+  }
 
   if (outcome.verdict === 'NEUTRAL') {
     const writes = await writeCaches(e, model, {

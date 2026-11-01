@@ -110,7 +110,12 @@
  *     the prompt without the paragraph.
  *   - `corpus.v24.jsonl` + `MANIFEST.v24.json` — `claims-v8`, a stamp-only re-freeze of v23.
  *   - `corpus.v25.jsonl` + `MANIFEST.v25.json` — FOLLOW-1311 slice 4, `claims-v9`, a stamp-only
- *     re-freeze of v24, the current contract: the attribute lexicon moves no verdict of the corpus.
+ *     re-freeze of v24: the attribute lexicon moves no verdict of the corpus.
+ *   - `corpus.v26.jsonl` + `MANIFEST.v26.json` — FOLLOW-1311 slice 6 changed lines of the
+ *     description SYSTEM prompt and 16 headline personas, so v26 is a prompt-digest re-freeze of
+ *     v25, the current contract: the v26 guard swaps each edit back and proves the old prompt, byte
+ *     for byte. Every guard replays with the CURRENT system and headline digests (v26's); the guards
+ *     of older prompt changes read the headline prompt with the personas as they were.
  *
  * No other I/O happens: the test env configures no Redis, ClickHouse, Postgres or Sentry, so the
  * spend gate reads 0, every write reports `not_configured` and no row is written.
@@ -243,10 +248,6 @@ const CASES_V23: Case[] = readCorpus('corpus.v23.jsonl');
 const MANIFEST_V23 = JSON.parse(
   readFileSync(join(FIXTURE_DIR, 'MANIFEST.v23.json'), 'utf8'),
 ) as ManifestV3;
-/** FOLLOW-1414 (v17) and FOLLOW-1311 (v23) re-froze them again; each guard asserts its only change. */
-const DESCRIPTION_USER_SHA = new Map(
-  CASES_V23.map((c) => [c.id, c.expected.prompt_sha256.description_user] as const),
-);
 /** The claims-validation stamp every corpus v1–v9 was frozen with (the manifests keep it). */
 const FROZEN_STAMP = 'claims-v1';
 const CASES_V10: Case[] = readCorpus('corpus.v10.jsonl');
@@ -304,6 +305,26 @@ const MANIFEST_V25 = JSON.parse(
   readFileSync(join(FIXTURE_DIR, 'MANIFEST.v25.json'), 'utf8'),
 ) as ManifestV3 & { stamp_refreeze: { from: string; to: string; cases: number } };
 const STAMP = new Map(CASES_V25.map((c) => [c.id, c.expected.claims_validation] as const));
+const CASES_V26: Case[] = readCorpus('corpus.v26.jsonl');
+const MANIFEST_V26 = JSON.parse(
+  readFileSync(join(FIXTURE_DIR, 'MANIFEST.v26.json'), 'utf8'),
+) as ManifestV3 & {
+  persona_change: Record<string, { from: string; to: string }>;
+  system_prompt_change: { from: string; to: string }[];
+  refrozen: string[];
+  voice_fallback_refrozen: string[];
+};
+/**
+ * FOLLOW-1414 (v17) and FOLLOW-1311 (v23, v26) re-froze them again; each guard asserts its only
+ * change.
+ */
+const DESCRIPTION_USER_SHA = new Map(
+  CASES_V26.map((c) => [c.id, c.expected.prompt_sha256.description_user] as const),
+);
+/** The CURRENT description system digests, by case id: v1's until FOLLOW-1311 slice 6 (v26). */
+const DESCRIPTION_SYSTEM_SHA = new Map(
+  CASES_V26.map((c) => [c.id, c.expected.prompt_sha256.description_system] as const),
+);
 /** The stamp v20 introduced (FOLLOW-1420); the corpora after it are frozen with it. */
 const V20_STAMP = 'claims-v7';
 /** The stamp v14 introduced (FOLLOW-1415); the corpora after it are frozen with it. */
@@ -318,10 +339,9 @@ const MANIFEST_V15 = JSON.parse(
 /**
  * The CURRENT headline prompt digests, by case id (FOLLOW-1315 re-froze them as v3, FOLLOW-1382
  * as v5, FOLLOW-1411 as v12, FOLLOW-1408 as v15, FOLLOW-1414 as v17 for a Polish page, FOLLOW-1311
- * as v23; each of
- * those guards asserts they were that corpus's only change).
+ * as v23, slice 6 as v26; each of those guards asserts they were that corpus's only change).
  */
-const HEADLINE_SHA = new Map(CASES_V23.map((c) => [c.id, c.expected.prompt_sha256] as const));
+const HEADLINE_SHA = new Map(CASES_V26.map((c) => [c.id, c.expected.prompt_sha256] as const));
 
 /**
  * The verdict deltas after v5, oldest first, each derived from the corpus before it (v6 from v5).
@@ -429,8 +449,8 @@ async function expectIdentical(c: Case, headlineSha = HEADLINE_SHA.get(c.id)!): 
   const desc = mockCreate.mock.calls[0]![0] as CreateParams;
   expect(desc.model).toBe(c.expected.model);
   expect(desc.max_tokens).toBe(c.expected.max_tokens);
-  expect(sha(desc.system)).toBe(c.expected.prompt_sha256.description_system);
-  // The current description user prompt (v9, FOLLOW-1402); the system prompt is v1's.
+  expect(sha(desc.system)).toBe(DESCRIPTION_SYSTEM_SHA.get(c.id));
+  // The current description user prompt (v9, FOLLOW-1402) and system prompt (v26, FOLLOW-1311).
   expect(sha(desc.messages[0]!.content)).toBe(DESCRIPTION_USER_SHA.get(c.id));
 
   expect(report.outcome).toEqual(c.expected.outcome);
@@ -726,6 +746,20 @@ function beforeV15Persona(user: string, c: Case): string {
   return beforePersona(MANIFEST_V15.persona_change, user, c);
 }
 
+/** FOLLOW-1311 slice 6 (v26): the headline user prompt with its persona as before v26. */
+function beforeV26Persona(user: string, c: Case): string {
+  return beforePersona(MANIFEST_V26.persona_change, user, c);
+}
+
+/** v26: the one case whose empty VOICE section falls back to the persona, its voice as before. */
+function beforeV26Voice(user: string, c: Case): string {
+  if (!MANIFEST_V26.voice_fallback_refrozen.includes(c.id)) return user;
+  const { from, to } = MANIFEST_V26.persona_change[c.input.archetype]!;
+  const marker = 'archetype_voice_pattern:\n';
+  expect(user, c.id).toContain(`${marker}${to}\n`);
+  return user.replace(`${marker}${to}\n`, `${marker}${from}\n`);
+}
+
 function beforePersona(
   personaChange: Record<string, { from: string; to: string }>,
   user: string,
@@ -816,8 +850,11 @@ describe('description parity corpus v5 (FOLLOW-1382 — the current contract: he
       const user = beforeV12Persona(
         beforeV15Persona(
           beforeV17Headline(
-            withoutRoomConvention(
-              (mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content,
+            beforeV26Persona(
+              withoutRoomConvention(
+                (mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content,
+              ),
+              c,
             ),
             c,
           ),
@@ -1102,7 +1139,12 @@ describe('description parity corpus v9 (FOLLOW-1402 — description language, pr
       await generateDescription(c.input);
       // FOLLOW-1414 (v17) appended one more paragraph; read the prompt as it was before v17.
       const user = beforeV17Description(
-        withoutRoomConvention((mockCreate.mock.calls[0]![0] as CreateParams).messages[0]!.content),
+        beforeV26Voice(
+          withoutRoomConvention(
+            (mockCreate.mock.calls[0]![0] as CreateParams).messages[0]!.content,
+          ),
+          c,
+        ),
         c,
       );
       const paragraph = descriptionLanguageParagraph(c.input.locale);
@@ -1316,8 +1358,9 @@ describe('description parity corpus v12 (FOLLOW-1411 — headline persona re-fre
         .mockResolvedValueOnce(response(c.raw_description.text, c.raw_description.stop_reason))
         .mockResolvedValueOnce(response(c.raw_headline ?? '', 'end_turn'));
       await generateDescription(c.input);
-      const user = withoutRoomConvention(
-        (mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content,
+      const user = beforeV26Persona(
+        withoutRoomConvention((mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content),
+        c,
       );
       expect(sha(user), c.id).toBe(c.expected.prompt_sha256.headline_user);
       expect(sha(beforeV12Persona(user, c)), c.id).toBe(prev.expected.prompt_sha256.headline_user);
@@ -1520,8 +1563,9 @@ describe('description parity corpus v15 (FOLLOW-1408 — first_time_buyer person
         .mockResolvedValueOnce(response(c.raw_description.text, c.raw_description.stop_reason))
         .mockResolvedValueOnce(response(c.raw_headline ?? '', 'end_turn'));
       await generateDescription(c.input);
-      const user = withoutRoomConvention(
-        (mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content,
+      const user = beforeV26Persona(
+        withoutRoomConvention((mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content),
+        c,
       );
       expect(sha(user), c.id).toBe(c.expected.prompt_sha256.headline_user);
       expect(sha(beforeV15Persona(user, c)), c.id).toBe(prev.expected.prompt_sha256.headline_user);
@@ -1615,16 +1659,20 @@ describe('description parity corpus v17 (FOLLOW-1414 — write about the home, P
         .mockResolvedValueOnce(response(c.raw_description.text, c.raw_description.stop_reason))
         .mockResolvedValueOnce(response(c.raw_headline ?? '', 'end_turn'));
       await generateDescription(c.input);
-      const desc = withoutRoomConvention(
-        (mockCreate.mock.calls[0]![0] as CreateParams).messages[0]!.content,
+      const desc = beforeV26Voice(
+        withoutRoomConvention((mockCreate.mock.calls[0]![0] as CreateParams).messages[0]!.content),
+        c,
       );
       expect(sha(desc), c.id).toBe(c.expected.prompt_sha256.description_user);
       expect(sha(beforeV17Description(desc, c)), c.id).toBe(
         prev.expected.prompt_sha256.description_user,
       );
       if (c.expected.headline_called) {
-        const head = withoutRoomConvention(
-          (mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content,
+        const head = beforeV26Persona(
+          withoutRoomConvention(
+            (mockCreate.mock.calls[1]![0] as CreateParams).messages[0]!.content,
+          ),
+          c,
         );
         expect(sha(head), c.id).toBe(c.expected.prompt_sha256.headline_user);
         expect(sha(beforeV17Headline(head, c)), c.id).toBe(
@@ -1896,13 +1944,15 @@ describe('description parity corpus v23 (FOLLOW-1311 slice 3 — room-count para
         .mockResolvedValueOnce(response(c.raw_headline ?? '', 'end_turn'));
       await generateDescription(c.input);
       const calls = mockCreate.mock.calls as unknown as [CreateParams][];
-      expect(sha(withoutRoomConvention(calls[0]![0].messages[0]!.content)), c.id).toBe(
-        prev.expected.prompt_sha256.description_user,
-      );
+      expect(
+        sha(beforeV26Voice(withoutRoomConvention(calls[0]![0].messages[0]!.content), c)),
+        c.id,
+      ).toBe(prev.expected.prompt_sha256.description_user);
       if (c.expected.headline_called) {
-        expect(sha(withoutRoomConvention(calls[1]![0].messages[0]!.content)), c.id).toBe(
-          prev.expected.prompt_sha256.headline_user,
-        );
+        expect(
+          sha(beforeV26Persona(withoutRoomConvention(calls[1]![0].messages[0]!.content), c)),
+          c.id,
+        ).toBe(prev.expected.prompt_sha256.headline_user);
       }
     }
   });
@@ -1986,6 +2036,98 @@ describe('description parity corpus v25 (FOLLOW-1311 slice 4 — claims-v9, stam
 
   describe.each(CASES_V25.map((c) => [c.id, c] as const))('%s', (_id, c) => {
     it('generates identically to the v25 record', async () => {
+      await expectIdentical(c);
+    });
+  });
+});
+
+describe('description parity corpus v26 (FOLLOW-1311 slice 6 — external claims, prompt re-freeze)', () => {
+  beforeEach(() => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'parity-'.repeat(4));
+    mockCreate.mockReset();
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('v26 is v25 with ONLY the system digests and the listed headline digests changed', () => {
+    expect(MANIFEST_V26.corpus).toBe('corpus.v26.jsonl');
+    expect(MANIFEST_V26.kind).toBe('prompt_refreeze');
+    expect(MANIFEST_V26.delta).toEqual([]);
+    expect(MANIFEST_V26.derived_from.corpus_sha256).toBe(MANIFEST_V25.corpus_sha256);
+    expect(sha(readFileSync(join(FIXTURE_DIR, 'corpus.v26.jsonl'), 'utf8'))).toBe(
+      MANIFEST_V26.corpus_sha256,
+    );
+    expect(MANIFEST_V26.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    const refrozen = new Set(MANIFEST_V26.refrozen);
+    expect(CASES_V26.map((c) => c.id)).toEqual(CASES_V25.map((c) => c.id));
+    for (const [i, v26] of CASES_V26.entries()) {
+      const prev = CASES_V25[i]!;
+      const { prompt_sha256: pNew, ...restNew } = v26.expected;
+      const { prompt_sha256: pOld, ...restOld } = prev.expected;
+      expect({ ...v26, expected: restNew }, v26.id).toEqual({ ...prev, expected: restOld });
+      expect(pNew.description_system, v26.id).not.toBe(pOld.description_system);
+      if (MANIFEST_V26.voice_fallback_refrozen.includes(v26.id))
+        expect(pNew.description_user, v26.id).not.toBe(pOld.description_user);
+      else expect(pNew.description_user, v26.id).toBe(pOld.description_user);
+      expect(pNew.headline_system, v26.id).toBe(pOld.headline_system);
+      if (refrozen.has(v26.id)) expect(pNew.headline_user, v26.id).not.toBe(pOld.headline_user);
+      else expect(pNew.headline_user, v26.id).toBe(pOld.headline_user);
+    }
+  });
+
+  it('every new prompt is the v25 prompt with the listed edits swapped, byte for byte', async () => {
+    for (const c of CASES_V26) {
+      const prev = CASES_V25.find((x) => x.id === c.id)!;
+      mockCreate.mockReset();
+      mockCreate
+        .mockResolvedValueOnce(response(c.raw_description.text, c.raw_description.stop_reason))
+        .mockResolvedValueOnce(response(c.raw_headline ?? '', 'end_turn'));
+      await generateDescription(c.input);
+      const calls = mockCreate.mock.calls as unknown as [CreateParams][];
+      let system = calls[0]![0].system;
+      for (const { from, to } of MANIFEST_V26.system_prompt_change) {
+        expect(system, c.id).toContain(to);
+        system = system.replace(to, from);
+      }
+      expect(sha(system), c.id).toBe(prev.expected.prompt_sha256.description_system);
+      expect(sha(beforeV26Voice(calls[0]![0].messages[0]!.content, c)), c.id).toBe(
+        prev.expected.prompt_sha256.description_user,
+      );
+      if (c.expected.headline_called) {
+        expect(sha(beforeV26Persona(calls[1]![0].messages[0]!.content, c)), c.id).toBe(
+          prev.expected.prompt_sha256.headline_user,
+        );
+      }
+    }
+  });
+
+  it('only one case falls back to the persona as its voice, and no shipped template does', () => {
+    expect(MANIFEST_V26.voice_fallback_refrozen).toEqual(['fit.copy.template.markers.empty.voice']);
+  });
+
+  it('the system prompt no longer allows an outside claim, and every new persona is conditional', async () => {
+    const c = CASES_V26[0]!;
+    mockCreate
+      .mockResolvedValueOnce(response(c.raw_description.text, c.raw_description.stop_reason))
+      .mockResolvedValueOnce(response(c.raw_headline ?? '', 'end_turn'));
+    await generateDescription(c.input);
+    const { system } = (mockCreate.mock.calls as unknown as [CreateParams][])[0]![0];
+    for (const invited of [
+      'attractive yield potential',
+      'strong rental demand',
+      'established neighbourhood',
+      'generic positive language',
+      'knows this market',
+    ]) {
+      expect(system).not.toContain(invited);
+    }
+    expect(system).toContain('If the listing states it, use it; if not, do not assert it.');
+    for (const [archetype, { to }] of Object.entries(MANIFEST_V26.persona_change)) {
+      expect(to, archetype).toMatch(/only as the listing states/u);
+    }
+  });
+
+  describe.each(CASES_V26.map((c) => [c.id, c] as const))('%s', (_id, c) => {
+    it('generates identically to the v26 record', async () => {
       await expectIdentical(c);
     });
   });

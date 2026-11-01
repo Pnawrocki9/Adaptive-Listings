@@ -3686,6 +3686,70 @@ control-plane package's whole test suite by mistake at about 12:08–12:17 UTC (
 10). Run 188 had ended by 12:08:01, so this overload does not explain it; runs 189–192 ran under it
 and passed. The caveats of §5.23 (a)–(d) apply.
 
+### 5.55 — 2026-10-31 (FOLLOW-1311 slice 1 at `f704a488`, `RESTART_CP=1 CP_MODE=prod`) — **three consecutive `run=GREEN` with `total=8` — the per-PR series of #1115**
+
+| Run | Started (UTC)            | Result                                               | Note                             |
+| --- | ------------------------ | ---------------------------------------------------- | -------------------------------- |
+| 193 | 2026-10-31T13:12:52.700Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `f704a488…` |
+| 194 | 2026-10-31T13:14:55.176Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `f704a488…` |
+| 195 | 2026-10-31T13:16:36.980Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `f704a488…` |
+
+### 5.56 — 2026-10-31 (FOLLOW-1311 slice 2 at `674e0ef1`) — **three consecutive `run=GREEN` with `total=8` (196, 198, 199; 197 drew holdout) — the per-PR series of #1116**
+
+| Run | Started (UTC)            | Result                                                    | Note                                                              |
+| --- | ------------------------ | --------------------------------------------------------- | ----------------------------------------------------------------- |
+| 196 | 2026-10-31T14:18:29.471Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `674e0ef1…`                                  |
+| 197 | 2026-10-31T14:20:36.560Z | `TALLY green=7 red=0 unmeasured=1 total=8 run=UNMEASURED` | `[UNMEASURED:holdout]`, neutral; `[FRESH]` harnessSha `674e0ef1…` |
+| 198 | 2026-10-31T14:21:41.896Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `674e0ef1…`                                  |
+| 199 | 2026-10-31T14:23:22.585Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `674e0ef1…`                                  |
+
+The PR head later became `3c6314dd`, a merge of `main` that changed no file under `apps/` or
+`packages/`.
+
+### 5.57 — 2026-10-31 (FOLLOW-1311 slice 3 at `007105f3`, before the last review round) — three consecutive `run=GREEN`, **not the evidence for #1117**
+
+| Run | Started (UTC)            | Result                                               | Note                             |
+| --- | ------------------------ | ---------------------------------------------------- | -------------------------------- |
+| 200 | 2026-10-31T16:15:21.221Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `007105f3…` |
+| 201 | 2026-10-31T16:17:38.893Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `007105f3…` |
+| 202 | 2026-10-31T16:19:22.220Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `007105f3…` |
+
+### 5.58 — 2026-10-31 (FOLLOW-1311 slice 3 at `1feb8a1e`, the final product code) — **three consecutive `run=GREEN` with `total=8` (204, 206, 207; 203 and 205 drew holdout) — the per-PR series of #1117**
+
+| Run | Started (UTC)            | Result                                                    | Note                                                              |
+| --- | ------------------------ | --------------------------------------------------------- | ----------------------------------------------------------------- |
+| 203 | 2026-10-31T16:35:34.569Z | `TALLY green=3 red=0 unmeasured=5 total=8 run=UNMEASURED` | `[UNMEASURED:holdout]`, neutral; `[FRESH]` harnessSha `1feb8a1e…` |
+| 204 | 2026-10-31T16:37:34.295Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `1feb8a1e…`                                  |
+| 205 | 2026-10-31T16:39:28.410Z | `TALLY green=3 red=0 unmeasured=5 total=8 run=UNMEASURED` | `[UNMEASURED:holdout]`, neutral; `[FRESH]` harnessSha `1feb8a1e…` |
+| 206 | 2026-10-31T16:41:02.102Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `1feb8a1e…`                                  |
+| 207 | 2026-10-31T16:42:56.284Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `1feb8a1e…`                                  |
+
+The PR head later became `1e42b4fd`, a merge of `main` that changed no file under `apps/` or
+`packages/`.
+
+### 5.59 — 2026-10-31 (FOLLOW-1426 at `33a5afb8`) — **three consecutive `run=GREEN` with `total=8` — the per-PR series of #1118**
+
+| Run | Started (UTC)            | Result                                               | Note                             |
+| --- | ------------------------ | ---------------------------------------------------- | -------------------------------- |
+| 208 | 2026-10-31T17:31:18.037Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `33a5afb8…` |
+| 209 | 2026-10-31T17:33:15.447Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `33a5afb8…` |
+| 210 | 2026-10-31T17:35:04.777Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `33a5afb8…` |
+
+`llm_calls` over the series: 15 `llm_tweaked` rows and 3 `llm_full`, all `claude-sonnet-5-5`.
+`llm_tweaked` p50 2200 ms, p95 2422 ms. The earlier two-day figure on Haiku 4.5 was p50 2593 ms, p95
+3589 ms over 298 calls; the new sample is small.
+
+### 5.60 — 2026-10-31 (post-merge series on `main` at `191909f3`, which combines #1115 to #1118) — **three consecutive `run=GREEN` with `total=8`, each `[FRESH]`**
+
+| Run | Started (UTC)            | Result                                               | Note                             |
+| --- | ------------------------ | ---------------------------------------------------- | -------------------------------- |
+| 211 | 2026-10-31T18:44:45.512Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `191909f3…` |
+| 212 | 2026-10-31T18:47:19.975Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `191909f3…` |
+| 213 | 2026-10-31T18:49:19.453Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `191909f3…` |
+
+No RED in §5.55 to §5.60. The AC(5) failure of §5.54 did not recur. The caveats of §5.23 (a)–(d)
+apply.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

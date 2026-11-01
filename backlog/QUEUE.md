@@ -127,8 +127,9 @@
 - **FOLLOW-1168** — status: DONE # PR #1112, merged as `6d58d1c2`; README §5.53. Phase 4 P5: an arm
   is credited only when a served slot depends on it. Until FOLLOW-1164 decides what a variant is, no
   copy-variant difference is measured.
-- **FOLLOW-1311** — status: IN_PROGRESS # Phase 4 P6, re-scoped to about 41 h, 7 slices (AMENDMENT
-  in FOLLOW_UPS). Merged: slice 0 #1114, 1 #1115, 2 #1116, 3 #1117 (`643ee4c9`, `claims-v8`, README
+- **FOLLOW-1311** — status: DONE # Slices 0-6 merged (#1114-#1117, #1120, #1123, #1125), K4a. One
+  target not clearly met and slice 5 narrowed: docs/checkpoints/K4a.md. Was: Phase 4 P6 in
+  FOLLOW_UPS). Merged: slice 0 #1114, 1 #1115, 2 #1116, 3 #1117 (`643ee4c9`, `claims-v8`, README
   §5.58). Slice 3 went through two independent review rounds; declared limits are in the amendment.
   CEO defaults accepted 2026-10-31: no computed price per m²; remaining embellishment is a recorded
   limit. AC(1b) stays in FOLLOW-1345, which now also depends on this ticket (`checkTypedClaims`).
@@ -142,7 +143,14 @@
   not fired live yet.
 - **FOLLOW-1428** — status: BACKLOG # P3 product. FAILED descriptions (truncated, empty, wrong
   language) also follow a billed call, write nothing and regenerate on every miss; FOLLOW-1427
-  guards REFUSED only. Next free: FOLLOW-1429, RETRO-372, ESC-090.
+  guards REFUSED only. Next free: FOLLOW-1431, RETRO-372, ESC-090.
+- **FOLLOW-1429** — status: READY # P2 product. Blind audit of 2026-11-01: 32 firm language errors
+  on PL and ES pages, in 21 of 56 texts, many of them translated persona phrases ("matematyka
+  wyjścia", "ogon najmu", "zaprojektowany pod więcej weekendów"), plus "sqm" and "Lisbon" on Polish
+  pages. `docs/checkpoints/K4a.md`.
+- **FOLLOW-1430** — status: READY # P3 gate. `check-measured-premises.mjs` fails on dated
+  measurements in `generation-models.ts` and the FOLLOW-1377 tests (#1081 on). K7 gate; runs only
+  weekly. Move them to `docs/ops/MEASURED_PREMISES.md`.
 - **FOLLOW-1425** — status: DONE # PR #1121, merged as `3746fd4f` (2026-11-01), README §5.64. The
   evidence keeps the Playwright call log of a failed CTA click, bounded. The cause of run 188 is
   still unknown.
@@ -303,7 +311,7 @@
 - **FOLLOW-1343** — status: DONE # #1021 `ca39406d`, 2026-10-18 (N2 v0) + #1045 `3952ac29`,
   2026-10-19 (page tests for every remaining `/admin` page = N2 full). Instrument N2 (nav
   reachability + Playwright admin-smoke). K3 full = the authenticated rows (decision in M3).
-- **FOLLOW-1344** — status: BACKLOG # Instrument N3 (`real-app-acceptance.mjs`). K4b first use, K5
+- **FOLLOW-1344** — status: READY # Instrument N3 (`real-app-acceptance.mjs`). K4b first use, K5
   full.
 - **FOLLOW-1345** — status: IN_PROGRESS # Ledgers K0 #1018, K1 #1022, K2a #1031, K2b #1034, K2c
   (this PR, `k2c-green`). Harness AC(1b), AC(9) at K4a/K4b.

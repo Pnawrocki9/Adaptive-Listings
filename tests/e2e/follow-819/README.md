@@ -3828,6 +3828,26 @@ live.
 The squash of #1123 on `main` (`e633a5e6`) has the same tree as `40a91cde`, so no post-merge series
 was run. No RED in §5.61 to §5.66.
 
+### 5.67 — 2026-11-01 (FOLLOW-1311 slice 5 at `de338228`) — **three `run=GREEN` with `total=8` (244, 247, 248; 245 and 246 drew holdout) — the per-PR series of #1125**
+
+| Run | Started (UTC)            | Result                                                    | Note                             |
+| --- | ------------------------ | --------------------------------------------------------- | -------------------------------- |
+| 244 | 2026-11-01T15:35:26.953Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `de338228…` |
+| 245 | 2026-11-01T15:37:09.586Z | `TALLY green=3 red=0 unmeasured=5 total=8 run=UNMEASURED` | `[FRESH]` harnessSha `de338228…` |
+| 246 | 2026-11-01T15:38:34.094Z | `TALLY green=3 red=0 unmeasured=5 total=8 run=UNMEASURED` | `[FRESH]` harnessSha `de338228…` |
+| 247 | 2026-11-01T15:39:59.371Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `de338228…` |
+| 248 | 2026-11-01T15:41:29.102Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `de338228…` |
+
+### 5.68 — 2026-11-01 (FOLLOW-1345 AC(1b) at `df7fb177`) — **three consecutive `run=GREEN` with `total=8`, AC(1b) PASS on 2 served texts in each — the series of #1126 and control I1 of K4a**
+
+| Run | Started (UTC)            | Result                                               | Note                             |
+| --- | ------------------------ | ---------------------------------------------------- | -------------------------------- |
+| 249 | 2026-11-01T16:16:35.361Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `df7fb177…` |
+| 250 | 2026-11-01T16:18:37.835Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `df7fb177…` |
+| 251 | 2026-11-01T16:20:10.792Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `df7fb177…` |
+
+`df7fb177` and the squash on `main` (`179b4d4c`) have the same tree. No RED in §5.67 or §5.68.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

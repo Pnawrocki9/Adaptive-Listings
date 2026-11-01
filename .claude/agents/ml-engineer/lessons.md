@@ -735,3 +735,10 @@ the invoking command.
   real listing uses" I added widened what a mention could spare; form tolerance belonged on the name
   only. · Guardrail: when the safe side of a guard is refusal, sparing logic starts from the
   narrowest true statement and needs a reason to widen, never the reverse.
+
+- **2026-11-02 / FOLLOW-1431, last commit** · Removed own-address blanking after a third reader got
+  through it again; the guard is now only ever tighter than origin/main, proved by a recorded
+  differential table. FOLLOW-1431 stays open. · Judgment call: three rounds of narrowing a sparing
+  rule each opened holes; the fix was to drop it. A shared import also broke the AC(1b) helper, a
+  CJS path no unit test runs. · Guardrail: a change to a module the e2e helper loads runs that
+  helper before hand-off; a guard's exception starts from "can this only ever be stricter?".

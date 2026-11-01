@@ -926,6 +926,327 @@ export async function settleForAdaptResponse({
   };
 }
 
+// ─── AC(1b): grounding fidelity, a sub-check of AC(1) (FOLLOW-1345) ─────────────────────
+//
+// AC(1) says a model adapted the listing; nothing said the description the buyer was then served
+// keeps to the listing. AC(1b) reads that text and asserts: no playbook marker; each price and
+// street equals the source on `:8081`; each typed claim the control plane's own check recognises is
+// not refused by it.
+//
+// WHAT IT READS. The served text is every browser `GET …/adapt/description` answer of the adapted
+// session (`observeDescriptionCalls()`), over the WHOLE run, because the SDK asks again on later
+// refreshes, so a text served after AC(1)'s line was printed is graded too; plus the description slot
+// on the page at the end, when it holds something neither the seller wrote nor a response explains.
+// The source is the production reader over `:8081`; the check is `checkTypedClaims()`, in a
+// subprocess, `ac1b-claim-check.cts`'s docblock says why. No check is copied here.
+//
+// WHEN NO DESCRIPTION WAS SERVED. Not being able to read a text is never green.
+//   - holdout session → UNMEASURED `holdout`, the existing reason.
+//   - every answer `template_fallback` → UNMEASURED `no_description`. The buyer keeps the seller's
+//     copy. The wire cannot say why, by design (FOLLOW-465, FOLLOW-1427): a miss whose generation is
+//     running, a refusal (ESC-076, no cache row, and the guard holds the next attempt for an hour)
+//     and a NEUTRAL verdict answer alike. All are correct product behaviour and none measures
+//     fidelity, so neither RED nor PASS. Like every UNMEASURED it is neutral in a series and exits 1.
+//   - no request at all on a session that got an adapted response → RED `no_description_request`:
+//     above the gate the SDK always asks (`adapt-loop.ts`), so this is a dead wire. With nothing
+//     adapted it is UNMEASURED `no_description`, and AC(1)'s own predicate is what is RED.
+//   - an answer that cannot be read (non-2xx, failed, unparsable, unknown `source`, `ai_cached` with
+//     nothing in it, never answered) → RED `description_unreadable`: the session may have been
+//     served what nothing checked, and the endpoint is under test.
+// A text with a violation is RED on any run: holdout and window excuse the adapted half only.
+//
+// THE TALLY. AC(1b) has no row in `GRADED_ACS`: `foldAc1bIntoAc1()` folds it into AC(1) just before
+// the grade, so `total` is unchanged. Its own line prints then; a verdict that moves AC(1) after
+// AC(1)'s line was printed gets the existing `[RECLASSIFIED]` line.
+
+/** The literal section headings and fact key of a playbook `copy_template` (FOLLOW-1318). */
+const PLAYBOOK_MARKERS = ['VOICE PATTERN', 'HARD RULES', 'verified_facts'];
+/** A playbook slot's unfilled `{token}`: copy never holds one (FOLLOW-1140). */
+const PLAYBOOK_TOKEN_RE = /\{[a-z_]+\}/g;
+
+/**
+ * The playbook markers in a text.
+ *
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function findPlaybookMarkers(text) {
+  return [
+    ...PLAYBOOK_MARKERS.filter((m) => text.includes(m)),
+    ...(text.match(PLAYBOOK_TOKEN_RE) ?? []),
+  ];
+}
+
+/**
+ * Record every browser `GET …/adapt/description` of one browser context with what came back.
+ *
+ * @param {{on: Function}} context - The Playwright context of the adapted session.
+ * @param {string} origin - The decision origin.
+ * @returns {{calls: Array<Record<string, any>>, settle: (budgetMs?: number) => Promise<void>}}
+ *   `settle()` waits until every call is answered, or the budget ends: an unanswered call then stays
+ *   `status: null`, which `evaluateAc1b()` grades unreadable.
+ */
+export function observeDescriptionCalls(context, origin) {
+  const calls = [];
+  const callOf = new WeakMap();
+  context.on('request', (req) => {
+    if (req.method() !== 'GET' || !req.url().startsWith(origin)) return;
+    const url = new URL(req.url());
+    if (!url.pathname.endsWith('/adapt/description')) return;
+    const call = {
+      seq: calls.length + 1,
+      listingId: url.searchParams.get('listing_id'),
+      archetype: url.searchParams.get('archetype'),
+      locale: url.searchParams.get('locale'),
+      status: null,
+      source: null,
+      description: null,
+      headline: null,
+      unreadable: null,
+      settled: false,
+    };
+    callOf.set(req, call);
+    calls.push(call);
+  });
+  context.on('response', (res) => {
+    const call = callOf.get(res.request());
+    if (!call) return;
+    call.status = res.status();
+    void res.text().then(
+      (text) => {
+        try {
+          const body = JSON.parse(text);
+          call.source = body?.source ?? null;
+          call.description = body?.description ?? null;
+          call.headline = body?.headline ?? null;
+        } catch {
+          call.unreadable = `body is not JSON: ${text.slice(0, 200)}`;
+        }
+        call.settled = true;
+      },
+      (err) => {
+        call.unreadable = `body could not be read: ${String(err)}`;
+        call.settled = true;
+      },
+    );
+  });
+  context.on('requestfailed', (req) => {
+    const call = callOf.get(req);
+    if (!call) return;
+    call.unreadable = req.failure()?.errorText ?? 'request failed';
+    call.settled = true;
+  });
+  const settle = async (budgetMs = 5000) => {
+    const deadline = Date.now() + budgetMs;
+    while (calls.some((c) => !c.settled) && Date.now() < deadline) await sleep(25);
+  };
+  return { calls, settle };
+}
+
+const collapseSpace = (text) => text.replace(/\s+/g, ' ').trim();
+
+/**
+ * Why one answer cannot be read, or null. `template_fallback` is readable: it says nothing was
+ * served.
+ *
+ * @param {Record<string, any>} call
+ * @returns {string|null}
+ */
+function descriptionCallUnreadable(call) {
+  if (call.unreadable) return call.unreadable;
+  if (call.status === null) return 'never answered';
+  if (call.status < 200 || call.status >= 300) return `HTTP ${String(call.status)}`;
+  if (call.source === 'template_fallback') return null;
+  if (call.source !== 'ai_cached') return `unknown source ${String(call.source)}`;
+  return call.description ? null : 'ai_cached with no description';
+}
+
+/**
+ * The texts this session was served, each once. Every non-empty `description` and `headline` of an
+ * answer (the wire contract keeps `template_fallback`'s empty, FOLLOW-1318; `checkHeadlineFacts`
+ * applies the same typed check, and §6.16 served "single-storey" in a headline), then what the slot
+ * shows, unless it is the seller's copy or an answer's text. With no seller's copy to compare, the
+ * slot says nothing: grading it could turn the seller's own words into a served text.
+ *
+ * @param {ReadonlyArray<Record<string, any>>} calls
+ * @param {{seller: string|null, painted: string|null}|null} [page]
+ * @returns {Array<{via: 'response'|'page', field: 'description'|'headline', text: string}>}
+ */
+export function servedDescriptionTexts(calls, page = null) {
+  const texts = [];
+  const add = (via, field, text) => {
+    if (typeof text !== 'string' || collapseSpace(text) === '') return;
+    if (texts.some((t) => collapseSpace(t.text) === collapseSpace(text))) return;
+    texts.push({ via, field, text });
+  };
+  for (const call of calls) {
+    add('response', 'description', call.description);
+    add('response', 'headline', call.headline);
+  }
+  if (page?.seller && page.painted && collapseSpace(page.seller) !== collapseSpace(page.painted)) {
+    add('page', 'description', page.painted);
+  }
+  return texts;
+}
+
+/**
+ * Run the control plane's claim check on the served texts, against the listing the production reader
+ * reads from `groundingOrigin`. Never throws: a check that could not run is `{error}`.
+ *
+ * @param {{listingId: string, locale: string, texts: string[], groundingOrigin?: string}} input
+ * @returns {Promise<{original?: string, fields?: Record<string, string>, claims?: Array<Array<{
+ *   kind: string, key: string, value: string, source: string|null, violation: string|null}>>,
+ *   error?: string}>}
+ */
+export async function runAc1bClaimCheck({
+  listingId,
+  locale,
+  texts,
+  groundingOrigin = GROUNDING_ORIGIN,
+}) {
+  try {
+    const tsx = createRequire(nodePath.join(REPO_ROOT, 'package.json')).resolve('tsx/cli');
+    const stdout = await new Promise((resolve, reject) => {
+      const child = execFile(
+        process.execPath,
+        [
+          tsx,
+          '--tsconfig',
+          'apps/control-plane/tsconfig.json',
+          'tests/e2e/follow-819/ac1b-claim-check.cts',
+        ],
+        {
+          cwd: REPO_ROOT,
+          timeout: 60000,
+          maxBuffer: 16 * 1024 * 1024,
+          env: { ...process.env, ESTALARA_BACKEND_URL: groundingOrigin },
+        },
+        (err, out) => (err ? reject(err) : resolve(out)),
+      );
+      child.stdin.end(JSON.stringify({ listingId, locale, texts }));
+    });
+    return JSON.parse(stdout);
+  } catch (err) {
+    return { error: String(err).slice(0, 1200) };
+  }
+}
+
+/** Which failure a refused typed claim is: AC(1b)'s price, its street, or any other. */
+const AC1B_FAILURE_OF_CLAIM = { money: 'price_mismatch', street: 'street_mismatch' };
+
+/**
+ * AC(1b)'s verdict, as a pure function. See the section header above for each no-description case.
+ *
+ * A claim fails on its `violation`. A claim with `violation: null` and `source: null` passes: it is
+ * what `checkTypedClaims()` declares it cannot refuse (a part of a stated count, "two bedrooms for
+ * the children"; FOLLOW-1311: if the recogniser cannot tell, it passes). Such claims are named in
+ * `passedWithoutGroundedField`, so a reader can see them.
+ *
+ * @param {{calls: ReadonlyArray<Record<string, any>>,
+ *   page?: {seller: string|null, painted: string|null}|null, drewHoldout: boolean|null,
+ *   adaptedResponseSeen: boolean, claimCheck: Record<string, any>|null}} obs - `claimCheck` is
+ *   `runAc1bClaimCheck()`'s answer for `servedDescriptionTexts(calls, page)`, in that order.
+ * @returns {{ok: boolean, verdict: 'PASS'|'FAIL'|'UNMEASURED',
+ *   unmeasured: 'holdout'|'no_description'|null, texts: Array<object>, failures: Array<object>,
+ *   passedWithoutGroundedField: Array<object>, listing: object|null, calls: Array<object>,
+ *   summary: string}}
+ */
+export function evaluateAc1b({ calls, page = null, drewHoldout, adaptedResponseSeen, claimCheck }) {
+  const texts = servedDescriptionTexts(calls, page);
+  const failures = [];
+  const passedWithoutGroundedField = [];
+
+  for (const call of calls) {
+    const why = descriptionCallUnreadable(call);
+    if (why !== null) failures.push({ kind: 'description_unreadable', seq: call.seq, why });
+  }
+  for (const { via, field, text } of texts) {
+    for (const marker of findPlaybookMarkers(text)) {
+      failures.push({ kind: 'playbook_marker', via, field, marker });
+    }
+  }
+  if (texts.length > 0) {
+    if (!Array.isArray(claimCheck?.claims) || claimCheck.claims.length !== texts.length) {
+      failures.push({
+        kind: 'claim_check_unavailable',
+        why: claimCheck?.error ?? 'the check answered no claims for these texts',
+      });
+    } else if (!claimCheck.original) {
+      failures.push({
+        kind: 'source_unreadable',
+        why: 'the production reader read no description of this listing, so nothing was compared',
+      });
+    } else {
+      texts.forEach(({ via, field }, i) => {
+        for (const claim of claimCheck.claims[i]) {
+          const named = { via, field, claimKind: claim.kind, key: claim.key, value: claim.value };
+          if (claim.violation !== null) {
+            failures.push({
+              kind: AC1B_FAILURE_OF_CLAIM[claim.kind] ?? 'unsupported_typed_claim',
+              violation: claim.violation,
+              ...named,
+            });
+          } else if (claim.source === null) {
+            passedWithoutGroundedField.push(named);
+          }
+        }
+      });
+    }
+  }
+  if (calls.length === 0 && texts.length === 0 && adaptedResponseSeen && drewHoldout !== true) {
+    failures.push({
+      kind: 'no_description_request',
+      why: 'an adapted response reached this session and the SDK never asked for its description',
+    });
+  }
+
+  const unmeasured =
+    failures.length > 0 || texts.length > 0
+      ? null
+      : drewHoldout === true
+        ? 'holdout'
+        : 'no_description';
+  const ok = failures.length === 0 && unmeasured === null;
+  const answered = `${String(calls.length)} description request(s)`;
+  let summary = `${String(texts.length)} served text(s) checked against the listing, ${answered}`;
+  if (failures.length > 0) {
+    summary += `; failed: ${[...new Set(failures.map((f) => f.kind))].join(', ')}`;
+  } else if (unmeasured === 'holdout') {
+    summary = `no description served: the session drew holdout, ${answered}`;
+  } else if (unmeasured !== null) {
+    summary =
+      `no description served: ${answered}, every answer template_fallback or none. The buyer ` +
+      "kept the seller's copy. A miss still generating, a refusal and a NEUTRAL verdict read " +
+      'alike on the wire, and none of them measures fidelity';
+  }
+  return {
+    ok,
+    verdict: ok ? 'PASS' : unmeasured ? 'UNMEASURED' : 'FAIL',
+    unmeasured,
+    texts,
+    failures,
+    passedWithoutGroundedField,
+    listing: claimCheck?.fields ?? null,
+    calls: calls.map((c) => ({ seq: c.seq, status: c.status, source: c.source })),
+    summary,
+  };
+}
+
+/**
+ * Fold AC(1b) into AC(1)'s result: AC(1) is `ok` only when both hold. `outcomes` stays what
+ * `evaluateAc1()` counted; `adaptedPredicateOk` keeps that half's own outcome, which is what lets
+ * `unmeasuredBecause()` tell the two halves apart.
+ *
+ * @param {{ok: boolean, evidence: Record<string, unknown>}} ac1Result - Changed in place.
+ * @param {{ok: boolean}} fidelity - `evaluateAc1b()`'s verdict.
+ * @returns {void}
+ */
+export function foldAc1bIntoAc1(ac1Result, fidelity) {
+  ac1Result.evidence.adaptedPredicateOk = ac1Result.ok;
+  ac1Result.evidence.groundingFidelity = fidelity;
+  ac1Result.ok = ac1Result.ok && fidelity.ok;
+}
+
 // ─── FOLLOW-1240: UNMEASURED is a verdict, and the tally says so ────────────────────────
 
 /**
@@ -1004,6 +1325,8 @@ export function evaluateAc4Frozen({
  *
  * - AC(1), AC(2): the adapted axis itself. Holdout → `holdout`; a response passing AC(1)'s own
  *   predicate that arrived after the verdict (`adaptedResponsesArrivedAfterVerdict > 0`) → `window`.
+ *   AC(1) also folds AC(1b) (FOLLOW-1345): a violation stays RED on any run, and an adapted AC(1)
+ *   whose AC(1b) is UNMEASURED takes AC(1b)'s reason (`no_description`).
  * - AC(7): same two reasons, but only when every unmet precondition is an adapted-arm consequence
  *   AND the control arm served and logged zero directives. A control arm that served directives is
  *   the arms not separating, on any run.
@@ -1014,7 +1337,7 @@ export function evaluateAc4Frozen({
  * @param {{ac: string, evidence?: any}} result
  * @param {{adaptedArmDrewHoldout: boolean|null, adaptedResponsesArrivedAfterVerdict: number,
  *   chatArmDrewHoldout?: boolean|null}} facts
- * @returns {'holdout'|'window'|'config'|null}
+ * @returns {'holdout'|'window'|'config'|'no_description'|null}
  */
 function unmeasuredBecause(result, facts) {
   const holdout = facts.adaptedArmDrewHoldout === true;
@@ -1022,7 +1345,15 @@ function unmeasuredBecause(result, facts) {
   const reason = holdout ? 'holdout' : windowed ? 'window' : null;
   const ev = result.evidence ?? {};
   switch (result.ac) {
-    case 'AC(1)':
+    case 'AC(1)': {
+      // FOLLOW-1345: holdout and window excuse the adapted half, never a measured AC(1b) violation.
+      const fidelity = ev.groundingFidelity;
+      if (fidelity?.verdict === 'FAIL') return null;
+      if (fidelity?.verdict === 'UNMEASURED' && ev.adaptedPredicateOk === true) {
+        return fidelity.unmeasured;
+      }
+      return reason;
+    }
     case 'AC(2)':
       return reason;
     case 'AC(7)': {
@@ -1073,7 +1404,8 @@ function unmeasuredBecause(result, facts) {
 
 /**
  * Every AC a full run grades, in record order (FOLLOW-1361: AC(10) makes it eight; AC(6) is the
- * manual-runbook criterion and is never recorded, AC(9) does not exist). `main()` records any of
+ * manual-runbook criterion and is never recorded, AC(9) does not exist, AC(1b) is folded into AC(1)
+ * and has no row of its own). `main()` records any of
  * these that a run did not evaluate as RED (`missingGradedAcs()`), so `TALLY total=8` cannot be
  * reached by a run that silently skipped one, and a TALLY with another total is not a full run.
  */
@@ -4223,6 +4555,7 @@ export const HARNESS_TREE_PATHSPEC = [
   'turbo.json',
   'tests/e2e/follow-819/differentiator-e2e.mjs',
   'tests/e2e/follow-819/bandit-probe.mjs',
+  'tests/e2e/follow-819/ac1b-claim-check.cts',
   'tests/e2e/follow-819/fixture-listing.html',
   'scripts/dev/fixture-listing-details-server.mjs',
   'scripts/dev/mock-decision-server.mjs',
@@ -5919,6 +6252,9 @@ async function main() {
     );
   });
 
+  // FOLLOW-1345: AC(1b) reads what this session is served as a description.
+  const descriptionCalls = observeDescriptionCalls(context, DECISION_ORIGIN);
+
   const consoleLines = [];
   const page = await context.newPage();
   page.on('console', (m) => consoleLines.push(`${m.type()}: ${m.text()}`));
@@ -5949,6 +6285,14 @@ async function main() {
       })),
     );
   const baseline = await readSlots();
+  // FOLLOW-1345: whole, unlike readSlots(), and with its paragraphs apart, as the response has them.
+  const readDescriptionSlot = () =>
+    page
+      .evaluate(
+        () => document.querySelector('[data-estalara-slot="description"]')?.innerText ?? null,
+      )
+      .catch(() => null);
+  const sellerDescription = await readDescriptionSlot();
 
   // ── ARM A: behavioral signals only ────────────────────────────────────────────────────
   // The question FOLLOW-875 left open and this ticket exists to answer: can behavior ALONE
@@ -6995,6 +7339,30 @@ async function main() {
     );
   }
 
+  // FOLLOW-1345: AC(1b), over everything this session was served, folded into AC(1)'s result.
+  await descriptionCalls.settle();
+  const descriptionPage = { seller: sellerDescription, painted: await readDescriptionSlot() };
+  const servedTexts = servedDescriptionTexts(descriptionCalls.calls, descriptionPage);
+  const ac1b = evaluateAc1b({
+    calls: descriptionCalls.calls,
+    page: descriptionPage,
+    drewHoldout: runDrewHoldout,
+    adaptedResponseSeen: decided.some((d) => d.body && isAdaptedResponse(d.body, serverGate)),
+    claimCheck:
+      servedTexts.length > 0
+        ? await runAc1bClaimCheck({
+            listingId: groundingSource.listingId,
+            locale: descriptionCalls.calls[0]?.locale ?? 'en',
+            texts: servedTexts.map((t) => t.text),
+          })
+        : null,
+  });
+  const ac1bLabel = ac1b.unmeasured ? `UNMEASURED:${ac1b.unmeasured}` : ac1b.ok ? 'PASS' : 'FAIL';
+  console.log(`[${ac1bLabel}] AC(1b) — grounding fidelity: ${ac1b.summary}`);
+  console.log(`        ${JSON.stringify(ac1b.failures)}`);
+  const ac1Result = results.find((r) => r.ac === 'AC(1)');
+  if (ac1Result) foldAc1bIntoAc1(ac1Result, ac1b);
+
   // FOLLOW-1361: a graded AC this run never recorded is RED, never a smaller total.
   for (const ac of missingGradedAcs(results)) {
     record(ac, `${ac} was not evaluated by this run`, false, {
@@ -7084,6 +7452,9 @@ async function main() {
     adaptedResponsesArrivedAfterVerdict,
     results: grade.results,
     decided,
+    // FOLLOW-1345: every description request with its answer; AC(1b)'s verdict is in AC(1)'s
+    // `evidence.groundingFidelity`.
+    descriptionCalls: descriptionCalls.calls,
     // FOLLOW-1240: every browser `/api/adapt` request, numbered; `decided[].requestSeq` points here,
     // and `postQuizSettle.quizRequest.seq` names the quiz turn's.
     adaptRequests,

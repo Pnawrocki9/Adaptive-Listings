@@ -137,14 +137,15 @@
 - **FOLLOW-1426** — status: DONE # PR #1118, merged as `191909f3`; README §5.59. CEO 2026-10-31: the
   tweak band of `/api/adapt` runs the global generation model (Sonnet 5.5), band read from
   `similarity`. The fact-check judge stays on Haiku 4.5.
-- **FOLLOW-1427** — status: READY # P2 product, CEO agreed 2026-10-31. A REFUSED description writes
-  nothing, so every cache miss regenerates and bills it (about $0.025; only the $100 daily cap
-  limits it; read from the code, not run). Add a short repeat guard per listing and archetype, for
-  example one attempt per hour. Regeneration is also the only way such a listing recovers, so the
-  expiry must stay short. Next free: FOLLOW-1428, RETRO-372, ESC-090.
-- **FOLLOW-1425** — status: READY # P3 harness. Run 188 (README §5.54): AC(5) RED, 7 attempts of
-  `scrollIntoViewIfNeeded` timed out, cause unknown. `clickCtaWhenReady` keeps only the first line
-  of each error; keep the Playwright call log in the evidence.
+- **FOLLOW-1427** — status: DONE # PR #1122, merged as `cec50c2c` (2026-11-01), README §5.65.
+  One-hour Redis guard per listing, archetype, language, model, revision and claims version. It has
+  not fired live yet.
+- **FOLLOW-1428** — status: BACKLOG # P3 product. FAILED descriptions (truncated, empty, wrong
+  language) also follow a billed call, write nothing and regenerate on every miss; FOLLOW-1427
+  guards REFUSED only. Next free: FOLLOW-1429, RETRO-372, ESC-090.
+- **FOLLOW-1425** — status: DONE # PR #1121, merged as `3746fd4f` (2026-11-01), README §5.64. The
+  evidence keeps the Playwright call log of a failed CTA click, bounded. The cause of run 188 is
+  still unknown.
 - **FOLLOW-1423** — status: BACKLOG # P2 product. Composition rule gaps left by #1108: percentages
   ("80% of residents are Muslim"), a group before "most" ("Catholics make up most of…"), Polish
   majority phrasing without to/jest/są/stanowi.

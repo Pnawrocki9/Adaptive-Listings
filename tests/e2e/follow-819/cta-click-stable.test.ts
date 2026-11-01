@@ -15,12 +15,19 @@ interface Result {
   errors: string[];
 }
 let clickCtaWhenReady: (page: unknown, opts?: Record<string, unknown>) => Promise<Result>;
+let ctaClickErrorText: (err: unknown, maxChars?: number) => string;
+let caps = { chars: 0, kept: 0 };
 let harnessSrc = '';
 
 beforeAll(async () => {
   (globalThis as Record<string, unknown>).FOLLOW1186_IMPORT_ONLY = true;
   const mod = (await import('./differentiator-e2e.mjs')) as Record<string, unknown>;
   clickCtaWhenReady = mod.clickCtaWhenReady as typeof clickCtaWhenReady;
+  ctaClickErrorText = mod.ctaClickErrorText as typeof ctaClickErrorText;
+  caps = {
+    chars: mod.CTA_CLICK_ERROR_MAX_CHARS as number,
+    kept: mod.CTA_CLICK_ERRORS_MAX_KEPT as number,
+  };
   harnessSrc = await readFile(new URL('./differentiator-e2e.mjs', import.meta.url), 'utf8');
 });
 
@@ -101,5 +108,43 @@ describe('FOLLOW-1398 — clickCtaWhenReady', () => {
       harnessSrc.indexOf('// ─── FOLLOW-1361: AC(10), the quiz confirmation path'),
     );
     expect(fn).not.toMatch(/force:\s*true/);
+  });
+});
+
+describe('FOLLOW-1425 — the Playwright call log is kept, bounded', () => {
+  const pwMsg =
+    'locator.scrollIntoViewIfNeeded: Timeout 2000ms exceeded.\n' +
+    "Call log:\n  - waiting for locator('[data-estalara-cta]').first()\n" +
+    '  - element is not stable\n';
+
+  it('keeps the call log lines, not only the first line', () => {
+    const t = ctaClickErrorText(new Error(pwMsg));
+    expect(t).toContain('Timeout 2000ms exceeded.');
+    expect(t).toContain('Call log:');
+    expect(t).toContain('element is not stable');
+    expect(t).not.toContain('\n');
+  });
+
+  it('cuts one entry at the character cap', () => {
+    const t = ctaClickErrorText(new Error('x\n' + 'y'.repeat(50000)));
+    expect(t.length).toBeLessThanOrEqual(caps.chars + '…[truncated]'.length);
+    expect(t.endsWith('[truncated]')).toBe(true);
+  });
+
+  it('through the real helper: a verbose failure reaches result.error and errors, bounded', async () => {
+    const { page } = fakePage(Array(100).fill(pwMsg + 'z'.repeat(5000)));
+    const r = await clickCtaWhenReady(page, { ...clock(), budgetMs: 5000 });
+    expect(r.clicked).toBe(false);
+    expect(r.attempts).toBeGreaterThan(caps.kept); // more attempts than kept entries
+    expect(r.errors).toHaveLength(caps.kept);
+    expect(r.error).toContain('element is not stable');
+    const total = r.errors.reduce((n, e) => n + e.length, 0);
+    expect(total).toBeLessThanOrEqual(caps.kept * (caps.chars + 20));
+  });
+
+  it('attempts and verdict are unchanged by the longer text', async () => {
+    const { page } = fakePage([pwMsg, pwMsg]);
+    const r = await clickCtaWhenReady(page, clock());
+    expect(r).toMatchObject({ clicked: true, attempts: 3 });
   });
 });

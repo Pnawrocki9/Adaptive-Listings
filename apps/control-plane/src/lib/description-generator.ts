@@ -1146,7 +1146,7 @@ async function generateValidated(e: DescriptionRequestedEvent): Promise<Generati
     archetype: e.archetype,
     locale: e.locale,
     model,
-    listingRevision: e.listing_revision,
+    listingRevision: e.listing_revision ?? 0,
     claimsVersion: CLAIMS_VALIDATION_VERSION,
   };
   if (await isRefusalGuarded(guardScope)) {

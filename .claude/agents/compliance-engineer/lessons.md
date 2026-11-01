@@ -222,3 +222,13 @@ being written to Redis without any disclosure review. The schema contract should
   since FOLLOW-1106/ESC-070, and the DPIA §2.2.1 already said so. **Guardrail I'd add:** every
   sentence that names what an identifier IS must cite the producing line of code, and a review greps
   that line before accepting the sentence; an escalation's prose is a claim, not a source.
+
+- **2026-11-01 / FOLLOW-1316 (design review before code)** · Wrote the requirements record
+  `docs/compliance/FOLLOW-1316-design-review.md`; edited no DPIA or ROPA text. **Drift risk:** three
+  disclosures already describe things the code does not do: "deleted if you withdraw consent" and
+  Notice §3's "Withdraw consent" control (nothing in the SDK sets `denied` once granted), and the
+  GPC claims in the ROPA and DPIA (no code reads the signal). The ticket text repeated "consented
+  random id" and "with events" without noticing either. **Guardrail I'd add:** a review of any
+  feature that promises deletion on withdrawal first greps for the control that triggers the
+  withdrawal, not only the erase function behind it; and a negative control must be paired with a
+  positive on the same key in the same run, or an empty store passes it.

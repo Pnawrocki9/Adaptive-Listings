@@ -7,9 +7,8 @@
  * so a difference can only be read off that object, and removing one is a measured change of its
  * own (a verdict may move). This slice moves no verdict.
  *
- * Names are not here: the three name policies (adapt judges every capital, the headline refuses, the
- * body judges a place frame only) stay with their paths, sharing only {@link STOP_CAPS} and
- * {@link stemLoose}.
+ * Names are not here: the three name policies (adapt judges, the headline refuses, the body has no
+ * rule) stay with their paths, sharing only {@link STOP_CAPS} and {@link stemLoose}.
  *
  * Pure, no I/O.
  *

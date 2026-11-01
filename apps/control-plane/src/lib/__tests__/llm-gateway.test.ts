@@ -246,7 +246,7 @@ describe('callLlmGateway — listingContext injection', () => {
       {
         type: 'text',
         slot: 'headline',
-        value: 'Investor headline',
+        value: 'Yield headline',
         archetype: 'yield_hunter',
         confidence: 0.8,
       },
@@ -625,7 +625,7 @@ describe('callLlmGateway — FOLLOW-261 parameterized ClickHouse INSERT (logLlmC
       {
         type: 'text',
         slot: 'headline',
-        value: 'Investor headline',
+        value: 'Yield headline',
         archetype: 'yield_hunter',
         confidence: 0.8,
       },
@@ -660,7 +660,7 @@ describe('callLlmGateway — FOLLOW-261 parameterized ClickHouse INSERT (logLlmC
       {
         type: 'text',
         slot: 'headline',
-        value: 'Investor headline',
+        value: 'Yield headline',
         archetype: 'yield_hunter',
         confidence: 0.8,
       },
@@ -685,7 +685,7 @@ describe('callLlmGateway — FOLLOW-261 parameterized ClickHouse INSERT (logLlmC
       {
         type: 'text',
         slot: 'headline',
-        value: 'Investor headline',
+        value: 'Yield headline',
         archetype: 'yield_hunter',
         confidence: 0.8,
       },
@@ -1565,7 +1565,7 @@ describe('callLlmGateway — FOLLOW-1042: the grounding is tokenised with Unicod
     // new false-rejection class is the segment-initial exemption above — which is a claim, so
     // it is asserted here rather than only stated in the comment.
     const result = await gatewayWith(
-      'Maison de campagne | Élégant jardin et grange',
+      'Élégant maison de campagne | Jardin et grange',
       LISTING_FACTS_FR,
     );
 

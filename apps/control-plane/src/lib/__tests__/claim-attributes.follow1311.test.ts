@@ -641,6 +641,7 @@ describe('KNOWN_LIMITS: these pass although they are wrong', () => {
     ['sold with furniture', PLAIN_EN, 'Sold with all its furniture'],
     ['"low" on other costs', PLAIN_PL, 'Niskie koszty stałe'],
     ['a capital right after a preposition', PLAIN_EN, 'A flat in Detached Villa country'],
+    ['a street word after the claim, unlisted', PLAIN_EN, 'A Detached House Lane flat'],
     ['a question', PLAIN_EN, 'Why not this fully furnished flat?'],
     ['"if" with a real claim after it', PLAIN_EN, 'If you like this fully furnished flat, call.'],
     ['a plural', PLAIN_EN, 'Modern south-facing flats'],

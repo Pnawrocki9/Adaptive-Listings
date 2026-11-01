@@ -31,33 +31,22 @@ import {
 } from './shared';
 
 const { replay, refusals } = vi.hoisted(() => ({
-  replay: { queue: [] as unknown[], judged: [] as string[] },
+  replay: { queue: [] as unknown[] },
   refusals: { list: [] as { slot: string; violation: string }[] },
 }));
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class {
     messages = {
-      create: async (params: { system?: string; messages: { content: string }[] }) => {
-        // `raw.v1.jsonl` holds no description name judge (FOLLOW-1311 slice 5) and no replay calls a
-        // model: every flag stands, the worst the judge can do, so a flag is a refusal here. A later
-        // recording that holds the judge's call for this very prompt answers from the recording.
-        if (params.system?.startsWith('You check place names')) {
-          replay.judged.push(params.messages[0]?.content ?? '');
-          const { groupedSha256 } = await import('./shared');
-          const recorded = (replay.queue[0] as RecordedCall | undefined)?.prompt_sha256;
-          if (recorded !== groupedSha256(JSON.stringify([params.system, params.messages]))) {
-            return {
-              content: [{ type: 'text', text: '{"grounded": false}' }],
-              stop_reason: 'end_turn',
-              usage: { input_tokens: 0, output_tokens: 0 },
-            };
-          }
-        }
+      create: () => {
         const call = replay.queue.shift() as RecordedCall | undefined;
-        if (call === undefined) throw new Error('no_recording');
-        if (call.error !== undefined) throw new Error(call.error);
-        return { content: call.content, stop_reason: call.stop_reason, usage: call.usage };
+        if (call === undefined) return Promise.reject(new Error('no_recording'));
+        if (call.error !== undefined) return Promise.reject(new Error(call.error));
+        return Promise.resolve({
+          content: call.content,
+          stop_reason: call.stop_reason,
+          usage: call.usage,
+        });
       },
     };
   },
@@ -137,12 +126,9 @@ describe('FOLLOW-1311 claim baseline replay', () => {
     }
     if (process.env.CLAIM_REPLAY_OUT) {
       writeFileSync(process.env.CLAIM_REPLAY_OUT, `${lines.join('\n')}\n`);
-      writeFileSync(`${process.env.CLAIM_REPLAY_OUT}.judged`, replay.judged.join('\n---\n'));
       return;
     }
     expect(lines).toEqual(readLines('verdicts.v4.jsonl'));
-    // Slice 5 has no room for a sixth refusal, so no frozen body may even reach the judge.
-    expect(replay.judged).toEqual([]);
   });
 
   it('v2 moves only the classified cases, and the refusal target is computed from the verdicts', () => {

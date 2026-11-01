@@ -33,9 +33,9 @@
  *
  * A street address always passes (CEO 2026-10-30): it is masked in the copy and in the listing
  * before anything here reads either (`lib/street-address.ts`). A street the listing does NOT state
- * is the one claim read from the address itself: `unsupported_street` (slice 5). The listing's own
- * street passes in any form (`przy ulicy Długiej` on `ul. Długa 4`); the house number is the digit
- * rule's.
+ * is the one claim read from the address itself, with a signal only: `unsupported_street` (slice
+ * 5). The listing's own street passes in any form (`przy ulicy Długiej` on `ul. Długa 4`); the house
+ * number is the digit rule's.
  *
  * Pure, no I/O.
  *
@@ -45,7 +45,7 @@
 import { AMENITY_RES, asserted } from '@/lib/amenity-lexicon';
 import { namesStudio, readCounts, unreadableCountKeys, type CountKey } from '@/lib/count-claims';
 import { ATTRIBUTE_RES, assertedAttributes, groundsAttribute } from '@/lib/attribute-lexicon';
-import { isCapitalisedNameOfListing } from '@/lib/name-forms';
+import { isStreetNameOfListing } from '@/lib/name-forms';
 import { MULTIPLIER_WORDS, normaliseNumberGroups, readMultiplied } from '@/lib/number-groups';
 import {
   isAddressField,
@@ -503,16 +503,20 @@ function checkAttributes(text: string, sources: readonly ListingSource[]): Typed
 // ─── Streets ──────────────────────────────────────────────────────────────────
 
 /**
- * Each street `text` names, against the listing's words with the address fields included. One word
- * of the name found is enough: if the check cannot tell, it passes.
+ * Each street `text` states, against the listing's words with the address fields included. Every
+ * word of an address field is a name, in any case. One word of the name found is enough: if the
+ * check cannot tell, it passes. `text` comes with the listed address already blanked.
  */
 function checkStreets(text: string, sources: readonly ListingSource[]): TypedClaimCheck[] {
-  const claims = readStreetClaims(text).filter((claim) => claim.words.length > 0);
+  const claims = readStreetClaims(text);
   if (claims.length === 0) return [];
-  const names = (s: ListingSource) => readLowerCaseStreetNames(s.text);
+  const names = (s: ListingSource): string[] => [
+    ...readLowerCaseStreetNames(s.text),
+    ...(isAddressField(s.field) ? [s.text] : []),
+  ];
   return claims.map((claim): TypedClaimCheck => {
     const own = sources.find((s) =>
-      claim.words.some((w) => isCapitalisedNameOfListing(w, s.text, names(s))),
+      claim.words.some((w) => isStreetNameOfListing(w, s.text, names(s))),
     );
     return {
       kind: 'street',
@@ -547,7 +551,8 @@ export function checkTypedClaims(
       field: s.field,
       text: maskStreetAddresses(maskListedAddressParts(s.text, addresses)),
     }));
-  const copy = maskStreetAddresses(maskListedAddressParts(text, addresses));
+  const withoutListed = maskListedAddressParts(text, addresses);
+  const copy = maskStreetAddresses(withoutListed);
   const normalised = normaliseNumberGroups(copy);
   return [
     ...checkCounts(normalised, masked),
@@ -556,6 +561,6 @@ export function checkTypedClaims(
     ...checkYears(copy, masked),
     ...checkNegations(copy, masked),
     ...checkAttributes(copy, masked),
-    ...checkStreets(text, sources),
+    ...checkStreets(withoutListed, sources),
   ];
 }

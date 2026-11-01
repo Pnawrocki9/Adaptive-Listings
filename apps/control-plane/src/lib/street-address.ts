@@ -72,84 +72,142 @@ const ADDRESS_RES: readonly RegExp[] = [
   /(?<![\p{L}\p{N}-])\p{Nd}{2}-\p{Nd}{3}(?![\p{L}\p{N}-])/gu,
 ];
 
-/** One word of a name a street claim states: no dot, "near Bath. Road access" is no "Bath Road". */
+// ─── Street claims (FOLLOW-1311 slice 5) ──────────────────────────────────────
+//
+// A capital is no signal: "Free Street Parking", "A Sunset Drive", "Plac Budowy". A claim needs a
+// house number, a street prefix with a real name, or a locating word in sentence case. If this
+// cannot tell, it passes. Same line only: "Quiet Garden\nDrive to the beach" is two thoughts.
+
+const GAP = '[ \\t]+';
+/** "Św.", "Dr.", "Ks.", "J.", "Sta.": no name itself; the next word decides. */
+const ABBREVIATION = '\\p{Lu}\\p{L}{0,3}\\.(?=[ \\t]+[\\p{Lu}\\p{Nd}])';
 const CLAIM_NAME = `(?!${CLAIM_WORD})\\p{Lu}[\\p{L}'’-]+`;
-/**
- * Unambiguous without a number: not "Way", "Place", "Close", "Terrace", "Square", "Court", "Mews",
- * and not "St.": "Visit St. Augustine".
- */
+const CLAIM_PIECE = `(?:${ABBREVIATION}|${CLAIM_NAME})`;
+/** The first word after a prefix may be a number ("ul. 3 Maja"). */
+const CLAIM_FIRST = `(?:${ABBREVIATION}|(?!${CLAIM_WORD})[\\p{Lu}\\p{Nd}][\\p{L}\\p{N}'’-]*)`;
+/** Unambiguous without a number: not "Way", "Place", "Close", "Terrace", "Square", "Court", "St". */
 const BARE_STREET_WORD = 'Street|Road|Rd\\.?|Avenue|Ave\\.?|Boulevard|Blvd\\.?|Lane|Drive';
-/** {@link STREET_PREFIX} without the estate words: "osiedle" names no street. */
-const CLAIM_PREFIX =
-  '[Uu]l\\.|[Uu]lic[aąęy]|[Aa]l\\.|[Aa]lej\\p{L}*|[Aa]lei|[Pp]l\\.|[Pp]lac(?:u|em)?|' +
-  '[Cc]alle|[Cc]/|[Aa]venida|[Aa]vda\\.|[Pp]aseo|[Pp]laza|[Cc]arrer|[Rr]ua';
-/** The first word after a prefix may be a number ("ul. 3 Maja"); no dot, as in {@link CLAIM_NAME}. */
-const CLAIM_FIRST_NAME = `(?!${CLAIM_WORD})[\\p{Lu}\\p{Nd}][\\p{L}\\p{N}'’-]*`;
-const STREET_CLAIM_RES: readonly RegExp[] = [
-  // "12 Ocean Drive", "9 Blackberry Pl": a number makes every street word a street
-  new RegExp(
-    `(?<![\\p{L}\\p{N}.,€$£])${HOUSE_NUMBER}\\s+((?:${CLAIM_NAME}\\s+){1,3})(?:${STREET_WORD})(?![\\p{L}\\p{N}])`,
-    'gu',
-  ),
-  // "Ocean Drive", "Collins Avenue"
-  new RegExp(
-    `(?<![\\p{L}\\p{N}'’-])((?:${CLAIM_NAME}\\s+){1,3})(?:${BARE_STREET_WORD})(?![\\p{L}\\p{N}])`,
-    'gu',
-  ),
-  // "ul. Złota", "przy ulicy Długiej", "calle de la Paz", "ul. 3 Maja"
-  new RegExp(
-    `(?<![\\p{L}\\p{N}])(?:${CLAIM_PREFIX})\\s+(?:${PARTICLE}\\s+){0,2}(${CLAIM_FIRST_NAME}(?:\\s+(?:${PARTICLE}\\s+)?${CLAIM_NAME}){0,3})`,
-    'gu',
-  ),
-];
-/**
- * Words that make no street's name: "A Quiet Road", "Main Street", "Plac Zabaw". In title-case copy
- * the name is only what follows the last of them: "Easy Access To The Main Road" names none.
- */
+/** Nothing that goes on naming something else follows: "on Google Street View" is no street. */
+const CLAUSE_GOES_ON = `(?=[ \\t]*(?:[.,;:!?)\\n]|$)|${GAP}(?:in|near|and|or|with|to|at|from|for|is|has|which|w|i|z|na|en|y)(?![\\p{L}\\p{N}]))`;
+const LOCATING_WORD = '(?:on|at|off|near|along|przy)';
+const STRONG_PREFIX =
+  '[Uu]l\\.|[Uu]lic[aąęy]|[Aa]l\\.|[Aa]lej\\p{L}*|[Aa]lei|[Cc]alle|[Cc]/|[Aa]venida|[Aa]vda\\.|' +
+  '[Cc]arrer|[Rr]ua';
+/** A square or a promenade needs a locating word too: "Plac Budowy", "Plaza de Garaje". */
+const WEAK_PREFIX = '[Pp]l\\.|[Pp]lac(?:u|em)?|[Pp]aseo|[Pp]laza';
+const WEAK_LOCATING_WORD = '(?:przy|na|od|do|koło|obok|en|del|de|junto a|cerca de)';
+const PREFIXED_NAME = `(?:${PARTICLE}${GAP}){0,2}(${CLAIM_FIRST}(?:${GAP}(?:${PARTICLE}${GAP})?${CLAIM_PIECE}){0,3})`;
+
+const NUMBERED_CLAIM_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}.,€$£])${HOUSE_NUMBER}${GAP}((?:${CLAIM_PIECE}${GAP}){1,3})(?:${STREET_WORD})(?![\\p{L}\\p{N}])`,
+  'gu',
+);
+const LOCATED_CLAIM_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}])${LOCATING_WORD}${GAP}(?:the${GAP})?((?:${CLAIM_PIECE}${GAP}){1,3})(?:${BARE_STREET_WORD})(?![\\p{L}\\p{N}])${CLAUSE_GOES_ON}`,
+  'gu',
+);
+const STRONG_PREFIX_CLAIM_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}])(?:${STRONG_PREFIX})${GAP}${PREFIXED_NAME}`,
+  'gu',
+);
+const WEAK_PREFIX_CLAIM_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}])${WEAK_LOCATING_WORD}${GAP}(?:(?:la|el)${GAP})?(?:${WEAK_PREFIX})${GAP}${PREFIXED_NAME}`,
+  'gu',
+);
+
+/** Before a street word, the name is only what follows the last of these: "To The Main Road". */
 const GENERIC_STREET_WORDS: ReadonlySet<string> = new Set(
   (
     'a an the this that these those your our its their every each no one to of in on at by for ' +
     'from with and or near off along just quiet peaceful private main high side back country ' +
-    'residential ring service access open scenic coastal long short test hard tree-lined zabaw ' +
-    'marítimo maritimo'
+    'residential ring service access open scenic coastal long short test hard tree-lined easy ' +
+    'free paved gated sunset large big small sunny covered roof ' +
+    'minute minutes min mile miles hour hours km second seconds day week car cars star stars ' +
+    'zabaw budowy marítimo maritimo tranquilo tranquila principal peatonal comercial residencial ' +
+    'privada ancha garaje parking aparcamiento terraza piscina jardín jardin ascensor balcón ' +
+    'balcon vistas trastero con sin en y para'
   ).split(' '),
 );
-/** The lower-case names of a listing's text: "ul. parterowa", "coast road". */
-const LOWER_STREET_NAME_RES: readonly RegExp[] = [
-  new RegExp(
-    `(?<![\\p{L}\\p{N}])(?:${LOWER_NAME_PREFIX})\\s+(?:${PARTICLE}\\s+){0,2}(?!${NOT_A_STREET_NAME})(\\p{Ll}[\\p{L}'’-]*)`,
-    'gu',
-  ),
-  /(?<![\p{L}\p{N}])(\p{Ll}[\p{L}'’-]*)\s+(?:street|road|avenue|boulevard|lane|drive|st\.|rd\.?|ave\.?|blvd\.?|dr\.?|pl\.?)(?![\p{L}\p{N}])/gu,
-];
+const PARTICLES: ReadonlySet<string> = new Set(['de', 'del', 'la', 'las', 'los', 'im.']);
+
+/** Title case carries no signal: "Beautiful Home on Sunset Drive". The sentence's first word may. */
+function followsTitleCase(text: string, at: number): boolean {
+  const sentence =
+    text
+      .slice(Math.max(0, at - 80), at)
+      .split(/[.!?:;|\n]/u)
+      .at(-1) ?? '';
+  const words = sentence
+    .trim()
+    .split(/[ \t]+/u)
+    .filter(Boolean);
+  return words.length >= 2 && /^\p{Lu}/u.test(words.at(-1) ?? '');
+}
+
+/** The words of a name that a listing must state; abbreviations and numbers decide nothing. */
+const named = (words: readonly string[]): string[] =>
+  words.filter((w) => !w.endsWith('.') && /^\p{Lu}/u.test(w) && Array.from(w).length >= 2);
+
+const beforeStreetWord = (name: string): string[] => {
+  const all = name.trim().split(/[ \t]+/u);
+  const lastGeneric = all.map((w) => GENERIC_STREET_WORDS.has(w.toLowerCase())).lastIndexOf(true);
+  return named(all.slice(lastGeneric + 1));
+};
+
+/** After a prefix a generic first word means no name at all: "Calle Principal", "c/ Terraza". */
+const afterPrefix = (name: string): string[] => {
+  const all = name
+    .trim()
+    .split(/[ \t]+/u)
+    .filter((w) => !PARTICLES.has(w.toLowerCase()));
+  const words = named(all);
+  return GENERIC_STREET_WORDS.has((words[0] ?? '').toLowerCase()) ? [] : words;
+};
 
 /** One street a text states by name. */
 interface StreetClaim {
   /** As written, without the street word: "Ocean", "Długiej". */
   readonly name: string;
-  /** The words a listing's name has to match; none when only generic words are left. */
+  /** The words a listing's name has to match; never empty. */
   readonly words: readonly string[];
 }
 
 /**
- * Every street `text` states by a capitalised name. A name in lower case, a street word outside the
- * closed lists and a number with no name ("42nd Street") are not read, and pass.
+ * Every street `text` states with a signal: a house number, a street prefix with a real name, or a
+ * locating word in sentence case. A name in lower case and a street word outside the closed lists
+ * are not read, and pass.
  *
  * @param text - Generated copy, as written.
  * @returns The claims; each is one street.
  */
 export function readStreetClaims(text: string): StreetClaim[] {
-  return STREET_CLAIM_RES.flatMap((re) =>
-    Array.from(text.matchAll(re), (m): StreetClaim => {
-      const name = (m[1] ?? '').trim();
-      const all = name.split(/\s+/u);
-      const lastGeneric = all
-        .map((w) => GENERIC_STREET_WORDS.has(w.toLowerCase()))
-        .lastIndexOf(true);
-      return { name, words: all.slice(lastGeneric + 1).filter((w) => /^\p{Lu}/u.test(w)) };
-    }),
-  );
+  const claims = (
+    re: RegExp,
+    read: (name: string) => string[],
+    titleCaseCounts: boolean,
+  ): StreetClaim[] =>
+    Array.from(text.matchAll(re))
+      .filter((m) => !titleCaseCounts || !followsTitleCase(text, m.index))
+      .map((m) => {
+        const name = (m[1] ?? '').trim();
+        return { name, words: read(name) };
+      });
+  return [
+    ...claims(NUMBERED_CLAIM_RE, beforeStreetWord, false),
+    ...claims(LOCATED_CLAIM_RE, beforeStreetWord, true),
+    ...claims(STRONG_PREFIX_CLAIM_RE, afterPrefix, false),
+    ...claims(WEAK_PREFIX_CLAIM_RE, afterPrefix, true),
+  ].filter((claim) => claim.words.length > 0);
 }
+
+/** The names a listing writes in lower case beside a street word: "plac wolności", "coast road". */
+const LOWER_STREET_NAME_RES: readonly RegExp[] = [
+  new RegExp(
+    `(?<![\\p{L}\\p{N}])(?:${LOWER_NAME_PREFIX}|[Aa]lej\\p{L}*|[Aa]lei|[Pp]lac(?:u|em)?)[ \\t]+(?:${PARTICLE}[ \\t]+){0,2}(?!${NOT_A_STREET_NAME})(\\p{Ll}[\\p{L}'’-]*)`,
+    'gu',
+  ),
+  /(?<![\p{L}\p{N}])(\p{Ll}[\p{L}'’-]*)[ \t]+(?:street|road|avenue|boulevard|lane|drive|way|place|court|st\.|rd\.?|ave\.?|blvd\.?|dr\.?|pl\.?)(?![\p{L}\p{N}])/gu,
+];
 
 /**
  * The names a listing's text writes in lower case right beside a street word.

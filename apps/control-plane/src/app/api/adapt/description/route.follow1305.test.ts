@@ -295,7 +295,7 @@ describe('FOLLOW-1305 — a legacy (unstamped) cache hit is not trusted FIT', ()
   });
 
   it('FOLLOW-1311: a claims-v9 Postgres FIT row is a miss and regenerates once', async () => {
-    // claims-v9 rows never passed the street claim or the judge on names in a body.
+    // claims-v9 rows never passed the street claim.
     mockGetPgCachedDescription.mockResolvedValueOnce(pgRow(SAFE_TEXT, 'claims-v9'));
 
     const body = (await (await GET(request())).json()) as { source: string; description: string };

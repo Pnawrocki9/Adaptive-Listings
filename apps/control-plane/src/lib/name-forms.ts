@@ -8,6 +8,8 @@
  * @module apps/control-plane/src/lib/name-forms
  */
 
+import { isAddressField } from '@/lib/street-address';
+
 /** Python `\w` for a `str` pattern (`str.isalnum()` or `_`), as a character-class body. */
 export const PY_WORD = '\\p{L}\\p{N}_';
 /** Python `\b` before/after a word character, as lookarounds. */
@@ -87,9 +89,11 @@ const POLISH_CASE_ENDINGS: readonly (readonly [string, string])[] = [
   ['ego', 'e'],
   ['ym', 'e'],
   ['ich', 'ie'],
-  // a plural place, FOLLOW-1311 slice 5: `Katowice` → `w Katowicach`, `Katowic`; `Tychy` → `w Tychach`
+  // a plural place, FOLLOW-1311 slice 5: `Katowice` → `w Katowicach`; `Krzyki` → `na Krzykach`
   ['ach', 'e'],
   ['ach', 'y'],
+  ['ach', 'i'],
+  ['im', 'ie'],
   ['', 'e'],
   // neuter, -e / -o nominative
   ['u', 'e'],
@@ -105,7 +109,7 @@ const CAPITALISED_FACT_TOKEN_RE = /\p{Uppercase}\p{L}{2,}/gu;
 
 /** One word is the other under one `POLISH_CASE_ENDINGS` rule (either word may be the inflected one). */
 function polishCaseForms(a: string, b: string): boolean {
-  const fold = (s: string) => s.toLowerCase().replaceAll('ó', 'o');
+  const fold = (s: string) => s.toLowerCase().replaceAll('ó', 'o').replaceAll('á', 'a');
   const x = a.toLowerCase();
   const y = b.toLowerCase();
   for (const [inflected, nominative] of POLISH_CASE_ENDINGS) {
@@ -136,7 +140,11 @@ export function isPolishCaseFormOfFact(
   for (const m of facts.matchAll(CAPITALISED_FACT_TOKEN_RE)) {
     if (polishCaseForms(word, m[0])) return true;
   }
-  return false;
+  // An address field names in any case: `przy Piotrkowskiej` on `ul. piotrkowska 120`.
+  return Object.entries(ctx).some(
+    ([field, value]) =>
+      isAddressField(field) && value.split(/[^\p{L}]+/u).some((w) => polishCaseForms(word, w)),
+  );
 }
 
 /** FOLLOW-1396: a name with its diacritics folded ("Kraków" → "Krakow", "Łódź" → "Lodz"). */
@@ -219,45 +227,41 @@ export function isOtherNameOfListingPlace(
   return false;
 }
 
+/** A name as its words: no apostrophe, hyphens split ("Skłodowskiej-Curie", "O’Connell"). */
+function nameWords(text: string): string[] {
+  return text
+    .replace(/['’]/gu, '')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => Array.from(word).length >= 2);
+}
+
 /**
- * Does a capitalised word of `listing` name what `word` names: the same word in any case, without
- * its diacritics, or a Polish case form of it? No other table and no lower-case word of the listing,
- * so "Beach Road" takes no support from "close to the beach". `extra` adds the lower-case names the
- * caller has read as names ("ul. parterowa").
+ * Does `listing` state what a word of a street's name names? Against its capitalised words and
+ * `extra`: the same word in any case, without diacritics, a Polish case form, or the same first four
+ * letters, folded ("Provenza" for "Provença"). No lower-case word of the listing otherwise, so
+ * "Beach Road" takes no support from "close to the beach".
  *
- * @param word - A word of a name in generated copy.
+ * @param word - A word of a street's name in generated copy.
  * @param listing - The listing's own words.
- * @param extra - Further names of the listing, whatever their case.
+ * @param extra - Further names of the listing, whatever their case (an address field's words).
  * @returns `true` when the listing states that name.
  */
-export function isCapitalisedNameOfListing(
+export function isStreetNameOfListing(
   word: string,
   listing: string,
   extra: readonly string[],
 ): boolean {
-  const folded = foldDiacritics(word);
-  const same = (name: string): boolean =>
-    foldDiacritics(name).toLowerCase() === folded.toLowerCase() ||
-    polishCaseForms(word, name) ||
-    polishCaseForms(folded, foldDiacritics(name));
-  if (extra.some(same)) return true;
-  return Array.from(listing.matchAll(CAPITALISED_FACT_TOKEN_RE), (m) => m[0]).some(same);
-}
-
-/**
- * The listing's own place under any other name, whichever side carries the case form: the copy's
- * "Warsaw" on a listing that only says "w Warszawie".
- *
- * @param word - A word of a name in generated copy.
- * @param listing - The listing's own words.
- * @returns `true` when a row of the closed table holds `word` and a form the listing uses.
- */
-export function isExonymOfInflectedListingName(word: string, listing: string): boolean {
-  const folded = foldDiacritics(word).toLowerCase();
-  const listed = Array.from(listing.matchAll(CAPITALISED_FACT_TOKEN_RE), (m) => m[0]);
-  return PLACE_EXONYMS.some(
-    (row) =>
-      row.some((n) => foldDiacritics(n).toLowerCase() === folded) &&
-      row.some((n) => listed.some((l) => polishCaseForms(l, n))),
-  );
+  const capitalised = nameWords(listing).filter((w) => /^\p{Lu}/u.test(w));
+  const names = [...capitalised, ...extra.flatMap(nameWords)];
+  return nameWords(word).some((part) => {
+    const folded = foldDiacritics(part).toLowerCase();
+    return names.some((name) => {
+      const other = foldDiacritics(name).toLowerCase();
+      return (
+        other === folded ||
+        (folded.length >= 4 && other.slice(0, 4) === folded.slice(0, 4)) ||
+        polishCaseForms(part, name)
+      );
+    });
+  });
 }

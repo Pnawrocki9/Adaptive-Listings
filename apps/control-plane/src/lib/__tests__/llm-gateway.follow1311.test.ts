@@ -138,80 +138,22 @@ describe('FOLLOW-1311 on /api/adapt', () => {
     expect(judged).toBe(false);
   });
 
-  // Slice 5: the first word of a headline is read, and goes to the judge like any other capital.
-  describe('the first word of the headline slot', () => {
-    it.each([
-      ['a place the listing does not name', EN, 'Miami flat with a mature garden'],
-      ['pl: a place the listing does not name', PL, 'Gdynia: mieszkanie z balkonem'],
-    ])('%s is judged, and the judge refuses it', async (_name, ctx, value) => {
-      expect(await run(ctx, value)).toEqual({ served: false, judged: true });
+  it('slice 5: an unlisted street is final on a slot, no judge call overrules it', async () => {
+    expect(await run(EN, 'Home on Ocean Drive with a mature garden', true)).toEqual({
+      served: false,
+      judged: false,
     });
+  });
 
-    it('the judge may clear it', async () => {
-      expect(await run(EN, 'Miami flat with a mature garden', true)).toEqual({
-        served: true,
-        judged: true,
-      });
+  it('slice 5: the first word of a headline keeps its exemption', async () => {
+    expect(await run(EN, 'Gorgeous home with a mature garden')).toEqual({
+      served: true,
+      judged: false,
     });
+  });
 
-    it.each([
-      ['the listing own place', EN, 'Palm Coast home with a mature garden'],
-      ['the listing own word', EN, 'Attached two-car garage and a mature garden'],
-      ['pl: a case form of its place', PL, 'Krakowie, mieszkanie z balkonem'],
-      ['an opening word', EN, 'Three-bedroom home with a mature garden'],
-      ['pl: an opening word', PL, 'Przestronne mieszkanie z balkonem'],
-      ['an imperative', EN, 'Make Palm Coast home'],
-      ['the English live', EN, 'Live like a local in Palm Coast'],
-      ['es: a determiner', EN, 'Un piso en Palm Coast'],
-    ])('%s passes with no judge call', async (_name, ctx, value) => {
-      expect(await run(ctx, value)).toEqual({ served: true, judged: false });
-    });
-
-    it('an opener does not excuse the name after it', async () => {
-      expect(await run(EN, 'Live like a local in Miami')).toEqual({ served: false, judged: true });
-    });
-
-    it('still exempt: the first word of any other slot', async () => {
-      mockCreate.mockReset();
-      mockCreate.mockImplementation(() =>
-        Promise.resolve({
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify([
-                {
-                  type: 'text',
-                  slot: 'cta',
-                  value: 'Miami tour',
-                  archetype: 'yield_hunter',
-                  confidence: 0.8,
-                },
-              ]),
-            },
-          ],
-          usage: { input_tokens: 1, output_tokens: 1 },
-        }),
-      );
-      const result = await callLlmGateway({
-        archetypeId: 'yield_hunter',
-        confidence: 0.75,
-        similarity: 0.75,
-        basePlaybook: getPlaybook('yield_hunter'),
-        listingContext: EN,
-      });
-      expect(result).not.toBeNull();
-      expect(mockCreate).toHaveBeenCalledTimes(1);
-    });
-
-    it('KNOWN_LIMIT: the word after a colon in a headline still carries no name signal', async () => {
-      expect(await run(EN, 'Home: Miami views')).toEqual({ served: true, judged: false });
-    });
-
-    it('the street claim is final on the slot: no judge call overrules it', async () => {
-      expect(await run(EN, 'Home on Ocean Drive with a mature garden', true)).toEqual({
-        served: false,
-        judged: false,
-      });
-    });
+  it('slice 5: a form of a lower-case address field needs no judge call', async () => {
+    const ctx = { listing_title: 'Lokal', listing_location: 'ul. piotrkowska 120, łódź' };
+    expect(await run(ctx, 'Lokal przy Piotrkowskiej')).toEqual({ served: true, judged: false });
   });
 });

@@ -108,7 +108,7 @@ describe('isTrustedDescriptionHit (legacy admission)', () => {
     expect(isTrustedDescriptionHit('FIT', 'claims-v6')).toBe(false);
     // FOLLOW-1311 slice 4: a claims-v8 row never passed the attribute lexicon.
     expect(isTrustedDescriptionHit('FIT', 'claims-v8')).toBe(false);
-    // FOLLOW-1311 slice 5: a claims-v9 row never passed the street claim or the body's name judge.
+    // FOLLOW-1311 slice 5: a claims-v9 row never passed the street claim.
     expect(isTrustedDescriptionHit('FIT', 'claims-v9')).toBe(false);
     expect(isTrustedDescriptionHit('FIT', 'claims-v10')).toBe(true);
     expect(isTrustedDescriptionHit('NEUTRAL', 'claims-v1')).toBe(true);

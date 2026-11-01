@@ -693,12 +693,10 @@ the invoking command.
   corpus carries its own `copy_template`, so a playbook edit moves no digest and needs its own pin;
   an empty VOICE section reaches the persona, so a persona edit can move a description prompt.
 
-- **2026-11-01 / FOLLOW-1311 slice 5** · Built: street claim (`unsupported_street`), a place-frame
-  name rule on the body with a scoped judge, adapt `headline` first word read, T7 forms;
-  `claims-v10`. · Judgment call: with no refusal budget left, every flag on the frozen corpus would
-  be a refusal I could not verify, because no recording holds a judge; so the replay answers the
-  judge "no" and the recogniser was narrowed until nothing flagged. Honest result: none of it fired
-  on 176 cases, and the judge has never run. · Guardrail: a slice whose rule is a model must measure
-  the model once, or say in its first line that it did not. `Wrocławiu`, `Poznaniu` were missing
-  from T7 until a probe over every recorded call found them, so probe forms on the real towns before
-  trusting a table.
+- **2026-11-01 / FOLLOW-1311 slice 5** · Built: `unsupported_street` with a required signal, T7
+  forms, `claims-v10`. A body judge and an adapt first-word change were built and removed after a
+  live sample (true on 4 of 24 harmless cases). · Judgment call: I shipped a judge that had never
+  run, and treated "nothing fired on the corpus" as safety; it only meant the corpus could not see
+  the false refusals, and my first street rule refused its own listing's address. · Guardrail: a
+  rule that is a model is measured live once before handoff; a rule on addresses gets real address
+  shapes (abbreviations, apostrophes, lower case) and ordinary title-case phrases as pins first.

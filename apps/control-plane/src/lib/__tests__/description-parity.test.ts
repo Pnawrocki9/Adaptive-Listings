@@ -117,8 +117,7 @@
  *     for byte. Every guard replays with the CURRENT system and headline digests (v26's); the guards
  *     of older prompt changes read the headline prompt with the personas as they were.
  *   - `corpus.v27.jsonl` + `MANIFEST.v27.json` — FOLLOW-1311 slice 5, `claims-v10`, a stamp-only
- *     re-freeze of v26, the current contract: the street claim and the judge on names in a body move
- *     no verdict of the corpus, and no case reaches the judge.
+ *     re-freeze of v26, the current contract: the street claim moves no verdict of the corpus.
  *
  * No other I/O happens: the test env configures no Redis, ClickHouse, Postgres or Sentry, so the
  * spend gate reads 0, every write reports `not_configured` and no row is written.

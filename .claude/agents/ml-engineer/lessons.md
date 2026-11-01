@@ -700,3 +700,12 @@ the invoking command.
   the false refusals, and my first street rule refused its own listing's address. · Guardrail: a
   rule that is a model is measured live once before handoff; a rule on addresses gets real address
   shapes (abbreviations, apostrophes, lower case) and ordinary title-case phrases as pins first.
+
+- **2026-11-01 / FOLLOW-1431 + FOLLOW-1436** · One address vocabulary in shared; the guard spares an
+  address with a marker on all three lists, own address blanked first on both paths; a count is no
+  house number before five ambiguous street words; closed forms of "aleja". · Judgment call: nothing
+  on either recording fired, so precision is unmeasured; my own attack sentences found three defects
+  the first pins missed ("Alejo" as a name, "na Katyńskiej", a listing-side tightening from a wider
+  mask). Those are still one mind's attack. · Guardrail: when a mask is shared by copy and listing,
+  widening it is a loosening on one side and a tightening on the other; test both before calling a
+  change loosening-only.

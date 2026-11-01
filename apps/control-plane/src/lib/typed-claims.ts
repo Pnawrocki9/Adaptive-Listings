@@ -50,6 +50,7 @@ import { MULTIPLIER_WORDS, normaliseNumberGroups, readMultiplied } from '@/lib/n
 import {
   isAddressField,
   maskListedAddressParts,
+  maskListingAddresses,
   maskStreetAddresses,
   readLowerCaseStreetNames,
   readStreetClaims,
@@ -549,7 +550,7 @@ export function checkTypedClaims(
     .filter((s) => !isAddressField(s.field))
     .map((s) => ({
       field: s.field,
-      text: maskStreetAddresses(maskListedAddressParts(s.text, addresses)),
+      text: maskListingAddresses(maskListedAddressParts(s.text, addresses)),
     }));
   const withoutListed = maskListedAddressParts(text, addresses);
   const copy = maskStreetAddresses(withoutListed);

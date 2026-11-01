@@ -8,7 +8,11 @@
  * @module apps/control-plane/src/lib/name-forms
  */
 
-import { isAddressField } from '@/lib/street-address';
+import {
+  describesResidentsByProtectedGround,
+  HOUSE_NUMBER_AFTER_NAME,
+} from '@estalara/shared/playbook-traits';
+import { isAddressField, isListedStreet, maskListedAddressParts } from '@/lib/street-address';
 
 /** Python `\w` for a `str` pattern (`str.isalnum()` or `_`), as a character-class body. */
 export const PY_WORD = '\\p{L}\\p{N}_';
@@ -264,4 +268,98 @@ export function isStreetNameOfListing(
       );
     });
   });
+}
+
+// ─── The listing's own address, before the protected-ground guard [FOLLOW-1431] ───────────────────
+
+const ADDRESS_WORD_RE = /(?<![\p{L}\p{N}])\p{L}[\p{L}'’-]*/gu;
+/** Up to three words, then a house number: "Bohaterów Getta 5", "Mieszkanie przy Katyńskiej 5". */
+const NUMBERED_NAME_RE = new RegExp(
+  String.raw`(?<![\p{L}\p{N}])((?:\p{L}[\p{L}'’-]*[ \t]+){1,3})${HOUSE_NUMBER_AFTER_NAME}`,
+  'gu',
+);
+/**
+ * What a listing's text states as an address with no address field: capitalised, and nothing
+ * counted after the number: "the Ghetto 2 bedrooms" is no address.
+ */
+const LISTING_NUMBERED_NAME_RE = new RegExp(
+  String.raw`(?<![\p{L}\p{N}])((?:\p{Lu}[\p{L}'’-]*[ \t]+){1,3})${HOUSE_NUMBER_AFTER_NAME}(?=[ \t]*(?:[,.;:!?)\n]|$)|[ \t]+(?:w|we|in|en)[ \t])`,
+  'gu',
+);
+/** "przy Katyńskiej", "on Długa": capitalised, or it is a noun and no name ("przy getcie"). */
+const AT_NAME_RE =
+  /(?<![\p{L}\p{N}])(?:przy|na|on|at|en)[ \t]+(\p{Lu}[\p{L}'’-]*(?:[ \t]+\p{Lu}[\p{L}'’-]*){0,2})/gu;
+
+const addressWords = (text: string): RegExpExecArray[] =>
+  Array.from(text.matchAll(ADDRESS_WORD_RE));
+
+/** The streets the listing states: in an address field, or anywhere with a house number. */
+function ownStreets(listing: Readonly<Record<string, string>>): string[][] {
+  return Object.entries(listing).flatMap(([field, value]) => {
+    const parts = isAddressField(field) ? value.split(',').filter(isListedStreet) : [];
+    const numbered = Array.from(value.matchAll(LISTING_NUMBERED_NAME_RE), (m) => m[1] ?? '');
+    return [...parts, ...numbered].map((text) => addressWords(text).map((w) => w[0]));
+  });
+}
+
+/** Is `words` the end of the street's name, each word the same or a Polish case form? */
+const endsStreet = (words: readonly string[], street: readonly string[]): boolean => {
+  const name = street.slice(-words.length);
+  return (
+    name.length === words.length &&
+    words.every((w, i) => {
+      const other = name[i] ?? '';
+      return (
+        foldDiacritics(w).toLowerCase() === foldDiacritics(other).toLowerCase() ||
+        polishCaseForms(w, other)
+      );
+    })
+  );
+};
+
+/**
+ * Blank what `text` repeats of the listing's own address, the forms no marker shows included:
+ * "przy Katyńskiej 5" on a listing at "ul. Katyńska 5". A street's name needs a house number or
+ * a locating word beside it, so "Pomnik Zbrodni Katyńskiej" on that listing stays what it says, and
+ * the name of a town is never blanked (`isListedStreet`).
+ */
+function blankOwnAddress(text: string, listing: Readonly<Record<string, string>>): string {
+  const addresses = Object.entries(listing)
+    .filter(([field]) => isAddressField(field))
+    .map(([, value]) => value);
+  const streets = ownStreets(listing);
+  const isOwn = (words: readonly string[]): boolean => streets.some((s) => endsStreet(words, s));
+  const blank = (match: string): string => ' '.repeat(match.length);
+  return maskListedAddressParts(text, addresses)
+    .replace(NUMBERED_NAME_RE, (match: string, name: string) => {
+      const words = addressWords(name);
+      for (const [i, word] of words.entries()) {
+        if (isOwn(words.slice(i).map((w) => w[0]))) {
+          return match.slice(0, word.index) + blank(match.slice(word.index));
+        }
+      }
+      return match;
+    })
+    .replace(AT_NAME_RE, (match: string, name: string) =>
+      isOwn(addressWords(name).map((w) => w[0])) ? blank(match) : match,
+    );
+}
+
+/**
+ * The protected-ground guard, on a listing: its own address is a fact it states, and blanked first
+ * (PM on FOLLOW-1431, both paths). Blanking only ever spares: text the guard passes as written is
+ * passed before anything is blanked.
+ *
+ * @param text - Copy as the model wrote it.
+ * @param listing - The listing's own fields by name, the description among them.
+ * @returns `true` when the copy is refused.
+ */
+export function refusesOnProtectedGround(
+  text: string,
+  listing: Readonly<Record<string, string>>,
+): boolean {
+  return (
+    describesResidentsByProtectedGround(text) &&
+    describesResidentsByProtectedGround(blankOwnAddress(text, listing))
+  );
 }

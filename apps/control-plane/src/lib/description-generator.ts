@@ -53,11 +53,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import * as Sentry from '@sentry/nextjs';
 import { DescriptionRequestedEventSchema } from '@estalara/shared';
 import type { DescriptionCacheValue, DescriptionRequestedEvent } from '@estalara/shared';
-import {
-  getTraitAddOns,
-  renderTraitRules,
-  describesResidentsByProtectedGround,
-} from '@estalara/shared/playbook-traits';
+import { getTraitAddOns, renderTraitRules } from '@estalara/shared/playbook-traits';
+import { refusesOnProtectedGround } from '@/lib/name-forms';
 import {
   ALLOWED_GENERATION_MODELS,
   DEFAULT_GENERATION_MODEL,
@@ -831,6 +828,12 @@ function parseVerifiedFacts(output: string): { description: string; facts: strin
 }
 
 /** The interpretation half of `_generate_with_sonnet`: raw model output → outcome. */
+/** The listing's own fields, the description among them. */
+const ownFields = (e: DescriptionRequestedEvent): Record<string, string> => ({
+  original_description: e.original_description || '',
+  ...e.listing_context,
+});
+
 function interpretDescription(
   raw: { text: string; stopReason: string | null },
   e: DescriptionRequestedEvent,
@@ -856,7 +859,7 @@ function interpretDescription(
 
   // FOLLOW-1411: a statement about residents' race, ethnic origin or religion is refused before
   // the claim check, as `/api/adapt` orders it; refused, never stripped.
-  if (describesResidentsByProtectedGround(description)) {
+  if (refusesOnProtectedGround(description, ownFields(e))) {
     return { verdict: 'REFUSED', violation: 'protected_ground' };
   }
 
@@ -898,7 +901,7 @@ function interpretHeadline(
   const languageViolation = checkOutputLanguage(headline, e.locale);
   if (languageViolation) return { headline: null, violation: languageViolation };
   // FOLLOW-1411: residents' race, ethnic origin or religion, as on the body and on `/api/adapt`.
-  if (describesResidentsByProtectedGround(headline)) {
+  if (refusesOnProtectedGround(headline, ownFields(e))) {
     return { headline: null, violation: 'protected_ground' };
   }
   const violation = checkHeadlineFacts(

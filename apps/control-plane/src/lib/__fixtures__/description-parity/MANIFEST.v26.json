@@ -1,0 +1,200 @@
+{
+  "case_count": 98,
+  "change": "FOLLOW-1311 slice 6 (template clean-up for external claims): the description SYSTEM prompt no longer lists area, market and demand descriptors as allowed without the listing and no longer tells the model to express a theme the facts do not support; 16 headline personas (ARCHETYPE_GUIDANCE) ask for their themes only as the listing states them. v26 is a prompt-digest re-freeze of v25: every byte is v25's except prompt_sha256.description_system of every case, prompt_sha256.headline_user of the cases under refrozen, and prompt_sha256.description_user of the case under voice_fallback_refrozen (an empty VOICE section falls back to the persona; no shipped template has one). No verdict, headline, violation or stamp moved. Each input.copy_template stays as frozen, so the playbook edits of the same slice do not reach this corpus: they are pinned by copy-template-external-claims.follow1311.test.ts.",
+  "claims_validation_version": "claims-v9",
+  "corpus": "corpus.v26.jsonl",
+  "corpus_sha256": "5c2675c9:e6da0896:d6a064da:55fec607:c918d35b:e1c15d64:9007df99:19ac69e8",
+  "delta": [],
+  "derived_from": {
+    "corpus": "corpus.v25.jsonl",
+    "manifest": "MANIFEST.v25.json",
+    "corpus_sha256": "ef2c3231:60f60fd2:ad91a7fa:988713c1:6095c61b:4c759dcb:c053076c:ef2b31e1"
+  },
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-11-01",
+  "headline_called": 62,
+  "headline_suppressed": 29,
+  "kind": "prompt_refreeze",
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "NEUTRAL/with_reason": 8,
+    "NEUTRAL/without_reason": 1,
+    "REFUSED/unsupported_amenity": 6,
+    "FAILED/meta_commentary": 1,
+    "REFUSED/count_mismatch": 1,
+    "REFUSED/hallucinated_number": 5,
+    "REFUSED/unsupported_guarantee": 2,
+    "REFUSED/unit_mismatch": 2,
+    "FAILED/empty": 2,
+    "FAILED/residual_tag": 3,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/truncated": 1
+  },
+  "per_verdict": {
+    "FIT": 62,
+    "REFUSED": 16,
+    "NEUTRAL": 9,
+    "FAILED": 11
+  },
+  "recorded_outputs_predate_prompt": "Every raw output in this corpus was produced by an older prompt. They are replayed through the unchanged checks, so they pin the checks and the new prompt bytes, NOT what the new prompt makes the model write.",
+  "persona_change": {
+    "yield_hunter": {
+      "from": "Focus on ROI numbers: gross yield %, estimated annual rental income, cap rate, void risk mitigation, and price-per-sqm vs local average. Mention transport links only when they affect rental demand.",
+      "to": "Focus on ROI numbers: gross yield %, annual rental income, cap rate and void risk, only as the listing states them. Mention transport links only as the listing states them."
+    },
+    "lifestyle_expat": {
+      "from": "Emphasise walkability, international community presence, English-language services, expat social network, international schools only as the listing states them, and modern amenities. Relocation practicalities matter (utilities, local support).",
+      "to": "Emphasise walkability, international community presence, English-language services, expat social network, international schools and modern amenities, only as the listing states them. Relocation practicalities matter (utilities, local support) where the listing gives them."
+    },
+    "first_time_buyer": {
+      "from": "Lead with affordability, mortgage eligibility, a manageable layout and running costs, and Help-to-Buy eligibility where applicable. Simplify jargon. Reassure on condition and surveys only as the listing states them.",
+      "to": "Lead with affordability, a manageable layout and running costs; mortgage or scheme eligibility only as the listing states them. Simplify jargon. Reassure on condition and surveys only as the listing states them."
+    },
+    "luxury_buyer": {
+      "from": "Emphasise premium finishes, brand-name appliances, views, exclusivity, concierge services, and prestige address. Avoid yield or budget language.",
+      "to": "Emphasise premium finishes, brand-name appliances, views, exclusivity, concierge services and prestige address, only as the listing states them. Avoid yield or budget language."
+    },
+    "remote_worker": {
+      "from": "Lead with fibre broadband speed, dedicated office space or spare room, quiet location, and proximity to co-working hubs or transport for occasional commutes.",
+      "to": "Lead with fibre broadband speed, dedicated office space or spare room, quiet location, and proximity to co-working hubs or transport for occasional commutes, only as the listing states them."
+    },
+    "downsizer": {
+      "from": "Emphasise low maintenance, manageable garden size, single-storey layout or good lift access, proximity to healthcare, and social amenities. Avoid stairs/large gardens.",
+      "to": "Emphasise low maintenance, manageable garden size, single-storey layout or good lift access, proximity to healthcare, and social amenities, only as the listing states them. Avoid stairs/large gardens."
+    },
+    "upsizer": {
+      "from": "Lead with extra bedrooms, flexible living space, potential for extension, and larger garden; schools only as the listing states them. Frame as the next chapter in family life.",
+      "to": "Lead with extra bedrooms, flexible living space and larger garden; potential for extension and schools only as the listing states them. Frame as the next chapter in family life."
+    },
+    "retiree_relocator": {
+      "from": "Emphasise warm climate, healthcare quality, low cost of living, expat community for the target region, accessibility, and low-maintenance property.",
+      "to": "Emphasise warm climate, healthcare quality, low cost of living, expat community for the target region, accessibility, and low-maintenance property, only as the listing states them."
+    },
+    "vacation_rental_investor": {
+      "from": "Focus on tourist demand, occupancy rate projections, platform (Airbnb/Vrbo) eligibility, local rental regulations, and management company availability.",
+      "to": "Focus on tourist demand, occupancy rate projections, platform (Airbnb/Vrbo) eligibility, local rental regulations, and management company availability, only as the listing states them."
+    },
+    "flip_investor": {
+      "from": "Highlight below-market price, renovation potential, structural soundness, planning permission history, and comparable sold prices post-refurb.",
+      "to": "Highlight below-market price, renovation potential, structural soundness, planning permission history, and comparable sold prices post-refurb, only as the listing states them."
+    },
+    "portfolio_builder": {
+      "from": "Lead with portfolio diversification value, multi-unit or HMO potential, bulk-purchase discount angle, and scalable management options.",
+      "to": "Lead with portfolio diversification value, multi-unit or HMO potential, bulk-purchase discount angle, and scalable management options, only as the listing states them."
+    },
+    "golden_visa_buyer": {
+      "from": "Emphasise minimum investment thresholds for residency eligibility, legal pathway clarity, capital preservation, and prestige of the address.",
+      "to": "Emphasise minimum investment thresholds for residency eligibility, legal pathway clarity, capital preservation, and prestige of the address, only as the listing states them."
+    },
+    "commercial_investor": {
+      "from": "Focus on tenant covenant strength, lease length, passing rent vs ERV, WAULT, and asset management upside.",
+      "to": "Focus on tenant covenant strength, lease length, passing rent vs ERV, WAULT, and asset management upside, only as the listing states them."
+    },
+    "diaspora_buyer": {
+      "from": "Acknowledge dual-market awareness (local vs origin country), family ties, remittance-funded purchase practicalities, and long-term capital preservation.",
+      "to": "Acknowledge dual-market awareness (local vs origin country) and family ties as the motive of the reader; remittance-funded purchase practicalities and long-term capital preservation only as the listing states them."
+    },
+    "second_home_buyer": {
+      "from": "Emphasise lifestyle benefit for weekends, holidays and occasional family use, rental income potential during vacant periods, proximity to desired leisure activities, and seasonal access.",
+      "to": "Emphasise lifestyle benefit for weekends, holidays and occasional family use; rental income potential during vacant periods, proximity to desired leisure activities and seasonal access only as the listing states them."
+    },
+    "student_parent": {
+      "from": "Focus on proximity to the target university, room count for student plus guests, post-graduation rental yield, and low-maintenance features.",
+      "to": "Focus on proximity to the target university, room count for student plus guests, post-graduation rental yield, and low-maintenance features, only as the listing states them."
+    }
+  },
+  "refrozen": [
+    "live.001.listing-001.luxury_buyer.en",
+    "live.003.listing-001.yield_hunter.en",
+    "live.004.listing-002.first_time_buyer.en",
+    "live.005.listing-002.vacation_rental_investor.en",
+    "live.006.listing-002.remote_worker.en",
+    "live.009.listing-004.luxury_buyer.en",
+    "live.010.listing-004.golden_visa_buyer.en",
+    "live.011.listing-005.yield_hunter.en",
+    "live.014.listing-006.vacation_rental_investor.en",
+    "live.015.listing-006.luxury_buyer.en",
+    "live.019.listing-008.upsizer.es",
+    "live.020.listing-009.yield_hunter.en",
+    "live.021.listing-009.portfolio_builder.en",
+    "live.024.listing-010.second_home_buyer.en",
+    "live.025.listing-011.remote_worker.en",
+    "live.028.listing-012.retiree_relocator.en",
+    "live.030.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.first_time_buyer.en",
+    "live.031.839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c.flip_investor.en",
+    "hand1305.positive.control",
+    "hand1305.self.report.not.whitelist",
+    "hand1305.headline.invented.amenity",
+    "fit.missing.verdict.tag",
+    "fit.no.audit.block",
+    "fit.facts.malformed.json",
+    "fit.facts.not.a.list",
+    "fit.facts.mixed.types",
+    "fit.number.thousands.separator",
+    "fit.number.uppercase.unit",
+    "fit.headline.non.ascii.name.only.in.context",
+    "fit.headline.non.ascii.name.in.original",
+    "fit.headline.inflection.stem",
+    "fit.headline.stem.is.not.prefix",
+    "fit.headline.invented.number",
+    "fit.headline.invented.proper.name",
+    "fit.headline.invented.guarantee",
+    "fit.headline.unit.mismatch",
+    "fit.headline.empty",
+    "fit.headline.quotes.and.first.line",
+    "fit.headline.cut.120.code.points",
+    "fit.headline.stop.caps.and.punctuation",
+    "fit.headline.digit.in.grounded.word.boundary",
+    "fit.headline.negated.amenity.in.listing",
+    "fit.negated.amenity.in.body",
+    "fit.area.grounded.by.area.field",
+    "fit.condition.fact.grounds.no.work",
+    "fit.amenity.key.positive.value",
+    "fit.non.ascii.body.pl",
+    "fit.override.model.opus",
+    "fit.generation.model.haiku",
+    "fit.invalid.override.falls.to.default",
+    "fit.structured.copy.template",
+    "fit.copy.template.markers.empty.voice",
+    "fit.copy.template.only.one.marker",
+    "fit.empty.context.and.long.original",
+    "fit.mid.length.original.scales.max.tokens",
+    "fit.context.non.ascii.key.and.value",
+    "fit.original.with.quotes.and.backslash",
+    "fit.astral.emoji.in.context"
+  ],
+  "system_prompt_change": [
+    {
+      "from": "Write as an experienced human copywriter who knows this market — not as an AI.",
+      "to": "Write as an experienced human copywriter — not as an AI."
+    },
+    {
+      "from": "If the voice pattern asks you to lead with something the verified facts do not support with a number (e.g. \"lead with cashflow\" but no yield figure exists), lead with the theme using generic positive language — never with an invented figure.",
+      "to": "If the voice pattern asks you to lead with something the verified facts do not support (e.g. \"lead with cashflow\" but no yield figure exists), lead with the verified facts that bear on it and leave the rest out — never with an invented figure or a claim the facts do not make."
+    },
+    {
+      "from": "3. Generic positive descriptors that contain no number and no named entity are permitted, provided they are plausibly supported by the verified facts.\n   ALLOWED: \"attractive yield potential\", \"strong rental demand\", \"spacious garden\", \"well-connected\", \"established neighbourhood\", \"bright, generous living space\".",
+      "to": "3. Generic positive descriptors that contain no number and no named entity are permitted, provided the verified facts state what they describe. If the listing states it, use it; if not, do not assert it. That holds for the area, transport, the market, rental demand, yield potential, tax and the law as much as for the property: from outside the listing they are not facts.\n   ALLOWED: \"spacious garden\" for a garden the listing calls large, \"bright, generous living space\" for rooms the listing describes so."
+    },
+    {
+      "from": "but no supporting figure or name exists in the verified facts, express the theme with generic positive language only. Do not invent, estimate, round, or imply a number.",
+      "to": "but the verified facts say nothing about it, leave the theme out and speak to the reader through the facts they do state. Do not invent, estimate, round, or imply a number, and do not assert the theme."
+    },
+    {
+      "from": "\"Well-connected\" is fine; \"excellent transport links",
+      "to": "\"Well-connected\" is fine where the listing says so; \"excellent transport links"
+    },
+    {
+      "from": "If the voice pattern implies leading with a number or named entity that is not verified, honour the theme with generic language and drop the specific.",
+      "to": "If the voice pattern implies leading with a number or named entity that is not verified, honour the theme through the facts that are verified and drop the specific."
+    }
+  ],
+  "voice_fallback_refrozen": ["fit.copy.template.markers.empty.voice"]
+}

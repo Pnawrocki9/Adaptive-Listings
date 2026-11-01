@@ -687,3 +687,8 @@ the invoking command.
   suggestions read as claims, T8 gaps and quadratic context reads. · Judgment call: exits for
   questions, conditions and plurals open named holes in exchange for fewer false refusals. ·
   Guardrail I'd add: test a lexicon in title case and against a listed street before first review.
+- **2026-11-01 / FOLLOW-1311 slice 6** · Made template, system prompt and persona lines hang on the
+  listing; parity v26 re-freeze. · Judgment call: which lines assert an outside fact versus frame a
+  motive; family lines and adapt slot headlines left and reported. · Guardrail I'd add: the frozen
+  corpus carries its own `copy_template`, so a playbook edit moves no digest and needs its own pin;
+  an empty VOICE section reaches the persona, so a persona edit can move a description prompt.

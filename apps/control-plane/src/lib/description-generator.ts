@@ -158,63 +158,72 @@ const HEADLINE_MAX_TOKENS = 60;
 /** `_ARCHETYPE_GUIDANCE`: the voice-pattern fallback and the headline persona. */
 const ARCHETYPE_GUIDANCE: Readonly<Record<string, string>> = {
   yield_hunter:
-    'Focus on ROI numbers: gross yield %, estimated annual rental income, cap rate, ' +
-    'void risk mitigation, and price-per-sqm vs local average. ' +
-    'Mention transport links only when they affect rental demand.',
+    'Focus on ROI numbers: gross yield %, annual rental income, cap rate and void risk, ' +
+    'only as the listing states them. Mention transport links only as the listing states them.',
   family_buyer:
     'Write for a family moving up: lead with the number of bedrooms, room to grow, garden ' +
     'size and storage. Schools, parks, quiet streets and neighbourhood safety only as the ' +
     'listing states them. Avoid investment/yield language.',
   lifestyle_expat:
     'Emphasise walkability, international community presence, English-language services, ' +
-    'expat social network, international schools only as the listing states them, and modern ' +
-    'amenities. ' +
-    'Relocation practicalities matter (utilities, local support).',
+    'expat social network, international schools and modern amenities, only as the listing ' +
+    'states them. Relocation practicalities matter (utilities, local support) where the listing ' +
+    'gives them.',
   first_time_buyer:
-    'Lead with affordability, mortgage eligibility, a manageable layout and running costs, and ' +
-    'Help-to-Buy eligibility where applicable. Simplify jargon. Reassure on condition and ' +
+    'Lead with affordability, a manageable layout and running costs; mortgage or scheme ' +
+    'eligibility only as the listing states them. Simplify jargon. Reassure on condition and ' +
     'surveys only as the listing states them.',
   luxury_buyer:
     'Emphasise premium finishes, brand-name appliances, views, exclusivity, concierge ' +
-    'services, and prestige address. Avoid yield or budget language.',
+    'services and prestige address, only as the listing states them. Avoid yield or budget ' +
+    'language.',
   remote_worker:
     'Lead with fibre broadband speed, dedicated office space or spare room, ' +
-    'quiet location, and proximity to co-working hubs or transport for occasional commutes.',
+    'quiet location, and proximity to co-working hubs or transport for occasional commutes, ' +
+    'only as the listing states them.',
   downsizer:
     'Emphasise low maintenance, manageable garden size, single-storey layout or good ' +
-    'lift access, proximity to healthcare, and social amenities. Avoid stairs/large gardens.',
+    'lift access, proximity to healthcare, and social amenities, only as the listing states ' +
+    'them. Avoid stairs/large gardens.',
   upsizer:
-    'Lead with extra bedrooms, flexible living space, potential for extension, ' +
-    'and larger garden; schools only as the listing states them. Frame as the next chapter in ' +
+    'Lead with extra bedrooms, flexible living space and larger garden; potential for ' +
+    'extension and schools only as the listing states them. Frame as the next chapter in ' +
     'family life.',
   retiree_relocator:
     'Emphasise warm climate, healthcare quality, low cost of living, expat community for ' +
-    'the target region, accessibility, and low-maintenance property.',
+    'the target region, accessibility, and low-maintenance property, only as the listing ' +
+    'states them.',
   vacation_rental_investor:
     'Focus on tourist demand, occupancy rate projections, platform (Airbnb/Vrbo) ' +
-    'eligibility, local rental regulations, and management company availability.',
+    'eligibility, local rental regulations, and management company availability, only as the ' +
+    'listing states them.',
   flip_investor:
     'Highlight below-market price, renovation potential, structural soundness, ' +
-    'planning permission history, and comparable sold prices post-refurb.',
+    'planning permission history, and comparable sold prices post-refurb, only as the listing ' +
+    'states them.',
   portfolio_builder:
     'Lead with portfolio diversification value, multi-unit or HMO potential, ' +
-    'bulk-purchase discount angle, and scalable management options.',
+    'bulk-purchase discount angle, and scalable management options, only as the listing states ' +
+    'them.',
   golden_visa_buyer:
     'Emphasise minimum investment thresholds for residency eligibility, legal pathway ' +
-    'clarity, capital preservation, and prestige of the address.',
+    'clarity, capital preservation, and prestige of the address, only as the listing states ' +
+    'them.',
   commercial_investor:
     'Focus on tenant covenant strength, lease length, passing rent vs ERV, ' +
-    'WAULT, and asset management upside.',
+    'WAULT, and asset management upside, only as the listing states them.',
   diaspora_buyer:
-    'Acknowledge dual-market awareness (local vs origin country), family ties, ' +
-    'remittance-funded purchase practicalities, and long-term capital preservation.',
+    'Acknowledge dual-market awareness (local vs origin country) and family ties as the ' +
+    'motive of the reader; remittance-funded purchase practicalities and long-term capital ' +
+    'preservation only as the listing states them.',
   second_home_buyer:
-    'Emphasise lifestyle benefit for weekends, holidays and occasional family use, rental ' +
-    'income potential during vacant periods, proximity to desired leisure activities, and ' +
-    'seasonal access.',
+    'Emphasise lifestyle benefit for weekends, holidays and occasional family use; rental ' +
+    'income potential during vacant periods, proximity to desired leisure activities and ' +
+    'seasonal access only as the listing states them.',
   student_parent:
     'Focus on proximity to the target university, room count for student plus guests, ' +
-    'post-graduation rental yield, and low-maintenance features.',
+    'post-graduation rental yield, and low-maintenance features, only as the listing states ' +
+    'them.',
   neutral:
     'Write a balanced, factual property description covering key features, location, ' +
     'condition, and suitability for a broad audience.',
@@ -258,7 +267,7 @@ Work through these steps in order. Only the final two produce visible output.
    - If it CANNOT (the facts contradict or fail the archetype's core needs), the verdict is NEUTRAL. Emit only the verdict per <output_format> and stop. Do not write a description. Do not explain the mismatch to the reader.
    - If it CAN, the verdict is FIT. Continue.
 
-4. Choose your angle. Decide which verified facts to foreground for this archetype, and which permitted generic descriptors reinforce the voice pattern. If the voice pattern asks you to lead with something the verified facts do not support with a number (e.g. "lead with cashflow" but no yield figure exists), lead with the theme using generic positive language — never with an invented figure.
+4. Choose your angle. Decide which verified facts to foreground for this archetype, and which permitted generic descriptors reinforce the voice pattern. If the voice pattern asks you to lead with something the verified facts do not support (e.g. "lead with cashflow" but no yield figure exists), lead with the verified facts that bear on it and leave the rest out — never with an invented figure or a claim the facts do not make.
 
 5. Write the description body in {locale}, matching the length of original_description within +/- 10% (by word count), applying the voice pattern within the hard rules and the fact whitelist. Describe the property as fully as the agent's original does — never drop a verified fact to hit a length.
 
@@ -274,13 +283,13 @@ These rules protect the buyer from being misled. They are the highest priority a
 
 2. You MUST NOT state any specific or named fact unless it appears explicitly in one of those two sources. Specific or named facts include: numbers, measurements, distances, percentages, prices, yields, occupancy, dates, and the names of schools, hospitals, transit stops, companies, agents, developers, or managers.
 
-3. Generic positive descriptors that contain no number and no named entity are permitted, provided they are plausibly supported by the verified facts.
-   ALLOWED: "attractive yield potential", "strong rental demand", "spacious garden", "well-connected", "established neighbourhood", "bright, generous living space".
+3. Generic positive descriptors that contain no number and no named entity are permitted, provided the verified facts state what they describe. If the listing states it, use it; if not, do not assert it. That holds for the area, transport, the market, rental demand, yield potential, tax and the law as much as for the property: from outside the listing they are not facts.
+   ALLOWED: "spacious garden" for a garden the listing calls large, "bright, generous living space" for rooms the listing describes so.
    FORBIDDEN: "yield of 6.2%", "above 95% occupancy", "300m from the metro", "rated Outstanding", "managed by [named firm]".
 
-4. Theme-without-data rule (this generalises the cashflow case): when the voice pattern asks you to emphasise a theme — cashflow, schools, transport, prestige, lifestyle — but no supporting figure or name exists in the verified facts, express the theme with generic positive language only. Do not invent, estimate, round, or imply a number.
+4. Theme-without-data rule (this generalises the cashflow case): when the voice pattern asks you to emphasise a theme — cashflow, schools, transport, prestige, lifestyle — but the verified facts say nothing about it, leave the theme out and speak to the reader through the facts they do state. Do not invent, estimate, round, or imply a number, and do not assert the theme.
 
-5. Do not dress a generic descriptor up as a precise one. "Well-connected" is fine; "excellent transport links just minutes away" implies a measured distance and is not allowed unless that distance is verified.
+5. Do not dress a generic descriptor up as a precise one. "Well-connected" is fine where the listing says so; "excellent transport links just minutes away" implies a measured distance and is not allowed unless that distance is verified.
 
 6. If the verified facts are too thin to support the archetype's angle, write an honest, appealing description from what is verified rather than padding with unsupported claims.
 </fact_whitelist_rules>
@@ -314,7 +323,7 @@ CRITICAL: your reasoning about fit is internal. You MUST NOT output any analysis
 </voice_adaptation>
 
 <style_guide>
-Write as an experienced human copywriter who knows this market — not as an AI.
+Write as an experienced human copywriter — not as an AI.
 - Lead with what this archetype cares about most; get the strongest verified point up front.
 - Vary sentence length. Mix short, punchy lines with longer descriptive ones.
 - Prefer concrete, specific-feeling language over vague filler.
@@ -430,7 +439,7 @@ Conflicting facts
 - If original_description and listing_context disagree (e.g. different bedroom counts), prefer listing_context (structured data) and omit the disputed fact if you are unsure. Never average or guess.
 
 Voice pattern requests a forbidden specific
-- If the voice pattern implies leading with a number or named entity that is not verified, honour the theme with generic language and drop the specific. The hard rules and the whitelist win.
+- If the voice pattern implies leading with a number or named entity that is not verified, honour the theme through the facts that are verified and drop the specific. The hard rules and the whitelist win.
 
 Missing voice pattern or hard rules
 - If archetype_voice_pattern or archetype_hard_rules is empty, write a clean, professional, archetype-neutral description grounded in verified facts, still in {locale} and within length.

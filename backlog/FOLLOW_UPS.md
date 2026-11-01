@@ -57144,6 +57144,17 @@ its `groundedBy`. Refused as `unsupported_attribute` on both paths; `checkTypedC
 as `kind: 'attribute'`. "Top floor" is not in the original list: it is the one invented attribute
 the frozen replay holds ("a top-floor walk-up" for a fourth floor), so the replay justifies it.
 
+**Slice 6, templates (2026-11-01), run before slice 5.** 136 phrase edits in 16 playbooks, 6 in the
+system prompt, 16 personas: themes only as the listing states them. Parity corpus v26. Fresh sample:
+the 60 description cases recorded with the new prompts (USD 1.76 with the 28 adapt cases), one
+sample each. Refusals 7 to 5, median length 1618 to 1503 characters. Blind audit of the 60 pairs,
+one rater: firm external claims 30 to 2, firm invented property facts 18 to 5, contradictions 0 to
+1, appeal 3.53 to 3.55, flatness 2.69 to 2.80 (higher is drier), better text new 43, old 12, tie 5.
+Directional only: one rater, one sample, mostly constructed listings; the final audit stays the
+measure. This moves MASTER_DESIGN §E.7.5 rules 3–4. Left open: `upsizer.ts:42` (pl) calls the area
+good for families unconditionally (ESC-089; the quiz no longer assigns `upsizer`); adapt slot
+headlines (FOLLOW-1164).
+
 Replay `verdicts.v3`: one new body refusal (true), 0 headlines, 0 of 84 slots, 0 un-refused; 5 of 57
 since the baseline (8.8 %), all classified true by a single rater. Parity corpus v25: stamp only.
 The earlier prototype's 8 bodies did not reproduce: every other attribute in the recordings is

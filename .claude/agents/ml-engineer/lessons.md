@@ -692,3 +692,11 @@ the invoking command.
   motive; family lines and adapt slot headlines left and reported. · Guardrail I'd add: the frozen
   corpus carries its own `copy_template`, so a playbook edit moves no digest and needs its own pin;
   an empty VOICE section reaches the persona, so a persona edit can move a description prompt.
+
+- **2026-11-01 / FOLLOW-1311 slice 5** · Built: `unsupported_street` with a required signal, T7
+  forms, `claims-v10`. A body judge and an adapt first-word change were built and removed after a
+  live sample (true on 4 of 24 harmless cases). · Judgment call: I shipped a judge that had never
+  run, and treated "nothing fired on the corpus" as safety; it only meant the corpus could not see
+  the false refusals, and my first street rule refused its own listing's address. · Guardrail: a
+  rule that is a model is measured live once before handoff; a rule on addresses gets real address
+  shapes (abbreviations, apostrophes, lower case) and ordinary title-case phrases as pins first.

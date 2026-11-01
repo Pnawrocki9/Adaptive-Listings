@@ -138,8 +138,11 @@ import {
  *   matching fact in the listing are refused, by a closed lexicon with a closed entailment table
  *   (`lib/attribute-lexicon.ts`). No `claims-v8` row was checked against those; it is regenerated
  *   once instead of served.
+ * - `claims-v10` — 2026-11-01, FOLLOW-1311 slice 5: a street the listing does not state, stated with
+ *   a house number, a street prefix or a locating word, is refused (`unsupported_street`). No
+ *   `claims-v9` row was checked against that; it is regenerated once instead of served.
  */
-export const CLAIMS_VALIDATION_VERSION = 'claims-v9';
+export const CLAIMS_VALIDATION_VERSION = 'claims-v10';
 
 /** G-03: total budget per call (deadline on the whole, retries included). */
 const DESCRIPTION_DEADLINE_MS = 75_000;

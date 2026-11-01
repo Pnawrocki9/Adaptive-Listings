@@ -32,7 +32,10 @@
  * a plain count must not exceed the largest. A key the listing mentions unreadably is unknown.
  *
  * A street address always passes (CEO 2026-10-30): it is masked in the copy and in the listing
- * before anything here reads either (`lib/street-address.ts`).
+ * before anything here reads either (`lib/street-address.ts`). A street the listing does NOT state
+ * is the one claim read from the address itself, with a signal only: `unsupported_street` (slice
+ * 5). The listing's own street passes in any form (`przy ulicy Długiej` on `ul. Długa 4`); the house
+ * number is the digit rule's.
  *
  * Pure, no I/O.
  *
@@ -42,8 +45,15 @@
 import { AMENITY_RES, asserted } from '@/lib/amenity-lexicon';
 import { namesStudio, readCounts, unreadableCountKeys, type CountKey } from '@/lib/count-claims';
 import { ATTRIBUTE_RES, assertedAttributes, groundsAttribute } from '@/lib/attribute-lexicon';
+import { isStreetNameOfListing } from '@/lib/name-forms';
 import { MULTIPLIER_WORDS, normaliseNumberGroups, readMultiplied } from '@/lib/number-groups';
-import { isAddressField, maskListedAddressParts, maskStreetAddresses } from '@/lib/street-address';
+import {
+  isAddressField,
+  maskListedAddressParts,
+  maskStreetAddresses,
+  readLowerCaseStreetNames,
+  readStreetClaims,
+} from '@/lib/street-address';
 
 /** Why a typed claim was refused. */
 export type TypedViolation =
@@ -52,7 +62,8 @@ export type TypedViolation =
   | 'unit_mismatch'
   | 'year_mismatch'
   | 'negation_contradiction'
-  | 'unsupported_attribute';
+  | 'unsupported_attribute'
+  | 'unsupported_street';
 
 /** One place the listing's words come from. */
 export interface ListingSource {
@@ -62,7 +73,7 @@ export interface ListingSource {
 
 /** One recognised claim of a text, with its verdict. */
 interface TypedClaimCheck {
-  readonly kind: 'count' | 'money' | 'area' | 'year' | 'negation' | 'attribute';
+  readonly kind: 'count' | 'money' | 'area' | 'year' | 'negation' | 'attribute' | 'street';
   /** What the claim is about: `bedroom`, `EUR`, `m2`, `renovated`, `furnished`, the denied words. */
   readonly key: string;
   readonly value: string;
@@ -489,6 +500,34 @@ function checkAttributes(text: string, sources: readonly ListingSource[]): Typed
   });
 }
 
+// ─── Streets ──────────────────────────────────────────────────────────────────
+
+/**
+ * Each street `text` states, against the listing's words with the address fields included. Every
+ * word of an address field is a name, in any case. One word of the name found is enough: if the
+ * check cannot tell, it passes. `text` comes with the listed address already blanked.
+ */
+function checkStreets(text: string, sources: readonly ListingSource[]): TypedClaimCheck[] {
+  const claims = readStreetClaims(text);
+  if (claims.length === 0) return [];
+  const names = (s: ListingSource): string[] => [
+    ...readLowerCaseStreetNames(s.text),
+    ...(isAddressField(s.field) ? [s.text] : []),
+  ];
+  return claims.map((claim): TypedClaimCheck => {
+    const own = sources.find((s) =>
+      claim.words.some((w) => isStreetNameOfListing(w, s.text, names(s))),
+    );
+    return {
+      kind: 'street',
+      key: 'street',
+      value: claim.name,
+      source: own?.field ?? null,
+      violation: own !== undefined ? null : 'unsupported_street',
+    };
+  });
+}
+
 // ─── The check ────────────────────────────────────────────────────────────────
 
 /**
@@ -512,7 +551,8 @@ export function checkTypedClaims(
       field: s.field,
       text: maskStreetAddresses(maskListedAddressParts(s.text, addresses)),
     }));
-  const copy = maskStreetAddresses(maskListedAddressParts(text, addresses));
+  const withoutListed = maskListedAddressParts(text, addresses);
+  const copy = maskStreetAddresses(withoutListed);
   const normalised = normaliseNumberGroups(copy);
   return [
     ...checkCounts(normalised, masked),
@@ -521,5 +561,6 @@ export function checkTypedClaims(
     ...checkYears(copy, masked),
     ...checkNegations(copy, masked),
     ...checkAttributes(copy, masked),
+    ...checkStreets(withoutListed, sources),
   ];
 }

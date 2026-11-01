@@ -113,9 +113,11 @@
  *     re-freeze of v24: the attribute lexicon moves no verdict of the corpus.
  *   - `corpus.v26.jsonl` + `MANIFEST.v26.json` — FOLLOW-1311 slice 6 changed lines of the
  *     description SYSTEM prompt and 16 headline personas, so v26 is a prompt-digest re-freeze of
- *     v25, the current contract: the v26 guard swaps each edit back and proves the old prompt, byte
+ *     v25: the v26 guard swaps each edit back and proves the old prompt, byte
  *     for byte. Every guard replays with the CURRENT system and headline digests (v26's); the guards
  *     of older prompt changes read the headline prompt with the personas as they were.
+ *   - `corpus.v27.jsonl` + `MANIFEST.v27.json` — FOLLOW-1311 slice 5, `claims-v10`, a stamp-only
+ *     re-freeze of v26, the current contract: the street claim moves no verdict of the corpus.
  *
  * No other I/O happens: the test env configures no Redis, ClickHouse, Postgres or Sentry, so the
  * spend gate reads 0, every write reports `not_configured` and no row is written.
@@ -304,7 +306,13 @@ const CASES_V25: Case[] = readCorpus('corpus.v25.jsonl');
 const MANIFEST_V25 = JSON.parse(
   readFileSync(join(FIXTURE_DIR, 'MANIFEST.v25.json'), 'utf8'),
 ) as ManifestV3 & { stamp_refreeze: { from: string; to: string; cases: number } };
-const STAMP = new Map(CASES_V25.map((c) => [c.id, c.expected.claims_validation] as const));
+/** The stamp v25 introduced (FOLLOW-1311 slice 4), v26 kept it; v27 moved the constant on (slice 5). */
+const V25_STAMP = 'claims-v9';
+const CASES_V27: Case[] = readCorpus('corpus.v27.jsonl');
+const MANIFEST_V27 = JSON.parse(
+  readFileSync(join(FIXTURE_DIR, 'MANIFEST.v27.json'), 'utf8'),
+) as ManifestV3 & { stamp_refreeze: { from: string; to: string; cases: number } };
+const STAMP = new Map(CASES_V27.map((c) => [c.id, c.expected.claims_validation] as const));
 const CASES_V26: Case[] = readCorpus('corpus.v26.jsonl');
 const MANIFEST_V26 = JSON.parse(
   readFileSync(join(FIXTURE_DIR, 'MANIFEST.v26.json'), 'utf8'),
@@ -1999,11 +2007,11 @@ describe('description parity corpus v24 (FOLLOW-1311 slice 3 — claims-v8, stam
   });
 });
 
-describe('description parity corpus v25 (FOLLOW-1311 slice 4 — claims-v9, stamp-only re-freeze, the current contract)', () => {
+describe('description parity corpus v25 (FOLLOW-1311 slice 4 — claims-v9, stamp-only re-freeze)', () => {
   const V24_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v24.jsonl'), 'utf8');
   const V25_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v25.jsonl'), 'utf8');
   const OLD = `"claims_validation": "${V24_STAMP}"`;
-  const NEW = `"claims_validation": "${CLAIMS_VALIDATION_VERSION}"`;
+  const NEW = `"claims_validation": "${V25_STAMP}"`;
 
   beforeEach(() => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'parity-'.repeat(4));
@@ -2011,17 +2019,16 @@ describe('description parity corpus v25 (FOLLOW-1311 slice 4 — claims-v9, stam
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it('the manifest describes v25 as a stamp re-freeze of v24 under the current constant', () => {
-    expect(CLAIMS_VALIDATION_VERSION).toBe('claims-v9');
+  it('the manifest describes v25 as a stamp re-freeze of v24 under claims-v9', () => {
     expect(MANIFEST_V25.kind).toBe('stamp_refreeze');
     expect(MANIFEST_V25.derived_from.corpus).toBe('corpus.v24.jsonl');
     expect(MANIFEST_V25.derived_from.corpus_sha256).toBe(MANIFEST_V24.corpus_sha256);
     expect(sha(V24_TEXT)).toBe(MANIFEST_V25.derived_from.corpus_sha256);
     expect(sha(V25_TEXT)).toBe(MANIFEST_V25.corpus_sha256);
-    expect(MANIFEST_V25.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(MANIFEST_V25.claims_validation_version).toBe(V25_STAMP);
     expect(MANIFEST_V25.stamp_refreeze).toEqual({
       from: V24_STAMP,
-      to: CLAIMS_VALIDATION_VERSION,
+      to: V25_STAMP,
       cases: MANIFEST_V24.per_verdict.FIT,
     });
     expect(MANIFEST_V25.delta).toEqual([]);
@@ -2056,7 +2063,7 @@ describe('description parity corpus v26 (FOLLOW-1311 slice 6 — external claims
     expect(sha(readFileSync(join(FIXTURE_DIR, 'corpus.v26.jsonl'), 'utf8'))).toBe(
       MANIFEST_V26.corpus_sha256,
     );
-    expect(MANIFEST_V26.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(MANIFEST_V26.claims_validation_version).toBe(V25_STAMP);
     const refrozen = new Set(MANIFEST_V26.refrozen);
     expect(CASES_V26.map((c) => c.id)).toEqual(CASES_V25.map((c) => c.id));
     for (const [i, v26] of CASES_V26.entries()) {
@@ -2128,6 +2135,48 @@ describe('description parity corpus v26 (FOLLOW-1311 slice 6 — external claims
 
   describe.each(CASES_V26.map((c) => [c.id, c] as const))('%s', (_id, c) => {
     it('generates identically to the v26 record', async () => {
+      await expectIdentical(c);
+    });
+  });
+});
+
+describe('description parity corpus v27 (FOLLOW-1311 slice 5 — claims-v10, stamp-only re-freeze, the current contract)', () => {
+  const V26_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v26.jsonl'), 'utf8');
+  const V27_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v27.jsonl'), 'utf8');
+  const OLD = `"claims_validation": "${V25_STAMP}"`;
+  const NEW = `"claims_validation": "${CLAIMS_VALIDATION_VERSION}"`;
+
+  beforeEach(() => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'parity-'.repeat(4));
+    mockCreate.mockReset();
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('the manifest describes v27 as a stamp re-freeze of v26 under the current constant', () => {
+    expect(CLAIMS_VALIDATION_VERSION).toBe('claims-v10');
+    expect(MANIFEST_V27.kind).toBe('stamp_refreeze');
+    expect(MANIFEST_V27.derived_from.corpus).toBe('corpus.v26.jsonl');
+    expect(MANIFEST_V27.derived_from.corpus_sha256).toBe(MANIFEST_V26.corpus_sha256);
+    expect(sha(V26_TEXT)).toBe(MANIFEST_V27.derived_from.corpus_sha256);
+    expect(sha(V27_TEXT)).toBe(MANIFEST_V27.corpus_sha256);
+    expect(MANIFEST_V27.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(MANIFEST_V27.stamp_refreeze).toEqual({
+      from: V25_STAMP,
+      to: CLAIMS_VALIDATION_VERSION,
+      cases: MANIFEST_V26.per_verdict.FIT,
+    });
+    expect(MANIFEST_V27.delta).toEqual([]);
+    expect(MANIFEST_V27.case_count).toBe(CASES_V27.length);
+  });
+
+  it('v27 is v26 byte for byte except the stamp value, in every FIT case and nowhere else', () => {
+    expect(V26_TEXT.split(OLD).length - 1).toBe(MANIFEST_V26.per_verdict.FIT);
+    expect(V27_TEXT.split(NEW).length - 1).toBe(MANIFEST_V26.per_verdict.FIT);
+    expect(V27_TEXT).toBe(V26_TEXT.split(OLD).join(NEW));
+  });
+
+  describe.each(CASES_V27.map((c) => [c.id, c] as const))('%s', (_id, c) => {
+    it('generates identically to the v27 record', async () => {
       await expectIdentical(c);
     });
   });

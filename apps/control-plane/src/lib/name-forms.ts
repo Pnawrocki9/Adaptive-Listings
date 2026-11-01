@@ -8,6 +8,8 @@
  * @module apps/control-plane/src/lib/name-forms
  */
 
+import { isAddressField } from '@/lib/street-address';
+
 /** Python `\w` for a `str` pattern (`str.isalnum()` or `_`), as a character-class body. */
 export const PY_WORD = '\\p{L}\\p{N}_';
 /** Python `\b` before/after a word character, as lookarounds. */
@@ -53,6 +55,16 @@ const POLISH_CASE_ENDINGS: readonly (readonly [string, string])[] = [
   ['cie', 't'],
   ['dzie', 'd'],
   ['le', 'ł'],
+  // FOLLOW-1311 slice 5: `Wrocław` → `we Wrocławiu`, `Poznań` → `w Poznaniu`, `Łódź` → `w Łodzi`,
+  // `Bydgoszcz` → `w Bydgoszczy`
+  ['iu', ''],
+  ['ia', ''],
+  ['y', ''],
+  ['niu', 'ń'],
+  ['nia', 'ń'],
+  ['niem', 'ń'],
+  ['dzi', 'dź'],
+  ['dzią', 'dź'],
   // feminine, -a nominative
   ['y', 'a'],
   ['i', 'a'],
@@ -63,6 +75,26 @@ const POLISH_CASE_ENDINGS: readonly (readonly [string, string])[] = [
   ['ce', 'ka'],
   ['dze', 'ga'],
   ['le', 'ła'],
+  ['dzie', 'da'],
+  ['i', 'ia'],
+  // an adjective as a name, FOLLOW-1311 slice 5: `ul. Długa` → `przy ulicy Długiej`, `Dolny Sopot`
+  // → `w Dolnym Sopocie`, `Stare Miasto` → `do Starego Miasta`, `Aleje Jerozolimskie` → `w Alejach
+  // Jerozolimskich`
+  ['ej', 'a'],
+  ['iej', 'a'],
+  ['ego', 'i'],
+  ['m', 'i'],
+  ['ego', 'y'],
+  ['ym', 'y'],
+  ['ego', 'e'],
+  ['ym', 'e'],
+  ['ich', 'ie'],
+  // a plural place, FOLLOW-1311 slice 5: `Katowice` → `w Katowicach`; `Krzyki` → `na Krzykach`
+  ['ach', 'e'],
+  ['ach', 'y'],
+  ['ach', 'i'],
+  ['im', 'ie'],
+  ['', 'e'],
   // neuter, -e / -o nominative
   ['u', 'e'],
   ['a', 'e'],
@@ -77,7 +109,7 @@ const CAPITALISED_FACT_TOKEN_RE = /\p{Uppercase}\p{L}{2,}/gu;
 
 /** One word is the other under one `POLISH_CASE_ENDINGS` rule (either word may be the inflected one). */
 function polishCaseForms(a: string, b: string): boolean {
-  const fold = (s: string) => s.toLowerCase().replaceAll('ó', 'o');
+  const fold = (s: string) => s.toLowerCase().replaceAll('ó', 'o').replaceAll('á', 'a');
   const x = a.toLowerCase();
   const y = b.toLowerCase();
   for (const [inflected, nominative] of POLISH_CASE_ENDINGS) {
@@ -108,7 +140,11 @@ export function isPolishCaseFormOfFact(
   for (const m of facts.matchAll(CAPITALISED_FACT_TOKEN_RE)) {
     if (polishCaseForms(word, m[0])) return true;
   }
-  return false;
+  // An address field names in any case: `przy Piotrkowskiej` on `ul. piotrkowska 120`.
+  return Object.entries(ctx).some(
+    ([field, value]) =>
+      isAddressField(field) && value.split(/[^\p{L}]+/u).some((w) => polishCaseForms(word, w)),
+  );
 }
 
 /** FOLLOW-1396: a name with its diacritics folded ("Kraków" → "Krakow", "Łódź" → "Lodz"). */
@@ -129,6 +165,8 @@ const PLACE_EXONYMS: readonly (readonly string[])[] = [
   ['Warszawa', 'Warsaw', 'Varsovia'],
   ['Kraków', 'Cracow', 'Cracovia'],
   ['Wrocław', 'Breslavia'],
+  // Its stem is too short for the endings [FOLLOW-1311 slice 5].
+  ['Łódź', 'Łodzi', 'Łodzią'],
   ['Poznań', 'Posnania'],
   ['Śląsk', 'Silesia'],
   ['Pomorze', 'Pomerania'],
@@ -136,6 +174,7 @@ const PLACE_EXONYMS: readonly (readonly string[])[] = [
   ['Mazowsze', 'Masovia', 'Mazovia'],
   ['Kaszuby', 'Kashubia'],
   ['Tatry', 'Tatras'],
+  ['Wisła', 'Vistula', 'Vístula'],
   // Spain
   ['Sevilla', 'Seville', 'Sewilla'],
   ['Zaragoza', 'Saragossa'],
@@ -159,6 +198,9 @@ const PLACE_EXONYMS: readonly (readonly string[])[] = [
   // Portugal
   ['Lisboa', 'Lisbon', 'Lizbona'],
   ['Porto', 'Oporto'],
+  // Regions and states a listing names short or in another language [FOLLOW-1311 slice 5]
+  ['Valencian', 'Walencka', 'Valenciana'],
+  ['FL', 'Florida', 'Floryda'],
 ];
 
 /**
@@ -183,4 +225,43 @@ export function isOtherNameOfListingPlace(
     }
   }
   return false;
+}
+
+/** A name as its words: no apostrophe, hyphens split ("Skłodowskiej-Curie", "O’Connell"). */
+function nameWords(text: string): string[] {
+  return text
+    .replace(/['’]/gu, '')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => Array.from(word).length >= 2);
+}
+
+/**
+ * Does `listing` state what a word of a street's name names? Against its capitalised words and
+ * `extra`: the same word in any case, without diacritics, a Polish case form, or the same first four
+ * letters, folded ("Provenza" for "Provença"). No lower-case word of the listing otherwise, so
+ * "Beach Road" takes no support from "close to the beach".
+ *
+ * @param word - A word of a street's name in generated copy.
+ * @param listing - The listing's own words.
+ * @param extra - Further names of the listing, whatever their case (an address field's words).
+ * @returns `true` when the listing states that name.
+ */
+export function isStreetNameOfListing(
+  word: string,
+  listing: string,
+  extra: readonly string[],
+): boolean {
+  const capitalised = nameWords(listing).filter((w) => /^\p{Lu}/u.test(w));
+  const names = [...capitalised, ...extra.flatMap(nameWords)];
+  return nameWords(word).some((part) => {
+    const folded = foldDiacritics(part).toLowerCase();
+    return names.some((name) => {
+      const other = foldDiacritics(name).toLowerCase();
+      return (
+        other === folded ||
+        (folded.length >= 4 && other.slice(0, 4) === folded.slice(0, 4)) ||
+        polishCaseForms(part, name)
+      );
+    });
+  });
 }

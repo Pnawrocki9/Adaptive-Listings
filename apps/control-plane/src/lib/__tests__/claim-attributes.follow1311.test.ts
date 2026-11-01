@@ -306,7 +306,11 @@ describe('negation', () => {
 
 describe('a street address always passes, and grounds nothing', () => {
   it.each<[string, Listing, string]>([
-    ['South Street', PLAIN_EN, 'A flat on South Street'],
+    [
+      'South Street, listed',
+      { original: 'Flat.', ctx: { listing_location: 'South Street' } },
+      'A flat on South Street',
+    ],
     [
       'a house number',
       { original: 'Flat.', ctx: { listing_location: '12 South Street' } },
@@ -318,7 +322,11 @@ describe('a street address always passes, and grounds nothing', () => {
       'Mieszkanie przy ul. Parterowa 5',
     ],
     ['pl: a name form', PLAIN_PL, 'Mieszkanie przy Parterowej'],
-    ['es: Calle Solar', PLAIN_ES, 'Piso en la Calle Solar'],
+    [
+      'es: Calle Solar, listed',
+      { original: 'Piso.', ctx: { listing_location: 'Calle Solar' } },
+      'Piso en la Calle Solar',
+    ],
     [
       'es: Calle Solar, a claim word',
       { original: 'Piso.', ctx: { listing_location: 'Calle Energía Solar 12' } },

@@ -2,10 +2,10 @@
 /**
  * FOLLOW-1311: replay the frozen model outputs (`fixtures/raw.v1.jsonl`) through the REAL
  * `generateDescription` and `callLlmGateway`, with only the SDK and the sinks replaced, and compare
- * every verdict with the current frozen verdicts, `fixtures/verdicts.v3.jsonl`.
+ * every verdict with the current frozen verdicts, `fixtures/verdicts.v4.jsonl`.
  * `verdicts.v1.jsonl` stays as the baseline every target is measured from, and
- * `verdicts.v2.delta.json` and `verdicts.v3.delta.json` classify, by hand, every case that moved
- * from v1 to v2 and from v2 to v3.
+ * `verdicts.v2.delta.json`, `verdicts.v3.delta.json` and `verdicts.v4.delta.json` classify, by hand,
+ * every case that moved from v1 to v2, from v2 to v3 and from v3 to v4.
  *
  * A change that moves no verdict leaves this green. A change that does move one must show it: run
  * with `CLAIM_REPLAY_OUT=<file>` and diff that file against the frozen verdicts, then classify every
@@ -128,7 +128,7 @@ describe('FOLLOW-1311 claim baseline replay', () => {
       writeFileSync(process.env.CLAIM_REPLAY_OUT, `${lines.join('\n')}\n`);
       return;
     }
-    expect(lines).toEqual(readLines('verdicts.v3.jsonl'));
+    expect(lines).toEqual(readLines('verdicts.v4.jsonl'));
   });
 
   it('v2 moves only the classified cases, and the refusal target is computed from the verdicts', () => {
@@ -288,5 +288,67 @@ describe('FOLLOW-1311 claim baseline replay', () => {
     expect(classified.every((c) => c === 'true' || c === 'false')).toBe(true);
     const share = classified.filter((c) => c === 'true').length / classified.length;
     expect(share).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it('v4 refuses nothing new: the budget of 10 % is spent, and the header is computed', () => {
+    interface Verdict {
+      id: string;
+      verdict?: string;
+      refused?: unknown[];
+      served?: unknown[];
+      headline_sha?: string | null;
+    }
+    const read = (file: string) => readLines(file).map((l) => JSON.parse(l) as Verdict);
+    const v1 = read('verdicts.v1.jsonl');
+    const v3 = read('verdicts.v3.jsonl');
+    const v4 = read('verdicts.v4.jsonl');
+    const delta = JSON.parse(
+      readFileSync(path.join(FIXTURES, 'verdicts.v4.delta.json'), 'utf8'),
+    ) as Record<string, number> & { moved: Record<string, { classified: string }> };
+    const raw3 = readLines('verdicts.v3.jsonl');
+    expect(
+      readLines('verdicts.v4.jsonl')
+        .map((line, i) => (line === raw3[i] ? null : (JSON.parse(line) as Verdict).id))
+        .filter((id) => id !== null)
+        .sort(),
+    ).toEqual(Object.keys(delta.moved).sort());
+
+    const fit = v1.filter((v) => v.verdict === 'FIT');
+    const refused = fit.filter((v) => v4.find((x) => x.id === v.id)?.verdict !== 'FIT');
+    const slots = (vs: Verdict[]) => vs.reduce((n, v) => n + (v.refused?.length ?? 0), 0);
+    const lost = v3.filter(
+      (v) => v.verdict === 'FIT' && v4.find((x) => x.id === v.id)?.verdict !== 'FIT',
+    ).length;
+    const headlines = (from: Verdict[], to: Verdict[]) =>
+      from.filter((v) => {
+        const after = to.find((x) => x.id === v.id);
+        return (
+          v.verdict === 'FIT' && after?.verdict === 'FIT' && v.headline_sha && !after.headline_sha
+        );
+      }).length;
+    expect(refused.length).toBe(5);
+    expect(refused.length / fit.length).toBeLessThanOrEqual(0.1);
+    expect({
+      fit_before: delta.fit_before,
+      fit_baseline: delta.fit_baseline,
+      new_body_refusals: delta.new_body_refusals,
+      new_body_refusals_since_baseline: delta.new_body_refusals_since_baseline,
+      headlines_newly_suppressed: delta.headlines_newly_suppressed,
+      headlines_newly_served: delta.headlines_newly_served,
+      adapt_slots_newly_refused: delta.adapt_slots_newly_refused,
+      adapt_slots_total: delta.adapt_slots_total,
+    }).toEqual({
+      fit_before: v3.filter((v) => v.verdict === 'FIT').length,
+      fit_baseline: fit.length,
+      new_body_refusals: lost,
+      new_body_refusals_since_baseline: refused.length,
+      headlines_newly_suppressed: headlines(v3, v4),
+      headlines_newly_served: headlines(v4, v3),
+      adapt_slots_newly_refused: slots(v4) - slots(v3),
+      adapt_slots_total: v4.reduce(
+        (n, v) => n + (v.refused?.length ?? 0) + (v.served?.length ?? 0),
+        0,
+      ),
+    });
   });
 });

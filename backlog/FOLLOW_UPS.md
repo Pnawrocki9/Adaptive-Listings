@@ -57207,3 +57207,69 @@ does a lower-case name after `ul.`, `calle`).
 The review round of 2026-10-31 also bounded `clauseBefore` and the list walk of the shared amenity
 rule to a slice of the text: both read the whole prefix per match, which was the larger share of the
 cost on saturated text. No verdict moved by it.
+
+**Slice 5, streets (2026-11-01, narrowed after a review with a live judge sample).** `claims-v10`.
+Of the three parts in the table, only the first shipped.
+
+A street the listing does not state is refused as `unsupported_street` on both paths and in
+`checkTypedClaims` (`kind: 'street'`), deterministic and final. A capital is no signal, so a claim
+needs one of three: a house number (`12 Elm St`), a street prefix with a real name
+(`przy ul. Złotej`, `calle Mayor`, `c/ Serrano`; `plac`, `plaza`, `paseo` also need a locating
+word), or a locating word in sentence case (`on Abbey Road`, `at Collins Ave`), with nothing after
+the street that goes on naming something else. Same line only. If it cannot tell, it passes. The
+listing's own street passes in any form: the listed address is blanked first, every word of an
+address field is a name in any case, hyphens split, apostrophes go, an abbreviation ending in a dot
+decides nothing, a Polish case form or the same first four folded letters counts (`calle Provenza`
+on `Carrer de Provença 123`, `C/ Sta. Clara` on `Calle Santa Clara`). `John Paul II Avenue` on
+`al. Jana Pawła II` passes, by its "II".
+
+T7 grew and stands on its own: adjectives as names (`Piotrkowskiej`, `Dolnym`, `Piastowskim`),
+plural places (`Katowicach`, `Krzykach`), `Wrocławiu`, `Poznaniu`, `Łodzi`, `Gdyni`, `á` read as `a`
+(`Maladze`), a lower-case address field (`przy Piotrkowskiej` on `ul. piotrkowska 120`), and rows
+for `Wisła`, `Valencian`, `FL`. These loosen the headline rule and the adapt name rule.
+
+**Dropped, with the numbers.**
+
+- The judge on names in a body. Live, at real settings, over 96 calls: false on all 21 invented
+  places, but true on only 4 of 24 harmless or own-place cases (`Mieszkanie na Krzykach` on
+  "Wrocław, Krzyki", `Apartament w Maladze` on "Marbella, Málaga", `W dawnej Dzielnicy Żydowskiej`,
+  `Lovely in Spring`, `na Airbnb` were all refused). That breaks name forms, ESC-089 and the "dawna"
+  ruling. 5.2 % of replies were cut off before any JSON, which refused the body and set the hour
+  guard. A rewritten prompt reached 11 of 24. No rule on recorded text fired on 176 cases, so no
+  measured benefit goes. `Located in Miami` on a body stays a limit, the one this slice set out to
+  close.
+- The first word of the adapt `headline` slot. Its verdicts were right, but most ordinary openers
+  (`Gorgeous`, `Lovely`, `Piękne`) cost a judge call of about 570 ms against about 2.2 s for the
+  generation, a judge failure drops the slot, and each counts against the budget of 3 flags. Nothing
+  fired on 84 slots. The exemption stays, and `Miami flat` in that slot stays a limit.
+
+**Replay `verdicts.v4`.** 0 new body refusals, 5 of 57 since the baseline (8.8 %), 0 headlines
+suppressed, 2 served that were suppressed (`w Poznaniu`, `we Wrocławiu`, both the listing's own
+town), 0 of 84 slots, 0 un-refused. The live recording of slice 6, by the same rules: 0 new body
+refusals of 55 FIT, 0 slots, 1 headline served that was suppressed (`w Katowicach Załężu`, true). 5
+and 3 street claims read, all the listing's own. Parity corpus v27: stamp only.
+
+**What these numbers do not say.** The street rule never refused anything on 176 recorded cases, so
+the budget is met and its precision is unmeasured; the pins are review cases and constructed
+sentences. The review's false refusals on the earlier version show how much a rule like this depends
+on them. Served invented names of the kind the judge would have caught are not reduced by this
+slice.
+
+**Declared limits of slice 5.** Wrong copy that still passes, pinned by name in `KNOWN_LIMITS` of
+`apps/control-plane/src/lib/__tests__/claim-streets-names.follow1311.test.ts`:
+
+- No signal: `A short walk to Beach Road`; title case: `Beautiful Home on Ocean Drive`; a square
+  with no locating word: `Plac Zbawiciela`, `Plaza Mayor`; a noun after the street:
+  `on Abbey Road studios`.
+- The name: `High Street`, `Main Street` (generic); `Palm Street` on Palm Coast (one word found);
+  `Blackpool Road` on Blackberry (the same first four letters); `Blackberry Lane` for Blackberry Pl
+  (the type is not compared); `On Beach Road` on "Beach 200 m." (a sentence opening has a capital).
+- Not read: `12 bath road`, `przy ul. parterowa` (lower case); `42nd Street` (no name word);
+  `Palm Coast Parkway` (outside the closed words); `Ocean Way`, `Bath Place`, `Bath St.` (ambiguous
+  without a number).
+- Body names: `Located in Miami`, `Mieszkanie w Gdyni`, `Piso en Granada`: no rule at all.
+- Adapt headline: the first word is exempt, as before.
+
+Refused although it may be fine, pinned: `A flat on Golden Road` for "ul. Złota" (a translation with
+no shared letters), `A flat near Wall Street` (a figure of speech). Slice 4's pins of `South Street`
+and `Calle Solar` now state those streets on the listing: an unlisted one is a street claim here.

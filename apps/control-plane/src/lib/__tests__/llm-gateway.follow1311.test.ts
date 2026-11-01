@@ -137,4 +137,23 @@ describe('FOLLOW-1311 on /api/adapt', () => {
     expect(served).toBe(false);
     expect(judged).toBe(false);
   });
+
+  it('slice 5: an unlisted street is final on a slot, no judge call overrules it', async () => {
+    expect(await run(EN, 'Home on Ocean Drive with a mature garden', true)).toEqual({
+      served: false,
+      judged: false,
+    });
+  });
+
+  it('slice 5: the first word of a headline keeps its exemption', async () => {
+    expect(await run(EN, 'Gorgeous home with a mature garden')).toEqual({
+      served: true,
+      judged: false,
+    });
+  });
+
+  it('slice 5: a form of a lower-case address field needs no judge call', async () => {
+    const ctx = { listing_title: 'Lokal', listing_location: 'ul. piotrkowska 120, łódź' };
+    expect(await run(ctx, 'Lokal przy Piotrkowskiej')).toEqual({ served: true, judged: false });
+  });
 });

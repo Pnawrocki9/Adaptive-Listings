@@ -1,0 +1,29 @@
+{
+  "ticket": "FOLLOW-1311 slice 5",
+  "classified_by": "ml-engineer, single rater, by hand against the listing",
+  "fit_before": 52,
+  "fit_baseline": 57,
+  "new_body_refusals": 0,
+  "new_body_refusals_since_baseline": 5,
+  "true_positives": 0,
+  "headlines_newly_suppressed": 0,
+  "headlines_newly_served": 2,
+  "adapt_slots_newly_refused": 0,
+  "adapt_slots_total": 84,
+  "un_refused": 0,
+  "note": "No new refusal: no frozen text states an unlisted street with a signal, and only the listing's own were read. Zero is the budget (slices 3 and 4 spent 5 of 57), and it says nothing about the precision of the street rule, because it never fired. The two moved cases are loosenings of T7.",
+  "moved": {
+    "description.poz.student_parent.pl": {
+      "from": "headline suppressed hallucinated_proper_name",
+      "to": "headline served",
+      "classified": "true",
+      "why": "\"…ul. Kraszewskiego w Poznaniu\" on \"ul. Kraszewskiego, Poznań, Jeżyce\": the listing's own town, inflected. T7 grew."
+    },
+    "description.wro.diaspora_buyer.pl": {
+      "from": "headline suppressed hallucinated_proper_name",
+      "to": "headline served",
+      "classified": "true",
+      "why": "\"…na Jagodnie we Wrocławiu, rynek pierwotny\" on \"Jagodno, Wrocław, dolnośląskie\": the listing's own town, inflected."
+    }
+  }
+}

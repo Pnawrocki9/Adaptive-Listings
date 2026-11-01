@@ -2,10 +2,11 @@
 /**
  * FOLLOW-1311: replay the frozen model outputs (`fixtures/raw.v1.jsonl`) through the REAL
  * `generateDescription` and `callLlmGateway`, with only the SDK and the sinks replaced, and compare
- * every verdict with the current frozen verdicts, `fixtures/verdicts.v4.jsonl`.
+ * every verdict with the current frozen verdicts, `fixtures/verdicts.v5.jsonl`.
  * `verdicts.v1.jsonl` stays as the baseline every target is measured from, and
  * `verdicts.v2.delta.json`, `verdicts.v3.delta.json` and `verdicts.v4.delta.json` classify, by hand,
- * every case that moved from v1 to v2, from v2 to v3 and from v3 to v4.
+ * every case that moved from v1 to v2, from v2 to v3 and from v3 to v4. `verdicts.v5.delta.json`
+ * records that v5 (FOLLOW-1431, `claims-v11`) moved none.
  *
  * A change that moves no verdict leaves this green. A change that does move one must show it: run
  * with `CLAIM_REPLAY_OUT=<file>` and diff that file against the frozen verdicts, then classify every
@@ -128,7 +129,7 @@ describe('FOLLOW-1311 claim baseline replay', () => {
       writeFileSync(process.env.CLAIM_REPLAY_OUT, `${lines.join('\n')}\n`);
       return;
     }
-    expect(lines).toEqual(readLines('verdicts.v4.jsonl'));
+    expect(lines).toEqual(readLines('verdicts.v5.jsonl'));
   });
 
   it('v2 moves only the classified cases, and the refusal target is computed from the verdicts', () => {
@@ -350,5 +351,14 @@ describe('FOLLOW-1311 claim baseline replay', () => {
         0,
       ),
     });
+  });
+
+  it('v5 moves nothing: claims-v11 is read on no frozen text, and that is no evidence of precision', () => {
+    const delta = JSON.parse(
+      readFileSync(path.join(FIXTURES, 'verdicts.v5.delta.json'), 'utf8'),
+    ) as { moved: Record<string, unknown>; new_body_refusals: number };
+    expect(readLines('verdicts.v5.jsonl')).toEqual(readLines('verdicts.v4.jsonl'));
+    expect(delta.moved).toEqual({});
+    expect(delta.new_body_refusals).toBe(0);
   });
 });

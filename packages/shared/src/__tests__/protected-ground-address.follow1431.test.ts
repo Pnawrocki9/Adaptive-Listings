@@ -5,7 +5,7 @@
  * nothing new: the listing's own address has no exemption here, which is FOLLOW-1431's open limit.
  */
 import { describe, expect, it } from 'vitest';
-import { describesResidentsByProtectedGround } from '../playbooks/traits';
+import { describesResidentsByProtectedGround } from '../playbooks/traits.js';
 
 const RECORDED: [string, string, boolean, boolean][] = [
   ['The memorial at Treblinka.', 'ul. Polna 3, 08-140 Treblinka', true, true],

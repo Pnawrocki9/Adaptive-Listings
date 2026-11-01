@@ -204,7 +204,7 @@ describe('describesResidentsByProtectedGround — race, ethnic origin, religion 
     }
     const strings = served.filter(Boolean);
     expect(strings.length).toBeGreaterThan(100);
-    expect(strings.filter(describesResidentsByProtectedGround)).toEqual([]);
+    expect(strings.filter((s) => describesResidentsByProtectedGround(s))).toEqual([]);
   });
 });
 

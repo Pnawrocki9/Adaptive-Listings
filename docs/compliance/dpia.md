@@ -1,6 +1,6 @@
 # Data Protection Impact Assessment (DPIA)
 
-**Document ID:** ESTALARA-DPIA-001 **Version:** 2.26 **Date:** 2026-10-20 **Authors:** Time2Show,
+**Document ID:** ESTALARA-DPIA-001 **Version:** 2.27 **Date:** 2026-11-02 **Authors:** Time2Show,
 Inc. — Compliance Engineering **DPO Review Status:** External DPO appointment in progress
 (DPO-as-a-Service provider). Placeholder contact: compliance@estalara.com **Next Mandatory Review
 Date:** 2027-05-15 (annual) or upon any material change to processing described herein (see
@@ -145,9 +145,16 @@ determined at session initialization:
 - **Mode B — Consented Mode:** Tenant collects explicit user consent via the Estalara Consent Helper
   or their own CMP, and passes a verified consent record to the Estalara backend via API. The
   ninety-day cross-session identifier `__estalara_xid__` is enabled — a random UUID in
-  `localStorage`, **not** a behavioral fingerprint (§13.2 carries the mechanism and its current
-  transmission gap). Cross-listing journeys within a declared partner group are permitted. Sessions
-  in Mode B contribute to global archetype training (with differential privacy protections applied).
+  `localStorage`, **not** a behavioral fingerprint (§13.2 carries the mechanism and what leaves the
+  browser). Cross-listing journeys within a declared partner group are permitted. Sessions in Mode B
+  contribute to global archetype training (with differential privacy protections applied).
+  **Correction (v2.27, FOLLOW-1316):** _"passes a verified consent record to the Estalara backend
+  via API"_ does not describe the SDK banner. The banner's decision is held in
+  `localStorage['estalara_consent']` and the accepted text version in
+  `localStorage['estalara_consent_text_version']`. The server receives one `consent.granted` event
+  in ClickHouse `events` (payload `language`, `method`, `text_version`), deleted at the period of
+  `CONSENT_LOG_RETENTION_DAYS`; the banner writes no `consent_records` row. For an anonymous buyer
+  the server cannot check consent: it takes the `consent_state` the SDK sends.
 - **Mode C — Legitimate Interest Mode:** Narrow use cases only, such as duplicate listing spam
   detection. Not permitted for marketing personalization per EDPB Guidelines on legitimate interests
   and CNIL enforcement guidance. This mode is tenant-configurable but subject to a documented
@@ -196,10 +203,15 @@ is **not** a claim that two visits by the same person can never be associated. T
 vectors present at `d9160da0`, each assessed in its own section, are:
 
 1. **`__estalara_xid__`** — a 90-day cross-session identifier in `localStorage`, written only after
-   consent is granted and erased on denial or withdrawal (§13.2). It is a random UUID, not a
-   fingerprint. It is **not currently transmitted anywhere** (FOLLOW-146), so today it creates no
-   server-side linkage; when FOLLOW-146 ships it will, by design and under the disclosure the
-   shipped banner already carries.
+   consent is granted and erased on denial or withdrawal, once any server copy is deleted (§13.2).
+   It is a random UUID, not a fingerprint. With the server flag `BUYER_PROFILE_ENABLED` off it is
+   transmitted nowhere. With the flag on, which today means localhost only (production is not
+   enabled, pending counsel), it travels in the POST body of `/api/adapt` and is the key of a
+   server-side profile, so it is then a deliberate link across visits (FOLLOW-1316, ESC-090). It is
+   on no event. Whether the shipped banner sentence covers that link is question L-1 for counsel;
+   this record does not assume it does. _Corrected v2.27: this item said the link would arrive
+   "under the disclosure the shipped banner already carries", which the design review
+   (`docs/compliance/FOLLOW-1316-design-review.md`, section 2) refuted._
 2. **`lead_id`** — for an authenticated visitor, the first 16 hex characters of
    `SHA-256(Keycloak user UUID)` (`deriveLeadId()`), attached to chat and live events (`lead_id` in
    `packages/shared/src/schemas/events/{chat,live}.ts`). This is a deterministic, durable,
@@ -231,25 +243,26 @@ read-only); `git show 852f5dee:packages/sdk/src/core/session.ts` (the original b
 
 ### 2.3 System Components
 
-| Component                | Technology                                         | Function                                                                                           | Data Processed                                                                                                                                                                                                                                                 |
-| ------------------------ | -------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| JavaScript SDK           | TypeScript 5 + Preact 10, Shadow DOM               | Behavioral signal capture; mints and stores the session identifier (§2.2.1)                        | Behavioral signals (scroll depth, clicks, listing views, dwell time); a randomly minted UUID v4 session id. **No device attribute is read for identification** — no canvas, AudioContext, WebGL, screen geometry, timezone or language                         |
-| Edge Ingest              | Cloudflare Workers (regions: fra/lhr/iad/dxb)      | Event validation, API-key auth (optional HMAC body signature, `apps/ingest/src/auth.ts`), batching | Behavioral event payloads, session_id (random UUID v4; historical rows carry the pre-`d9160da0` 64-hex digest — §2.2.1), tenant_id                                                                                                                             |
-| Event Bus                | Redpanda Cloud (Kafka-compatible)                  | Durable ordered delivery of behavioral events                                                      | Same as Edge Ingest                                                                                                                                                                                                                                            |
-| Intent Engine            | Modal (Python), current-gen Claude (Haiku)         | Intent extraction, embedding computation                                                           | Behavioral event sequence, session embedding vector                                                                                                                                                                                                            |
-| Session Embeddings Store | Supabase (Postgres 16) per-region                  | Per-session 1024-dim embedding + archetype match                                                   | session_id, tenant_id, embedding vector, matched archetype                                                                                                                                                                                                     |
-| Global Archetype Store   | Supabase + pgvector                                | Cross-tenant DP-aggregated archetype centroids                                                     | DP-anonymized embedding vectors; no session_id, no tenant_id                                                                                                                                                                                                   |
-| Adaptation Engine        | Modal (Python), current-gen Claude (Sonnet)        | Listing adaptation directive generation                                                            | Session embedding, archetype label, listing metadata                                                                                                                                                                                                           |
-| Decision API             | Next.js 15 Edge Runtime on Vercel                  | Returns JSON adaptation directives in real time                                                    | session_id, archetype, adaptation variant                                                                                                                                                                                                                      |
-| ClickHouse Cloud         | ClickHouse (event store)                           | Immutable adaptation decision log, analytics                                                       | session_id, archetype, directive type, holdout_group, timestamps                                                                                                                                                                                               |
-| Consent Records          | Supabase (Postgres 16)                             | Consent state storage                                                                              | session_id, consent_type, granted boolean, encrypted ip_address                                                                                                                                                                                                |
-| DSR Queue                | Control Plane API + Postgres                       | Data subject request processing                                                                    | DSR type, session*id (the subject key), requester email (OTP delivery; retained only as a SHA-256 `email_hash` in `dsr_audit_log`), optional lead_id, jurisdiction. *`fingerprint_hash` was named here in error and exists nowhere in the code — FOLLOW-1107\_ |
-| Control Plane            | Next.js 15 App Router on Vercel                    | Tenant dashboard, configuration, analytics, billing                                                | Tenant admin email, billing info, usage metrics                                                                                                                                                                                                                |
-| Cache                    | Upstash Redis (multi-region)                       | Session intent vector cache, adaptation cache                                                      | session_id → embedding vector (TTL-bounded)                                                                                                                                                                                                                    |
-| LLM Provider             | Anthropic API (current-gen Claude models)          | Intent extraction prompts, adaptation reasoning                                                    | Behavioral context strings; no direct PII per DPA                                                                                                                                                                                                              |
-| Embeddings Provider      | OpenAI API (text-embedding-3-small)                | 1024-dim embedding generation                                                                      | Behavioral signal text; no direct PII per DPA                                                                                                                                                                                                                  |
-| Error Tracking           | Sentry                                             | Error and performance monitoring                                                                   | Stack traces, request context. Redaction is partial and NOT uniform across apps — see §Sentry redaction scope (FOLLOW-739)                                                                                                                                     |
-| CRM Outcome Ingest       | Next.js 15 control plane (`POST /api/crm/outcome`) | Receive tenant CRM outcome labels via authenticated webhook; upsert into `conversion_labels`       | `prediction_id` (UUID), `outcome_class`, `label_source`, `lead_id` (pseudonymous), `outcome_raw` (JSONB, PII-stripped per DPA), `tenant_id`                                                                                                                    |
+| Component                | Technology                                         | Function                                                                                                                        | Data Processed                                                                                                                                                                                                                                                 |
+| ------------------------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| JavaScript SDK           | TypeScript 5 + Preact 10, Shadow DOM               | Behavioral signal capture; mints and stores the session identifier (§2.2.1)                                                     | Behavioral signals (scroll depth, clicks, listing views, dwell time); a randomly minted UUID v4 session id. **No device attribute is read for identification** — no canvas, AudioContext, WebGL, screen geometry, timezone or language                         |
+| Edge Ingest              | Cloudflare Workers (regions: fra/lhr/iad/dxb)      | Event validation, API-key auth (optional HMAC body signature, `apps/ingest/src/auth.ts`), batching                              | Behavioral event payloads, session_id (random UUID v4; historical rows carry the pre-`d9160da0` 64-hex digest — §2.2.1), tenant_id                                                                                                                             |
+| Event Bus                | Redpanda Cloud (Kafka-compatible)                  | Durable ordered delivery of behavioral events                                                                                   | Same as Edge Ingest                                                                                                                                                                                                                                            |
+| Intent Engine            | Modal (Python), current-gen Claude (Haiku)         | Intent extraction, embedding computation                                                                                        | Behavioral event sequence, session embedding vector                                                                                                                                                                                                            |
+| Session Embeddings Store | Supabase (Postgres 16) per-region                  | Per-session 1024-dim embedding + archetype match                                                                                | session_id, tenant_id, embedding vector, matched archetype                                                                                                                                                                                                     |
+| Global Archetype Store   | Supabase + pgvector                                | Cross-tenant DP-aggregated archetype centroids                                                                                  | DP-anonymized embedding vectors; no session_id, no tenant_id                                                                                                                                                                                                   |
+| Adaptation Engine        | Modal (Python), current-gen Claude (Sonnet)        | Listing adaptation directive generation                                                                                         | Session embedding, archetype label, listing metadata                                                                                                                                                                                                           |
+| Decision API             | Next.js 15 Edge Runtime on Vercel                  | Returns JSON adaptation directives in real time                                                                                 | session_id, archetype, adaptation variant. With `BUYER_PROFILE_ENABLED` on (localhost only): `xid`, `xid_created_at` and `archetype_source` in the POST body, none of them logged (§13.2)                                                                      |
+| Self-service profile API | Next.js 15 App Router on Vercel                    | `POST /api/profile/erase`, `/access`, `/portability` (FOLLOW-1316); routes deploy with the control plane whatever the flag says | `tenant_id`, `xid` in the POST body; the client address only as a SHA-256 quota key for 60 s; a `dsr_audit_log` row with no xid (§8)                                                                                                                           |
+| ClickHouse Cloud         | ClickHouse (event store)                           | Immutable adaptation decision log, analytics                                                                                    | session_id, archetype, directive type, holdout_group, timestamps                                                                                                                                                                                               |
+| Consent Records          | Supabase (Postgres 16)                             | Consent state storage                                                                                                           | session_id, consent_type, granted boolean, encrypted ip_address                                                                                                                                                                                                |
+| DSR Queue                | Control Plane API + Postgres                       | Data subject request processing                                                                                                 | DSR type, session*id (the subject key), requester email (OTP delivery; retained only as a SHA-256 `email_hash` in `dsr_audit_log`), optional lead_id, jurisdiction. *`fingerprint_hash` was named here in error and exists nowhere in the code — FOLLOW-1107\_ |
+| Control Plane            | Next.js 15 App Router on Vercel                    | Tenant dashboard, configuration, analytics, billing                                                                             | Tenant admin email, billing info, usage metrics                                                                                                                                                                                                                |
+| Cache                    | Upstash Redis (multi-region)                       | Session intent vector cache, adaptation cache; returning-buyer profile store (FOLLOW-1316, flag on, localhost only)             | session_id → embedding vector (TTL-bounded); `buyer_profile:{tenant_id}:{sha256(xid)}` → the §2.5 value; `buyer_profile_tombstone:…` hash-only; `buyer_profile_quota:{tenant_id}:{sha256(client IP)}`, 60 s                                                    |
+| LLM Provider             | Anthropic API (current-gen Claude models)          | Intent extraction prompts, adaptation reasoning                                                                                 | Behavioral context strings; no direct PII per DPA                                                                                                                                                                                                              |
+| Embeddings Provider      | OpenAI API (text-embedding-3-small)                | 1024-dim embedding generation                                                                                                   | Behavioral signal text; no direct PII per DPA                                                                                                                                                                                                                  |
+| Error Tracking           | Sentry                                             | Error and performance monitoring                                                                                                | Stack traces, request context. Redaction is partial and NOT uniform across apps — see §Sentry redaction scope (FOLLOW-739)                                                                                                                                     |
+| CRM Outcome Ingest       | Next.js 15 control plane (`POST /api/crm/outcome`) | Receive tenant CRM outcome labels via authenticated webhook; upsert into `conversion_labels`                                    | `prediction_id` (UUID), `outcome_class`, `label_source`, `lead_id` (pseudonymous), `outcome_raw` (JSONB, PII-stripped per DPA), `tenant_id`                                                                                                                    |
 
 References to "current-gen Claude models" reflect the operational practice of selecting Claude Haiku
 and Claude Sonnet at the model-tier level, with specific version selection (e.g., Claude Haiku 4.5,
@@ -292,42 +305,53 @@ switching providers, adding self-hosted inference, removing zero-retention claus
 11. Nightly batch job applies k-anonymity (k≥50) and Differential Privacy (ε≤2 per epoch) to
     aggregate session embeddings into global archetype centroids. Aggregation output contains no
     session_id, no tenant_id, no PII.
+12. _(Added v2.27, FOLLOW-1316. Runs only with `BUYER_PROFILE_ENABLED` on, which today means
+    localhost only; production is not enabled, pending counsel. See §13.2.)_ After the banner's
+    Accept, and only while `readSendableXid()` allows it, the SDK sends `xid` and `xid_created_at`
+    in the POST body of `/api/adapt`. A session with no qualifying signal of its own, in the
+    treatment arm, not opted out, is served the stored profile and is adapted from its first call. A
+    qualifying quiz or behaviour label writes the profile after the response.
 
 ### 2.5 Data Types and Retention
 
-| Data Type                                                  | Store                                                                        | Retention                                                                                                                                                                                                                                                                                                     | Basis                                                                                  |
-| ---------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Behavioral event payload (scroll, click, view)             | Redpanda (transient)                                                         | Session scope; purged after Intent Engine consumption                                                                                                                                                                                                                                                         | Processing necessity                                                                   |
-| Session identifier (`session_id`, random UUID v4 — §2.2.1) | Browser `sessionStorage`; ClickHouse `events`; Postgres `session_embeddings` | Browser: tab lifetime (cleared by the browser on tab close). ClickHouse `events`: 13 months, enforced (`0001_create_events.sql:46`). Postgres `session_embeddings`: 90 days declared — **UNENFORCED (FOLLOW-1113)**, the nightly TTL cron this row assumed does not exist in `apps/control-plane/vercel.json` | Processing necessity; ePrivacy 5(3)(b) — the exemption argument is open, see §4 Risk E |
-| Session embedding vector (1024-dim)                        | Postgres: `session_embeddings`                                               | 90 days from last active event — **UNENFORCED (FOLLOW-1113)**: no TTL cron exists; rows are removed today only by the DSR erasure cascade                                                                                                                                                                     | LI — intent matching                                                                   |
-| Archetype match and adaptation decisions                   | ClickHouse: `adaptation_decisions`                                           | 13 months (AI Act audit trail per Master Design H.2) — **UNENFORCED (FOLLOW-1110)**: the table has no TTL in production, so retention is currently indefinite (over-retention)                                                                                                                                | Legal obligation + LI                                                                  |
-| LLM call records                                           | ClickHouse: `llm_calls`                                                      | 13 months — **UNENFORCED (FOLLOW-1111)**: the table has no TTL in production                                                                                                                                                                                                                                  | Audit, model improvement                                                               |
-| Consent records                                            | Postgres: `consent_records`                                                  | 3 years from consent event                                                                                                                                                                                                                                                                                    | Legal obligation (Art. 6.1.c)                                                          |
-| DSR tokens                                                 | Postgres: `dsr_tokens`                                                       | 30 days from DSR resolution                                                                                                                                                                                                                                                                                   | Legal obligation                                                                       |
-| A/B bandit weights                                         | Postgres: `ab_bandit_weights`                                                | Retained (anonymized — no session_id)                                                                                                                                                                                                                                                                         | Legitimate interest                                                                    |
-| Global archetype embeddings                                | Postgres: `archetype_embeddings`                                             | Indefinite (no personal data post-DP-aggregation)                                                                                                                                                                                                                                                             | Legitimate interest                                                                    |
-| Tenant configuration and admin contact                     | Postgres: `tenants`, `users`                                                 | Contract duration + 7 years                                                                                                                                                                                                                                                                                   | Art. 6.1.b (contract)                                                                  |
-| Billing records                                            | Postgres + Stripe                                                            | Contract duration + 7 years                                                                                                                                                                                                                                                                                   | Legal obligation                                                                       |
-| Staff audit log                                            | Postgres: `staff_audit_log`                                                  | 7 years                                                                                                                                                                                                                                                                                                       | Legal obligation + Art. 6.1.c                                                          |
-| LLM prompt content (Anthropic)                             | Not retained by Anthropic per DPA                                            | Zero retention (DPA clause required)                                                                                                                                                                                                                                                                          | Processor DPA                                                                          |
-| CRM outcome labels (`conversion_labels`)                   | Postgres: `conversion_labels`                                                | 13 months from `labeled_at`, enforced by daily Vercel cron at `/api/internal/retention/conversion-labels` (FOLLOW-234 / PR #230, 2026-06-08)                                                                                                                                                                  | LI (model calibration + AI Act audit trail)                                            |
-| `quiz_completions`, `quiz_runs`                            | Postgres: `quiz_completions`; `quiz_runs` (H002, FOLLOW-1358)                | 13 months — enforced (FOLLOW-1364): daily `/api/cron/quiz-retention`, CEO ruling 2026-10-20                                                                                                                                                                                                                   | Consent (SDK banner); `quiz_runs` only on `consented`                                  |
+| Data Type                                                                              | Store                                                                              | Retention                                                                                                                                                                                                                                                                                                                 | Basis                                                                                  |
+| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Behavioral event payload (scroll, click, view)                                         | Redpanda (transient)                                                               | Session scope; purged after Intent Engine consumption                                                                                                                                                                                                                                                                     | Processing necessity                                                                   |
+| Session identifier (`session_id`, random UUID v4 — §2.2.1)                             | Browser `sessionStorage`; ClickHouse `events`; Postgres `session_embeddings`       | Browser: tab lifetime (cleared by the browser on tab close). ClickHouse `events`: 13 months, enforced (`0001_create_events.sql:46`). Postgres `session_embeddings`: 90 days declared — **UNENFORCED (FOLLOW-1113)**, the nightly TTL cron this row assumed does not exist in `apps/control-plane/vercel.json`             | Processing necessity; ePrivacy 5(3)(b) — the exemption argument is open, see §4 Risk E |
+| Session embedding vector (1024-dim)                                                    | Postgres: `session_embeddings`                                                     | 90 days from last active event — **UNENFORCED (FOLLOW-1113)**: no TTL cron exists; rows are removed today only by the DSR erasure cascade                                                                                                                                                                                 | LI — intent matching                                                                   |
+| Archetype match and adaptation decisions                                               | ClickHouse: `adaptation_decisions`                                                 | 13 months (AI Act audit trail per Master Design H.2) — **UNENFORCED (FOLLOW-1110)**: the table has no TTL in production, so retention is currently indefinite (over-retention)                                                                                                                                            | Legal obligation + LI                                                                  |
+| LLM call records                                                                       | ClickHouse: `llm_calls`                                                            | 13 months — **UNENFORCED (FOLLOW-1111)**: the table has no TTL in production                                                                                                                                                                                                                                              | Audit, model improvement                                                               |
+| Consent records                                                                        | Postgres: `consent_records`                                                        | 3 years from consent event                                                                                                                                                                                                                                                                                                | Legal obligation (Art. 6.1.c)                                                          |
+| DSR tokens                                                                             | Postgres: `dsr_tokens`                                                             | 30 days from DSR resolution                                                                                                                                                                                                                                                                                               | Legal obligation                                                                       |
+| A/B bandit weights                                                                     | Postgres: `ab_bandit_weights`                                                      | Retained (anonymized — no session_id)                                                                                                                                                                                                                                                                                     | Legitimate interest                                                                    |
+| Global archetype embeddings                                                            | Postgres: `archetype_embeddings`                                                   | Indefinite (no personal data post-DP-aggregation)                                                                                                                                                                                                                                                                         | Legitimate interest                                                                    |
+| Tenant configuration and admin contact                                                 | Postgres: `tenants`, `users`                                                       | Contract duration + 7 years                                                                                                                                                                                                                                                                                               | Art. 6.1.b (contract)                                                                  |
+| Billing records                                                                        | Postgres + Stripe                                                                  | Contract duration + 7 years                                                                                                                                                                                                                                                                                               | Legal obligation                                                                       |
+| Staff audit log                                                                        | Postgres: `staff_audit_log`                                                        | 7 years                                                                                                                                                                                                                                                                                                                   | Legal obligation + Art. 6.1.c                                                          |
+| LLM prompt content (Anthropic)                                                         | Not retained by Anthropic per DPA                                                  | Zero retention (DPA clause required)                                                                                                                                                                                                                                                                                      | Processor DPA                                                                          |
+| CRM outcome labels (`conversion_labels`)                                               | Postgres: `conversion_labels`                                                      | 13 months from `labeled_at`, enforced by daily Vercel cron at `/api/internal/retention/conversion-labels` (FOLLOW-234 / PR #230, 2026-06-08)                                                                                                                                                                              | LI (model calibration + AI Act audit trail)                                            |
+| `quiz_completions`, `quiz_runs`                                                        | Postgres: `quiz_completions`; `quiz_runs` (H002, FOLLOW-1358)                      | 13 months — enforced (FOLLOW-1364): daily `/api/cron/quiz-retention`, CEO ruling 2026-10-20                                                                                                                                                                                                                               | Consent (SDK banner); `quiz_runs` only on `consented`                                  |
+| Returning-buyer profile (FOLLOW-1316; flag on, localhost only; production not enabled) | Redis: `buyer_profile:{tenant_id}:{sha256(xid)}`                                   | Up to `XID_RETENTION_DAYS` (90), ending with the xid: `EXAT` at first write, `KEEPTTL` on overwrite, never extended by a read. Enforced by the store. Ended earlier by withdrawal, self-service erase or `/api/dsr/erase`. Value: `v`, `archetype`, `confidence`, `source`, optional `traits` from a four-item allow-list | Consent only (ESC-090 item 1)                                                          |
+| Erase tombstone (FOLLOW-1316)                                                          | Redis: `buyer_profile_tombstone:{tenant_id}:{sha256(xid)}`, value `1`              | 24 hours after a self-service erase; `XID_RETENTION_DAYS` days after `/api/dsr/erase`, because that browser is not told and keeps its id. Enforced by `EX`. A later erase never shortens a longer one                                                                                                                     | Keeps an erased profile erased; basis question with L-4                                |
+| Client-address quota key (FOLLOW-1316)                                                 | Redis: `buyer_profile_quota:{tenant_id}:{sha256(client IP)}`                       | 60 seconds, enforced by `EX`. Unsalted hash of the first `x-forwarded-for` value, or of `unknown`. Exists only on a `/api/profile/*` request                                                                                                                                                                              | Rate limit on the self-service routes; basis question with L-4                         |
+| Self-service audit rows (FOLLOW-1316)                                                  | ClickHouse: `dsr_audit_log`, `dsr_type` `buyer_profile_{erase,access,portability}` | **No TTL: the table has none (`infra/clickhouse/migrations/0009_dsr_audit_log.sql`).** One row per request; no xid or hash of it, `session_id` empty, `email_hash` the SHA-256 of an empty string                                                                                                                         | Accountability                                                                         |
+| `estalara_consent_text_version` and the xid's `sent` and `lead` fields                 | Browser `localStorage`                                                             | Text version: until a denial or withdrawal erases it. `sent`, `lead`: inside the `__estalara_xid__` entry, gone with it, at most 90 days. `lead` is the 16-hex lead id, which is otherwise sessionStorage-only                                                                                                            | Consent                                                                                |
 
 ### 2.6 Third-Party Processors
 
-| Processor        | Role                                           | Data Category                                                                                                        | DPF Status                                         | DPA Status                                           |
-| ---------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------- |
-| Anthropic        | LLM inference (current-gen Claude models)      | Behavioral context prompts (no PII)                                                                                  | Verified annually at dataprivacyframework.gov/list | DPA in place — zero-retention clause                 |
-| OpenAI           | Embedding computation (text-embedding-3-small) | Behavioral context text (no PII)                                                                                     | Verified annually at dataprivacyframework.gov/list | DPA in place — zero-retention clause                 |
-| Cloudflare       | Edge ingest, CDN, Workers                      | Event payloads, session_id, IP address (transient)                                                                   | Certified (EU-U.S. DPF + UK Extension)             | DPA in place (Cloudflare Enterprise DPA)             |
-| Supabase         | Postgres (per-region projects)                 | All Postgres tables listed in 2.5                                                                                    | Verified annually at dataprivacyframework.gov/list | DPA in place — per-region projects (EU, US, UK, UAE) |
-| ClickHouse Cloud | Event store                                    | adaptation_decisions, llm_calls                                                                                      | Verified annually at dataprivacyframework.gov/list | DPA in place                                         |
-| Upstash          | Redis cache (multi-region)                     | Session intent vectors (TTL-bounded)                                                                                 | Verified annually at dataprivacyframework.gov/list | DPA in place                                         |
-| Modal            | ML compute (serverless)                        | Embedding computation, archetype update jobs                                                                         | Verified annually at dataprivacyframework.gov/list | DPA in place                                         |
-| Redpanda Cloud   | Event bus                                      | Behavioral event payloads (transient)                                                                                | N/A (EU instance)                                  | DPA in place                                         |
-| Vercel           | Control plane hosting                          | Tenant admin sessions, dashboard traffic; pre-consent static-asset serving to visitor browsers (transient IP — §2.8) | Certified (EU-U.S. DPF)                            | DPA in place (Vercel DPA)                            |
-| Sentry           | Error and performance tracking                 | Stack traces, request context (see redaction note)                                                                   | Verified annually at dataprivacyframework.gov/list | DPA in place (Sentry DPA)                            |
-| Stripe           | Billing and payment processing                 | Tenant billing details, invoices                                                                                     | Verified annually at dataprivacyframework.gov/list | DPA in place (Stripe DPA)                            |
+| Processor        | Role                                           | Data Category                                                                                                                                                                               | DPF Status                                         | DPA Status                                           |
+| ---------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------- |
+| Anthropic        | LLM inference (current-gen Claude models)      | Behavioral context prompts (no PII)                                                                                                                                                         | Verified annually at dataprivacyframework.gov/list | DPA in place — zero-retention clause                 |
+| OpenAI           | Embedding computation (text-embedding-3-small) | Behavioral context text (no PII)                                                                                                                                                            | Verified annually at dataprivacyframework.gov/list | DPA in place — zero-retention clause                 |
+| Cloudflare       | Edge ingest, CDN, Workers                      | Event payloads, session_id, IP address (transient)                                                                                                                                          | Certified (EU-U.S. DPF + UK Extension)             | DPA in place (Cloudflare Enterprise DPA)             |
+| Supabase         | Postgres (per-region projects)                 | All Postgres tables listed in 2.5                                                                                                                                                           | Verified annually at dataprivacyframework.gov/list | DPA in place — per-region projects (EU, US, UK, UAE) |
+| ClickHouse Cloud | Event store                                    | adaptation_decisions, llm_calls                                                                                                                                                             | Verified annually at dataprivacyframework.gov/list | DPA in place                                         |
+| Upstash          | Redis cache (multi-region)                     | Session intent vectors (TTL-bounded); with FOLLOW-1316 enabled, the §2.5 profile, tombstone and quota keys. **Not enabled in production: the production region is unconfirmed (§4 Risk B)** | Verified annually at dataprivacyframework.gov/list | DPA in place                                         |
+| Modal            | ML compute (serverless)                        | Embedding computation, archetype update jobs                                                                                                                                                | Verified annually at dataprivacyframework.gov/list | DPA in place                                         |
+| Redpanda Cloud   | Event bus                                      | Behavioral event payloads (transient)                                                                                                                                                       | N/A (EU instance)                                  | DPA in place                                         |
+| Vercel           | Control plane hosting                          | Tenant admin sessions, dashboard traffic; pre-consent static-asset serving to visitor browsers (transient IP — §2.8)                                                                        | Certified (EU-U.S. DPF)                            | DPA in place (Vercel DPA)                            |
+| Sentry           | Error and performance tracking                 | Stack traces, request context (see redaction note)                                                                                                                                          | Verified annually at dataprivacyframework.gov/list | DPA in place (Sentry DPA)                            |
+| Stripe           | Billing and payment processing                 | Tenant billing details, invoices                                                                                                                                                            | Verified annually at dataprivacyframework.gov/list | DPA in place (Stripe DPA)                            |
 
 **Transfer mechanism layering**: Where a US-based sub-processor is DPF-certified, DPF is the primary
 transfer mechanism for EU→US flows. SCCs (Module 2 Controller-to-Processor) and a Transfer Impact
@@ -722,6 +746,13 @@ purpose (c), within the single tenant (no cross-tenant aggregation is involved);
 purpose (an Engagement Score purpose previously listed here was never implemented and was removed in
 v2.22, FOLLOW-1268).
 
+**Returning-buyer continuity (added v2.27, FOLLOW-1316, ESC-090).** With `BUYER_PROFILE_ENABLED` on,
+which today means localhost only, objective (b) extends to a later visit of the same browser: a
+consented buyer's inferred archetype is stored for up to 90 days under `sha256(xid)` and restored on
+that visit. It serves that and nothing else. In particular, it provides **no cross-session
+conversion linkage**: the xid is on no event and lift stays per session (ESC-090 item 4), so purpose
+(b) of the pre-v2.27 §13.2 text is not pursued. Lawful basis: consent only (ESC-090 item 1).
+
 **Platform-wide consent umbrella (CEO decision 2026-06-21 — FOLLOW-373):** For the app.estalara.com
 pilot, Adaptive-Listings owns the full consent layer for the entire Estalara platform. Consent is
 mandatory at app.estalara.com registration; without granting consent the investor cannot register or
@@ -796,6 +827,14 @@ The following measures implement data minimization as required by GDPR Article 5
   exists in the SDK, and this bullet previously asserted one. What minimisation this delivers, and
   the three linkage vectors it does not close (`__estalara_xid__`, `lead_id`, network/behavioural
   metadata), are stated in §2.2.1; they are not restated here as guarantees.
+- **Returning-buyer profile (FOLLOW-1316; flag on, localhost only):** a strict five-field schema
+  (`StoredBuyerProfileSchema`, `apps/control-plane/src/lib/buyer-profile-store.ts`) with unknown
+  keys refused. `neutral`, `diaspora_buyer` and `golden_visa_buyer` are never written; of the traits
+  only `premium`, `works_from_home`, `seasoned_investor` and `will_let` are; a label the chat prior
+  moved writes nothing. No free text, intent dimensions, probability map, answers, session ids, lead
+  id, listing ids, IP or user agent is in the value. The key holds a SHA-256 of the xid, so a store
+  dump yields no usable credential. There is deliberately no mapping from an xid to session ids,
+  which also limits what withdrawal can reach (§8). A holdout-arm xid is never read or written.
 - **No directly identifying fields in event schema:** The Estalara ingest Zod schema enforces a PII
   blocklist. Fields containing email, name, phone, or national identification patterns are rejected
   at the Edge Ingest layer. The schema is validated in CI.
@@ -833,7 +872,10 @@ Behavioral data is used only for listing personalization and archetype model imp
 never used for: targeted advertising outside the tenant website; credit scoring; employment
 decisions; insurance underwriting; political profiling; or any purpose beyond real estate listing
 presentation optimization. Tenant DPAs prohibit secondary use. Anthropic and OpenAI DPAs include
-zero-retention clauses for prompt content.
+zero-retention clauses for prompt content. The returning-buyer profile (FOLLOW-1316) is read only by
+`/api/adapt`, the self-service profile routes and `/api/dsr/erase`; analytics, lead ranking, agent
+summaries and admin do not import its store (`buyer-profile-store.importers.test.ts`), and it is not
+transferred under §H.8.
 
 ---
 
@@ -861,8 +903,20 @@ device entropy and is not re-derivable (§2.2.1), so the specific vector this ri
 — matching an Estalara identifier against a browser-fingerprinting database — is closed at the
 identifier layer. What remains is correlation on the **payload**: behavioural sequences, listing
 identifiers and timing, plus the source IP visible to the edge, plus the two deliberate durable keys
-(`__estalara_xid__` once FOLLOW-146 ships, and `lead_id` for authenticated visitors). Nothing in the
-identifier change reduces those.
+(`__estalara_xid__` where `BUYER_PROFILE_ENABLED` is on, and `lead_id` for authenticated visitors).
+Nothing in the identifier change reduces those.
+
+**The returning-buyer profile adds two exposures (FOLLOW-1316; flag on, localhost only).** (1) **The
+xid is a bearer credential held in `localStorage`.** The API key and its HMAC are public by design
+in a browser SDK, so any script on the host page that can read the key can read or erase that
+browser's profile through `/api/profile/*`. (2) **A shared computer.** Consent and profile belong to
+the browser, not to a person. A second person who never saw the banner is served the first person's
+archetype, and their activity can overwrite it. Copy for `family_buyer` or `retiree_relocator` can
+reveal something to another member of a household. What the code does about it: four traits only, no
+text saying a buyer was recognised, a withdrawal control, and no send when the logged-in lead
+differs from the one bound to the id. What it does not do: a logged-out session on the same browser
+still sends the id, and either person's withdrawal deletes the profile and denies consent for the
+whole browser. Whether one person's consent can carry this is question L-5.
 
 **Historical half (rows minted before `d9160da0`), and it is the larger one today.** Every event row
 written before 2026-08-24 carries the previous identifier: an unkeyed SHA-256 over four browser
@@ -940,6 +994,12 @@ because pseudonymous data is personal data, the transfer remains subject to GDPR
   blocklist at ingest).
 - **UK IDTA** executed for UK-to-US transfers where the sub-processor does not participate in the UK
   Extension to the EU-U.S. DPF.
+- **Returning-buyer profile (FOLLOW-1316):** ROPA Appendix A records Upstash as United States,
+  multi-region. A 24-hour key and a 90-day profile are different weighings, so the profile is **not
+  enabled in production** until the production database is confirmed EU-only, which cannot be
+  verified from this repository, or the H003 Postgres table replaces
+  `apps/control-plane/src/lib/buyer-profile-store.ts` (ESC-090 item 1; `CTO_HANDOVER.md` section 4
+  row 20). The rating below does not cover this flow.
 - **UAE data**: LLM inference uses the nearest available Bedrock region (eu-central-1 for MVP); UAE
   event data remains in Cloudflare dxb / AWS me-central-1 and is not transferred except as
   DP-anonymized archetype vectors.
@@ -1055,6 +1115,11 @@ tenant onboarding.
 - External DPO (once appointed) will engage proactively with UODO (as Lead Supervisory Authority),
   ICO, and CNIL for informal guidance on the Mode A strictly necessary analysis.
 
+**`__estalara_xid__` is outside the Mode A argument (added v2.27, FOLLOW-1316).** It is stored in
+`localStorage`, read back on every send and, with the flag on, sent to a server. No strictly
+necessary exemption is claimed for it. It is written only after the banner's Accept. Whether that
+Accept is sufficient for the server-side profile is L-1 and L-2.
+
 **Residual Likelihood:** Low-Medium. **Residual Severity:** High. **Residual Risk:** MEDIUM (ORANGE
 band). This risk is flagged for ongoing monitoring. It does not constitute a "High" residual risk
 blocking the current hybrid pilot deployment because the shipped SDK obtains consent through the
@@ -1070,13 +1135,14 @@ current pilot cohort.
 
 ## 5. Mitigations and Residual Risk Summary
 
-| Risk                         | Residual Likelihood                          | Residual Severity | Residual Risk                                                                                  | Production Launch Blocker?                                                               |
-| ---------------------------- | -------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| A — Re-identification        | Low (forward) / Medium (pre-`d9160da0` rows) | Medium            | LOW-MEDIUM (GREEN-YELLOW) forward; MEDIUM (YELLOW) historical until FOLLOW-1110/1111/1112 land | No                                                                                       |
-| B — Cross-border transfer    | Low-Medium                                   | Low-Medium        | LOW (GREEN-YELLOW)                                                                             | No                                                                                       |
-| C — Anthropic data retention | Low                                          | Low-Medium        | LOW (GREEN)                                                                                    | No                                                                                       |
-| D — Cross-tenant data leak   | Very Low                                     | High              | LOW (GREEN)                                                                                    | No                                                                                       |
-| E — Regulatory enforcement   | Low-Medium                                   | High              | MEDIUM (ORANGE)                                                                                | No (Mode B fallback available; external DPO review required before scaling pilot cohort) |
+| Risk                                      | Residual Likelihood                          | Residual Severity | Residual Risk                                                                                                      | Production Launch Blocker?                                                                                           |
+| ----------------------------------------- | -------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| A — Re-identification                     | Low (forward) / Medium (pre-`d9160da0` rows) | Medium            | LOW-MEDIUM (GREEN-YELLOW) forward; MEDIUM (YELLOW) historical until FOLLOW-1110/1111/1112 land                     | No                                                                                                                   |
+| B — Cross-border transfer                 | Low-Medium                                   | Low-Medium        | LOW (GREEN-YELLOW)                                                                                                 | No                                                                                                                   |
+| C — Anthropic data retention              | Low                                          | Low-Medium        | LOW (GREEN)                                                                                                        | No                                                                                                                   |
+| D — Cross-tenant data leak                | Very Low                                     | High              | LOW (GREEN)                                                                                                        | No                                                                                                                   |
+| E — Regulatory enforcement                | Low-Medium                                   | High              | MEDIUM (ORANGE)                                                                                                    | No (Mode B fallback available; external DPO review required before scaling pilot cohort)                             |
+| F — Returning-buyer profile (FOLLOW-1316) | Not rated                                    | Not rated         | Not rated: the rating waits for counsel (L-1 to L-6) and the DPO. No real data subject is in the flow on localhost | **Yes, for enabling it in production** (`docs/compliance/FOLLOW-1316-signed-review.md`, section 8). No for localhost |
 
 **Overall Residual Risk Assessment:** MEDIUM, driven primarily by Risk E. The overall assessment
 does not reach HIGH. No risks rated HIGH residual risk are present. Supervisory authority
@@ -1310,6 +1376,18 @@ The three consent modes described in Section 2.2 implement the following consent
    seven (7) days, and a deletion request is queued for cascade execution per the DSR workflow
    (Section 8).
 
+**Items 2, 5 and 6 checked against the code (v2.27, FOLLOW-1316).** _Item 2:_ the only code that
+reads `navigator.globalPrivacyControl` is `readSendableXid()` in `packages/sdk/src/core/session.ts`,
+where it stops the xid being sent. That is all this feature makes true; the mode lock item 2
+describes has no implementing code, and FOLLOW-1438 owns that claim. _Item 5:_ **no shipped code
+does this for the SDK banner.** `estalara_consent` has no expiry and nothing reads an `expired_at`;
+a grant lasts until the buyer changes it or clears the browser. What expires at 90 days is the xid.
+A recorded text version below `MIN_PROFILE_TEXT_VERSION` re-shows the banner; a grant with no
+recorded version is not re-asked and sends no xid. _Item 6:_ **no shipped code performs the 24-hour
+downgrade, the seven-day quarantine or a queued cascade.** The withdrawal that exists is the SDK
+control described in §13.2. Items 5 and 6 are left in place as a statement of intent, not of
+behaviour.
+
 **Implementation reference:** TICKET-041 (SDK consent banner) implements the user-facing consent
 collection flow. TICKET-GDPR-004 implements the consent state propagation from SDK through ingest to
 Decision API.
@@ -1343,6 +1421,27 @@ is one checkbox click. **This mailbox is an operator commitment: it must be moni
 withdrawal requests must be actioned inside the SLA below.** Texts served under
 `platform-v1.3-2026-06-21` and earlier named no concrete address at all ("the agency's DSR contact")
 — a defect recorded in `PRIVACY_NOTICE_TEMPLATE.md` §6.1 and closed by the same bump.
+
+**Returning-buyer profile — what exists and what a buyer can reach (added v2.27, FOLLOW-1316; flag
+on, localhost only; production not enabled).** The buyer has no account and no way to know a session
+id, so holding the xid is the proof. Three routes take `{ tenant_id, xid }` in a signed POST body:
+`POST /api/profile/erase`, `/api/profile/access` and `/api/profile/portability`
+(`apps/control-plane/src/lib/buyer-profile-route.ts`). They work in any consent state and with the
+flag off. **From the product interface a buyer can reach only the erase**, through the withdrawal
+control or the banner's Decline. **Nothing in the SDK calls `/access` or `/portability`, so a buyer
+cannot use them today.** `POST /api/dsr/erase` takes an optional body `xid`, awaited inline before
+the OTP is spent, and reports `buyer_profile_erasure`; a store failure answers 503 and the OTP stays
+valid. `POST /api/dsr/initiate` still refuses every caller (FOLLOW-1308, FOLLOW-1279), so that route
+is reachable only from a row seeded by hand, as AC(9)'s evidence states. `GET /api/dsr/access` and
+`/portability` do not read an xid; FOLLOW-1308 owns that by written amendment.
+
+**What withdrawal does not reach.** There is deliberately no mapping from an xid to session ids. So
+withdrawal deletes the profile and the browser's own state, and it cannot locate `quiz_runs` and
+`quiz_completions` rows from earlier tabs (ROPA Activity 17, consent basis, 13 months), `events` or
+`adaptation_decisions` rows. Those age out on their own schedules. Whether Art. 17(1)(b) requires
+more is L-4. No text may say a withdrawal removes "all your data". The self-service routes leave a
+`dsr_audit_log` row with no xid and no TTL; a withdrawal is logged as `consent.denied` with
+`method: 'banner'`, the same as a banner Decline, so the log cannot tell them apart.
 
 **DSR workflow (tenant-mediated — the path for embed-surface visitors and for Art. 15/17/20
 requests):**
@@ -1573,6 +1672,7 @@ to the stable presence of the CEO who directs business operations from Poland).
 | 2.24    | 2026-10-19 | Backend Engineering    | **FOLLOW-1358 (plan Faza Q package Q3, ESC-086 items 2 and 6) — new store `quiz_runs`.** §8 step 6 gains a dated note: the Postgres erase cascade and the step 5 access/portability disclosure cover `quiz_runs` (one row per quiz shown, `POST /api/quiz/run`, handover SQL H002) on (tenant_id, session_id); a database without H002 is treated as holding no rows (42P01 tolerated for this table only). Pseudonymous only; written under profiling consent, never on §H.9 opt-out; retention = `quiz_completions` (no enforced TTL for either — flagged). ROPA v2.19 Activity 17. Compliance-engineer review 2026-10-20: APPROVE WITH CONDITIONS (corrections in v2.25).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | 2.25    | 2026-10-20 | Backend Engineering    | **FOLLOW-1358 — compliance-engineer review 2026-10-20, APPROVE WITH CONDITIONS; corrections.** §2.5 gains the row `quiz_completions`, `quiz_runs` — period TBD — UNENFORCED (FOLLOW-1364). §3.1 maps quiz accuracy measurement to purpose (c). §8 step 5's Access/Portability enumeration now names `quiz_runs` (it was only in the step 6 note, which ROPA cited as step 5). The step 6 note is corrected: `session_id` is the random per-tab session UUID v4 (Activity 2, ESC-070), not a SHA-256 fingerprint; the basis is the SDK banner consent and the route writes only on `consented`; the erase response reports `quiz_runs_erasure`. ROPA v2.20.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | 2.26    | 2026-10-20 | Backend Engineering    | **FOLLOW-1364 (ESC-086 condition C6) — §2.5 `quiz_completions`, `quiz_runs` row: "Period TBD — UNENFORCED" becomes "13 months — enforced".** CEO ruling 2026-10-20; the daily `/api/cron/quiz-retention` job deletes rows older than 13 months from both tables. The Activity 17 summary sentence is aligned. ROPA v2.21.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| 2.27    | 2026-11-02 | Compliance Engineering | **FOLLOW-1316 (ESC-085 D-E, ESC-090) — new processing, behind a flag: the returning-buyer profile. True of the code on localhost; production is NOT enabled, pending counsel L-1 to L-6, DPO sign-off and the Upstash region.** §13.2 rewritten: the identifier now rests on consent, the legitimate-interest conclusion is withdrawn and kept as a marked record, and withdrawal is stated as it behaves, gaps included. §13.5 re-read: its sufficiency conclusion does not extend to the 90-day profile (L-6). §2.2, §2.2.1, §2.3, §2.4, §2.5, §2.6, §3.1, §3.3, §3.5, Risks A, B, E, §5 (new row F), §7 items 2, 5, 6 and §8 updated. Signed record: `docs/compliance/FOLLOW-1316-signed-review.md`. The banner sentence is byte-identical. **The GPC claims of §6.3 and §7 item 2 are not touched beyond one true sentence; FOLLOW-1438 owns the rest.** DPO gate: PENDING.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 ---
 
@@ -1798,7 +1898,144 @@ corresponding gate item.
 
 ---
 
-### 13.2 LIA — Cross-Session Identifier `__estalara_xid__` (Audit Finding F-14)
+### 13.2 Cross-Session Identifier `__estalara_xid__` and the Returning-Buyer Profile (Audit Finding F-14)
+
+_Rewritten v2.27 (FOLLOW-1316, ESC-085 D-E, ESC-090). The title said "LIA"; this is no longer a
+legitimate-interest assessment. Every behavioural sentence down to the "Superseded record" marker
+was checked against the code at `685b4e35`; the signed record is
+`docs/compliance/FOLLOW-1316-signed-review.md`. Every lawful-basis statement is an engineering read
+by a non-lawyer. Nothing here states that any of this is legally sufficient._
+
+**Where this runs.** The server half is behind `BUYER_PROFILE_ENABLED` (`isBuyerProfileEnabled()`,
+`apps/control-plane/src/lib/buyer-profile-store.ts`), default off and set only in
+`scripts/dev/localhost-up.sh`. **It is not enabled in production, and must not be, until counsel has
+answered L-1 to L-6, the DPO has signed off this section and §13.5, and the production Upstash
+database is confirmed EU-only or the H003 table replaces the store** (ESC-090 item 1;
+`docs/handover/CTO_HANDOVER.md` section 4 row 20). Localhost holds no real data subjects.
+
+**The identifier.** A random UUID v4 with a creation time, under `localStorage['__estalara_xid__']`
+(`XSESSION_STORAGE_KEY`). It is drawn from the session id's CSPRNG ladder (`drawUuid()`:
+`crypto.randomUUID()`, then `crypto.getRandomValues()`); without a CSPRNG no id exists. The
+`Math.random` fallback this section used to concede is gone. No browser attribute is read. It is
+written only after consent: at the banner's `onGranted`, and on load when the state is already
+`granted`. It is replaced after `XID_RETENTION_DAYS` (90) days. The stored entry has two further
+fields since FOLLOW-1316: `sent`, set before the id first leaves the browser, and `lead`, the 16-hex
+lead id of the first logged-in session that sent it. **`lead` puts that value in `localStorage`,
+which `__estalara_lead_id__` itself avoids; it goes when the entry goes, and it is not sent as part
+of the entry.**
+
+**What leaves the browser, with the flag on.** `readSendableXid()` reads storage on every send,
+never mints, and returns the id only when all of these hold: consent is `granted`; a text version is
+recorded and is not below `MIN_PROFILE_TEXT_VERSION`; `navigator.globalPrivacyControl` is not
+`true`; no `__estalara_profiling_opt_out__*` key exists; SubtleCrypto is available, since otherwise
+the delete could never be signed; the id is unexpired; and the logged-in lead does not differ from
+the one bound to it. The SDK learns the flag from `buyer_profile_enabled` on
+`GET /api/quiz/public-config`, and absent means off. `xid`, `xid_created_at` and `archetype_source`
+then travel in the POST body of `/api/adapt`, and the id alone in the POST body of
+`/api/profile/erase`. They are in no URL, event, beacon or description call. With the flag off the
+id is transmitted nowhere, a denial included.
+
+**What the server holds.** Key `buyer_profile:{tenant_id}:{sha256(xid)}`; value, strictly validated:
+`v`, `archetype`, `confidence` (two decimals), `source` (`quiz` or `behavior`), optional `traits`
+from `premium`, `works_from_home`, `seasoned_investor`, `will_let`. Never written: `neutral`,
+`diaspora_buyer`, `golden_visa_buyer`; `has_children`, `residency_goal`, `buying_from_abroad`; a
+label the chat prior moved (ESC-090 item 3). `family_buyer` is persisted although it implies family
+status; `lifestyle_expat`, `student_parent` and `retiree_relocator` are persisted too. Whether any
+of these reveals Art. 9 data by inference is L-3. A write needs a consented valid xid, opt-out off,
+AL on, no demo override, the treatment arm, and a confidence above the 0.6 gate. A `quiz` result
+overwrites anything; a `behavior` label overwrites `behavior` only. A `quiz` result that may not
+persist deletes the stored key. `/api/adapt` honours the id only when `consent_state` is exactly
+`consented` (`honourConsentedXid()`); the value is the SDK's assertion, which the server cannot
+check for an anonymous buyer.
+
+**Retention, each with what enforces it.**
+
+| Item                                | Period                                                                                 | Enforced by                                                                   |
+| ----------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Local id                            | 90 days, then replaced                                                                 | `XID_TTL_MS`, from `XID_RETENTION_DAYS`; `isXidLive()`                        |
+| Profile                             | `min(now + 90 d, xid.created_at + 90 d)`, set once; reads and overwrites do not extend | `EXAT` and `KEEPTTL` in `WRITE_SCRIPT`; `check-consent-retention-sync.mjs` G8 |
+| Tombstone, self-service             | 24 hours                                                                               | `EX`, `SELF_SERVICE_TOMBSTONE_TTL_SECONDS`                                    |
+| Tombstone, `/api/dsr/erase`         | 90 days, so it can outlive the id by nearly that long; it holds only a hash in its key | `EX`, `DSR_TOMBSTONE_TTL_SECONDS`                                             |
+| Client-address quota key            | 60 seconds                                                                             | `EX`, `ROUTE_QUOTA_WINDOW_SECONDS`                                            |
+| `consent.granted`, `consent.denied` | The period of `CONSENT_LOG_RETENTION_DAYS`                                             | `/api/internal/retention/consent-log`                                         |
+| `dsr_audit_log` rows                | **None: no TTL**                                                                       | Nothing                                                                       |
+
+A profile can outlive access to it if a buyer clears site data. It lasts until its expiry and
+nothing can read it without the id.
+
+**The client address.** `/api/profile/*` keeps a per-minute quota of 60 under
+`sha256(first x-forwarded-for value)`, or of the word `unknown`. The hash is unsalted, so an address
+can be recovered from it by enumeration while it lives, and that is 60 seconds. The header can be
+set by the client wherever the platform does not overwrite it, so the quota can be sidestepped
+there. A store failure in the quota allows the request.
+
+**Lawful basis: consent, Art. 6(1)(a), never legitimate interest (ESC-090 item 1).** The legitimate
+interest conclusion of the text below is **withdrawn**. It covered an identifier that stayed in the
+browser and said in terms that it did not pre-approve server-side linking. Storing and reading the
+id engages ePrivacy Art. 5(3), and an id tied to an inferred profile is personal data under
+pseudonymisation; randomness settles the mechanism, not the basis. Purposes (a) to (c) of the old
+text do not carry over: only continuity of personalisation is pursued. There is no cross-session
+conversion linkage (ESC-090 item 4) and no fraud use.
+
+**The banner sentence is unchanged and does not fully describe this.** It still reads, byte for byte
+in `apps/control-plane/public/consent-text.json` and the record
+`docs/compliance/consent-disclosures.canonical.json`:
+
+> To remember your preferences across visits, we store a pseudonymous identifier in your browser for
+> up to 90 days. This identifier is refreshed every 90 days and is deleted if you withdraw consent.
+
+With the flag on, three things differ: the id leaves the browser; an inferred profile is held on a
+server under it; and "your preferences" describes something a buyer set, while an archetype is
+inferred. It changes **only after counsel** (ESC-086(b), L-1). The draft for counsel is in
+`docs/compliance/FOLLOW-1316-design-review.md` section 9 and does not ship.
+`MIN_PROFILE_TEXT_VERSION` today equals the served `text_version` (`2026-08-24.1`), so **it must be
+raised with the new text**, or production would treat a grant of the old sentence as covering the
+profile.
+
+**Withdrawal, as it behaves.** A control labelled "Withdraw consent" (`data-estalara-withdraw`;
+"Wycofaj zgodę", "Retirar el consentimiento") sits in the Personalization toggle's box. One click:
+state `denied` first, so sending stops; a signed `keepalive` `POST /api/profile/erase`; the local id
+erased only on a 2xx; on any other answer it stays, and the stored-`denied` branch retries on each
+later load until the delete succeeds or the id expires (`deleteThenEraseXid()`,
+`packages/sdk/src/core/consent-flow.ts`). A delete leaves a tombstone, and a delayed write against
+it is refused atomically. An id that never left the browser, or has expired, is erased with no
+request. The same path runs on the banner's Decline. The control also restores the headline and
+description slots, erases the intent state, the quiz config cache, the opt-out keys and the text
+version, sends one `consent.denied` event and halts the SDK.
+
+**What withdrawal does not do today. These are known gaps, not closed by this revision.**
+
+1. The control shows a label with no explanation and disappears with no confirmation. A failed
+   delete is not shown to the buyer.
+2. **It renders only when the flag is on or this id has already been sent. With the flag off there
+   is no in-product way to withdraw, while the banner sentence says the id is deleted if you
+   withdraw.**
+3. Only the headline and description slots are restored (`restoreOriginalSlots()`). `cta` and
+   `feature` text, class directives and the listing order stay on the page until the next load.
+4. Withdrawal halts this tab. Another open tab stops sending the id on its next send, but keeps
+   calling `/api/adapt` with `consent_state: none` until it reloads, and that route does not gate on
+   it.
+5. There is no way back: after `denied` no banner renders, so a buyer cannot consent again without
+   clearing site data.
+6. It does not reach rows from earlier sessions (§8), and access and export are unreachable from the
+   interface (§8).
+7. On a shared computer it denies consent for the browser, whoever clicks (§4 Risk A).
+
+**Opt-out is a suspension, not a withdrawal.** See §13.5.
+
+**Holdout.** For a consented valid xid the arm is `assignHoldout` over the xid, otherwise over the
+session id (ESC-090 item 2). It stores nothing and takes no demographic input. A holdout-arm xid
+gets no read and no write. Its decision row logs the hint it sent, `neutral` on a return visit,
+while a treatment row logs the restored archetype, so per-archetype lift compares unlike cohorts for
+returning buyers (`docs/MASTER_DESIGN.md`, "Decision #5"). `features_snapshot` records
+`assignment_unit` and `profile_restored`, never the xid.
+
+**DPO gate:** DPO sign-off of this section is required before the flag is set in production. Status:
+**PENDING**. Tracked in `docs/compliance/PRIVACY_NOTICE_TEMPLATE.md` §5.
+
+**Superseded record. Everything from here to "End of the superseded record" is the pre-v2.27 text,
+kept because this folder is append-only. It states no current behaviour and no current lawful basis.
+Where it differs from the text above, the text above governs.**
 
 **Finding summary (audit):** The Estalara SDK offers cross-session continuity for tenants who opt in
 to cross-listing journey tracking (§4.2 of this DPIA), by way of an identifier that persists for 90
@@ -1929,6 +2166,8 @@ requires a real browser session against the staging environment. It is a manual 
 `docs/ops/PILOT_RUNBOOK.md` §EU pre-flight, "consent disclosure and localStorage QA" gate item.
 Status: **READY FOR STAGING VERIFICATION** — FOLLOW-139 implementation deployed to `main`; staging
 deploy and manual QA verification pending.
+
+**End of the superseded record.**
 
 ---
 
@@ -2256,11 +2495,11 @@ AL-DOM processing only.
 
 - **Art. 17 erasure (consent withdrawal):** The mandatory registration consent (Mode B for
   app.estalara.com investors) is a separate matter. Consent withdrawal by a registered investor is
-  handled by the FOLLOW-139 erasure path (consent banner "Withdraw" → cascade deletion). The
-  FOLLOW-372 toggle is an opt-out of DOM adaptation only, not a consent withdrawal. An investor who
-  suspends DOM adaptation retains their registration consent and continues to receive the
-  registration-gated services (chat, lead visibility, agent summaries). This is explicitly
-  communicated in the toggle UX (FOLLOW-372 AC).
+  handled by the FOLLOW-139 erasure path (consent banner "Withdraw" → cascade deletion; **no such
+  banner control or cascade exists, see the re-read below**). The FOLLOW-372 toggle is an opt-out of
+  DOM adaptation only, not a consent withdrawal. An investor who suspends DOM adaptation retains
+  their registration consent and continues to receive the registration-gated services (chat, lead
+  visibility, agent summaries). This is explicitly communicated in the toggle UX (FOLLOW-372 AC).
 
 - **No new processing ceases to be necessary:** The 12-dim vector, session embeddings, and
   adaptation logs that already exist are subject to their existing retention schedules. No new
@@ -2273,8 +2512,27 @@ erasure right (which remains on the consent-withdrawal path). No new PII is crea
 state. The 12-dim vector TTL continues to expire naturally. FOLLOW-372 may proceed without requiring
 a full erasure cascade.
 
-**DPO gate:** DPO review of this §13.5 addendum is required before the FOLLOW-372 toggle is deployed
-to production. Status: **PENDING** — tracked alongside §13.4 DPO gate above.
+**Re-read v2.27 (FOLLOW-1316). The conclusion above does not extend to the returning-buyer
+profile.** It was reached on the premise that the suspended state retains nothing beyond short TTLs
+and existing schedules. With `BUYER_PROFILE_ENABLED` on (localhost only; production not enabled)
+that premise fails: a profile of up to 90 days exists. So:
+
+- **What opt-out does to the profile.** The SDK sends no xid (`profilingOptedOut` in
+  `fetchDirectives`; any `__estalara_profiling_opt_out__*` key in `readSendableXid()`).
+  `/api/adapt?profiling_opt_out=1` returns neutral before tenant resolution, so there is no read and
+  no write. **The profile is kept and its clock keeps running**; turning the toggle back on restores
+  it if unexpired. Opt-out never extends or deletes it.
+- **Deletion is on the withdrawal control, not the toggle.** The toggle's words are unchanged
+  ("Personalization: active/disabled") and imply no deletion. The "Withdraw" of the text above is
+  not a banner control and not a cascade: the control is in the toggle's box, only where the flag is
+  on or the id was already sent, and what it reaches and does not reach is in §13.2 and §8.
+- **Whether suspend-not-erase is enough with a 90-day server-side profile is open: L-6.** This
+  record draws no conclusion on it. The sentence "the SDK emits no events, collects no signals"
+  above was not re-verified by this revision.
+
+**DPO gate:** DPO review of this §13.5 addendum, including this re-read, is required before the
+FOLLOW-372 toggle is deployed to production and before the flag is set. Status: **PENDING** —
+tracked alongside §13.4 DPO gate above.
 
 ---
 

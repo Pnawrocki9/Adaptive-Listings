@@ -196,7 +196,9 @@ control-plane verifier (X1).
 - **Bandit frozen** (`BANDIT_ENABLED` off since #957, D3; inert on LLM branches, FOLLOW-1168).
 - **Returning-visitor profile** (FOLLOW-1316, D-E, ESC-090). The server path exists behind
   `BUYER_PROFILE_ENABLED`, default off and on only in `scripts/dev/localhost-up.sh`; with it off
-  `/api/adapt` ignores any xid. Production needs section 4 row 20.
+  `/api/adapt` ignores any xid. Production needs section 4 row 20 and every item of
+  `docs/compliance/FOLLOW-1316-signed-review.md` section 8. Items P-2 to P-4 bind the SDK embed of
+  row 1 too, whether or not the flag is ever set: with the flag off no withdrawal control renders.
 - **Claim-check stamp.** Cached copy carries the claim-check version that passed it
   (`CLAIMS_VALIDATION_VERSION`, `claims-v7` since #1108). After a deploy that bumps it, older cache
   entries are not served; they regenerate lazily on the next request for that listing, so the first

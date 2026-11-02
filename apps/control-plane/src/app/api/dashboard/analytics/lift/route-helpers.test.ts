@@ -417,3 +417,55 @@ describe('FOLLOW-1457 lift queries against the alias-shadowing trap', () => {
     expect(queries.flatMap(shadowingAggregateAliases)).toEqual([]);
   });
 });
+
+// ─── FOLLOW-1458: one visit, one arm ──────────────────────────────────────────────────────────
+
+describe('FOLLOW-1458 a session has the arm of its first decision', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  async function sentSql(read: () => Promise<unknown>): Promise<string[]> {
+    vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test:8123');
+    vi.stubEnv('CALLER_SIGNED_COLUMN_ENABLED', 'true');
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('', { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    await read();
+    return (fetchMock.mock.calls as unknown as [string][]).map(
+      ([url]) => new URL(url).searchParams.get('query') ?? '',
+    );
+  }
+
+  it('every query takes the arm from argMin and never groups on the row arm', async () => {
+    const queries = [
+      ...(await sentSql(() => fetchLiftRaw(TENANT_ID, 7))),
+      ...(await sentSql(() => fetchLiftDaily(TENANT_ID, '2026-11-01', '2026-11-02'))),
+    ];
+    expect(queries).toHaveLength(4);
+    for (const sql of queries) {
+      expect(sql).toContain('argMin(holdout_group, ts) AS first_arm');
+      expect(sql).not.toMatch(/GROUP BY[^\n]*holdout_group/);
+      expect(sql).not.toMatch(/\bad\.holdout_group AS holdout\b/);
+    }
+  });
+
+  it('sessions_in_both_arms sums what the per-arm rows report, and is 0 when none', () => {
+    const row = { sessions: 10, ...conv(1) };
+    const raw = (a: number, h: number) => ({
+      groups: [
+        { holdout: 0, ...row, both_arm_sessions: a },
+        { holdout: 1, ...row, both_arm_sessions: h },
+      ],
+      archetypes: [],
+      funnel: [],
+      callerClass: true,
+    });
+    expect(buildResponseFromRaw(TENANT_ID, 7, raw(2, 1), 'clickhouse').sessions_in_both_arms).toBe(
+      3,
+    );
+    expect(buildResponseFromRaw(TENANT_ID, 7, raw(0, 0), 'clickhouse').sessions_in_both_arms).toBe(
+      0,
+    );
+  });
+});

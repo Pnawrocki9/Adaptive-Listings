@@ -206,7 +206,7 @@ describe('fetchLiftRaw / fetchLiftDaily against a ClickHouse stand-in', () => {
     vi.stubEnv('CLICKHOUSE_URL', 'http://ch.test:8123');
     vi.stubEnv('CALLER_SIGNED_COLUMN_ENABLED', 'true');
     const calls = stubClickHouse((sql) =>
-      sql.includes('GROUP BY ad.holdout_group')
+      sql.includes('GROUP BY arm.first_arm')
         ? [
             {
               holdout: 0,

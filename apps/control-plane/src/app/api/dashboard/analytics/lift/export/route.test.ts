@@ -175,7 +175,7 @@ describe('response', () => {
             ),
           );
         }
-        if (sql.includes('GROUP BY ad.holdout_group')) {
+        if (sql.includes('GROUP BY arm.first_arm')) {
           return Promise.resolve(
             new Response(
               [

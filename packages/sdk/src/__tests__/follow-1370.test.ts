@@ -130,8 +130,10 @@ afterEach(() => {
 describe('FOLLOW-1370 no served definition → no card', () => {
   it('no answer within 15 s → no card at all, no run ping, one request', async () => {
     const f = mockFetch({ config: SERVED, configDelayMs: 20_000 });
-    await boot(f);
+    // init waits for a late config before its first decision [FOLLOW-1458].
+    const init = boot(f);
     await vi.advanceTimersByTimeAsync(25_000);
+    await init;
     expect(quizCard()).toBeNull();
     expect(callsTo(f, '/quiz/run')).toBe(0);
     expect(callsTo(f, '/quiz/public-config')).toBe(1);
@@ -155,8 +157,9 @@ describe('FOLLOW-1370 no served definition → no card', () => {
 
   it('the served config fails late (after the 1 s budget) → still no card', async () => {
     const f = mockFetch({ config: null, configDelayMs: 5_000 });
-    await boot(f);
+    const init = boot(f);
     await vi.advanceTimersByTimeAsync(8_000);
+    await init;
     expect(quizCard()).toBeNull();
     expect(callsTo(f, '/quiz/run')).toBe(0);
   });

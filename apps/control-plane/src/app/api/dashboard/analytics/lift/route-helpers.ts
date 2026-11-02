@@ -155,6 +155,11 @@ export interface LiftResponse {
    * `null` exactly when `summary` is `null` (conversion_source 'disabled').
    */
   conversion_breakdown: { adapted: ArmBreakdown; holdout: ArmBreakdown } | null;
+  /**
+   * FOLLOW-1458 (additive): sessions whose decisions hold both arms. Each counts once, in the arm of
+   * its first decision; a figure above zero means assignment flipped inside a visit.
+   */
+  sessions_in_both_arms: number;
   /** Conversion funnel by arm. */
   funnel: FunnelRow[];
   /** Per-archetype breakdown, pilot shape (null lift when holdout rate is 0). */
@@ -177,6 +182,8 @@ export interface LiftResponse {
 interface ChGroupCounts extends ConversionCounts {
   holdout: number;
   sessions: number;
+  /** Of `sessions`, those whose decisions hold both arms; counted in their first arm only. */
+  both_arm_sessions?: number;
 }
 
 interface ChArchetypeCounts extends ConversionCounts {
@@ -537,6 +544,8 @@ export function buildResponseFromRaw(
     conversion_breakdown: raw.callerClass
       ? { adapted: armBreakdown(adaptedGroup), holdout: armBreakdown(holdoutGroup) }
       : null,
+    sessions_in_both_arms:
+      (adaptedGroup?.both_arm_sessions ?? 0) + (holdoutGroup?.both_arm_sessions ?? 0),
     funnel,
     by_archetype: byArchetype,
     rows,
@@ -559,6 +568,42 @@ export function buildResponseFromRaw(
  * so the two lift surfaces cannot drift apart on which holdout rows count.
  */
 export const CLEAN_HOLDOUT_PREDICATE = `NOT (ad.holdout_group = 1 AND ad.variant != 'control')`;
+
+/**
+ * Per-(tenant, session) arm, for every reader that needs one: the arm of the session's FIRST decision
+ * in the range (FOLLOW-1458). The unit is the session before consent and the xid after, and a
+ * withdrawal goes back, so one session can hold rows of both arms; without this it would be counted
+ * in each. `first_arm` must not be named `holdout_group`: an aggregate alias shadows the column in
+ * the WHERE (FOLLOW-1457). Same contamination rule as {@link CLEAN_HOLDOUT_PREDICATE}, unqualified.
+ *
+ * @param lowerBound - SQL for the first instant read.
+ * @param upperBound - SQL for the instant the range ends before; none reads up to now.
+ */
+function sessionArmSubquery(lowerBound: string, upperBound?: string): string {
+  return `
+      SELECT
+        tenant_id,
+        session_id,
+        argMin(holdout_group, ts) AS first_arm,
+        uniqExact(holdout_group) = 2 AS both_arms
+      FROM adaptation_decisions
+      WHERE tenant_id = {tenant_id:String}
+        AND ts >= ${lowerBound}${
+          upperBound === undefined
+            ? ''
+            : `
+        AND ts < ${upperBound}`
+        }
+        AND NOT (holdout_group = 1 AND variant != 'control')
+      GROUP BY tenant_id, session_id`;
+}
+
+/** The join of {@link sessionArmSubquery} onto `ad`, alias `arm`. */
+export function sessionArmJoin(lowerBound: string, upperBound?: string): string {
+  return `INNER JOIN (${sessionArmSubquery(lowerBound, upperBound)}
+    ) AS arm
+      ON ad.tenant_id = arm.tenant_id AND ad.session_id = arm.session_id`;
+}
 
 /**
  * Execute one parameterized ClickHouse query over the HTTP interface and parse JSONEachRow output.
@@ -637,39 +682,44 @@ export async function fetchLiftRaw(
   // FOLLOW-1201 AC(4): every `events` predicate below buckets on `ingest_received_at` (stamped by
   // the Worker, `handlers/events.ts`) — never on the client-supplied `ts`, which a forger can set
   // to any value. `ad.ts` on `adaptation_decisions` is server-written and stays.
+  const windowStart = 'now() - toIntervalDay({window_days:UInt16})';
+  const armJoin = sessionArmJoin(windowStart);
 
   // 1. Per-arm totals: distinct adapted/holdout sessions and the subset that converted
   //    (server-confirmed, after the first decision — FOLLOW-1203).
   const groupSql = `
     SELECT
-      ad.holdout_group AS holdout,
+      arm.first_arm AS holdout,
       countDistinct(ad.session_id) AS sessions,
+      countDistinctIf(ad.session_id, arm.both_arms) AS both_arm_sessions,
       ${countColumns}
     FROM adaptation_decisions AS ad
+    ${armJoin}
     LEFT JOIN (${evSubquery}
     ) AS ev
       ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
     WHERE ad.tenant_id = {tenant_id:String}
       AND ad.ts >= now() - toIntervalDay({window_days:UInt16})
       AND ${CLEAN_HOLDOUT_PREDICATE}
-    GROUP BY ad.holdout_group
+    GROUP BY arm.first_arm
   `;
 
   // 2. Per-archetype, per-arm totals.
   const archetypeSql = `
     SELECT
       ad.archetype AS archetype,
-      ad.holdout_group AS holdout,
+      arm.first_arm AS holdout,
       countDistinct(ad.session_id) AS sessions,
       ${countColumns}
     FROM adaptation_decisions AS ad
+    ${armJoin}
     LEFT JOIN (${evSubquery}
     ) AS ev
       ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
     WHERE ad.tenant_id = {tenant_id:String}
       AND ad.ts >= now() - toIntervalDay({window_days:UInt16})
       AND ${CLEAN_HOLDOUT_PREDICATE}
-    GROUP BY ad.archetype, ad.holdout_group
+    GROUP BY ad.archetype, arm.first_arm
   `;
 
   // 3. Funnel: distinct sessions per event-type stage per arm. Joins the holdout assignment from
@@ -678,22 +728,16 @@ export async function fetchLiftRaw(
   const funnelSql = `
     SELECT
       ev.type AS stage,
-      ad.session_arm AS holdout,
+      ad.first_arm AS holdout,
       countDistinct(ev.session_id) AS sessions
     FROM events AS ev
-    INNER JOIN (
-      SELECT session_id, anyHeavy(holdout_group) AS session_arm
-      FROM adaptation_decisions
-      WHERE tenant_id = {tenant_id:String}
-        AND ts >= now() - toIntervalDay({window_days:UInt16})
-        AND NOT (holdout_group = 1 AND variant != 'control')
-      GROUP BY session_id
+    INNER JOIN (${sessionArmSubquery(windowStart)}
     ) AS ad
       ON ev.session_id = ad.session_id
     WHERE ev.tenant_id = {tenant_id:String}
       AND ev.ingest_received_at >= now() - toIntervalDay({window_days:UInt16})
       AND ev.type IN ('page.view','listing.viewed','cta.clicked','inquiry.started','inquiry.completed')
-    GROUP BY ev.type, ad.session_arm
+    GROUP BY ev.type, ad.first_arm
   `;
 
   const [groupsRaw, archetypesRaw, funnelRaw] = await Promise.all([
@@ -707,6 +751,7 @@ export async function fetchLiftRaw(
       (r): ChGroupCounts => ({
         holdout: Number(r.holdout ?? 0),
         sessions: Number(r.sessions ?? 0),
+        both_arm_sessions: Number(r.both_arm_sessions ?? 0),
         ...readConversionCounts(r, '', callerClass, true),
       }),
     ),
@@ -773,7 +818,8 @@ interface ChDailyRaw {
  * {@link fetchLiftRaw} (the shared subquery / count columns, the same clean-holdout predicate, the
  * same attribution rule), only grouped by the UTC day of the session's decision instead of one
  * rolling window. A session with decisions on two days is in both days' cohorts; on each day it is
- * judged against that day's first decision. Conversions are read from the start of `fromDay` up to
+ * judged against that day's first decision, and its arm is that of its first decision in the range
+ * read (FOLLOW-1458), so a one-day read of a session straddling midnight sees that day only. Conversions are read from the start of `fromDay` up to
  * now, so a day's figures can still grow after the day ends (they are "as known at read time").
  *
  * Returns null when CLICKHOUSE_URL is unset (dev / CI). Throws when it is set and a query fails
@@ -809,10 +855,11 @@ export async function fetchLiftDaily(
   const sql = `
     SELECT
       toString(toDate(ad.ts, 'UTC')) AS day_utc,
-      ad.holdout_group AS holdout,
+      arm.first_arm AS holdout,
       countDistinct(ad.session_id) AS sessions,
       ${countColumns}
     FROM adaptation_decisions AS ad
+    ${sessionArmJoin(`toDateTime({from_day:Date}, 'UTC')`, `toDateTime({to_day:Date}, 'UTC') + toIntervalDay(1)`)}
     LEFT JOIN (${evSubquery}
     ) AS ev
       ON ad.tenant_id = ev.tenant_id AND ad.session_id = ev.session_id
@@ -820,7 +867,7 @@ export async function fetchLiftDaily(
       AND ad.ts >= toDateTime({from_day:Date}, 'UTC')
       AND ad.ts < toDateTime({to_day:Date}, 'UTC') + toIntervalDay(1)
       AND ${CLEAN_HOLDOUT_PREDICATE}
-    GROUP BY day_utc, ad.holdout_group
+    GROUP BY day_utc, arm.first_arm
     ORDER BY day_utc ASC
   `;
   const raw = await chQuery<Record<string, unknown>>(baseUrl, user, password, sql, {

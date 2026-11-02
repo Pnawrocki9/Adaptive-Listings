@@ -246,11 +246,11 @@ function clickhouseSimulator(urlStr: string): Response {
       ...conversionColumns(sql, holdoutRows, 'holdout_'),
     });
   } else if (
-    sql.includes('GROUP BY ad.archetype, ad.holdout_group') ||
+    sql.includes('GROUP BY ad.archetype, arm.first_arm') ||
     sql.includes('FROM events AS ev')
   ) {
     // Per-archetype and funnel breakdowns are not compared here (the summary is).
-  } else if (/GROUP BY ad\.holdout_group\s*(FORMAT|$)/.test(sql)) {
+  } else if (/GROUP BY arm\.first_arm\s*(FORMAT|$)/.test(sql)) {
     // Lift route per-arm totals, fenced on the bound tenant.
     const tenant = url.searchParams.get('param_tenant_id');
     const rows = visible.filter((d) => d.tenant_id === tenant);

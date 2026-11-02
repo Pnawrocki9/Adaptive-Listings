@@ -103,7 +103,7 @@ function answerLiftQuery(urlStr: unknown, cohorts: Cohort[]): Response {
   const lines: unknown[] = [];
   if (sql.includes('FROM events AS ev')) {
     // funnel: leave empty (not under test here)
-  } else if (sql.includes('GROUP BY ad.archetype, ad.holdout_group')) {
+  } else if (sql.includes('GROUP BY ad.archetype, arm.first_arm')) {
     for (const c of cohorts) {
       lines.push({
         archetype: c.archetype,

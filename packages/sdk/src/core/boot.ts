@@ -280,7 +280,7 @@ export async function boot(queue: CollectedEvent[]): Promise<BootContext | null>
     intentOverrides = resolveIntentOverrides(fetchedWeights);
 
     if (raced === 'slow') {
-      // Awaited by the quiz card only; never blocks init.
+      // Awaited by the quiz card and, for the xid, by the first decision [FOLLOW-1458].
       const base = config;
       lateConfig = quizRequest.then((late) => (late ? mergeQuizConfig(base, late) : null));
     }

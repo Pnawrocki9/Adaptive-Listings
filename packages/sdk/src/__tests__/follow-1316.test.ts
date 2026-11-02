@@ -400,7 +400,9 @@ describe('FOLLOW-1316 send path', () => {
     expect(adaptBodies()[0]?.consent_state).toBe('none');
   });
 
-  it('a config answering after the 1 s budget: first call without, then the xid (fail closed)', async () => {
+  // FOLLOW-1458: the first decision used to go without the xid here and the next with it. The server
+  // keyed the two on different units, so one visit could land in both arms.
+  it('a config answering after the 1 s budget: no decision until it answers, the first carries the xid', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     seedGranted();
     seedXid();
@@ -409,13 +411,42 @@ describe('FOLLOW-1316 send path', () => {
     stubWire({ flag: true, configDelayMs: 3_000 });
     const init = _initForTest();
     await vi.advanceTimersByTimeAsync(1_500);
-    await init;
-    expect(adaptBodies()[0]?.xid).toBeUndefined();
-    expect(withdrawControl()).toBeNull();
+    expect(adaptBodies()).toHaveLength(0);
 
     await vi.advanceTimersByTimeAsync(2_500);
-    expect(adaptBodies().at(-1)?.xid).toBe(XID);
+    await init;
+    expect(adaptBodies().length).toBeGreaterThan(0);
+    for (const body of adaptBodies()) expect(body.xid).toBe(XID);
     expect(withdrawControl()).not.toBeNull();
+  });
+
+  it('a late config without the flag: the first decision goes then, without the xid', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    seedGranted();
+    seedXid();
+    seedSession();
+    insertScript();
+    stubWire({ configDelayMs: 3_000 });
+    const init = _initForTest();
+    await vi.advanceTimersByTimeAsync(4_000);
+    await init;
+    expect(adaptBodies().length).toBeGreaterThan(0);
+    for (const body of adaptBodies()) expect(body.xid).toBeUndefined();
+    expect(withdrawControl()).toBeNull();
+  });
+
+  it('a config that never answers: the decision still goes, without the xid (fail closed)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    seedGranted();
+    seedXid();
+    seedSession();
+    insertScript();
+    stubWire({ flag: true, configFails: true });
+    const init = _initForTest();
+    await vi.advanceTimersByTimeAsync(1_500);
+    await init;
+    expect(adaptBodies().length).toBeGreaterThan(0);
+    for (const body of adaptBodies()) expect(body.xid).toBeUndefined();
   });
 
   it('R4: a whole session, events and flushes included, carries the xid only where allowed', async () => {

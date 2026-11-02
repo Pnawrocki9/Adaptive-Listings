@@ -1,6 +1,6 @@
 diff -ruN a/setenv_linux.sh b/setenv_linux.sh
---- a/setenv_linux.sh	2026-11-02 07:01:53.939088193 +0100
-+++ b/setenv_linux.sh	2026-11-02 07:01:58.579046467 +0100
+--- a/setenv_linux.sh	2026-11-02 08:33:56.417788604 +0100
++++ b/setenv_linux.sh	2026-11-02 08:34:01.585737915 +0100
 @@ -54,3 +54,10 @@
  export FACEBOOK_ACCOUNT_ID="your_facebook_account_id"
  
@@ -13,8 +13,8 @@ diff -ruN a/setenv_linux.sh b/setenv_linux.sh
 +export AL_LISTING_UPDATED_WEBHOOK_URL=""
 +export AL_LISTING_UPDATED_WEBHOOK_SECRET=""
 diff -ruN a/setenv_win.bat b/setenv_win.bat
---- a/setenv_win.bat	2026-11-02 07:01:53.939088193 +0100
-+++ b/setenv_win.bat	2026-11-02 07:01:58.583046428 +0100
+--- a/setenv_win.bat	2026-11-02 08:33:56.417788604 +0100
++++ b/setenv_win.bat	2026-11-02 08:34:01.589737876 +0100
 @@ -55,3 +55,10 @@
  
  echo Environment variables have been set.
@@ -26,9 +26,29 @@ diff -ruN a/setenv_win.bat b/setenv_win.bat
 +set AL_TENANT_ID=
 +set AL_LISTING_UPDATED_WEBHOOK_URL=
 +set AL_LISTING_UPDATED_WEBHOOK_SECRET=
+diff -ruN a/src/main/kotlin/com/time2show/core/config/ExecutorsConfiguration.kt b/src/main/kotlin/com/time2show/core/config/ExecutorsConfiguration.kt
+--- a/src/main/kotlin/com/time2show/core/config/ExecutorsConfiguration.kt	2026-11-02 08:33:55.933793351 +0100
++++ b/src/main/kotlin/com/time2show/core/config/ExecutorsConfiguration.kt	2026-11-02 08:33:56.573787075 +0100
+@@ -1,5 +1,6 @@
+ package com.time2show.core.config
+ 
++import com.time2show.core.service.adaptivelistings.AdaptiveListingsExecutor
+ import org.springframework.context.annotation.Bean
+ import org.springframework.context.annotation.Configuration
+ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
+@@ -18,6 +19,9 @@
+             initialize()
+         }
+ 
++    @Bean(AdaptiveListingsExecutor.BEAN_NAME)
++    fun adaptiveListingsExecutor(): ThreadPoolTaskExecutor = AdaptiveListingsExecutor.build()
++
+     @Bean("ioExecutor")
+     fun ioExecutor(): Executor =
+         ThreadPoolTaskExecutor().apply {
 diff -ruN a/src/main/kotlin/com/time2show/core/config/WebSecurityConfiguration.kt b/src/main/kotlin/com/time2show/core/config/WebSecurityConfiguration.kt
---- a/src/main/kotlin/com/time2show/core/config/WebSecurityConfiguration.kt	2026-11-02 07:01:53.407092952 +0100
-+++ b/src/main/kotlin/com/time2show/core/config/WebSecurityConfiguration.kt	2026-11-02 07:01:55.955070160 +0100
+--- a/src/main/kotlin/com/time2show/core/config/WebSecurityConfiguration.kt	2026-11-02 08:33:55.945793234 +0100
++++ b/src/main/kotlin/com/time2show/core/config/WebSecurityConfiguration.kt	2026-11-02 08:33:56.601786800 +0100
 @@ -102,7 +102,7 @@
          val configuration = CorsConfiguration().apply {
              origins.forEach { addAllowedOriginPattern(it) }
@@ -38,49 +58,83 @@ diff -ruN a/src/main/kotlin/com/time2show/core/config/WebSecurityConfiguration.k
              // SSE auth strategy: /api/*/me/events expects Bearer token from fetch-based SSE clients.
              // We intentionally keep allowCredentials=false and do not support native EventSource with cookies.
              allowCredentials = false
-diff -ruN a/src/main/kotlin/com/time2show/core/controller/ListingController.kt b/src/main/kotlin/com/time2show/core/controller/ListingController.kt
---- a/src/main/kotlin/com/time2show/core/controller/ListingController.kt	2026-11-02 07:01:53.467092415 +0100
-+++ b/src/main/kotlin/com/time2show/core/controller/ListingController.kt	2026-11-02 07:01:56.019069587 +0100
-@@ -9,6 +9,7 @@
- import com.time2show.core.model.enums.ImageRole
- import com.time2show.core.model.enums.ListingMediaType
- import com.time2show.core.model.enums.ListingStatus
-+import com.time2show.core.service.adaptivelistings.ListingUpdatedNotifier
- import com.time2show.core.service.web.ListingCollaboratorApiService
- import com.time2show.core.service.web.ListingDetailsApiService
- import com.time2show.core.service.web.ListingOwnershipTransferService
-@@ -59,6 +60,7 @@
-     private val createListingCollaboratorInvitationRequestValidator: CreateListingCollaboratorInvitationRequestValidator,
-     private val transferListingOwnershipRequestValidator: TransferListingOwnershipRequestValidator,
-     private val listingOwnershipTransferRequestValidator: ListingOwnershipTransferRequestValidator,
-+    private val listingUpdatedNotifier: ListingUpdatedNotifier,
- ) {
+diff -ruN a/src/main/kotlin/com/time2show/core/dto/async/ListingUpdatedWebhookJobPayload.kt b/src/main/kotlin/com/time2show/core/dto/async/ListingUpdatedWebhookJobPayload.kt
+--- a/src/main/kotlin/com/time2show/core/dto/async/ListingUpdatedWebhookJobPayload.kt	1970-01-01 01:00:00.000000000 +0100
++++ b/src/main/kotlin/com/time2show/core/dto/async/ListingUpdatedWebhookJobPayload.kt	2026-11-02 08:33:56.897783898 +0100
+@@ -0,0 +1,5 @@
++package com.time2show.core.dto.async
++
++data class ListingUpdatedWebhookJobPayload(
++    val listingUuid: String = ""
++)
+diff -ruN a/src/main/kotlin/com/time2show/core/model/enums/AsyncAggregateType.kt b/src/main/kotlin/com/time2show/core/model/enums/AsyncAggregateType.kt
+--- a/src/main/kotlin/com/time2show/core/model/enums/AsyncAggregateType.kt	2026-11-02 08:33:55.757795076 +0100
++++ b/src/main/kotlin/com/time2show/core/model/enums/AsyncAggregateType.kt	2026-11-02 08:33:57.161781309 +0100
+@@ -21,5 +21,8 @@
+     AD,
  
-     @ApiResponses(
-@@ -453,6 +455,9 @@
-     @PutMapping
-     fun updateOwnListingDetails(@Valid @RequestBody updateOwnListingRequestTO: UpdateOwnListingRequestTO, @AuthenticationPrincipal @Parameter(hidden = true) jwtUserDetails: JwtUserDetails): ResponseEntity<Any> {
-         val resultTO: OwnListingResponseTO = listingService.updateOwnListingDetails(updateOwnListingRequestTO, jwtUserDetails)
-+        if (resultTO.isSuccess()) {
-+            listingUpdatedNotifier.notifyListingSaved(updateOwnListingRequestTO.listingUuid)
+     /** Job for indexing a RAG document. aggregateId = DocumentFile UUID. */
+-    RAG_DOCUMENT
++    RAG_DOCUMENT,
++
++    /** Job about a listing. aggregateId = Listing UUID. */
++    LISTING
+ }
+diff -ruN a/src/main/kotlin/com/time2show/core/model/enums/AsyncJobType.kt b/src/main/kotlin/com/time2show/core/model/enums/AsyncJobType.kt
+--- a/src/main/kotlin/com/time2show/core/model/enums/AsyncJobType.kt	2026-11-02 08:33:55.729795351 +0100
++++ b/src/main/kotlin/com/time2show/core/model/enums/AsyncJobType.kt	2026-11-02 08:33:57.165781269 +0100
+@@ -28,5 +28,11 @@
+     AD_REVISION(5),
+ 
+     /** Index a RAG document (extract text, chunk, embed to vector store). Processed by RagDocumentIndexingJobProcessor. */
+-    RAG_DOCUMENT_INDEXING(5)
++    RAG_DOCUMENT_INDEXING(5),
++
++    /**
++     * Tell Adaptive Listings a listing's facts changed. Processed by ListingUpdatedWebhookJobProcessor. The
++     * attempts span about three hours on the shared backoff, since a lost call leaves old copy until the next save.
++     */
++    LISTING_UPDATED_WEBHOOK(12)
+ }
+diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/AdaptiveListingsExecutor.kt b/src/main/kotlin/com/time2show/core/service/adaptivelistings/AdaptiveListingsExecutor.kt
+--- a/src/main/kotlin/com/time2show/core/service/adaptivelistings/AdaptiveListingsExecutor.kt	1970-01-01 01:00:00.000000000 +0100
++++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/AdaptiveListingsExecutor.kt	2026-11-02 08:33:57.649776523 +0100
+@@ -0,0 +1,31 @@
++package com.time2show.core.service.adaptivelistings
++
++import org.slf4j.LoggerFactory
++import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
++import java.util.concurrent.RejectedExecutionHandler
++
++/**
++ * The bounded pool behind the conversion listeners. A bare `@Async` here falls back to a new thread per
++ * call, because this application defines several executors and none named `taskExecutor`, and a slow
++ * ingest would then grow threads without limit. A full queue drops the conversion with one line and
++ * never throws: the caller is an after-commit callback of a buyer's request.
++ */
++object AdaptiveListingsExecutor {
++    const val BEAN_NAME = "adaptiveListingsExecutor"
++
++    private val log = LoggerFactory.getLogger(AdaptiveListingsExecutor::class.java)
++
++    private val dropAndLog = RejectedExecutionHandler { _, _ ->
++        log.warn("al_conversion_dropped reason=executor_full")
++    }
++
++    fun build(threads: Int = 2, queueCapacity: Int = 100): ThreadPoolTaskExecutor =
++        ThreadPoolTaskExecutor().apply {
++            corePoolSize = threads
++            maxPoolSize = threads
++            setQueueCapacity(queueCapacity)
++            setThreadNamePrefix("adaptive-listings-")
++            setRejectedExecutionHandler(dropAndLog)
++            initialize()
 +        }
- 
-         return ResponseEntity.status(resultTO.httpStatus).body(if (resultTO.isSuccess()) resultTO else resultTO.messages)
-     }
-@@ -476,6 +481,9 @@
-     fun patchOwnListingDetails(@Valid @RequestBody patchOwnListingRequestTO: PatchOwnListingRequestTO,
-                                @AuthenticationPrincipal @Parameter(hidden = true) jwtUserDetails: JwtUserDetails): ResponseEntity<Any> {
-         val resultTO: OwnListingResponseTO = listingService.patchOwnListingDetails(patchOwnListingRequestTO, jwtUserDetails)
-+        if (resultTO.isSuccess() && ListingUpdatedNotifier.changesGroundingFacts(patchOwnListingRequestTO)) {
-+            listingUpdatedNotifier.notifyListingSaved(patchOwnListingRequestTO.listingUuid)
-+        }
- 
-         return ResponseEntity.status(resultTO.httpStatus).body(if (resultTO.isSuccess()) resultTO else resultTO.messages)
-     }
++}
 diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/AdaptiveListingsProperties.kt b/src/main/kotlin/com/time2show/core/service/adaptivelistings/AdaptiveListingsProperties.kt
 --- a/src/main/kotlin/com/time2show/core/service/adaptivelistings/AdaptiveListingsProperties.kt	1970-01-01 01:00:00.000000000 +0100
-+++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/AdaptiveListingsProperties.kt	2026-11-02 07:01:57.563055775 +0100
-@@ -0,0 +1,101 @@
++++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/AdaptiveListingsProperties.kt	2026-11-02 08:33:57.641776602 +0100
+@@ -0,0 +1,110 @@
 +package com.time2show.core.service.adaptivelistings
 +
 +import org.slf4j.LoggerFactory
@@ -166,6 +220,10 @@ diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/Adaptive
 +    }
 +
 +    private fun checkListingUpdated(): Boolean {
++        if (tenantId.isNotBlank() && !UUID_FORMAT.matches(tenantId)) {
++            log.error("Adaptive Listings listing-updated webhook is misconfigured and disabled (tenant-id is not a UUID)")
++            return false
++        }
 +        val anySet = listingUpdatedUri != null || listingUpdatedWebhookSecret.isNotBlank()
 +        if (!anySet) {
 +            log.info("Adaptive Listings listing-updated webhook is not configured; none will be sent")
@@ -181,25 +239,32 @@ diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/Adaptive
 +        }
 +        return true
 +    }
++
++    private companion object {
++        // `UUID.fromString` also accepts forms like 1-1-1-1-1, which the route's schema refuses.
++        val UUID_FORMAT = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
++    }
 +}
 diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/BoundedHttpPost.kt b/src/main/kotlin/com/time2show/core/service/adaptivelistings/BoundedHttpPost.kt
 --- a/src/main/kotlin/com/time2show/core/service/adaptivelistings/BoundedHttpPost.kt	1970-01-01 01:00:00.000000000 +0100
-+++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/BoundedHttpPost.kt	2026-11-02 07:01:57.567055739 +0100
-@@ -0,0 +1,68 @@
++++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/BoundedHttpPost.kt	2026-11-02 08:33:57.641776602 +0100
+@@ -0,0 +1,96 @@
 +package com.time2show.core.service.adaptivelistings
 +
-+import java.io.IOException
 +import java.net.URI
 +import java.net.http.HttpClient
 +import java.net.http.HttpRequest
 +import java.net.http.HttpResponse
 +import java.nio.charset.StandardCharsets
 +import java.time.Duration
++import java.util.concurrent.ExecutionException
++import java.util.concurrent.TimeUnit
++import java.util.concurrent.TimeoutException
 +
 +/**
-+ * One best-effort POST to Adaptive Listings: bounded connect and request timeouts, a bounded number of
-+ * sends, a re-send only after a 5xx or a network failure. Worst case is
-+ * MAX_SENDS x (connect + request timeout) + the delays, on an `@Async` thread and never on a request.
++ * One best-effort POST to Adaptive Listings: a bounded number of sends, each bounded as a whole, with a
++ * re-send only after a 5xx, a 429 or a network failure. Never on a request thread. Worst case is
++ * MAX_SENDS x request timeout + (MAX_SENDS - 1) x MAX_RETRY_AFTER.
 + */
 +class BoundedHttpPost(
 +    connectTimeout: Duration,
@@ -213,8 +278,14 @@ diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/BoundedH
 +        .connectTimeout(connectTimeout)
 +        .build()
 +
-+    /** How the last send ended. [status] is null when no response arrived. */
-+    data class Outcome(val status: Int?, val body: String?, val sends: Int, val failure: String?)
++    /** How the last send ended. [status] is null when no complete response arrived. */
++    data class Outcome(
++        val status: Int?,
++        val body: String?,
++        val sends: Int,
++        val failure: String?,
++        val retryAfter: Duration? = null,
++    )
 +
 +    /** [headers] is called once per send, so a signed caller signs each send freshly. */
 +    fun post(uri: URI, body: String, headers: () -> Map<String, String>): Outcome {
@@ -222,9 +293,14 @@ diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/BoundedH
 +        for (send in 1..MAX_SENDS) {
 +            last = sendOnce(uri, body, headers(), send)
 +            val status = last.status
-+            if ((status != null && status < 500) || send == MAX_SENDS) return last
++            val retryable = status == null || status >= 500 || status == 429
++            if (!retryable || send == MAX_SENDS) return last
++
++            val wait = last.retryAfter ?: retryDelay
++            // Sending earlier than the server asked is pointless, and waiting longer breaks the bound.
++            if (wait > MAX_RETRY_AFTER) return last.copy(failure = "retry_after_beyond_bound")
 +            try {
-+                Thread.sleep(retryDelay.toMillis())
++                Thread.sleep(wait.toMillis())
 +            } catch (e: InterruptedException) {
 +                Thread.currentThread().interrupt()
 +                return last
@@ -238,25 +314,40 @@ diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/BoundedH
 +            .timeout(requestTimeout)
 +            .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
 +        headers.forEach { (name, value) -> builder.header(name, value) }
++        // A deadline on the whole exchange, body included, stated here rather than left to how a given JDK
++        // build reads `HttpRequest.timeout`: its contract is "the response", and builds differ on the body.
++        val exchange = client.sendAsync(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
 +        return try {
-+            val response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
-+            Outcome(response.statusCode(), response.body(), send, null)
-+        } catch (e: IOException) {
++            val response = exchange.get(requestTimeout.toMillis(), TimeUnit.MILLISECONDS)
++            val retryAfter = response.headers().firstValue("Retry-After").orElse(null)
++                ?.takeIf { response.statusCode() == 429 }
++                ?.let(::parseRetryAfter)
++            Outcome(response.statusCode(), response.body(), send, null, retryAfter)
++        } catch (e: TimeoutException) {
++            exchange.cancel(true)
++            Outcome(null, null, send, "timeout")
++        } catch (e: ExecutionException) {
 +            // The class name only: a message can carry the URL, and the log needs no more than the kind.
-+            Outcome(null, null, send, e.javaClass.simpleName)
++            Outcome(null, null, send, (e.cause ?: e).javaClass.simpleName)
 +        } catch (e: InterruptedException) {
++            exchange.cancel(true)
 +            Thread.currentThread().interrupt()
 +            Outcome(null, null, send, "interrupted")
 +        }
 +    }
 +
++    /** Delay-seconds only; ingest sends that form. An HTTP-date falls back to the ordinary delay. */
++    private fun parseRetryAfter(raw: String): Duration? =
++        raw.trim().toLongOrNull()?.takeIf { it >= 0 }?.let { Duration.ofSeconds(it) }
++
 +    companion object {
 +        const val MAX_SENDS = 3
++        val MAX_RETRY_AFTER: Duration = Duration.ofSeconds(10)
 +    }
 +}
 diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/BuyerSessionId.kt b/src/main/kotlin/com/time2show/core/service/adaptivelistings/BuyerSessionId.kt
 --- a/src/main/kotlin/com/time2show/core/service/adaptivelistings/BuyerSessionId.kt	1970-01-01 01:00:00.000000000 +0100
-+++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/BuyerSessionId.kt	2026-11-02 07:01:57.563055775 +0100
++++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/BuyerSessionId.kt	2026-11-02 08:33:57.641776602 +0100
 @@ -0,0 +1,37 @@
 +package com.time2show.core.service.adaptivelistings
 +
@@ -297,7 +388,7 @@ diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/BuyerSes
 +}
 diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/ConversionEventClient.kt b/src/main/kotlin/com/time2show/core/service/adaptivelistings/ConversionEventClient.kt
 --- a/src/main/kotlin/com/time2show/core/service/adaptivelistings/ConversionEventClient.kt	1970-01-01 01:00:00.000000000 +0100
-+++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/ConversionEventClient.kt	2026-11-02 07:01:57.571055703 +0100
++++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/ConversionEventClient.kt	2026-11-02 08:33:57.649776523 +0100
 @@ -0,0 +1,107 @@
 +package com.time2show.core.service.adaptivelistings
 +
@@ -408,8 +499,8 @@ diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/Conversi
 +}
 diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/ConversionEventListener.kt b/src/main/kotlin/com/time2show/core/service/adaptivelistings/ConversionEventListener.kt
 --- a/src/main/kotlin/com/time2show/core/service/adaptivelistings/ConversionEventListener.kt	1970-01-01 01:00:00.000000000 +0100
-+++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/ConversionEventListener.kt	2026-11-02 07:01:57.571055703 +0100
-@@ -0,0 +1,54 @@
++++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/ConversionEventListener.kt	2026-11-02 08:33:57.649776523 +0100
+@@ -0,0 +1,57 @@
 +package com.time2show.core.service.adaptivelistings
 +
 +import com.time2show.core.model.enums.ConversationParticipantRole
@@ -424,7 +515,8 @@ diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/Conversi
 + * The two places a conversion is emitted (CEO ruling D-J): a buyer's registration for a live
 + * presentation and a conversation a buyer started.
 + *
-+ * After commit, so a rolled-back registration emits nothing; `@Async`, so the request never waits; and
++ * After commit, so a rolled-back registration emits nothing; on a bounded pool, so the request never
++ * waits; and
 + * nothing thrown here leaves this class, so a failure cannot reach registration or conversation
 + * creation. Without a session id there is nothing to attribute the conversion to: nothing is sent and
 + * one line without personal data says so. A conversion is never sent with a made-up session.
@@ -434,7 +526,7 @@ diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/Conversi
 +
 +    private val log = LoggerFactory.getLogger(ConversionEventListener::class.java)
 +
-+    @Async
++    @Async(AdaptiveListingsExecutor.BEAN_NAME)
 +    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
 +    fun onLivePresentationRegistered(event: LivePresentationRegisteredEvent) {
 +        emit(ConversionEventClient.TYPE_LIVE_SIGNUP, event.buyerSessionId) { sessionId ->
@@ -442,10 +534,12 @@ diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/Conversi
 +        }
 +    }
 +
-+    @Async
++    @Async(AdaptiveListingsExecutor.BEAN_NAME)
 +    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
 +    fun onConversationCreated(event: ConversationCreatedEvent) {
 +        if (event.initiatorRole != ConversationParticipantRole.BUYER) return
++        // Any account has a slug; a buyer writing to another buyer has contacted no selling agent.
++        if (event.recipientRole != ConversationParticipantRole.AGENT) return
 +        emit(ConversionEventClient.TYPE_INQUIRY_COMPLETED, event.buyerSessionId) { sessionId ->
 +            client.sendInquiryCompleted(sessionId)
 +        }
@@ -466,71 +560,92 @@ diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/Conversi
 +}
 diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/ListingUpdatedNotifier.kt b/src/main/kotlin/com/time2show/core/service/adaptivelistings/ListingUpdatedNotifier.kt
 --- a/src/main/kotlin/com/time2show/core/service/adaptivelistings/ListingUpdatedNotifier.kt	1970-01-01 01:00:00.000000000 +0100
-+++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/ListingUpdatedNotifier.kt	2026-11-02 07:01:57.571055703 +0100
-@@ -0,0 +1,60 @@
++++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/ListingUpdatedNotifier.kt	2026-11-02 08:33:57.645776562 +0100
+@@ -0,0 +1,81 @@
 +package com.time2show.core.service.adaptivelistings
 +
 +import com.fasterxml.jackson.databind.ObjectMapper
 +import com.time2show.core.dto.PatchOwnListingRequestTO
++import com.time2show.core.dto.async.ListingUpdatedWebhookJobPayload
++import com.time2show.core.model.enums.AsyncAggregateType
++import com.time2show.core.model.enums.AsyncJobType
++import com.time2show.core.model.enums.ListingStatus
++import com.time2show.core.service.web.AsyncJobCreator
++import com.time2show.core.util.JsonUtils
 +import org.slf4j.LoggerFactory
-+import org.springframework.scheduling.annotation.Async
 +import org.springframework.stereotype.Component
++import java.util.UUID
 +
 +/**
-+ * Tells the Adaptive Listings control plane a listing was saved, so it advances the listing's revision
-+ * and stops serving copy generated from the old facts (`POST /api/webhooks/listing-updated`).
++ * Tells the Adaptive Listings control plane a listing's facts changed, so it advances the listing's
++ * revision and stops serving copy generated from the old ones (`POST /api/webhooks/listing-updated`).
 + *
-+ * Called by the controller after the service returned, so the save has committed and the control
-+ * plane's next read sees the new facts. A failed call leaves adapted copy stale; it is logged, and it
-+ * never fails the save.
++ * This webhook is the control plane's only change signal for a permanent cache, so a lost call means old
++ * copy until the next save. The call is therefore a durable async job, written in the save's own
++ * transaction: the save and the promise to announce it commit together, and the job retries for hours
++ * across a restart of either side. It finally alerts the admins (DEAD_LETTER) and can be retried by hand.
 + */
 +@Component
-+class ListingUpdatedNotifier(private val properties: AdaptiveListingsProperties) {
-+
++class ListingUpdatedNotifier(
++    private val properties: AdaptiveListingsProperties,
++    private val asyncJobCreator: AsyncJobCreator,
++) {
 +    private val log = LoggerFactory.getLogger(ListingUpdatedNotifier::class.java)
 +    private val objectMapper = ObjectMapper()
 +    private val http = BoundedHttpPost(properties.connectTimeout, properties.requestTimeout, properties.retryDelay)
 +
-+    @Async
-+    fun notifyListingSaved(listingUuid: String) {
-+        val uri = properties.listingUpdatedUri
-+        if (!properties.listingUpdatedConfigured || uri == null) {
++    /** Must run inside the transaction that saves the listing. No deduplication: every save must bump. */
++    fun enqueueInCurrentTx(listingUuid: UUID) {
++        if (!properties.listingUpdatedConfigured) {
 +            log.debug("al_listing_updated_skipped reason=not_configured")
 +            return
 +        }
-+        try {
-+            val body = objectMapper.writeValueAsString(
-+                mapOf("tenant_id" to properties.tenantId, "listing_id" to listingUuid)
-+            )
-+            val outcome = http.post(uri, body) {
-+                mapOf("Content-Type" to "application/json", "X-Webhook-Secret" to properties.listingUpdatedWebhookSecret)
-+            }
-+            val status = outcome.status
-+            if (status != null && status in 200..299) {
-+                log.info("al_listing_updated_sent listing={} sends={}", listingUuid, outcome.sends)
-+            } else {
-+                log.warn(
-+                    "al_listing_updated_failed listing={} sends={} status={} failure={}",
-+                    listingUuid, outcome.sends, status, outcome.failure ?: "refused"
-+                )
-+            }
-+        } catch (e: Exception) {
-+            log.warn("al_listing_updated_failed listing={} failure={}", listingUuid, e.javaClass.simpleName)
++        asyncJobCreator.enqueueJobInCurrentTx(
++            type = AsyncJobType.LISTING_UPDATED_WEBHOOK,
++            aggregateType = AsyncAggregateType.LISTING,
++            aggregateId = listingUuid.toString(),
++            payloadJson = JsonUtils.mapper.writeValueAsString(ListingUpdatedWebhookJobPayload(listingUuid.toString())),
++        )
++    }
++
++    /** One delivery attempt for the job. Throws unless the control plane answered 2xx, so the job retries. */
++    fun deliver(listingUuid: String) {
++        val uri = properties.listingUpdatedUri
++        if (!properties.listingUpdatedConfigured || uri == null) {
++            log.warn("al_listing_updated_skipped listing={} reason=not_configured_at_delivery", listingUuid)
++            return
 +        }
++        val body = objectMapper.writeValueAsString(
++            mapOf("tenant_id" to properties.tenantId, "listing_id" to listingUuid)
++        )
++        val outcome = http.post(uri, body) {
++            mapOf("Content-Type" to "application/json", "X-Webhook-Secret" to properties.listingUpdatedWebhookSecret)
++        }
++        val status = outcome.status
++        if (status == null || status !in 200..299) {
++            // Stored as the job's last_error: no secret, no URL.
++            throw IllegalStateException(
++                "listing-updated webhook not delivered: sends=${outcome.sends} status=$status failure=${outcome.failure ?: "refused"}"
++            )
++        }
++        log.info("al_listing_updated_sent listing={} sends={}", listingUuid, outcome.sends)
 +    }
 +
 +    companion object {
 +        /**
-+         * Whether a PATCH changed a fact adapted copy is grounded on (price, location). A photo reorder or
-+         * a status change did not, and a regeneration on those would be paid for nothing.
++         * Whether a PATCH changed a fact adapted copy is grounded on: the price, the place, or a publish.
++         * A publish counts because a re-scrape rewrites a listing's text and leaves it DRAFT, with no signal
++         * of its own. `status` is mandatory on every PATCH, so only the transition counts: a photo reorder
++         * on a live listing also says ACTIVE, and a regeneration for that would be paid for nothing.
 +         */
-+        fun changesGroundingFacts(request: PatchOwnListingRequestTO): Boolean =
-+            request.price != null || request.cityPlaceGoogleId != null || request.districtPlaceGoogleId != null
++        fun changesGroundingFacts(request: PatchOwnListingRequestTO, previousStatus: ListingStatus): Boolean =
++            request.price != null || request.cityPlaceGoogleId != null || request.districtPlaceGoogleId != null ||
++                (request.status == ListingStatus.ACTIVE && previousStatus != ListingStatus.ACTIVE)
 +    }
 +}
 diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/LivePresentationRegisteredEvent.kt b/src/main/kotlin/com/time2show/core/service/adaptivelistings/LivePresentationRegisteredEvent.kt
 --- a/src/main/kotlin/com/time2show/core/service/adaptivelistings/LivePresentationRegisteredEvent.kt	1970-01-01 01:00:00.000000000 +0100
-+++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/LivePresentationRegisteredEvent.kt	2026-11-02 07:01:57.563055775 +0100
++++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/LivePresentationRegisteredEvent.kt	2026-11-02 08:33:57.637776640 +0100
 @@ -0,0 +1,10 @@
 +package com.time2show.core.service.adaptivelistings
 +
@@ -544,7 +659,7 @@ diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/LivePres
 +)
 diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/SignedEventSigner.kt b/src/main/kotlin/com/time2show/core/service/adaptivelistings/SignedEventSigner.kt
 --- a/src/main/kotlin/com/time2show/core/service/adaptivelistings/SignedEventSigner.kt	1970-01-01 01:00:00.000000000 +0100
-+++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/SignedEventSigner.kt	2026-11-02 07:01:57.567055739 +0100
++++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/SignedEventSigner.kt	2026-11-02 08:33:57.645776562 +0100
 @@ -0,0 +1,24 @@
 +package com.time2show.core.service.adaptivelistings
 +
@@ -570,9 +685,37 @@ diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/SignedEv
 +        return PREFIX + HexFormat.of().formatHex(mac.doFinal(message))
 +    }
 +}
+diff -ruN a/src/main/kotlin/com/time2show/core/service/scheduled/ListingUpdatedWebhookJobProcessor.kt b/src/main/kotlin/com/time2show/core/service/scheduled/ListingUpdatedWebhookJobProcessor.kt
+--- a/src/main/kotlin/com/time2show/core/service/scheduled/ListingUpdatedWebhookJobProcessor.kt	1970-01-01 01:00:00.000000000 +0100
++++ b/src/main/kotlin/com/time2show/core/service/scheduled/ListingUpdatedWebhookJobProcessor.kt	2026-11-02 08:33:57.437778602 +0100
+@@ -0,0 +1,24 @@
++package com.time2show.core.service.scheduled
++
++import com.time2show.core.dto.async.ListingUpdatedWebhookJobPayload
++import com.time2show.core.model.enums.AsyncJobType
++import com.time2show.core.repository.AsyncJobRepository
++import com.time2show.core.service.adaptivelistings.ListingUpdatedNotifier
++import com.time2show.core.service.email.AdminAlertService
++import org.springframework.beans.factory.annotation.Autowired
++import org.springframework.stereotype.Component
++import org.springframework.transaction.support.TransactionTemplate
++
++@Component
++class ListingUpdatedWebhookJobProcessor @Autowired constructor(
++    asyncJobRepository: AsyncJobRepository,
++    transactionTemplate: TransactionTemplate,
++    adminAlertService: AdminAlertService,
++    private val listingUpdatedNotifier: ListingUpdatedNotifier,
++) : AbstractAsyncJobProcessor<ListingUpdatedWebhookJobPayload>(
++    asyncJobRepository, transactionTemplate, adminAlertService, AsyncJobType.LISTING_UPDATED_WEBHOOK, ListingUpdatedWebhookJobPayload::class.java
++) {
++    override fun execute(payload: ListingUpdatedWebhookJobPayload) {
++        listingUpdatedNotifier.deliver(payload.listingUuid)
++    }
++}
 diff -ruN a/src/main/kotlin/com/time2show/core/service/web/CalendarServiceImpl.kt b/src/main/kotlin/com/time2show/core/service/web/CalendarServiceImpl.kt
---- a/src/main/kotlin/com/time2show/core/service/web/CalendarServiceImpl.kt	2026-11-02 07:01:52.835098070 +0100
-+++ b/src/main/kotlin/com/time2show/core/service/web/CalendarServiceImpl.kt	2026-11-02 07:01:57.371057493 +0100
+--- a/src/main/kotlin/com/time2show/core/service/web/CalendarServiceImpl.kt	2026-11-02 08:33:55.297799587 +0100
++++ b/src/main/kotlin/com/time2show/core/service/web/CalendarServiceImpl.kt	2026-11-02 08:33:57.505777935 +0100
 @@ -18,7 +18,10 @@
  import org.springframework.beans.factory.annotation.Autowired
  import org.springframework.http.HttpStatus
@@ -595,11 +738,14 @@ diff -ruN a/src/main/kotlin/com/time2show/core/service/web/CalendarServiceImpl.k
  
  ) : CalendarService {
  
-@@ -242,6 +247,16 @@
+@@ -242,6 +247,19 @@
  
          livePresentationRegistrationRepository.save(livePresentationRegistrationEntity)
  
-+        if (!accountEntity.isActiveAgent()) {
++        // canManageListing covers a collaborator or agency admin without the agent role: not a buyer either.
++        if (!accountEntity.isActiveAgent() &&
++            !listingAuthorizationService.canManageListing(jwtUserDetails.username, livePresentationEntity.listing.uuid)
++        ) {
 +            eventPublisher.publishEvent(
 +                LivePresentationRegisteredEvent(
 +                    livePresentationEntity.uuid,
@@ -613,8 +759,8 @@ diff -ruN a/src/main/kotlin/com/time2show/core/service/web/CalendarServiceImpl.k
  
      }
 diff -ruN a/src/main/kotlin/com/time2show/core/service/web/ConversationCreatedEvent.kt b/src/main/kotlin/com/time2show/core/service/web/ConversationCreatedEvent.kt
---- a/src/main/kotlin/com/time2show/core/service/web/ConversationCreatedEvent.kt	2026-11-02 07:01:52.907097425 +0100
-+++ b/src/main/kotlin/com/time2show/core/service/web/ConversationCreatedEvent.kt	2026-11-02 07:01:57.379057421 +0100
+--- a/src/main/kotlin/com/time2show/core/service/web/ConversationCreatedEvent.kt	2026-11-02 08:33:55.349799077 +0100
++++ b/src/main/kotlin/com/time2show/core/service/web/ConversationCreatedEvent.kt	2026-11-02 08:33:57.513777856 +0100
 @@ -1,6 +1,7 @@
  package com.time2show.core.service.web
  
@@ -623,18 +769,20 @@ diff -ruN a/src/main/kotlin/com/time2show/core/service/web/ConversationCreatedEv
  import java.util.*
  
  data class ConversationCreatedEvent(
-@@ -12,5 +13,7 @@
+@@ -12,5 +13,9 @@
      val initiatorAgencyName: String?,
      // Internal routing only (which local emitters to deliver to) — not exposed to the client. A list
      // because a conversation created during the recipient's absence is born three-way (buyer + agent + delegate).
 -    val recipientLogins: List<String>
 +    val recipientLogins: List<String>,
 +    // Adaptive Listings attribution, read on the request thread; null when the front end sent none.
-+    val buyerSessionId: BuyerSessionId? = null
++    val buyerSessionId: BuyerSessionId? = null,
++    // Who was contacted: only a conversation with an active agent is a conversion.
++    val recipientRole: ConversationParticipantRole? = null
  )
 diff -ruN a/src/main/kotlin/com/time2show/core/service/web/ConversationServiceImpl.kt b/src/main/kotlin/com/time2show/core/service/web/ConversationServiceImpl.kt
---- a/src/main/kotlin/com/time2show/core/service/web/ConversationServiceImpl.kt	2026-11-02 07:01:52.831098105 +0100
-+++ b/src/main/kotlin/com/time2show/core/service/web/ConversationServiceImpl.kt	2026-11-02 07:01:57.387057349 +0100
+--- a/src/main/kotlin/com/time2show/core/service/web/ConversationServiceImpl.kt	2026-11-02 08:33:55.281799745 +0100
++++ b/src/main/kotlin/com/time2show/core/service/web/ConversationServiceImpl.kt	2026-11-02 08:33:57.517777818 +0100
 @@ -15,6 +15,7 @@
  import com.time2show.core.repository.AccountRepository
  import com.time2show.core.repository.ConversationParticipantRepository
@@ -643,19 +791,57 @@ diff -ruN a/src/main/kotlin/com/time2show/core/service/web/ConversationServiceIm
  import org.springframework.context.ApplicationEventPublisher
  import org.springframework.data.domain.Pageable
  import org.springframework.http.HttpStatus
-@@ -246,7 +247,8 @@
+@@ -246,7 +247,9 @@
                  recipientLogins = listOfNotNull(
                      recipientAccount.login,
                      delegateLogin?.takeIf { it != currentAccount.login }
 -                )
 +                ),
-+                buyerSessionId = BuyerSessionId.fromCurrentRequest()
++                buyerSessionId = BuyerSessionId.fromCurrentRequest(),
++                recipientRole = roleOf(recipientAccount)
              )
          )
  
+diff -ruN a/src/main/kotlin/com/time2show/core/service/web/ListingServiceImpl.kt b/src/main/kotlin/com/time2show/core/service/web/ListingServiceImpl.kt
+--- a/src/main/kotlin/com/time2show/core/service/web/ListingServiceImpl.kt	2026-11-02 08:33:55.361798960 +0100
++++ b/src/main/kotlin/com/time2show/core/service/web/ListingServiceImpl.kt	2026-11-02 08:33:57.541777583 +0100
+@@ -104,6 +104,8 @@
+ 
+     private val basicListingCardAssembler: BasicListingCardAssembler,
+ 
++    private val listingUpdatedNotifier: com.time2show.core.service.adaptivelistings.ListingUpdatedNotifier,
++
+ ) : ListingService {
+ 
+     private val log = LoggerFactory.getLogger(ListingServiceImpl::class.java)
+@@ -1189,6 +1191,7 @@
+ 
+         listingRepository.save(listing)
+         cacheService.evictListingDetailsBySlug(listing.slug)
++        listingUpdatedNotifier.enqueueInCurrentTx(listing.uuid)
+ 
+         return ownListingResponseTOFromListingEntity(listing)
+     }
+@@ -1316,12 +1319,16 @@
+             }
+         }
+ 
++        val previousStatus = listing.status
+         listing.status = patchOwnListingRequestTO.status!!
+ 
+         listing.updatedAt = Instant.now()
+ 
+         listingRepository.save(listing)
+         cacheService.evictListingDetailsBySlug(listing.slug)
++        if (com.time2show.core.service.adaptivelistings.ListingUpdatedNotifier.changesGroundingFacts(patchOwnListingRequestTO, previousStatus)) {
++            listingUpdatedNotifier.enqueueInCurrentTx(listing.uuid)
++        }
+ 
+         return ownListingResponseTOFromListingEntity(listing)
+     }
 diff -ruN a/src/main/kotlin/com/time2show/core/service/web/LivestreamServiceImpl.kt b/src/main/kotlin/com/time2show/core/service/web/LivestreamServiceImpl.kt
---- a/src/main/kotlin/com/time2show/core/service/web/LivestreamServiceImpl.kt	2026-11-02 07:01:52.931097211 +0100
-+++ b/src/main/kotlin/com/time2show/core/service/web/LivestreamServiceImpl.kt	2026-11-02 07:01:57.455056741 +0100
+--- a/src/main/kotlin/com/time2show/core/service/web/LivestreamServiceImpl.kt	2026-11-02 08:33:55.377798803 +0100
++++ b/src/main/kotlin/com/time2show/core/service/web/LivestreamServiceImpl.kt	2026-11-02 08:33:57.553777465 +0100
 @@ -14,6 +14,8 @@
  import com.time2show.core.model.ImageEntity
  import com.time2show.core.model.LivePresentationEntity
@@ -678,8 +864,8 @@ diff -ruN a/src/main/kotlin/com/time2show/core/service/web/LivestreamServiceImpl
  
                  val reg = livePresentationRegistrationRepository.findByLivePresentationAndParticipant_Login(
 diff -ruN a/src/main/resources/application.properties b/src/main/resources/application.properties
---- a/src/main/resources/application.properties	2026-11-02 07:01:52.507101003 +0100
-+++ b/src/main/resources/application.properties	2026-11-02 07:01:57.695054594 +0100
+--- a/src/main/resources/application.properties	2026-11-02 08:33:55.025802255 +0100
++++ b/src/main/resources/application.properties	2026-11-02 08:33:57.789775149 +0100
 @@ -72,4 +72,13 @@
  ads.min-ad-set-budget-usd-cents=300
  notification.max-tokens-per-account=10
@@ -696,10 +882,241 @@ diff -ruN a/src/main/resources/application.properties b/src/main/resources/appli
 +adaptive-listings.tenant-id=${AL_TENANT_ID:}
 +adaptive-listings.listing-updated-webhook-url=${AL_LISTING_UPDATED_WEBHOOK_URL:}
 +adaptive-listings.listing-updated-webhook-secret=${AL_LISTING_UPDATED_WEBHOOK_SECRET:}
+diff -ruN a/src/test/kotlin/com/time2show/core/integration/ListingUpdatedWebhookJobIntegrationTest.kt b/src/test/kotlin/com/time2show/core/integration/ListingUpdatedWebhookJobIntegrationTest.kt
+--- a/src/test/kotlin/com/time2show/core/integration/ListingUpdatedWebhookJobIntegrationTest.kt	1970-01-01 01:00:00.000000000 +0100
++++ b/src/test/kotlin/com/time2show/core/integration/ListingUpdatedWebhookJobIntegrationTest.kt	2026-11-02 08:34:00.521748353 +0100
+@@ -0,0 +1,227 @@
++package com.time2show.core.integration
++
++import com.fasterxml.jackson.databind.ObjectMapper
++import com.sun.net.httpserver.HttpServer
++import com.time2show.core.EstalaraApplication
++import com.time2show.core.dto.PatchOwnListingRequestTO
++import com.time2show.core.dto.async.ListingUpdatedWebhookJobPayload
++import com.time2show.core.integration.support.CalendarTestDataFactory
++import com.time2show.core.integration.support.IntegrationAuthUtils
++import com.time2show.core.integration.support.ListingIntegrationTestDataFactory
++import com.time2show.core.model.AsyncJobEntity
++import com.time2show.core.model.ListingEntity
++import com.time2show.core.model.enums.AsyncAggregateType
++import com.time2show.core.model.enums.AsyncJobStatus
++import com.time2show.core.model.enums.AsyncJobType
++import com.time2show.core.model.enums.ListingStatus
++import com.time2show.core.model.enums.UserRole
++import com.time2show.core.repository.AsyncJobRepository
++import com.time2show.core.repository.ListingRepository
++import com.time2show.core.service.scheduled.AsyncJobEventDispatcher
++import com.time2show.core.service.web.AsyncJobCreator
++import com.time2show.core.service.web.ListingTranslationService
++import com.time2show.core.service.web.NotificationService
++import com.time2show.core.service.web.ScrapingWebhookService
++import com.time2show.core.service.web.StoreService
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertFalse
++import org.junit.jupiter.api.Assertions.assertNotNull
++import org.junit.jupiter.api.BeforeEach
++import org.junit.jupiter.api.DisplayName
++import org.junit.jupiter.api.Tag
++import org.junit.jupiter.api.Test
++import org.mockito.kotlin.any
++import org.mockito.kotlin.whenever
++import org.springframework.ai.chat.model.ChatModel
++import org.springframework.ai.vectorstore.VectorStore
++import org.springframework.beans.factory.annotation.Autowired
++import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
++import org.springframework.boot.test.context.SpringBootTest
++import org.springframework.http.MediaType
++import org.springframework.test.context.ActiveProfiles
++import org.springframework.test.context.DynamicPropertyRegistry
++import org.springframework.test.context.DynamicPropertySource
++import org.springframework.test.context.bean.override.mockito.MockitoBean
++import org.springframework.test.web.servlet.MockMvc
++import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
++import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
++import org.springframework.transaction.annotation.Transactional
++import java.net.InetSocketAddress
++import java.time.Instant
++import java.util.UUID
++import java.util.concurrent.CopyOnWriteArrayList
++
++/**
++ * The listing-updated webhook as a durable job: what a save writes, and that the real dispatcher and
++ * processor retry a control plane that was down until it answers.
++ */
++@DisplayName("Listing-updated webhook job (integration)")
++@Tag("integration")
++@SpringBootTest(classes = [EstalaraApplication::class])
++@AutoConfigureMockMvc
++@ActiveProfiles("test")
++class ListingUpdatedWebhookJobIntegrationTest {
++
++    @Autowired private lateinit var mockMvc: MockMvc
++    @Autowired private lateinit var objectMapper: ObjectMapper
++    @Autowired private lateinit var authUtils: IntegrationAuthUtils
++    @Autowired private lateinit var listingDataFactory: ListingIntegrationTestDataFactory
++    @Autowired private lateinit var calendarDataFactory: CalendarTestDataFactory
++    @Autowired private lateinit var listingRepository: ListingRepository
++    @Autowired private lateinit var asyncJobRepository: AsyncJobRepository
++    @Autowired private lateinit var asyncJobCreator: AsyncJobCreator
++    @Autowired private lateinit var dispatcher: AsyncJobEventDispatcher
++
++    @field:MockitoBean private lateinit var storeService: StoreService
++    @field:MockitoBean private lateinit var listingTranslationService: ListingTranslationService
++    @field:MockitoBean private lateinit var notificationService: NotificationService
++    @field:MockitoBean private lateinit var scrapingWebhookService: ScrapingWebhookService
++    @field:MockitoBean private lateinit var chatModel: ChatModel
++    @field:MockitoBean private lateinit var vectorStore: VectorStore
++
++    @BeforeEach
++    fun setUp() {
++        whenever(storeService.buildPublicPhotoUrl(any())).thenReturn("https://test/image.jpg")
++        whenever(storeService.buildPublicVideoUrl(any())).thenReturn("https://test/video.mp4")
++    }
++
++    private fun jobsFor(listingUuid: UUID): List<AsyncJobEntity> =
++        asyncJobRepository.findAll().filter {
++            it.type == AsyncJobType.LISTING_UPDATED_WEBHOOK && it.aggregateId == listingUuid.toString()
++        }
++
++    private fun managedListing(): Pair<ListingEntity, String> {
++        val login = "listing-webhook-${UUID.randomUUID().toString().take(8)}"
++        val agent = listingDataFactory.createAgentWithProfile(login)
++        return calendarDataFactory.createManagedListing(agent) to authUtils.createBearerToken(login, listOf(UserRole.AGENT))
++    }
++
++    private fun patchListing(token: String, body: PatchOwnListingRequestTO) = mockMvc.perform(
++        patch("/api/v1/listing")
++            .header("Authorization", "Bearer $token")
++            .contentType(MediaType.APPLICATION_JSON)
++            .content(objectMapper.writeValueAsString(body))
++    )
++
++    @Test
++    @Transactional
++    fun `a price PATCH writes one job in the save's transaction`() {
++        val (listing, token) = managedListing()
++
++        patchListing(token, PatchOwnListingRequestTO(listingUuid = listing.uuid.toString(), status = listing.status, price = 123_456.0))
++            .andExpect(status().isOk)
++
++        val job = jobsFor(listing.uuid).single()
++        assertEquals(AsyncAggregateType.LISTING, job.aggregateType)
++        assertEquals(12, job.maxAttempts)
++    }
++
++    @Test
++    @Transactional
++    fun `a PATCH that only repeats the status writes no job`() {
++        val (listing, token) = managedListing()
++        listing.status = ListingStatus.ACTIVE
++        listingRepository.saveAndFlush(listing)
++
++        patchListing(token, PatchOwnListingRequestTO(listingUuid = listing.uuid.toString(), status = ListingStatus.ACTIVE))
++            .andExpect(status().isOk)
++
++        assertEquals(0, jobsFor(listing.uuid).size)
++    }
++
++    @Test
++    @Transactional
++    fun `re-publishing a DRAFT writes a job, the case a re-scrape leaves behind`() {
++        val (listing, token) = managedListing()
++        listing.status = ListingStatus.DRAFT
++        listingRepository.saveAndFlush(listing)
++
++        patchListing(token, PatchOwnListingRequestTO(listingUuid = listing.uuid.toString(), status = ListingStatus.ACTIVE))
++            .andExpect(status().isOk)
++
++        assertEquals(1, jobsFor(listing.uuid).size)
++    }
++
++    @Test
++    @Transactional
++    fun `a refused PATCH writes no job`() {
++        val (_, token) = managedListing()
++        val unknown = UUID.randomUUID()
++
++        patchListing(token, PatchOwnListingRequestTO(listingUuid = unknown.toString(), status = ListingStatus.ACTIVE, price = 1.0))
++            .andExpect(status().isNotFound)
++
++        assertEquals(0, jobsFor(unknown).size)
++    }
++
++    @Test
++    fun `the job survives a control plane that is down and delivers once it answers`() {
++        val listingUuid = UUID.randomUUID()
++        webhookStatus = 503
++        val job = asyncJobCreator.createJob(
++            type = AsyncJobType.LISTING_UPDATED_WEBHOOK,
++            aggregateType = AsyncAggregateType.LISTING,
++            aggregateId = listingUuid.toString(),
++            payloadJson = objectMapper.writeValueAsString(ListingUpdatedWebhookJobPayload(listingUuid.toString())),
++        )
++        try {
++            val failed = await(job.id!!) { it.status == AsyncJobStatus.RETRY_WAIT }
++            assertEquals(1, failed.attemptCount)
++            assertNotNull(failed.lastError)
++            assertFalse(failed.lastError!!.contains(WEBHOOK_SECRET))
++
++            // What the poller does when the backoff has passed; the wait itself is not worth a test's time.
++            webhookStatus = 200
++            failed.nextAttemptAt = Instant.now().minusSeconds(1)
++            asyncJobRepository.saveAndFlush(failed)
++            dispatcher.submitPendingForAllTypes()
++
++            val delivered = await(job.id!!) { it.status == AsyncJobStatus.SUCCEEDED }
++            assertEquals(1, delivered.attemptCount)
++            val body = objectMapper.readTree(webhookBodies.last { it.contains(listingUuid.toString()) })
++            assertEquals(TENANT_ID, body["tenant_id"].asText())
++            assertEquals(listingUuid.toString(), body["listing_id"].asText())
++        } finally {
++            asyncJobRepository.deleteById(job.id!!)
++        }
++    }
++
++    private fun await(jobId: Long, predicate: (AsyncJobEntity) -> Boolean): AsyncJobEntity {
++        val deadline = System.nanoTime() + java.time.Duration.ofSeconds(60).toNanos()
++        while (System.nanoTime() < deadline) {
++            val current = asyncJobRepository.findById(jobId).orElseThrow()
++            if (predicate(current)) return current
++            Thread.sleep(100)
++        }
++        val last = asyncJobRepository.findById(jobId).orElseThrow()
++        throw AssertionError("job $jobId stayed ${last.status} attempts=${last.attemptCount} error=${last.lastError}")
++    }
++
++    companion object {
++        private const val WEBHOOK_SECRET = "integration-webhook-value"
++        private const val TENANT_ID = "00000000-0000-0000-0000-0000000000e2"
++
++        @Volatile
++        private var webhookStatus = 200
++        private val webhookBodies = CopyOnWriteArrayList<String>()
++
++        private val server: HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
++            createContext("/api/webhooks/listing-updated") { exchange ->
++                webhookBodies += exchange.requestBody.readAllBytes().toString(Charsets.UTF_8)
++                exchange.sendResponseHeaders(webhookStatus, -1)
++                exchange.close()
++            }
++            start()
++        }
++
++        @JvmStatic
++        @DynamicPropertySource
++        fun properties(registry: DynamicPropertyRegistry) {
++            registry.add("adaptive-listings.listing-updated-webhook-url") {
++                "http://127.0.0.1:${server.address.port}/api/webhooks/listing-updated"
++            }
++            registry.add("adaptive-listings.listing-updated-webhook-secret") { WEBHOOK_SECRET }
++            registry.add("adaptive-listings.tenant-id") { TENANT_ID }
++        }
++    }
++}
 diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventClientTest.kt b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventClientTest.kt
 --- a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventClientTest.kt	1970-01-01 01:00:00.000000000 +0100
-+++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventClientTest.kt	2026-11-02 07:01:58.495047286 +0100
-@@ -0,0 +1,252 @@
++++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventClientTest.kt	2026-11-02 08:34:01.313740583 +0100
+@@ -0,0 +1,324 @@
 +package com.time2show.core.unit.service.adaptivelistings
 +
 +import ch.qos.logback.classic.Logger
@@ -745,6 +1162,7 @@ diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/Con
 +
 +    private lateinit var server: HttpServer
 +    private val received = CopyOnWriteArrayList<Received>()
++    private val sendTimes = CopyOnWriteArrayList<Long>()
 +    private val responses = ArrayDeque<Pair<Int, String>>()
 +    private val appender = ListAppender<ILoggingEvent>()
 +    private val release = CountDownLatch(1)
@@ -762,16 +1180,35 @@ diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/Con
 +                ).associateWith { exchange.requestHeaders.getFirst(it) },
 +                body
 +            )
++            sendTimes += System.nanoTime()
 +            val (status, answer) = synchronized(responses) { responses.removeFirstOrNull() } ?: (200 to """{"accepted":1,"rejected":0}""")
 +            if (status == HANG) {
 +                release.await(10, TimeUnit.SECONDS)
 +            }
++            if (status == STALL_IN_BODY) {
++                // Headers and a first byte arrive at once; the rest never does.
++                exchange.sendResponseHeaders(200, 100)
++                exchange.responseBody.write('{'.code)
++                exchange.responseBody.flush()
++                release.await(10, TimeUnit.SECONDS)
++                exchange.close()
++                return@createContext
++            }
++            if (status == RATE_LIMITED_1S) exchange.responseHeaders.add("Retry-After", "1")
++            if (status == RATE_LIMITED_FOR_LONG) exchange.responseHeaders.add("Retry-After", "600")
 +            val bytes = answer.toByteArray()
++            if (status == RATE_LIMITED_1S || status == RATE_LIMITED_FOR_LONG) {
++                exchange.sendResponseHeaders(429, bytes.size.toLong())
++                exchange.responseBody.use { it.write(bytes) }
++                return@createContext
++            }
 +            exchange.sendResponseHeaders(if (status == HANG) 200 else status, bytes.size.toLong())
 +            exchange.responseBody.use { it.write(bytes) }
 +        }
 +        server.start()
 +        appender.start()
++        // An integration test in the same JVM may have left the test profile's root=ERROR in force.
++        (LoggerFactory.getLogger(ConversionEventClient::class.java) as Logger).level = ch.qos.logback.classic.Level.INFO
 +        (LoggerFactory.getLogger(ConversionEventClient::class.java) as Logger).addAppender(appender)
 +    }
 +
@@ -895,6 +1332,55 @@ diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/Con
 +    }
 +
 +    @Test
++    fun `an ingest stalling inside the response body gives up inside the bound`() {
++        respond(STALL_IN_BODY to "", STALL_IN_BODY to "", STALL_IN_BODY to "")
++
++        val startedAt = System.nanoTime()
++        client(requestTimeout = Duration.ofMillis(300)).sendInquiryCompleted(sessionId)
++        val elapsed = Duration.ofNanos(System.nanoTime() - startedAt)
++
++        // The server holds each body for 10 s, so anything bound only up to the headers takes 30 s.
++        assertTrue(elapsed < Duration.ofSeconds(8), "took $elapsed")
++        assertTrue(logs().contains("failure=timeout"))
++        assertTrue(logs().contains("sends=${BoundedHttpPost.MAX_SENDS}"))
++    }
++
++    @Test
++    fun `a 429 is re-sent after the Retry-After it asked for`() {
++        respond(RATE_LIMITED_1S to "{}")
++
++        client().sendInquiryCompleted(sessionId)
++
++        assertEquals(2, received.size)
++        val waited = Duration.ofNanos(sendTimes[1] - sendTimes[0])
++        assertTrue(waited >= Duration.ofMillis(900), "re-sent after $waited")
++        assertTrue(logs().contains("al_conversion_sent"))
++    }
++
++    @Test
++    fun `a 429 without a usable Retry-After is re-sent after the ordinary delay`() {
++        respond(429 to "{}")
++
++        client().sendInquiryCompleted(sessionId)
++
++        assertEquals(2, received.size)
++        assertTrue(logs().contains("al_conversion_sent"))
++    }
++
++    @Test
++    fun `a Retry-After beyond the bound stops the sends rather than breaking the bound`() {
++        respond(RATE_LIMITED_FOR_LONG to "{}")
++
++        val startedAt = System.nanoTime()
++        client().sendInquiryCompleted(sessionId)
++        val elapsed = Duration.ofNanos(System.nanoTime() - startedAt)
++
++        assertEquals(1, received.size)
++        assertTrue(elapsed < Duration.ofSeconds(8), "took $elapsed")
++        assertTrue(logs().contains("failure=retry_after_beyond_bound"))
++    }
++
++    @Test
 +    fun `an unreachable ingest does not throw`() {
 +        val port = server.address.port
 +        server.stop(0)
@@ -950,15 +1436,19 @@ diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/Con
 +
 +    private companion object {
 +        const val HANG = -1
++        const val STALL_IN_BODY = -2
++        const val RATE_LIMITED_1S = -3
++        const val RATE_LIMITED_FOR_LONG = -4
 +    }
 +}
 diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventListenerTest.kt b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventListenerTest.kt
 --- a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventListenerTest.kt	1970-01-01 01:00:00.000000000 +0100
-+++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventListenerTest.kt	2026-11-02 07:01:58.495047286 +0100
-@@ -0,0 +1,117 @@
++++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventListenerTest.kt	2026-11-02 08:34:01.277740936 +0100
+@@ -0,0 +1,168 @@
 +package com.time2show.core.unit.service.adaptivelistings
 +
 +import com.time2show.core.model.enums.ConversationParticipantRole
++import com.time2show.core.service.adaptivelistings.AdaptiveListingsExecutor
 +import com.time2show.core.service.adaptivelistings.BuyerSessionId
 +import com.time2show.core.service.adaptivelistings.ConversionEventClient
 +import com.time2show.core.service.adaptivelistings.ConversionEventListener
@@ -989,7 +1479,11 @@ diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/Con
 +    private val listener = ConversionEventListener(client)
 +    private val session = BuyerSessionId.parse(SignedEventVectors.SESSION_ID)!!
 +
-+    private fun conversation(role: ConversationParticipantRole, sessionId: BuyerSessionId?) = ConversationCreatedEvent(
++    private fun conversation(
++        role: ConversationParticipantRole,
++        sessionId: BuyerSessionId?,
++        recipientRole: ConversationParticipantRole? = ConversationParticipantRole.AGENT,
++    ) = ConversationCreatedEvent(
 +        conversationUuid = UUID.randomUUID(),
 +        initiatorSlug = "slug",
 +        initiatorName = "name",
@@ -997,13 +1491,59 @@ diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/Con
 +        initiatorRole = role,
 +        initiatorAgencyName = null,
 +        recipientLogins = listOf("agent"),
-+        buyerSessionId = sessionId
++        buyerSessionId = sessionId,
++        recipientRole = recipientRole
 +    )
 +
 +    @Test
-+    fun `a conversation a buyer started is an inquiry`() {
++    fun `a conversation a buyer started with an agent is an inquiry`() {
 +        listener.onConversationCreated(conversation(ConversationParticipantRole.BUYER, session))
 +        verify(client).sendInquiryCompleted(session)
++    }
++
++    @Test
++    fun `a buyer writing to a non-agent has contacted no selling agent`() {
++        listener.onConversationCreated(
++            conversation(ConversationParticipantRole.BUYER, session, ConversationParticipantRole.BUYER)
++        )
++        verify(client, never()).sendInquiryCompleted(any())
++    }
++
++    @Test
++    fun `an unknown recipient role does not count`() {
++        listener.onConversationCreated(conversation(ConversationParticipantRole.BUYER, session, null))
++        verify(client, never()).sendInquiryCompleted(any())
++    }
++
++    @Test
++    fun `both listeners run on the bounded pool, not the thread-per-call fallback`() {
++        listOf("onConversationCreated", "onLivePresentationRegistered").forEach { name ->
++            val method = ConversionEventListener::class.java.methods.single { it.name == name }
++            assertEquals(
++                AdaptiveListingsExecutor.BEAN_NAME,
++                method.getAnnotation(org.springframework.scheduling.annotation.Async::class.java).value
++            )
++        }
++    }
++
++    @Test
++    fun `a full queue drops with one log line and never throws`() {
++        val executor = AdaptiveListingsExecutor.build(threads = 1, queueCapacity = 1)
++        val appender = ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>().apply { start() }
++        val logger = org.slf4j.LoggerFactory.getLogger(AdaptiveListingsExecutor::class.java) as ch.qos.logback.classic.Logger
++        // An integration test in the same JVM may have left the test profile's root=ERROR in force.
++        logger.level = ch.qos.logback.classic.Level.WARN
++        logger.addAppender(appender)
++        val release = java.util.concurrent.CountDownLatch(1)
++        try {
++            repeat(4) { executor.execute { release.await() } }
++
++            assertEquals(2, appender.list.count { it.formattedMessage == "al_conversion_dropped reason=executor_full" })
++        } finally {
++            release.countDown()
++            logger.detachAppender(appender)
++            executor.shutdown()
++        }
 +    }
 +
 +    @Test
@@ -1075,8 +1615,8 @@ diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/Con
 +}
 diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventLiveIngestTest.kt b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventLiveIngestTest.kt
 --- a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventLiveIngestTest.kt	1970-01-01 01:00:00.000000000 +0100
-+++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventLiveIngestTest.kt	2026-11-02 07:01:58.491047325 +0100
-@@ -0,0 +1,54 @@
++++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventLiveIngestTest.kt	2026-11-02 08:34:01.305740662 +0100
+@@ -0,0 +1,55 @@
 +package com.time2show.core.unit.service.adaptivelistings
 +
 +import ch.qos.logback.classic.Logger
@@ -1108,6 +1648,7 @@ diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/Con
 +    fun `both conversions are accepted by the running Worker`() {
 +        val appender = ListAppender<ILoggingEvent>().apply { start() }
 +        val logger = LoggerFactory.getLogger(ConversionEventClient::class.java) as Logger
++        logger.level = ch.qos.logback.classic.Level.INFO
 +        logger.addAppender(appender)
 +        try {
 +            val client = ConversionEventClient(
@@ -1133,8 +1674,8 @@ diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/Con
 +}
 diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventSitesTest.kt b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventSitesTest.kt
 --- a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventSitesTest.kt	1970-01-01 01:00:00.000000000 +0100
-+++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventSitesTest.kt	2026-11-02 07:01:58.495047286 +0100
-@@ -0,0 +1,128 @@
++++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventSitesTest.kt	2026-11-02 08:34:01.301740702 +0100
+@@ -0,0 +1,141 @@
 +package com.time2show.core.unit.service.adaptivelistings
 +
 +import com.time2show.core.dto.CreateLiveEnrollmentEventRequestTO
@@ -1189,8 +1730,10 @@ diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/Con
 +    private val calendarRepository = mock<CalendarEventRepository>()
 +    private val listingRepository = mock<ListingRepository>()
 +
++    private val listingAuthorization = mock<com.time2show.core.service.web.ListingAuthorizationService>()
++
 +    private val service = CalendarServiceImpl(
-+        mock(), calendarRepository, listingRepository, mock(), accountRepository, liveRepository,
++        mock(), calendarRepository, listingRepository, listingAuthorization, accountRepository, liveRepository,
 +        registrationRepository, mock(), mock(), publisher
 +    )
 +
@@ -1254,6 +1797,17 @@ diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/Con
 +    }
 +
 +    @Test
++    fun `a collaborator or agency admin without the agent role is no buyer either`() {
++        whenever(account.isActiveAgent()).thenReturn(false)
++        whenever(listingAuthorization.canManageListing("buyer", listingUuid)).thenReturn(true)
++        whenever(registrationRepository.findByLivePresentationAndParticipant_Login(eq(live), eq("buyer"))).thenReturn(null)
++
++        assertEquals(HttpStatus.OK, enroll().httpStatus)
++
++        verify(publisher, never()).publishEvent(any<Any>())
++    }
++
++    @Test
 +    fun `pressing register again publishes nothing`() {
 +        whenever(registrationRepository.findByLivePresentationAndParticipant_Login(eq(live), eq("buyer")))
 +            .thenReturn(mock<LivePresentationRegistrationEntity>())
@@ -1265,27 +1819,38 @@ diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/Con
 +}
 diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ListingUpdatedNotifierTest.kt b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ListingUpdatedNotifierTest.kt
 --- a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ListingUpdatedNotifierTest.kt	1970-01-01 01:00:00.000000000 +0100
-+++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ListingUpdatedNotifierTest.kt	2026-11-02 07:01:58.491047325 +0100
-@@ -0,0 +1,105 @@
++++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ListingUpdatedNotifierTest.kt	2026-11-02 08:34:01.281740898 +0100
+@@ -0,0 +1,172 @@
 +package com.time2show.core.unit.service.adaptivelistings
 +
 +import com.fasterxml.jackson.databind.ObjectMapper
 +import com.sun.net.httpserver.HttpServer
 +import com.time2show.core.dto.PatchOwnListingRequestTO
++import com.time2show.core.model.enums.AsyncAggregateType
++import com.time2show.core.model.enums.AsyncJobType
++import com.time2show.core.model.enums.ListingStatus
 +import com.time2show.core.service.adaptivelistings.AdaptiveListingsProperties
 +import com.time2show.core.service.adaptivelistings.BoundedHttpPost
 +import com.time2show.core.service.adaptivelistings.ListingUpdatedNotifier
++import com.time2show.core.service.web.AsyncJobCreator
 +import org.junit.jupiter.api.AfterEach
 +import org.junit.jupiter.api.Assertions.assertEquals
 +import org.junit.jupiter.api.Assertions.assertFalse
++import org.junit.jupiter.api.Assertions.assertThrows
 +import org.junit.jupiter.api.Assertions.assertTrue
 +import org.junit.jupiter.api.BeforeEach
 +import org.junit.jupiter.api.DisplayName
 +import org.junit.jupiter.api.Tag
 +import org.junit.jupiter.api.Test
++import org.mockito.kotlin.any
++import org.mockito.kotlin.eq
++import org.mockito.kotlin.mock
++import org.mockito.kotlin.never
++import org.mockito.kotlin.verify
 +import java.net.InetSocketAddress
 +import java.nio.charset.StandardCharsets
 +import java.time.Duration
++import java.util.UUID
 +import java.util.concurrent.CopyOnWriteArrayList
 +
 +@DisplayName("ListingUpdatedNotifier (unit, real HTTP)")
@@ -1295,6 +1860,7 @@ diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/Lis
 +    private val tenant = "00000000-0000-0000-0000-0000000000e2"
 +    private val listing = "839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c"
 +    private val secret = "webhook-test-value"
++    private val jobs = mock<AsyncJobCreator>()
 +
 +    private lateinit var server: HttpServer
 +    private val bodies = CopyOnWriteArrayList<String>()
@@ -1316,17 +1882,31 @@ diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/Lis
 +    @AfterEach
 +    fun tearDown() = server.stop(0)
 +
-+    private fun notifier(url: String = "http://127.0.0.1:${server.address.port}/api/webhooks/listing-updated", key: String = secret) =
-+        ListingUpdatedNotifier(
-+            AdaptiveListingsProperties(
-+                "", "", "", tenant, url, key,
-+                Duration.ofSeconds(1), Duration.ofSeconds(1), Duration.ofMillis(5)
-+            )
-+        )
++    private fun properties(
++        url: String = "http://127.0.0.1:${server.address.port}/api/webhooks/listing-updated",
++        key: String = secret,
++        tenantId: String = tenant,
++    ) = AdaptiveListingsProperties(
++        "", "", "", tenantId, url, key,
++        Duration.ofSeconds(1), Duration.ofSeconds(1), Duration.ofMillis(5)
++    )
++
++    private fun notifier(properties: AdaptiveListingsProperties = properties()) = ListingUpdatedNotifier(properties, jobs)
++
++    private fun patch(
++        status: ListingStatus = ListingStatus.ACTIVE,
++        price: Double? = null,
++        city: String? = null,
++        district: String? = null,
++        images: List<String>? = null,
++    ) = PatchOwnListingRequestTO(
++        listingUuid = listing, status = status, price = price,
++        cityPlaceGoogleId = city, districtPlaceGoogleId = district, imageUuids = images
++    )
 +
 +    @Test
-+    fun `a save posts the route's body with the route's secret header`() {
-+        notifier().notifyListingSaved(listing)
++    fun `a delivery posts the route's body with the route's secret header`() {
++        notifier().deliver(listing)
 +
 +        assertEquals(1, bodies.size)
 +        val body = ObjectMapper().readTree(bodies.single())
@@ -1337,44 +1917,85 @@ diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/Lis
 +    }
 +
 +    @Test
-+    fun `a 500 is re-sent up to the bound and does not throw`() {
++    fun `a 500 fails the job after the bound, and the job's error carries neither secret nor URL`() {
 +        status = 500
-+        notifier().notifyListingSaved(listing)
++
++        val error = assertThrows(IllegalStateException::class.java) { notifier().deliver(listing) }
++
 +        assertEquals(BoundedHttpPost.MAX_SENDS, bodies.size)
++        assertTrue(error.message!!.contains("status=500"))
++        assertFalse(error.message!!.contains(secret))
++        assertFalse(error.message!!.contains("127.0.0.1"))
 +    }
 +
 +    @Test
-+    fun `a 401 is not re-sent and does not throw`() {
++    fun `a 401 fails the job without a re-send, so a corrected secret recovers it`() {
 +        status = 401
-+        notifier().notifyListingSaved(listing)
++        assertThrows(IllegalStateException::class.java) { notifier().deliver(listing) }
 +        assertEquals(1, bodies.size)
 +    }
 +
 +    @Test
-+    fun `an unreachable control plane does not throw`() {
++    fun `an unreachable control plane fails the job`() {
 +        val url = "http://127.0.0.1:${server.address.port}/api/webhooks/listing-updated"
 +        server.stop(0)
-+        notifier(url).notifyListingSaved(listing)
++        assertThrows(IllegalStateException::class.java) { notifier(properties(url = url)).deliver(listing) }
 +    }
 +
 +    @Test
-+    fun `not configured sends nothing`() {
-+        notifier(url = "", key = "").notifyListingSaved(listing)
++    fun `a save writes a durable job for the listing`() {
++        val uuid = UUID.fromString(listing)
++
++        notifier().enqueueInCurrentTx(uuid)
++
++        verify(jobs).enqueueJobInCurrentTx(
++            eq(AsyncJobType.LISTING_UPDATED_WEBHOOK), eq(AsyncAggregateType.LISTING), eq(listing), any(), eq(null), eq(null)
++        )
++    }
++
++    @Test
++    fun `not configured writes no job and sends nothing`() {
++        val unconfigured = notifier(properties(url = "", key = ""))
++
++        unconfigured.enqueueInCurrentTx(UUID.fromString(listing))
++        unconfigured.deliver(listing)
++
++        verify(jobs, never()).enqueueJobInCurrentTx(any(), any(), any(), any(), any(), any())
 +        assertEquals(0, bodies.size)
 +    }
 +
 +    @Test
-+    fun `a PATCH bumps the revision only when it changes a grounded fact`() {
-+        assertTrue(ListingUpdatedNotifier.changesGroundingFacts(PatchOwnListingRequestTO(listingUuid = listing, price = 1.0)))
-+        assertTrue(ListingUpdatedNotifier.changesGroundingFacts(PatchOwnListingRequestTO(listingUuid = listing, cityPlaceGoogleId = "x")))
-+        assertTrue(ListingUpdatedNotifier.changesGroundingFacts(PatchOwnListingRequestTO(listingUuid = listing, districtPlaceGoogleId = "x")))
-+        assertFalse(ListingUpdatedNotifier.changesGroundingFacts(PatchOwnListingRequestTO(listingUuid = listing, imageUuids = listOf("x"))))
-+        assertFalse(ListingUpdatedNotifier.changesGroundingFacts(PatchOwnListingRequestTO(listingUuid = listing)))
++    fun `a tenant id that is not a canonical UUID disables the group`() {
++        assertTrue(properties().listingUpdatedConfigured)
++        assertFalse(properties(tenantId = "not-a-uuid").listingUpdatedConfigured)
++        assertFalse(properties(tenantId = "1-1-1-1-1").listingUpdatedConfigured)
++        assertFalse(properties(tenantId = "").listingUpdatedConfigured)
++    }
++
++    @Test
++    fun `a PATCH bumps the revision when it changes a grounded fact`() {
++        val draft = ListingStatus.DRAFT
++        assertTrue(ListingUpdatedNotifier.changesGroundingFacts(patch(price = 1.0), ListingStatus.ACTIVE))
++        assertTrue(ListingUpdatedNotifier.changesGroundingFacts(patch(city = "x"), ListingStatus.ACTIVE))
++        assertTrue(ListingUpdatedNotifier.changesGroundingFacts(patch(district = "x"), ListingStatus.ACTIVE))
++        assertTrue(ListingUpdatedNotifier.changesGroundingFacts(patch(status = draft, price = 1.0), draft))
++    }
++
++    @Test
++    fun `a publish bumps the revision, because a re-scrape leaves a DRAFT with no signal of its own`() {
++        assertTrue(ListingUpdatedNotifier.changesGroundingFacts(patch(status = ListingStatus.ACTIVE), ListingStatus.DRAFT))
++        assertTrue(ListingUpdatedNotifier.changesGroundingFacts(patch(status = ListingStatus.ACTIVE), ListingStatus.WITHDRAWN))
++    }
++
++    @Test
++    fun `a photo reorder does not, though status is mandatory on every PATCH`() {
++        assertFalse(ListingUpdatedNotifier.changesGroundingFacts(patch(images = listOf("x")), ListingStatus.ACTIVE))
++        assertFalse(ListingUpdatedNotifier.changesGroundingFacts(patch(status = ListingStatus.DRAFT), ListingStatus.ACTIVE))
 +    }
 +}
 diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/SignedEventSignerTest.kt b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/SignedEventSignerTest.kt
 --- a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/SignedEventSignerTest.kt	1970-01-01 01:00:00.000000000 +0100
-+++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/SignedEventSignerTest.kt	2026-11-02 07:01:58.495047286 +0100
++++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/SignedEventSignerTest.kt	2026-11-02 08:34:01.293740780 +0100
 @@ -0,0 +1,49 @@
 +package com.time2show.core.unit.service.adaptivelistings
 +
@@ -1427,7 +2048,7 @@ diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/Sig
 +}
 diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/SignedEventVectors.kt b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/SignedEventVectors.kt
 --- a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/SignedEventVectors.kt	1970-01-01 01:00:00.000000000 +0100
-+++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/SignedEventVectors.kt	2026-11-02 07:01:58.495047286 +0100
++++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/SignedEventVectors.kt	2026-11-02 08:34:01.289740819 +0100
 @@ -0,0 +1,42 @@
 +package com.time2show.core.unit.service.adaptivelistings
 +
@@ -1472,9 +2093,9 @@ diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/Sig
 +    val UTF8_SIGNATURE = listOf("068c7912934c8e72", "2ddd6993553b05da", "d4fa7c187a26d213", "e347e65d6cd89fdd").joinToString("")
 +}
 diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/web/ConversationServiceImplTest.kt b/src/test/kotlin/com/time2show/core/unit/service/web/ConversationServiceImplTest.kt
---- a/src/test/kotlin/com/time2show/core/unit/service/web/ConversationServiceImplTest.kt	2026-11-02 07:01:53.867088837 +0100
-+++ b/src/test/kotlin/com/time2show/core/unit/service/web/ConversationServiceImplTest.kt	2026-11-02 07:01:58.487047364 +0100
-@@ -296,6 +296,39 @@
+--- a/src/test/kotlin/com/time2show/core/unit/service/web/ConversationServiceImplTest.kt	2026-11-02 08:33:56.361789154 +0100
++++ b/src/test/kotlin/com/time2show/core/unit/service/web/ConversationServiceImplTest.kt	2026-11-02 08:34:01.265741055 +0100
+@@ -296,6 +296,41 @@
          }
  
          @Test
@@ -1507,6 +2128,8 @@ diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/web/ConversationServ
 +            verify(eventPublisher).publishEvent(eventCaptor.capture())
 +            val event = eventCaptor.value as ConversationCreatedEvent
 +            assertEquals(sessionId, event.buyerSessionId?.value)
++            // Any slug is accepted here; this recipient has no agent role, and the event must say so.
++            assertEquals(com.time2show.core.model.enums.ConversationParticipantRole.BUYER, event.recipientRole)
 +            assertEquals(com.time2show.core.model.enums.ConversationParticipantRole.BUYER, event.initiatorRole)
 +        }
 +
@@ -1514,9 +2137,31 @@ diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/web/ConversationServ
          fun `returns OK with existing conversation when concurrent create hits unique constraint`() {
              val account1 = createAccount("user1", 1L)
              val account2 = createAccount("user2", 2L)
+diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/web/ListingServiceImplAddListingMediaImageTest.kt b/src/test/kotlin/com/time2show/core/unit/service/web/ListingServiceImplAddListingMediaImageTest.kt
+--- a/src/test/kotlin/com/time2show/core/unit/service/web/ListingServiceImplAddListingMediaImageTest.kt	2026-11-02 08:33:56.349789272 +0100
++++ b/src/test/kotlin/com/time2show/core/unit/service/web/ListingServiceImplAddListingMediaImageTest.kt	2026-11-02 08:34:01.029743369 +0100
+@@ -129,6 +129,7 @@
+             mock<ViewTrackingService>(),
+             mock<FxRateService>(),
+             mock<BasicListingCardAssembler>(),
++            mock<com.time2show.core.service.adaptivelistings.ListingUpdatedNotifier>(),
+         )
+         whenever(listingAuthorizationService.canManageListing(any(), any())).thenReturn(true)
+         whenever(messageHelper.createMessage(eq(BusinessMessageCode.ME_B_63), eq(RequestMessageType.ERROR)))
+diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/web/ListingServiceImplScrapeBatchTest.kt b/src/test/kotlin/com/time2show/core/unit/service/web/ListingServiceImplScrapeBatchTest.kt
+--- a/src/test/kotlin/com/time2show/core/unit/service/web/ListingServiceImplScrapeBatchTest.kt	2026-11-02 08:33:56.333789429 +0100
++++ b/src/test/kotlin/com/time2show/core/unit/service/web/ListingServiceImplScrapeBatchTest.kt	2026-11-02 08:34:01.033743330 +0100
+@@ -124,6 +124,7 @@
+             mock<ViewTrackingService>(),
+             mock<FxRateService>(),
+             mock<BasicListingCardAssembler>(),
++            mock<com.time2show.core.service.adaptivelistings.ListingUpdatedNotifier>(),
+         )
+         whenever(listingAuthorizationService.canManageListing(any(), any())).thenReturn(true)
+     }
 diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/web/LivestreamServiceImplTest.kt b/src/test/kotlin/com/time2show/core/unit/service/web/LivestreamServiceImplTest.kt
---- a/src/test/kotlin/com/time2show/core/unit/service/web/LivestreamServiceImplTest.kt	2026-11-02 07:01:53.787089553 +0100
-+++ b/src/test/kotlin/com/time2show/core/unit/service/web/LivestreamServiceImplTest.kt	2026-11-02 07:01:58.483047403 +0100
+--- a/src/test/kotlin/com/time2show/core/unit/service/web/LivestreamServiceImplTest.kt	2026-11-02 08:33:56.321789546 +0100
++++ b/src/test/kotlin/com/time2show/core/unit/service/web/LivestreamServiceImplTest.kt	2026-11-02 08:34:01.241741289 +0100
 @@ -606,6 +606,9 @@
          @Test
          fun `LS27 below capacity proceeds to token path`() {

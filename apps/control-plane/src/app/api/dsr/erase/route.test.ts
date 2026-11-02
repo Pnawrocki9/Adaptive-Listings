@@ -158,6 +158,9 @@ vi.mock('@/lib/dsr-verify', async (importOriginal) => {
   return {
     ...real,
     verifyAndConsumeOtp: mockVerifyAndConsumeOtp,
+    // FOLLOW-1316: erase verifies first and spends inside its transaction.
+    verifyOtpWithoutConsuming: mockVerifyAndConsumeOtp,
+    consumeVerifiedOtp: () => Promise.resolve(true),
   };
 });
 

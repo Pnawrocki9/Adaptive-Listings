@@ -877,23 +877,132 @@ describe('FOLLOW-1316: POST /api/dsr/erase with an xid', () => {
     expect(await redis.raw(['EXISTS', key()])).toBe(1);
   });
 
-  it('a store failure answers non-2xx, does not read as completed, and audits failed', async () => {
+  const post = (body: Record<string, unknown>): Promise<Response> =>
+    postErase(
+      new NextRequest('http://localhost/api/dsr/erase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    );
+  const usedAt = async (id: string): Promise<unknown> =>
+    (
+      await pg.query<{ used_at: unknown }>('SELECT used_at FROM dsr_verifications WHERE id = $1', [
+        id,
+      ])
+    ).rows[0]?.used_at;
+  const consentRows = async (): Promise<number> =>
+    (
+      await pg.query<{ n: number }>(
+        "SELECT count(*)::int AS n FROM consent_records WHERE session_id = 'dsr-session'",
+      )
+    ).rows[0]?.n ?? -1;
+
+  it('a store failure spends nothing and touches nothing, and the same OTP then succeeds', async () => {
     if (redis.real) return;
     await seedAndProveRestore();
+    await insertConsent({
+      tenantId: TENANT_ID,
+      sessionId: 'dsr-session',
+      consentType: 'profiling',
+    });
+    const { otp, verificationId } = await seedDsrVerification({ sessionId: 'dsr-session' });
+    const request = { request_id: verificationId, token: otp, xid: XID };
     redis.failHttp(403);
 
-    const res = await eraseWith({ xid: XID });
+    const failed = await post(request);
 
-    expect(res.status).toBe(503);
-    const body = (await res.json()) as Record<string, unknown>;
+    expect(failed.status).toBe(503);
+    const body = (await failed.json()) as Record<string, unknown>;
     expect(body.buyer_profile_erasure).toBe('failed');
     expect(body.deleted_at).toBeUndefined();
+    expect(await usedAt(verificationId)).toBeNull();
+    expect(await consentRows()).toBe(1);
     await vi.waitFor(() => {
       expect(vi.mocked(writeDsrAuditLog)).toHaveBeenCalled();
     });
     expect(vi.mocked(writeDsrAuditLog).mock.lastCall?.[0].action).toBe('failed');
     redis.failHttp(null);
     expect(await redis.raw(['EXISTS', key()])).toBe(1);
+
+    const retry = await post(request);
+
+    expect(retry.status).toBe(200);
+    expect(((await retry.json()) as Record<string, unknown>).buyer_profile_erasure).toBe('deleted');
+    expect(await redis.raw(['EXISTS', key()])).toBe(0);
+    expect(await usedAt(verificationId)).not.toBeNull();
+    expect(await consentRows()).toBe(0);
+  });
+
+  it('a Postgres failure leaves the OTP unspent and no profile, and the same OTP then succeeds', async () => {
+    await seedAndProveRestore();
+    await insertConsent({
+      tenantId: TENANT_ID,
+      sessionId: 'dsr-session',
+      consentType: 'profiling',
+    });
+    const { otp, verificationId } = await seedDsrVerification({ sessionId: 'dsr-session' });
+    const request = { request_id: verificationId, token: otp, xid: XID };
+    await pg.exec('ALTER TABLE intent_sessions RENAME TO intent_sessions_away');
+
+    let failed: Response;
+    try {
+      failed = await post(request);
+    } finally {
+      await pg.exec('ALTER TABLE intent_sessions_away RENAME TO intent_sessions');
+    }
+
+    expect(failed.status).toBe(500);
+    const body = (await failed.json()) as Record<string, unknown>;
+    expect(body.deleted_at).toBeUndefined();
+    expect(JSON.stringify(body)).not.toContain('intent_sessions');
+    // The profile is gone, and the rolled-back transaction spent nothing and deleted nothing.
+    expect(await redis.raw(['EXISTS', key()])).toBe(0);
+    expect(await usedAt(verificationId)).toBeNull();
+    expect(await consentRows()).toBe(1);
+    expect((await adapt({})).archetype).toBe('neutral');
+
+    const retry = await post(request);
+
+    expect(retry.status).toBe(200);
+    expect(((await retry.json()) as Record<string, unknown>).buyer_profile_erasure).toBe(
+      'not_found',
+    );
+    expect(await usedAt(verificationId)).not.toBeNull();
+    expect(await consentRows()).toBe(0);
+
+    // Spent exactly once: a third attempt is refused.
+    expect((await post(request)).status).toBe(401);
+  });
+
+  it('a wrong OTP reaches neither the store nor the transaction', async () => {
+    await seedAndProveRestore();
+    const { verificationId } = await seedDsrVerification({ sessionId: 'dsr-session' });
+    redis.requests.length = 0;
+
+    const res = await post({ request_id: verificationId, token: '000000', xid: XID });
+
+    expect(res.status).toBe(401);
+    expect(redis.requests).toEqual([]);
+    expect(await redis.raw(['EXISTS', key()])).toBe(1);
+  });
+
+  it('after a DSR erase the tombstone lasts 90 days and holds only a hash, because that browser keeps writing', async () => {
+    await seedAndProveRestore();
+    await eraseWith({ xid: XID });
+
+    const tombstone = `buyer_profile_tombstone:${TENANT_ID}:${createHash('sha256').update(XID).digest('hex')}`;
+    const ttl = Number(await redis.raw(['PTTL', tombstone]));
+    expect(ttl).toBeGreaterThan(89.9 * DAY_MS);
+    expect(ttl).toBeLessThanOrEqual(90 * DAY_MS);
+    expect(await redis.raw(['GET', tombstone])).toBe('1');
+    expect(tombstone).not.toContain(XID);
+
+    await adapt({ archetype_hint: 'family_buyer', confidence: 0.9, archetype_source: 'quiz' });
+    await new Promise((resolve) => setTimeout(resolve, redis.real ? 500 : 25));
+
+    expect(await redis.raw(['EXISTS', key()])).toBe(0);
+    expect((await adapt({})).archetype).toBe('neutral');
   });
 
   it('the audit call and Sentry carry no xid and no hash of it (R34, R16)', async () => {

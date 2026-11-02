@@ -24,6 +24,7 @@ vi.mock('@sentry/nextjs', () => ({
     initSpy(options);
   },
   replayIntegration: () => ({ name: 'Replay' }),
+  requestDataIntegration: (options: unknown) => ({ name: 'RequestData', options }),
 }));
 
 /** Env keys these three config modules read; cleared and restored per test. */
@@ -90,6 +91,7 @@ describe('FOLLOW-811 — control-plane Sentry init options (server)', () => {
       'autoInstrumentServerFunctions',
       'dsn',
       'environment',
+      'integrations',
       'release',
       'sendDefaultPii',
       'tracesSampleRate',
@@ -99,6 +101,10 @@ describe('FOLLOW-811 — control-plane Sentry init options (server)', () => {
     }
     expect(options?.sendDefaultPii).toBe(false);
     expect(options?.dsn).toBe(FAKE_DSN);
+    // FOLLOW-1316, R16: no request body on an event; sentry-xid-capture.test.ts drives it for real.
+    expect(options?.integrations).toEqual([
+      { name: 'RequestData', options: { include: { data: false } } },
+    ]);
   });
 
   it('ignores the browser-only DSN var', async () => {

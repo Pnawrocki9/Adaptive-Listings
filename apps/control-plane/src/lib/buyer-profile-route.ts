@@ -139,7 +139,7 @@ async function runAction(
   });
 
   if (action === 'erase') {
-    const result = await deleteBuyerProfile(tenantId, xid);
+    const result = await deleteBuyerProfile(tenantId, xid, 'browser');
     if (result === 'failed') return storeFailed();
     return {
       failed: false,

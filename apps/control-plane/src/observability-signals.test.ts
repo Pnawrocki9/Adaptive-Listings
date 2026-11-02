@@ -225,7 +225,8 @@
  *
  * FOLLOW-1316 (returning buyer profile) added one row, one site: `lib/buyer-profile-store.ts`, whose
  * single reporter carries a failure code and nothing else (design review R16, R18). It is now
- * **112 in 72**.
+ * **112 in 72**. Its erase fix added a third site to `app/api/dsr/erase/route.ts` (2 -> 3, the
+ * transaction rolling back). It is now **113 in 72**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -239,7 +240,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 112;
+const TOTAL_SITES = 113;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -540,9 +541,9 @@ const REGISTER: CaptureSiteGroup[] = [
   },
   {
     file: 'app/api/dsr/erase/route.ts',
-    sites: 2,
+    sites: 3,
     meaning:
-      'A DSR erasure failed or completed with an unerased namespace (`tags.crm_namespace`) — compliance-relevant.',
+      'A DSR erasure failed or completed with an unerased namespace (`tags.crm_namespace`), or its Postgres transaction rolled back (`erase_failed`, 500: the OTP stays valid and the request retries; FOLLOW-1316) — compliance-relevant.',
     consumer: NO_CHANNEL,
   },
   {

@@ -257,7 +257,7 @@ describe('POST /api/profile/erase (R24-R27, R30)', () => {
     expect((await adapt({ xid, xid_created_at: createdAt })).archetype).toBe('neutral');
   });
 
-  /** The delete's two commands, in its order, applied directly at a chosen point of a write. */
+  /** A delete's effect, applied directly at a chosen point of a write. */
   const deleteNow = (xid: string): void => {
     void redis.raw(['SET', `buyer_profile_tombstone:${TENANT}:${sha(xid)}`, '1', 'EX', '86400']);
     void redis.raw(['DEL', profileKey(xid)]);
@@ -270,43 +270,102 @@ describe('POST /api/profile/erase (R24-R27, R30)', () => {
       confidence: 0.9,
       archetype_source: 'quiz',
     });
-
-  it('a delete landing after a write passed its tombstone check leaves no profile (NC-11)', async () => {
-    if (redis.real) return;
-    const xid = randomUUID();
-    const createdAt = Date.now() - DAY_MS;
-    await seedAndProveRestore(xid, createdAt);
-
-    // Fires right after the write's first EXISTS answered 0, before its SET.
-    redis.afterCommand('EXISTS', () => {
-      deleteNow(xid);
-    });
-    await lateWrite(xid, createdAt);
-    await vi.waitFor(() => {
-      const pipelines = redis.requests.filter((r) => r.body.includes('"XX","KEEPTTL"'));
-      expect(pipelines.length).toBeGreaterThan(1);
-    });
+  const expectGoneForGood = async (xid: string, createdAt: number): Promise<void> => {
     await settle();
-
     expect(await redis.raw(['EXISTS', profileKey(xid)])).toBe(0);
     expect((await adapt({ xid, xid_created_at: createdAt })).archetype).toBe('neutral');
-  });
+  };
 
-  it('a tombstone landing between a write’s SET and its re-check undoes the write (NC-11)', async () => {
+  // The reader's defect: the write used to check the tombstone, SET, re-check, and undo with a DEL. A
+  // delete landing before the SET, followed by a failed undo or a lost response, left the key live
+  // with its full TTL while erase had answered 200.
+  it('a delete just before the write lands, with the DEL that would undo it failing (NC-11)', async () => {
     if (redis.real) return;
     const xid = randomUUID();
     const createdAt = Date.now() - DAY_MS;
     await seedAndProveRestore(xid, createdAt);
 
-    // Fires after the write's first SET: the delete's tombstone is in, its DEL comes too early.
-    redis.afterCommand('SET', () => {
-      void redis.raw(['SET', `buyer_profile_tombstone:${TENANT}:${sha(xid)}`, '1', 'EX', '86400']);
+    redis.onceBeforeProfileWrite(() => {
+      deleteNow(xid);
+      redis.failCommand('DEL');
     });
     await lateWrite(xid, createdAt);
-    await vi.waitFor(async () => {
-      expect(await redis.raw(['EXISTS', profileKey(xid)])).toBe(0);
-    });
     await settle();
+    redis.failCommand(null);
+
+    await expectGoneForGood(xid, createdAt);
+  });
+
+  it('a delete just before the write lands, with the write response lost (NC-11)', async () => {
+    if (redis.real) return;
+    const xid = randomUUID();
+    const createdAt = Date.now() - DAY_MS;
+    await seedAndProveRestore(xid, createdAt);
+
+    redis.onceBeforeProfileWrite(() => {
+      deleteNow(xid);
+      redis.loseNextResponse();
+    });
+    await lateWrite(xid, createdAt);
+
+    await expectGoneForGood(xid, createdAt);
+  });
+
+  it('a delete right after the write lands, with the write response lost (NC-11)', async () => {
+    if (redis.real) return;
+    const xid = randomUUID();
+    const createdAt = Date.now() - DAY_MS;
+    await seedAndProveRestore(xid, createdAt);
+
+    redis.onceAfterProfileWrite(() => {
+      deleteNow(xid);
+      redis.loseNextResponse();
+    });
+    await lateWrite(xid, createdAt);
+
+    await expectGoneForGood(xid, createdAt);
+  });
+
+  it('writes racing a real erase: none survives it (NC-11, the real scripts on a real Redis)', async () => {
+    const xid = randomUUID();
+    const createdAt = Date.now() - DAY_MS;
+    await seedAndProveRestore(xid, createdAt);
+
+    const racing = Array.from({ length: 12 }, () => lateWrite(xid, createdAt));
+    const erased = await eraseCall(xid);
+    expect(erased.status).toBe(200);
+    await Promise.all(racing);
+    await new Promise((resolve) => setTimeout(resolve, redis.real ? 1500 : 50));
+
+    await expectGoneForGood(xid, createdAt);
+  });
+
+  it('a reply the write script never gives is a captured failure, not a success', async () => {
+    if (redis.real) return;
+    const xid = randomUUID();
+    const createdAt = Date.now() - DAY_MS;
+    await seedAndProveRestore(xid, createdAt);
+    mockCaptureException.mockClear();
+
+    redis.replaceNextProfileWriteReply('something else');
+    await lateWrite(xid, createdAt);
+
+    await vi.waitFor(() => {
+      expect(String(mockCaptureException.mock.lastCall?.[0])).toBe(
+        'Error: buyer_profile redis_command_error',
+      );
+    });
+  });
+
+  it('a later self-service erase does not shorten a longer tombstone', async () => {
+    const xid = randomUUID();
+    await seedAndProveRestore(xid, Date.now() - DAY_MS);
+    const tombstone = `buyer_profile_tombstone:${TENANT}:${sha(xid)}`;
+    await redis.raw(['SET', tombstone, '1', 'EX', String(90 * 86400)]);
+
+    await eraseCall(xid);
+
+    expect(Number(await redis.raw(['PTTL', tombstone]))).toBeGreaterThan(89 * DAY_MS);
     expect(await redis.raw(['EXISTS', profileKey(xid)])).toBe(0);
   });
 
@@ -333,16 +392,9 @@ describe('POST /api/profile/erase (R24-R27, R30)', () => {
       'redis_http_error',
     ],
     [
-      'a [{error}] reply on DEL',
+      'a [{error}] reply to the delete',
       (r: RedisTestDouble) => {
-        r.failCommand('DEL');
-      },
-      'redis_command_error',
-    ],
-    [
-      'a [{error}] reply on the tombstone',
-      (r: RedisTestDouble) => {
-        r.failCommand('SET');
+        r.failCommand('EVAL');
       },
       'redis_command_error',
     ],

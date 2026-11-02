@@ -12,6 +12,10 @@
  *
  * Expiry is absolute: `EXAT` at first write, `KEEPTTL` on overwrite, never touched by a read (R21).
  *
+ * A write and a delete are each one atomic Lua script, so a write can never slip between a tombstone
+ * check and its `SET`, and no response that gets lost or fails can leave an erased profile behind
+ * (R27, NC-11). If `EVAL` is ever unavailable the write fails loud and stores nothing.
+ *
  * Commands always go as a POST to `/pipeline`, and every result is checked for its HTTP status and
  * its per-command error (R17, R18), unlike `tenant-schema.ts` and the session-keyed DSR erase.
  *
@@ -40,13 +44,50 @@ const PERSISTABLE_TRAITS = ['premium', 'works_from_home', 'seasoned_investor', '
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const XID_RETENTION_MS = XID_RETENTION_DAYS * DAY_MS;
-const TOMBSTONE_TTL_SECONDS = 24 * 60 * 60;
+/** A browser that erased through self-service forgets the id, so only stragglers can still write. */
+const SELF_SERVICE_TOMBSTONE_TTL_SECONDS = 24 * 60 * 60;
+/**
+ * A browser erased through `/api/dsr/erase` is never told and keeps writing until its id rotates. The
+ * tombstone holds only `sha256(xid)` under its key and the value `1`: no profile data.
+ */
+const DSR_TOMBSTONE_TTL_SECONDS = XID_RETENTION_DAYS * 24 * 60 * 60;
+/** How far ahead of the server clock `xid_created_at` may be; a later one is not honoured. */
+const CREATED_AT_SKEW_MS = 5 * 60 * 1000;
 const ROUTE_QUOTA_WINDOW_SECONDS = 60;
 const ROUTE_QUOTA_MAX = 60;
 
 /** Budget for the read on the Decision API path; a slower store means neutral, not a slow page. */
 const READ_TIMEOUT_MS = 1000;
 const TIMEOUT_MS = 2000;
+
+/**
+ * KEYS: profile, tombstone. ARGV: value, absolute expiry in seconds, source. A tombstone refuses the
+ * write. `quiz` overwrites anything; `behavior` overwrites `behavior` and never a stored `quiz`. The
+ * source is matched in the text this module itself serialised, so no `cjson` is needed. The first
+ * line is how the test double recognises the script.
+ */
+const WRITE_SCRIPT = `-- buyer_profile_write
+if redis.call('EXISTS', KEYS[2]) == 1 then return 'tombstoned' end
+local current = redis.call('GET', KEYS[1])
+if current then
+  if ARGV[3] == 'behavior' and string.find(current, '"source":"quiz"', 1, true) then
+    return 'outranked'
+  end
+  redis.call('SET', KEYS[1], ARGV[1], 'XX', 'KEEPTTL')
+  return 'overwritten'
+end
+redis.call('SET', KEYS[1], ARGV[1], 'EXAT', ARGV[2])
+return 'created'`;
+
+/**
+ * KEYS: profile, tombstone. ARGV: tombstone TTL in seconds. Never shortens a longer tombstone, so a
+ * self-service erase cannot cut a DSR erase's short. Returns how many profiles it deleted.
+ */
+const DELETE_SCRIPT = `-- buyer_profile_delete
+if redis.call('TTL', KEYS[2]) < tonumber(ARGV[1]) then
+  redis.call('SET', KEYS[2], '1', 'EX', ARGV[1])
+end
+return redis.call('DEL', KEYS[1])`;
 
 const STRICT_UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -192,6 +233,7 @@ export function honourConsentedXid(
   if (typeof createdAt !== 'number' || !Number.isSafeInteger(createdAt) || createdAt <= 0) {
     return null;
   }
+  if (createdAt > nowMs + CREATED_AT_SKEW_MS) return null;
   const xidEndsAt = createdAt + XID_RETENTION_MS;
   if (xidEndsAt <= nowMs) return null;
   return {
@@ -288,16 +330,16 @@ export async function readBuyerProfileForSubject(
 
 /**
  * Write or overwrite a profile. The caller has already decided the write is due (R14); this enforces
- * what may be stored (R9-R12), the absolute expiry (R21) and the tombstone (R27).
+ * what may be stored (R9-R12), the absolute expiry (R21), the tombstone (R27) and the source ranking.
  *
- * A delete sets its tombstone BEFORE its `DEL`, and this write checks for the tombstone again AFTER
- * its `SET`. Whichever order the two interleave in, either the `DEL` lands after the `SET` or the
- * second check sees the tombstone, so no profile comes back (NC-11).
+ * A `quiz` result that may not persist deletes the stored key: the buyer has just told us something
+ * else, so the old label must not be restored (Art. 5(1)(d)). It leaves no tombstone, because nothing
+ * was withdrawn and the next allowed result should store.
  *
  * @param tenantId - The server-derived tenant.
  * @param consented - From {@link honourConsentedXid}.
  * @param candidate - The resolved state; a non-persistable archetype writes nothing, other traits drop.
- * @returns `written`, `refused` (nothing stored, by rule), or `failed`.
+ * @returns `written`, `refused` (nothing new stored, by rule), or `failed`.
  */
 export async function writeBuyerProfile(
   tenantId: string,
@@ -317,28 +359,32 @@ export async function writeBuyerProfile(
     source: candidate.source,
     ...(persistableTraits.length > 0 ? { traits: persistableTraits } : {}),
   });
-  if (!parsed.success) return 'refused';
-
   const key = profileKey(tenantId, consented.xid);
-  const tombstone = tombstoneKey(tenantId, consented.xid);
-  const value = JSON.stringify(parsed.data);
-
-  const before = await redisPipeline([['EXISTS', tombstone]]);
-  if (!before.ok) return failedWrite(before.code);
-  if (before.replies[0] === 1) return 'refused';
-
-  const written = await redisPipeline([
-    ['SET', key, value, 'NX', 'EXAT', String(consented.expiresAtSeconds)],
-    ['SET', key, value, 'XX', 'KEEPTTL'],
-    ['EXISTS', tombstone],
-  ]);
-  if (!written.ok) return failedWrite(written.code);
-  if (written.replies[2] === 1) {
-    const undone = await redisPipeline([['DEL', key]]);
-    if (!undone.ok) return failedWrite(undone.code);
+  if (!parsed.success) {
+    if (candidate.source === 'quiz' && NON_PERSISTABLE_ARCHETYPES.has(candidate.archetype)) {
+      const cleared = await redisPipeline([['DEL', key]]);
+      if (!cleared.ok) return failedWrite(cleared.code);
+    }
     return 'refused';
   }
-  return 'written';
+
+  const written = await redisPipeline([
+    [
+      'EVAL',
+      WRITE_SCRIPT,
+      '2',
+      key,
+      tombstoneKey(tenantId, consented.xid),
+      JSON.stringify(parsed.data),
+      String(consented.expiresAtSeconds),
+      candidate.source,
+    ],
+  ]);
+  if (!written.ok) return failedWrite(written.code);
+  const outcome = written.replies[0];
+  if (outcome === 'created' || outcome === 'overwritten') return 'written';
+  if (outcome === 'tombstoned' || outcome === 'outranked') return 'refused';
+  return failedWrite('redis_command_error');
 }
 
 function failedWrite(code: FailureCode): 'failed' {
@@ -354,27 +400,37 @@ export function roundProfileConfidence(confidence: number): number {
 // ─── Delete ───────────────────────────────────────────────────────────────────
 
 /**
- * Delete a profile and leave a 24-hour hash-only tombstone that refuses later writes (R27).
+ * Delete a profile and leave a hash-only tombstone that refuses later writes (R27).
  *
  * @param tenantId - The tenant.
  * @param xid - A strict xid.
+ * @param requester - `browser` forgets the id, so 24 hours; `dsr` does not, so as long as an id lives.
  * @returns `deleted`, `not_found`, `not_configured` (no store and the flag off), or `failed`; a
  *   caller must answer `failed` with a non-2xx (R18).
  */
 export async function deleteBuyerProfile(
   tenantId: string,
   xid: string,
+  requester: 'browser' | 'dsr',
 ): Promise<'deleted' | 'not_found' | 'not_configured' | 'failed'> {
+  const tombstoneTtl =
+    requester === 'dsr' ? DSR_TOMBSTONE_TTL_SECONDS : SELF_SERVICE_TOMBSTONE_TTL_SECONDS;
   const out = await redisPipeline([
-    ['SET', tombstoneKey(tenantId, xid), '1', 'EX', String(TOMBSTONE_TTL_SECONDS)],
-    ['DEL', profileKey(tenantId, xid)],
+    [
+      'EVAL',
+      DELETE_SCRIPT,
+      '2',
+      profileKey(tenantId, xid),
+      tombstoneKey(tenantId, xid),
+      String(tombstoneTtl),
+    ],
   ]);
   if (!out.ok) {
     if (isUnconfiguredAndOff(out.code)) return 'not_configured';
     reportBuyerProfileFailure(out.code);
     return 'failed';
   }
-  return out.replies[1] === 1 ? 'deleted' : 'not_found';
+  return out.replies[0] === 1 ? 'deleted' : 'not_found';
 }
 
 // ─── Route quota ──────────────────────────────────────────────────────────────

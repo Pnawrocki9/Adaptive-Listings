@@ -3222,7 +3222,10 @@ Mechanizmy CATE estimation feed do D.5 confirmation rate (post-adaptation behavi
    session stays keyed on `session_id`. Denominators stay per session, so the rows of one xid are
    **correlated**: a per-session test treats them as independent and understates the variance for
    these sessions. `features_snapshot.assignment_unit` records `xid` or `session` per decision, so a
-   reader can split or cluster them. The xid itself is never logged.
+   reader can split or cluster them. The xid itself is never logged. **The cohorts also differ by
+   archetype:** a returning holdout buyer's row logs `neutral`, because the holdout path reads no
+   profile, while a returning treatment buyer's row logs the restored archetype. So `by_archetype`
+   lift compares unlike cohorts for those buyers; overall per-arm lift is not affected by this label.
 
    **Owner:** FOLLOW-1204 (P2, open) records the xid's purpose and retention in the ROPA/DPIA and
    measures the dilution once (its RETRO-328 amendment: without transmitting the xid). HEAD state:

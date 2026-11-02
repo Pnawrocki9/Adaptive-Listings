@@ -770,6 +770,7 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
           isAuthoredSectionLabel(input.basePlaybook, directive.slot, directive.value));
       const protectedGround: ProtectedGroundViolation | null = describesResidentsByProtectedGround(
         directive.value,
+        input.listingContext?.listing_location,
       )
         ? 'protected_ground'
         : null;

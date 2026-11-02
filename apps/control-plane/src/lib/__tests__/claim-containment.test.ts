@@ -91,7 +91,7 @@ describe('isTrustedDescriptionHit (legacy admission)', () => {
   });
 
   it('FOLLOW-1406 / FOLLOW-1411 / FOLLOW-1415 / FOLLOW-1414 / FOLLOW-1419 / FOLLOW-1420: a claims-v1 … v6 FIT hit is not trusted', () => {
-    expect(CLAIMS_VALIDATION_VERSION).toBe('claims-v10');
+    expect(CLAIMS_VALIDATION_VERSION).toBe('claims-v11');
     expect(isTrustedDescriptionHit('FIT', 'claims-v1')).toBe(false);
     expect(isTrustedDescriptionHit(undefined, 'claims-v1')).toBe(false);
     // FOLLOW-1411: a claims-v2 row never passed the protected-ground or school grounding check.
@@ -110,7 +110,9 @@ describe('isTrustedDescriptionHit (legacy admission)', () => {
     expect(isTrustedDescriptionHit('FIT', 'claims-v8')).toBe(false);
     // FOLLOW-1311 slice 5: a claims-v9 row never passed the street claim.
     expect(isTrustedDescriptionHit('FIT', 'claims-v9')).toBe(false);
-    expect(isTrustedDescriptionHit('FIT', 'claims-v10')).toBe(true);
+    // FOLLOW-1431: a claims-v10 row never passed the camp names or the composition read.
+    expect(isTrustedDescriptionHit('FIT', 'claims-v10')).toBe(false);
+    expect(isTrustedDescriptionHit('FIT', 'claims-v11')).toBe(true);
     expect(isTrustedDescriptionHit('NEUTRAL', 'claims-v1')).toBe(true);
   });
 
@@ -120,10 +122,12 @@ describe('isTrustedDescriptionHit (legacy admission)', () => {
       JSON.parse(
         readFileSync(path.resolve(__dirname, '../__fixtures__/description-parity', file), 'utf8'),
       ) as { claims_validation_version: string };
-    // The current contract (FOLLOW-1311: corpus v27, a stamp-only re-freeze of v26). History pins
+    // The current contract (FOLLOW-1431: corpus v29, a stamp-only re-freeze of v28). History pins
     // its own literal: v10 (FOLLOW-1406) introduced claims-v2, v13 (FOLLOW-1411) claims-v3, v14
     // (FOLLOW-1415) claims-v4, v18 (FOLLOW-1414) claims-v5, v19 (FOLLOW-1419) claims-v6.
-    expect(manifest('MANIFEST.v27.json').claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(manifest('MANIFEST.v29.json').claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(manifest('MANIFEST.v28.json').claims_validation_version).toBe('claims-v10');
+    expect(manifest('MANIFEST.v27.json').claims_validation_version).toBe('claims-v10');
     expect(manifest('MANIFEST.v26.json').claims_validation_version).toBe('claims-v9');
     expect(manifest('MANIFEST.v25.json').claims_validation_version).toBe('claims-v9');
     expect(manifest('MANIFEST.v24.json').claims_validation_version).toBe('claims-v8');

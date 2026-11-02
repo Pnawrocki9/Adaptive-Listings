@@ -307,8 +307,8 @@ describe('FOLLOW-1305 — a legacy (unstamped) cache hit is not trusted FIT', ()
     });
   });
 
-  it('FOLLOW-1311: a claims-v10 Postgres FIT row is a hit', async () => {
-    mockGetPgCachedDescription.mockResolvedValueOnce(pgRow(SAFE_TEXT, 'claims-v10'));
+  it('FOLLOW-1431: a claims-v11 Postgres FIT row is a hit', async () => {
+    mockGetPgCachedDescription.mockResolvedValueOnce(pgRow(SAFE_TEXT, 'claims-v11'));
 
     const body = (await (await GET(request())).json()) as { source: string; description: string };
 

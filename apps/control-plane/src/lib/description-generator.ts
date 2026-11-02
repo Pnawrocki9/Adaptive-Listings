@@ -141,8 +141,12 @@ import {
  * - `claims-v10` — 2026-11-01, FOLLOW-1311 slice 5: a street the listing does not state, stated with
  *   a house number, a street prefix or a locating word, is refused (`unsupported_street`). No
  *   `claims-v9` row was checked against that; it is regenerated once instead of served.
+ * - `claims-v11` — 2026-11-01, FOLLOW-1431: Treblinka, Sobibór, Bełżec, Majdanek and Auschwitz keep
+ *   the protected-ground guard's street exemption only when `listing_location` names the same camp,
+ *   and composition is also read past an address's abbreviation. No `claims-v10` row was checked
+ *   against those; it is regenerated once instead of served.
  */
-export const CLAIMS_VALIDATION_VERSION = 'claims-v10';
+export const CLAIMS_VALIDATION_VERSION = 'claims-v11';
 
 /** G-03: total budget per call (deadline on the whole, retries included). */
 const DESCRIPTION_DEADLINE_MS = 75_000;
@@ -888,7 +892,7 @@ function interpretDescription(
 
   // FOLLOW-1411: a statement about residents' race, ethnic origin or religion is refused before
   // the claim check, as `/api/adapt` orders it; refused, never stripped.
-  if (describesResidentsByProtectedGround(description)) {
+  if (describesResidentsByProtectedGround(description, e.listing_context.listing_location)) {
     return { verdict: 'REFUSED', violation: 'protected_ground' };
   }
 
@@ -930,7 +934,7 @@ function interpretHeadline(
   const languageViolation = checkOutputLanguage(headline, e.locale);
   if (languageViolation) return { headline: null, violation: languageViolation };
   // FOLLOW-1411: residents' race, ethnic origin or religion, as on the body and on `/api/adapt`.
-  if (describesResidentsByProtectedGround(headline)) {
+  if (describesResidentsByProtectedGround(headline, e.listing_context.listing_location)) {
     return { headline: null, violation: 'protected_ground' };
   }
   const violation = checkHeadlineFacts(

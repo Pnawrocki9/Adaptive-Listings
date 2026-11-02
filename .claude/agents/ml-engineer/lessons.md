@@ -701,6 +701,22 @@ the invoking command.
   rule that is a model is measured live once before handoff; a rule on addresses gets real address
   shapes (abbreviations, apostrophes, lower case) and ordinary title-case phrases as pins first.
 
+- **2026-11-01 / FOLLOW-1431 + FOLLOW-1436** · One address vocabulary in shared; the guard spares an
+  address with a marker on all three lists, own address blanked first on both paths; a count is no
+  house number before five ambiguous street words; closed forms of "aleja". · Judgment call: nothing
+  on either recording fired, so precision is unmeasured; my own attack sentences found three defects
+  the first pins missed ("Alejo" as a name, "na Katyńskiej", a listing-side tightening from a wider
+  mask). Those are still one mind's attack. · Guardrail: when a mask is shared by copy and listing,
+  widening it is a loosening on one side and a tightening on the other; test both before calling a
+  change loosening-only.
+
+- **2026-11-01 / FOLLOW-1431, second commit** · Reverted the guard's non-own reach to origin/main's;
+  all newly spared text now comes from own-address blanking. · Judgment call: I read "an address
+  with a marker passes" as licence to widen a text-only guard, which served invented sensitive
+  streets on the body; I reported it instead of measuring it against origin/main first. My blanket
+  "capital plus number in the listing's text is its own address" also spared "5 min from Treblinka
+  12". · Guardrail: a loosening's report carries a whole-path before/after table against
+  origin/main; a rule that cannot see the listing must not decide what belongs to the listing.
 - **2026-11-01 / FOLLOW-1429** · Built: pl/es copy_template calques replaced at the source
   (second_home, retiree, flip, commercial, diaspora), a NATURAL POLISH/SPANISH prompt paragraph on
   pl/es description prompts only, corpus v28 (5 non-en description_user digests), a calque pin. ·
@@ -710,3 +726,19 @@ the invoking command.
   (underwriting, obronny, fotogeniczny) alone. · Guardrail: a pl/es closer is written in the
   language first, never a quoted translation of the en closer; replay pins bytes only, so a fresh
   recording is the evidence.
+
+- **2026-11-01 / FOLLOW-1431, third commit** · An independent reader broke my own-address blanking
+  in about 215 cases (town via postcode, free text in a location field, seller's "na X 12", blanks
+  the qualifier saw through). Replaced by one narrow rule: one exact field, a street segment, the
+  listing's own number, the phrase ending there, an inert word in place. Camps lost the marker
+  exemption, composition is read with addresses out: `claims-v11`. · Judgment call: every "form a
+  real listing uses" I added widened what a mention could spare; form tolerance belonged on the name
+  only. · Guardrail: when the safe side of a guard is refusal, sparing logic starts from the
+  narrowest true statement and needs a reason to widen, never the reverse.
+
+- **2026-11-02 / FOLLOW-1431, last commit** · Removed own-address blanking after a third reader got
+  through it again; the guard is now only ever tighter than origin/main, proved by a recorded
+  differential table. FOLLOW-1431 stays open. · Judgment call: three rounds of narrowing a sparing
+  rule each opened holes; the fix was to drop it. A shared import also broke the AC(1b) helper, a
+  CJS path no unit test runs. · Guardrail: a change to a module the e2e helper loads runs that
+  helper before hand-off; a guard's exception starts from "can this only ever be stricter?".

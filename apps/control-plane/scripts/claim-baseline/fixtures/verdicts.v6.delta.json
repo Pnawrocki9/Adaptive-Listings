@@ -1,0 +1,231 @@
+{
+  "ticket": "FOLLOW-1459",
+  "classified_by": "ml-engineer, single rater",
+  "new_body_refusals": 0,
+  "headlines_newly_suppressed": 0,
+  "headlines_newly_served": 0,
+  "adapt_slots_newly_refused": 27,
+  "adapt_slots_total": 84,
+  "un_refused": 0,
+  "note": "The recordings predate the slot rule in the prompt, so this is the old output under the new check, not a forecast of the refusal rate: every recorded feature is a paragraph of 92 to 317 characters, none is a label. Slot refused, seller's copy stands. Body verdicts unmoved. The review's added CTA shapes and the question exemption moved no other case: the one CTA first refused here (\"Zapytaj o szczegóły umowy najmu i dokumentację lokalu\") is a question to the agent and passes again.",
+  "moved": {
+    "adapt.fx.family_buyer": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 154,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.fx.diaspora_buyer": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 201,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.krk.first_time_buyer": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 243,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.krk.yield_hunter": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 264,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.waw.lifestyle_expat": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 166,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.waw.student_parent": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 164,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.alb.yield_hunter": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 115,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.alb.second_home_buyer": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 92,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.gda.diaspora_buyer": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 189,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.gda.flip_investor": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 187,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.jav.second_home_buyer": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 265,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.jav.vacation_rental_investor": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 200,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.poz.yield_hunter": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 218,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.poz.student_parent": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 170,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.wro.diaspora_buyer": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 317,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.wro.family_buyer": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 205,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.zak.vacation_rental_investor": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 312,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.zak.second_home_buyer": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 234,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.sop.lifestyle_expat": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 178,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.lok.commercial_investor": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 158,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.lok.yield_hunter": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 158,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.kat.flip_investor": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 94,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.kat.first_time_buyer": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 143,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.lis.lifestyle_expat": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 222,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.lis.diaspora_buyer": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 172,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.tor.retiree_relocator": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 181,
+        "class": "true_positive"
+      }
+    ],
+    "adapt.tor.second_home_buyer": [
+      {
+        "slot": "feature",
+        "violation": "feature_not_a_label",
+        "chars": 188,
+        "class": "true_positive"
+      }
+    ]
+  },
+  "true_positives": 27,
+  "false_positives": 0
+}

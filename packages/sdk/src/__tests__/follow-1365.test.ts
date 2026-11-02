@@ -90,8 +90,10 @@ async function boot(f: ReturnType<typeof vi.fn>, advanceMs = 0): Promise<ShadowR
   script.dataset.tenantId = '550e8400-e29b-41d4-a716-446655440000';
   document.head.appendChild(script);
   vi.stubGlobal('fetch', f);
-  await _initForTest();
+  // init waits for a late config before its first decision [FOLLOW-1458].
+  const init = _initForTest();
   if (advanceMs > 0) await vi.advanceTimersByTimeAsync(advanceMs);
+  await init;
   let root: ShadowRoot | null = null;
   await vi.waitFor(
     () => {

@@ -82,7 +82,7 @@ describe('POST /api/adapt — traits', () => {
     ['premium', 'Request a Private Viewing'],
     ['works_from_home', 'Ask About Home Office Space'],
     ['residency_goal', 'Ask About Residency Requirements'],
-    ['seasoned_investor', 'Request an Investment Pack'],
+    ['seasoned_investor', 'Ask About the Investment Figures'],
     ['buying_from_abroad', 'Ask About Buying From Abroad'],
     ['will_let', 'Ask About Letting This Home'],
   ])('%s adds its one invitation slot on the playbook branch', async (trait, text) => {

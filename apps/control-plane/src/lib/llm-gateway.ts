@@ -25,7 +25,12 @@ import { hasModelControlTag } from '@/lib/model-control-tags';
 // FOLLOW-1061: the `llm_calls` INSERT moved to its own module so the `/api/adapt` route can book
 // its pre-LLM segment on the SAME register instead of standing up a competing one.
 import { logLlmCallAsync } from '@/lib/llm-calls-register';
-import { isAuthoredSectionLabel, isNonAssertiveSlot } from '@/lib/ungrounded-directives';
+import {
+  checkSlotFit,
+  isAuthoredSectionLabel,
+  isNonAssertiveSlot,
+  type SlotFitViolation,
+} from '@/lib/ungrounded-directives';
 import {
   slotRefusal,
   ADAPT_CLAIM_DIALECT,
@@ -205,6 +210,15 @@ function buildListingContextBlock(listingContext: Record<string, string>): strin
  * Grounding rule over the checker's own sources, never the playbook (ESC-076, §E.7.0)
  * [FOLLOW-1166].
  */
+/** What the two slots fill on the page; `checkSlotFit` enforces it after generation [FOLLOW-1459]. */
+const SLOT_FIT_RULE =
+  `\nSlot rules (output that breaks one is refused for that slot):\n` +
+  `- feature fills a section heading: a short label of at most 40 characters, never a sentence.\n` +
+  `- cta fills a button that opens a message thread to the listing agent, so it says that, for\n` +
+  `  example "Ask the agent about this home".\n` +
+  `  Never promise a download, guide, pack, brochure, report, document or financial details: none\n` +
+  `  exists.\n`;
+
 const GROUNDING_RULE =
   `\nGrounding rule (enforced after generation — output that breaks it is DISCARDED and the\n` +
   `buyer is served generic template copy instead):\n` +
@@ -264,6 +278,7 @@ function buildTweakPrompt(input: LlmGatewayInput): string {
     `Buyer's recent actions: ${recentEvents}\n` +
     contextBlock +
     GROUNDING_RULE +
+    SLOT_FIT_RULE +
     traitRulesBlock(input) +
     `\nReturn a JSON array of TextDirective objects that improve upon the current directives,\n` +
     `using the listing context above as the only source of facts.\n` +
@@ -294,6 +309,7 @@ function buildSonnetPrompt(input: LlmGatewayInput): string {
     `Quiz answers: ${quizAnswers}\n` +
     contextBlock +
     GROUNDING_RULE +
+    SLOT_FIT_RULE +
     traitRulesBlock(input) +
     `\nGenerate 2-3 TextDirective objects that would resonate with this buyer.\n` +
     `Output JSON only.\n` +
@@ -387,6 +403,7 @@ type ContractViolation = 'residual_tag' | 'meta_commentary';
 
 /** Every reason a slot can be refused for. */
 type SlotViolation =
+  | SlotFitViolation
   | DirectiveFactViolation
   | ClaimViolation
   | ProtectedGroundViolation
@@ -781,7 +798,10 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
         protectedGround ??
         (factViolation === 'hallucinated_number'
           ? factViolation
-          : (claimViolation ?? (exempt ? null : factViolation)));
+          : (claimViolation ??
+            // Before the name scan: final, so an unfit slot costs no judge call [FOLLOW-1459].
+            checkSlotFit(directive.slot, directive.value) ??
+            (exempt ? null : factViolation)));
       return { directive, violation, exempt };
     });
 

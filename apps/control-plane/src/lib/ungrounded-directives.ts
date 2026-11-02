@@ -12,36 +12,31 @@
  * from the listing's own text or not at all, and when we cannot ground, we do not adapt.
  *
  * THE HALF OF THE RULE THAT IS NOT "SERVE NOTHING". §E.7.0 forbids asserting a FACT we cannot
- * ground. A call to action asserts no fact about the property: it is an offer we make
- * (`'Request Investment Pack'`) or an invitation to the buyer (`'Book a Viewing'`), and it is
+ * ground. A call to action asserts no fact about the property: it is a question for the
+ * agent (`'Ask the Agent About Returns'`) or an invitation to the buyer (`'Book a Viewing'`), and it is
  * exactly as true whatever the listing turns out to contain. Withholding it would cost the
  * buyer an adaptation while protecting nothing.
  *
  * THE CLASSIFICATION, AND THE EVIDENCE BEHIND EACH LINE — enumerated from the shipped copy
  * before the line was drawn (Rule AC), not reasoned from the slot names:
  *
- * - **`cta` — non-assertive, SERVED.** All seventeen shipped strings were read. Every one is an
- *   offer or an invitation: `Request Investment Pack`, `Get Renovation Report`, `Download Golden
- *   Visa Guide`, `Book a Viewing`, `Compare Properties`, `Check Connectivity`, `Request Private
- *   Viewing`, `Request Bulk Enquiry`, `Speak with a Relocation Specialist`, `Get Family Buyer
- *   Guide`, `Get First-Time Buyer Guide`, `Download Expat Relocation Guide`, `Download
- *   Retirement Living Guide`, `Enquire About Holiday Use`, `Calculate Student Rental Return`,
- *   `See Short-Term Rental Projections`, `Request Commercial Pack`. The last two were the ones
- *   worth arguing about and they hold: they promise that WE have a projection or a calculator,
- *   not that this property yields anything. `Enquire About Holiday Use` invites a question; it
- *   does not claim holiday use is permitted.
+ * - **`cta` — non-assertive, SERVED.** All seventeen shipped strings were read. Every one is a
+ *   question for the agent or an invitation to contact them, which is all the button does: it opens
+ *   a message thread (FOLLOW-1459 re-authored the ones that promised a pack, a guide, a report or a
+ *   calculator nobody ships). `Ask the Agent About Returns` asks; it does not claim a return.
+ *   `Enquire About Holiday Use` does not claim holiday use is permitted.
  * - **`trait_note` — non-assertive, SERVED [FOLLOW-1360].** One invitation per buyer trait, all six
  *   read: `Request a Private Viewing`, `Ask About Home Office Space`, `Ask About Residency
- *   Requirements`, `Request an Investment Pack`, `Ask About Buying From Abroad`, `Ask About
+ *   Requirements`, `Ask About the Investment Figures`, `Ask About Buying From Abroad`, `Ask About
  *   Letting This Home` (and their PL/ES). Each is an offer or a question the buyer may ask; none
  *   says the property has an office, qualifies for residency, yields anything or may be let.
  *   `has_children` has no slot. The set lives in `packages/shared/src/playbooks/traits.ts`, whose
  *   test pins every string against a claim-word list, so a re-authored string is a red test.
  * - **`headline` — assertive, WITHHELD.** Every property claim in the playbook lives here.
  * - **`feature` — MIXED, and therefore withheld whole.** Most are section labels that assert
- *   nothing (`Family Essentials`, `Portfolio Metrics`, `Renovation Scope`, `Why Upgrade?`), but
+ *   nothing (`Family Essentials`, `Portfolio Metrics`, `Renovation Scope`, `Why Upgrade`), but
  *   four are claims about the property: `remote_worker`'s `Remote Work Ready`, `downsizer`'s
- *   `Downsizer Friendly`, `vacation_rental_investor`'s `Short-Term Rental Projections` and
+ *   `Downsizer Friendly`, `vacation_rental_investor`'s `Short-Term Rental` and
  *   `golden_visa_buyer`'s `Residency Requirements`. A mechanical slot rule cannot separate the
  *   label from the claim, and separating them means re-authoring shipped copy — which is
  *   FOLLOW-1164's job (playbooks become briefs), not this one's. Withholding the slot is the
@@ -104,9 +99,9 @@ export function isNonAssertiveSlot(slot: string): boolean {
  *
  * WHY AN ENUMERATION AND NOT A SLOT RULE. The header above already read all seventeen shipped
  * `feature` strings and found the slot MIXED: thirteen are headings (`Investment Performance`,
- * `Portfolio Metrics`, `Why Upgrade?`), four are claims about the property (`remote_worker`'s
+ * `Portfolio Metrics`, `Why Upgrade`), four are claims about the property (`remote_worker`'s
  * `Remote Work Ready`, `downsizer`'s `Downsizer Friendly`, `vacation_rental_investor`'s
- * `Short-Term Rental Projections`, `golden_visa_buyer`'s `Residency Requirements`). A slot rule
+ * `Short-Term Rental`, `golden_visa_buyer`'s `Residency Requirements`). A slot rule
  * cannot separate them, so this map lists the thirteen headings and leaves the four claims out:
  * they stay ordinary model output, scanned and judged. `neutral` has no `feature` slot.
  *
@@ -124,12 +119,12 @@ export function isNonAssertiveSlot(slot: string): boolean {
 const AUTHORED_SECTION_LABELS: ReadonlyMap<string, string> = new Map([
   ['yield_hunter', 'Investment Performance'],
   ['first_time_buyer', 'Your First Step'],
-  ['diaspora_buyer', 'Remote Purchase Guide'],
+  ['diaspora_buyer', 'Buying From Abroad'],
   ['lifestyle_expat', 'Expat Essentials'],
   ['family_buyer', 'Family Essentials'],
-  ['commercial_investor', 'Commercial Due Diligence Pack'],
+  ['commercial_investor', 'Commercial Due Diligence'],
   ['flip_investor', 'Renovation Scope'],
-  ['upsizer', 'Why Upgrade?'],
+  ['upsizer', 'Why Upgrade'],
   ['retiree_relocator', 'Retirement Living Highlights'],
   ['second_home_buyer', 'Weekend Escape'],
   ['luxury_buyer', 'Premium Highlights'],
@@ -172,6 +167,66 @@ export function isAuthoredSectionLabel(
   const shipped = playbook.slots.find((s) => s.slot === SECTION_LABEL_SLOT)?.en;
   if (shipped === undefined || normalise(shipped) !== normalise(reviewed)) return false;
   return normalise(value) === normalise(reviewed);
+}
+
+/**
+ * The longest `feature` we author is 28 characters (`Retirement Living Highlights`); 40 leaves PL and
+ * ES room to run about 40 % longer and stays a heading. A paragraph cannot fit.
+ */
+const MAX_SECTION_LABEL_CHARS = 40;
+
+/**
+ * What a `cta` may not promise: no pack, guide or document exists, and the button only opens a message
+ * thread to the agent. EN, PL (inflected) and ES, whole words. It is a list, so it stops the known
+ * shapes, and the prompt carries the rule; it does not prove what a `cta` does say.
+ */
+const DELIVERABLE_PROMISE = new RegExp(
+  `(?<![\\p{L}\\p{N}])(?:${[
+    'downloads?|downloadable|guides?|guidebooks?|packs?|packets?|brochures?|reports?|documents?',
+    'dossiers?|pdfs?|e-?books?|handbooks?|checklists?|prospectus(?:es)?|fact ?-?sheets?|calculators?',
+    'financials|financial (?:details|statements|breakdown|summary|summaries)',
+    'pobierz\\p{L}*|pobra\\p{L}*|poradnik\\p{L}*|przewodnik\\p{L}*|pakiet\\p{L}*|broszur\\p{L}*',
+    'raport\\p{L}*|dokument\\p{L}*|dosier\\p{L}*|materia[łl]\\p{L}*|zestawieni\\p{L}*',
+    'kalkulator\\p{L}*|analiz\\p{L}*|szczeg\\p{L}+ finansow\\p{L}*|dan\\p{L}+ finansow\\p{L}*',
+    'descarg\\p{L}*|gu[ií]as?|paquetes?|folletos?|informes?|documentos?|documentaci[oó]n',
+    'fichas?|cat[aá]logos?|(?:detalles|datos) financieros|informaci[oó]n financiera',
+  ].join('|')})(?![\\p{L}\\p{N}])`,
+  'iu',
+);
+
+/** A question to the agent, which is what the button does, whatever the question names. */
+const ASKS_THE_AGENT =
+  /^(?:(?:ask|enquire|inquire)(?: (?:the|your|an) agent)? about|zapytaj(?: agenta)? o|pregunt[ae](?: al agente)? (?:sobre|por)|consulta(?: al agente)? sobre)(?!\p{L})/iu;
+
+/** ...unless it also offers to hand the thing over: "Ask about returns and get the guide". */
+const OBTAIN_VERB =
+  /(?<!\p{L})(?:get|receive|send|request|see|view|open|download\p{L}*|pobierz\p{L}*|pobra\p{L}*|otrzymaj|zam[oó]w|popro[sś]|zobacz|descarg\p{L}*|recibe|solicita|pide|ver|obt[eé]n)(?!\p{L})/iu;
+
+/** A slot's value does not fit the element it fills [FOLLOW-1459]. */
+export type SlotFitViolation = 'feature_not_a_label' | 'cta_promises_deliverable';
+
+/**
+ * Does this value fit the element its slot fills? `feature` fills a section heading: a short label,
+ * on one line, with no sentence ending; an abbreviation (`St. Mary's Quarter`) is refused with the
+ * sentences, which fails safe. `cta` fills a button that contacts the agent: no promised deliverable.
+ * Read after NFC and whitespace normalisation, so an NBSP or a decomposed accent changes nothing. No
+ * other slot is read, and nothing here looks at family wording, the address or a claim.
+ *
+ * @param slot - The directive's slot name.
+ * @param value - The directive's value.
+ * @returns The violation, or null when it fits.
+ */
+export function checkSlotFit(slot: string, value: string): SlotFitViolation | null {
+  const text = value.normalize('NFC').replace(/\s+/g, ' ').trim();
+  if (slot === SECTION_LABEL_SLOT) {
+    return text.length > MAX_SECTION_LABEL_CHARS ||
+      /[.!?](?: |$)/.test(text) ||
+      /[\n\r\u2028\u2029]/.test(value.trim())
+      ? 'feature_not_a_label'
+      : null;
+  }
+  if (slot !== 'cta' || !DELIVERABLE_PROMISE.test(text)) return null;
+  return ASKS_THE_AGENT.test(text) && !OBTAIN_VERB.test(text) ? null : 'cta_promises_deliverable';
 }
 
 /**

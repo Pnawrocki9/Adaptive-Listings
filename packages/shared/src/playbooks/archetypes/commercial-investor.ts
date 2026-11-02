@@ -10,13 +10,13 @@ export const commercialInvestorPlaybook: PlaybookEntry = {
       variants: {
         en: [
           'Commercial Investment — {sqm}m² Income-Producing Asset',
-          'Commercial Asset — {sqm}m², Full Due Diligence Pack',
+          'Commercial Asset — {sqm}m² for Investors',
           'Office/Retail Investment — Triple Net Lease, Stable Returns',
         ],
       },
     },
-    { slot: 'cta', en: 'Request Commercial Pack' },
-    { slot: 'feature', en: 'Commercial Due Diligence Pack' },
+    { slot: 'cta', en: 'Ask the Agent About Commercial Terms' },
+    { slot: 'feature', en: 'Commercial Due Diligence' },
   ],
   listing_rules: {
     boost_if: ['commercial_zoning', 'rental_tenant_in_place', 'triple_net_lease'],

@@ -219,7 +219,7 @@ describe('FOLLOW-1178 — judge budget per band', () => {
       // exemption removes it from the flag population, two flags remain, and two flags always
       // fitted the old budget. A reader can therefore attribute the row above to the budget and
       // to nothing else in the batch.
-      expect(SHIPPED_CTA).toBe('Request Investment Pack');
+      expect(SHIPPED_CTA).toBe('Ask the Agent About Returns');
       mockCreate
         .mockResolvedValueOnce(anthropicResponse(threeSlotBatch(SHIPPED_CTA)))
         .mockResolvedValue(anthropicResponse('{"grounded": true}'));

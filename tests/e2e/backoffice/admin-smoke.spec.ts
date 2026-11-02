@@ -29,10 +29,9 @@
  *     `apps/control-plane/src/app/admin/__tests__/admin-nav-reachability.test.ts` and by the
  *     C2 unit tests, and are the skipped `K3 gap` test below.
  *   - API: `lib/tracer-auth.ts` path 3 (`via: 'staff_jwt'`) verifies HS256 with
- *     SUPABASE_JWT_SECRET (`packages/auth/src/middleware.ts` `verifyAndDecodeJwtPayload`). That
- *     name exists in neither Doppler `dev` nor `scripts/dev/localhost-up.sh`, so on localhost the
- *     path is fail-secure and refuses every bearer JWT. A localhost-only random value exported by
- *     localhost-up.sh to both the server and this spec would enable the readonly/ops rows.
+ *     SUPABASE_JWT_SECRET (`packages/auth/src/middleware.ts` `verifyAndDecodeJwtPayload`). Doppler
+ *     `dev` has none; since FOLLOW-1460 `scripts/dev/localhost-up.sh` generates a local value and
+ *     gives it to the server. Export the same value to this spec to run the readonly/ops rows.
  *
  * Run: see tests/e2e/backoffice/README.md.
  *
@@ -213,7 +212,7 @@ test.describe('N2 backoffice smoke — FOLLOW-1321 rank matrix on the live API',
   test.describe('staff JWT rows (readonly / ops)', () => {
     test.skip(
       !SUPABASE_JWT_SECRET,
-      'SUPABASE_JWT_SECRET is in neither Doppler dev nor localhost-up.sh: the staff_jwt path refuses every JWT on localhost (FOLLOW-1336/K3 gap)',
+      'SUPABASE_JWT_SECRET is unset here: export the value from .localhost-up/local-staff-jwt-secret (FOLLOW-1460)',
     );
     const jwt = (role: 'estalara:readonly' | 'estalara:ops') =>
       bearer(mintStaffJwt(SUPABASE_JWT_SECRET ?? '', role));

@@ -16,7 +16,7 @@ export const lifestyleExpatPlaybook: PlaybookEntry = {
         ],
       },
     },
-    { slot: 'cta', en: 'Download Expat Relocation Guide' },
+    { slot: 'cta', en: 'Ask the Agent About Moving Here' },
     { slot: 'feature', en: 'Expat Essentials' },
   ],
   listing_rules: {

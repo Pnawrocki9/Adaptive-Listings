@@ -6,13 +6,15 @@
  * @module apps/control-plane/src/app/api/dashboard/analytics/lift/route-helpers.test
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   parseWindowDays,
   buildResponseFromRaw,
   conversionCountColumns,
   conversionEventsSubquery,
+  fetchLiftDaily,
+  fetchLiftRaw,
   readConversionCounts,
 } from './route-helpers';
 
@@ -354,5 +356,117 @@ describe('FOLLOW-1203 — the shared SQL builders', () => {
       pre_exposure_conversions: null,
       unsigned_conversions: null,
     });
+  });
+});
+
+// ─── FOLLOW-1457: an aggregate alias must not shadow a column of its own WHERE ────────────────
+
+/**
+ * Aliases of aggregates that a sibling WHERE also names bare. ClickHouse binds that name to the alias
+ * (`prefer_column_name_to_alias` is off), so the WHERE holds an aggregate: code 184,
+ * ILLEGAL_AGGREGATION. Only innermost SELECTs are read, and a qualified `ad.x` is not a bare name.
+ */
+function shadowingAggregateAliases(sql: string): string[] {
+  const found: string[] = [];
+  const block =
+    /\bSELECT\b((?:(?!\bSELECT\b)[\s\S])*?)\bFROM\b((?:(?!\bSELECT\b)[\s\S])*?)\bGROUP BY\b/g;
+  const aggregate = /\b(?:any|argM|max|min|count|sum|uniq|avg)\w*\([\s\S]*?\)\s+AS\s+(\w+)/g;
+  for (const [, select = '', rest = ''] of sql.matchAll(block)) {
+    for (const [, alias = ''] of select.matchAll(aggregate)) {
+      if (new RegExp(`(?<![.\\w])${alias}\\b`).test(rest)) found.push(alias);
+    }
+  }
+  return found;
+}
+
+describe('FOLLOW-1457 lift queries against the alias-shadowing trap', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  /** Every SQL string `read` sends, with ClickHouse answering nothing. */
+  async function sentSql(read: () => Promise<unknown>): Promise<string[]> {
+    vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test:8123');
+    vi.stubEnv('CALLER_SIGNED_COLUMN_ENABLED', 'true');
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('', { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    await read();
+    return (fetchMock.mock.calls as unknown as [string][]).map(
+      ([url]) => new URL(url).searchParams.get('query') ?? '',
+    );
+  }
+
+  it('the detector names the alias that broke the route', () => {
+    expect(
+      shadowingAggregateAliases(`SELECT session_id, anyHeavy(holdout_group) AS holdout_group
+        FROM adaptation_decisions WHERE NOT (holdout_group = 1 AND variant != 'control')
+        GROUP BY session_id`),
+    ).toEqual(['holdout_group']);
+  });
+
+  it('no query of the rolling report has one', async () => {
+    const queries = await sentSql(() => fetchLiftRaw(TENANT_ID, 7));
+    expect(queries.length).toBeGreaterThanOrEqual(3);
+    expect(queries.flatMap(shadowingAggregateAliases)).toEqual([]);
+  });
+
+  it('no query of the per-day report has one', async () => {
+    const queries = await sentSql(() => fetchLiftDaily(TENANT_ID, '2026-11-01', '2026-11-02'));
+    expect(queries.length).toBeGreaterThanOrEqual(1);
+    expect(queries.flatMap(shadowingAggregateAliases)).toEqual([]);
+  });
+});
+
+// ─── FOLLOW-1458: one visit, one arm ──────────────────────────────────────────────────────────
+
+describe('FOLLOW-1458 a session has the arm of its first decision', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  async function sentSql(read: () => Promise<unknown>): Promise<string[]> {
+    vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test:8123');
+    vi.stubEnv('CALLER_SIGNED_COLUMN_ENABLED', 'true');
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('', { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    await read();
+    return (fetchMock.mock.calls as unknown as [string][]).map(
+      ([url]) => new URL(url).searchParams.get('query') ?? '',
+    );
+  }
+
+  it('every query takes the arm from argMin and never groups on the row arm', async () => {
+    const queries = [
+      ...(await sentSql(() => fetchLiftRaw(TENANT_ID, 7))),
+      ...(await sentSql(() => fetchLiftDaily(TENANT_ID, '2026-11-01', '2026-11-02'))),
+    ];
+    expect(queries).toHaveLength(4);
+    for (const sql of queries) {
+      expect(sql).toContain('argMin(holdout_group, ts) AS first_arm');
+      expect(sql).not.toContain('argMax');
+      expect(sql).not.toMatch(/GROUP BY[^\n]*holdout_group/);
+      expect(sql).not.toMatch(/\bad\.holdout_group AS holdout\b/);
+    }
+  });
+
+  it('sessions_in_both_arms sums what the per-arm rows report, and is 0 when none', () => {
+    const row = { sessions: 10, ...conv(1) };
+    const raw = (a: number, h: number) => ({
+      groups: [
+        { holdout: 0, ...row, both_arm_sessions: a },
+        { holdout: 1, ...row, both_arm_sessions: h },
+      ],
+      archetypes: [],
+      funnel: [],
+      callerClass: true,
+    });
+    expect(buildResponseFromRaw(TENANT_ID, 7, raw(2, 1), 'clickhouse').sessions_in_both_arms).toBe(
+      3,
+    );
+    expect(buildResponseFromRaw(TENANT_ID, 7, raw(0, 0), 'clickhouse').sessions_in_both_arms).toBe(
+      0,
+    );
   });
 });

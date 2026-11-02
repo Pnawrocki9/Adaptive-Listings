@@ -15,7 +15,7 @@ export const firstTimeBuyerPlaybook: PlaybookEntry = {
         ],
       },
     },
-    { slot: 'cta', en: 'Get First-Time Buyer Guide' },
+    { slot: 'cta', en: 'Ask the Agent About Buying Your First Home' },
     { slot: 'feature', en: 'Your First Step' },
   ],
   listing_rules: {

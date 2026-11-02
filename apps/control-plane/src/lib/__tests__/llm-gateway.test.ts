@@ -814,12 +814,12 @@ describe('callLlmGateway — FOLLOW-1034 / ESC-063: the fact check must not reje
     expect(mockCreate).toHaveBeenCalledTimes(2); // generation + one judge round trip
   });
 
-  it('accepts the playbook\'s own CTA vocabulary with a generic verb swap ("Get Investment Pack")', async () => {
+  it('accepts the playbook\'s own CTA vocabulary with a generic verb swap ("Ask About Investment Income")', async () => {
     // Rejected in prod as hallucinated_proper_name — on "Get". The other two words are
     // verbatim from the playbook's own cta slot. A generic imperative is not a proper name.
     // FOLLOW-1162: "Get" and "Investment" are stop-capped; the word that now trips the scan is
     // **"Pack"**, previously grounded by the cta slot's own text.
-    const result = await gatewayWith('Get Investment Pack', 'cta', 'grounded');
+    const result = await gatewayWith('Ask About Investment Income', 'cta', 'grounded');
     expect(result).not.toBeNull();
   });
 
@@ -960,7 +960,7 @@ describe('callLlmGateway — FOLLOW-1034 judge tier: name flags are adjudicated,
   });
 
   /** A value the token scan flags on a MID-segment capital that is a translation, not a name. */
-  const TRANSLATED_VALUE = 'Country house with converted Barn and outbuildings';
+  const TRANSLATED_VALUE = 'Country house with converted Barn';
 
   const directivesFor = (value: string): TextDirective[] => [
     { type: 'text', slot: 'feature', value, archetype: 'yield_hunter', confidence: 0.75 },
@@ -1045,7 +1045,7 @@ describe('callLlmGateway — FOLLOW-1040: the judge is bounded in time and in co
   const JUDGE_DEADLINE_MS = 2000;
 
   /** A value the token scan flags on a MID-segment capital that is a translation, not a name. */
-  const TRANSLATED_VALUE = 'Country house with converted Barn and outbuildings';
+  const TRANSLATED_VALUE = 'Country house with converted Barn';
 
   const directivesFor = (slots: string[]): TextDirective[] =>
     slots.map((slot) => ({
@@ -1185,7 +1185,7 @@ describe('callLlmGateway — FOLLOW-1041: the judge verdict is countable on the 
   const JUDGE_DEADLINE_MS = 2000;
 
   /** A value the token scan flags on a MID-segment capital that is a translation, not a name. */
-  const TRANSLATED_VALUE = 'Country house with converted Barn and outbuildings';
+  const TRANSLATED_VALUE = 'Country house with converted Barn';
 
   const directivesFor = (slots: string[]): TextDirective[] =>
     slots.map((slot) => ({

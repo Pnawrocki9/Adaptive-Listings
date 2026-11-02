@@ -161,7 +161,7 @@ function clickhouseSimulator(urlStr: string): Response {
       const [stage, holdout] = k.split('|');
       lines.push({ stage, holdout: Number(holdout), sessions: sessions.size });
     }
-  } else if (sql.includes('GROUP BY ad.archetype, ad.holdout_group')) {
+  } else if (sql.includes('GROUP BY ad.archetype, arm.first_arm')) {
     // cta-lift per-archetype, per-arm.
     for (const archetype of [...new Set(clean.map((d) => d.archetype))]) {
       for (const holdout of [0, 1] as const) {
@@ -175,7 +175,7 @@ function clickhouseSimulator(urlStr: string): Response {
         });
       }
     }
-  } else if (sql.includes('GROUP BY ad.holdout_group')) {
+  } else if (sql.includes('GROUP BY arm.first_arm')) {
     // cta-lift per-arm totals.
     for (const holdout of [0, 1] as const) {
       const rows = clean.filter((d) => d.holdout_group === holdout);

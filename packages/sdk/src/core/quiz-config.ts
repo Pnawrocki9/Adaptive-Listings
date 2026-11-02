@@ -170,8 +170,7 @@ export async function fetchQuizConfig(
       signal: controller.signal,
     });
 
-    clearTimeout(timer);
-
+    // The timer stays on until the body is read: `json()` has no deadline of its own [FOLLOW-1458].
     if (!response.ok) {
       // Non-2xx response — return null; caller falls back to defaults.
       return null;
@@ -206,7 +205,8 @@ export async function fetchQuizConfig(
     return result.data;
   } catch {
     // Network error or AbortError (timeout) — return null.
-    clearTimeout(timer);
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }

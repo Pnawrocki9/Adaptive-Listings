@@ -103,13 +103,13 @@ const FLAGGING_FEATURE = 'Investment Outlook';
 
 /**
  * The axis under test: the `cta` the model writes on a French listing. Title-Cased French, i.e.
- * [MP-012]'s coinage class — `Dossier` is mid-segment, capitalised and absent from the grounding,
+ * [MP-012]'s coinage class — `Bilan` is mid-segment, capitalised and absent from the grounding,
  * so the scan flags it exactly as it flags an English invention. The judge tier is the control
  * designed for this class; the budget is what decides whether the judge is ever asked.
  */
-const FRENCH_CTA = 'Demander le Dossier Investissement';
+const FRENCH_CTA = 'Demander le Bilan Investissement';
 
-/** A fully French batch: `Potentiel`, `Dossier` and `Locatif` each flag, one per slot. */
+/** A fully French batch: `Potentiel`, `Bilan` and `Locatif` each flag, one per slot. */
 const FRENCH_HEADLINE = 'Appartement calme à Lisbonne, fort Potentiel locatif';
 const FRENCH_FEATURE = 'Rendement Locatif attractif';
 
@@ -225,7 +225,7 @@ describe('FOLLOW-1180 — the tweak-band budget on a non-English listing', () =>
       // — because this string IS `s.en` — two flags remain, and two flags fitted the old budget
       // as they fit the new one. GREEN ON BOTH SIDES OF THE FIX, which is what licenses reading
       // the row above as an effect of the LANGUAGE and of nothing else.
-      expect(SHIPPED_CTA).toBe('Request Investment Pack');
+      expect(SHIPPED_CTA).toBe('Ask the Agent About Returns');
       mockCreate
         .mockResolvedValueOnce(anthropicResponse(threeSlotBatch(SHIPPED_CTA)))
         .mockResolvedValue(anthropicResponse('{"grounded": true}'));

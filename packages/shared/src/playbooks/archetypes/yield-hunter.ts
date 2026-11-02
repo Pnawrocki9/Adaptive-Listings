@@ -16,7 +16,7 @@ export const yieldHunterPlaybook: PlaybookEntry = {
         ],
       },
     },
-    { slot: 'cta', en: 'Request Investment Pack' },
+    { slot: 'cta', en: 'Ask the Agent About Returns' },
     { slot: 'feature', en: 'Investment Performance' },
   ],
   listing_rules: {

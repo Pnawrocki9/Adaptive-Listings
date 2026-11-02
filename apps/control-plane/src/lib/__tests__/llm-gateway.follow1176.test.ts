@@ -75,7 +75,8 @@ const LISTING_CONTEXT: Record<string, string> = {
  */
 const MODEL_INVENTED_CTAS = [
   'Book a Viewing with Knight Frank',
-  'Download the Marina Heights Yield Report',
+  // FOLLOW-1459: was `Download the … Report`, a promised deliverable refused before any judge call.
+  'Ask about the Marina Heights yield',
   // FOLLOW-1305: was `…the Guaranteed Rental Income scheme`. "Guaranteed" is now a deterministic
   // guarantee claim refused before any judge call (`llm-gateway.follow1305.test.ts`), so it no
   // longer exercises THIS file's question — whether an invented name reaches the judge.
@@ -155,7 +156,7 @@ describe('FOLLOW-1176 — the exemption covers authored copy, not whatever the m
   it("#875's win survives: the archetype's OWN shipped CTA still costs no judge round trip", async () => {
     // This is the population the seventeen-string enumeration actually covers, and it is what
     // the model returned on 12 of 12 live runs. Losing this would undo FOLLOW-1173.
-    expect(SHIPPED_CTA).toBe('Request Investment Pack');
+    expect(SHIPPED_CTA).toBe('Ask the Agent About Returns');
     mockCreate.mockResolvedValueOnce(anthropicResponse(directives(['cta', SHIPPED_CTA])));
 
     const result = await callLlmGateway(BASE_INPUT);
@@ -178,18 +179,18 @@ describe('FOLLOW-1176 — the exemption covers authored copy, not whatever the m
   });
 
   it('a paraphrase of the shipped CTA is NOT authored copy and is judged', async () => {
-    // The boundary. `Request the Investment Pack Today` is close to the template and still
+    // The boundary. `Ask the Agent About Returns Today` is close to the template and still
     // model-written, so it is adjudicated rather than assumed.
     mockCreate
       .mockResolvedValueOnce(
-        anthropicResponse(directives(['cta', 'Request the Investment Pack Today'])),
+        anthropicResponse(directives(['cta', 'Ask the Agent About Returns Today'])),
       )
       .mockResolvedValueOnce(anthropicResponse('{"grounded": true}'));
 
     const result = await callLlmGateway(BASE_INPUT);
 
     expect(mockCreate).toHaveBeenCalledTimes(2);
-    expect(result?.directives[0]?.value).toBe('Request the Investment Pack Today');
+    expect(result?.directives[0]?.value).toBe('Ask the Agent About Returns Today');
   });
 
   describe('CONTROL rows — neither is allowed to regress', () => {

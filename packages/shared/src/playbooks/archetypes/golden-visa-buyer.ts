@@ -16,7 +16,7 @@ export const goldenVisaBuyerPlaybook: PlaybookEntry = {
         ],
       },
     },
-    { slot: 'cta', en: 'Download Golden Visa Guide' },
+    { slot: 'cta', en: 'Ask the Agent About Residency' },
     { slot: 'feature', en: 'Residency Requirements' },
   ],
   listing_rules: {

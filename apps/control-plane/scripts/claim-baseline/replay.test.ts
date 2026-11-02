@@ -2,11 +2,12 @@
 /**
  * FOLLOW-1311: replay the frozen model outputs (`fixtures/raw.v1.jsonl`) through the REAL
  * `generateDescription` and `callLlmGateway`, with only the SDK and the sinks replaced, and compare
- * every verdict with the current frozen verdicts, `fixtures/verdicts.v5.jsonl`.
+ * every verdict with the current frozen verdicts, `fixtures/verdicts.v6.jsonl`.
  * `verdicts.v1.jsonl` stays as the baseline every target is measured from, and
  * `verdicts.v2.delta.json`, `verdicts.v3.delta.json` and `verdicts.v4.delta.json` classify, by hand,
  * every case that moved from v1 to v2, from v2 to v3 and from v3 to v4. `verdicts.v5.delta.json`
- * records that v5 (FOLLOW-1431, `claims-v11`) moved none.
+ * records that v5 (FOLLOW-1431, `claims-v11`) moved none, and `verdicts.v6.delta.json` classifies what
+ * FOLLOW-1459's slot-fit rule moved.
  *
  * A change that moves no verdict leaves this green. A change that does move one must show it: run
  * with `CLAIM_REPLAY_OUT=<file>` and diff that file against the frozen verdicts, then classify every
@@ -129,7 +130,7 @@ describe('FOLLOW-1311 claim baseline replay', () => {
       writeFileSync(process.env.CLAIM_REPLAY_OUT, `${lines.join('\n')}\n`);
       return;
     }
-    expect(lines).toEqual(readLines('verdicts.v5.jsonl'));
+    expect(lines).toEqual(readLines('verdicts.v6.jsonl'));
   });
 
   it('v2 moves only the classified cases, and the refusal target is computed from the verdicts', () => {

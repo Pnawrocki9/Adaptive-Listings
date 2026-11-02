@@ -369,7 +369,7 @@ describe('route.follow1163.test.ts — FOLLOW-1163 / MASTER_DESIGN §E.7.0 (ESC-
    * THE RULE, AND THE HALF OF IT THAT IS NOT OBVIOUS. §E.7.0 says a directive comes from the
    * listing's text or not at all — and that when we cannot ground, we do not adapt. It does NOT
    * say every directive dies: a CALL TO ACTION asserts nothing about the property. It is an offer
-   * we make ("Request Investment Pack") or an invitation to the buyer ("Book a Viewing"), and it
+   * we make ("Ask the Agent About Returns") or an invitation to the buyer ("Book a Viewing"), and it
    * stays true whatever the listing says. All seventeen shipped `cta` strings were enumerated
    * before this line was drawn and not one asserts a property fact.
    *
@@ -576,7 +576,7 @@ describe('route.follow1163.test.ts — FOLLOW-1163 / MASTER_DESIGN §E.7.0 (ESC-
 
     it('the cta SURVIVES — it is an offer we make, not a claim about the property', async () => {
       const body = await adaptFor('yield_hunter', 0.95);
-      expect(body.directives.map((d) => d.value)).toEqual(['Request Investment Pack']);
+      expect(body.directives.map((d) => d.value)).toEqual(['Ask the Agent About Returns']);
     });
 
     it('branch 3 fallback withholds the same slots — a model outage is not a licence to assert', async () => {

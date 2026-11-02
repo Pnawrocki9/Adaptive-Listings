@@ -110,9 +110,9 @@ const ADD_ONS: Readonly<Record<TraitId, TraitAddOn>> = {
     ],
     listing_rules: portfolioBuilderPlaybook.listing_rules,
     slot: invitation(
-      'Request an Investment Pack',
-      'Poproś o pakiet inwestycyjny',
-      'Solicita un dosier de inversión',
+      'Ask About the Investment Figures',
+      'Zapytaj o dane inwestycyjne',
+      'Pregunta por las cifras de inversión',
     ),
   },
   buying_from_abroad: {

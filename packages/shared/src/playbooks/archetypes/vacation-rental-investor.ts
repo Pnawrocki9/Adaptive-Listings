@@ -15,8 +15,8 @@ export const vacationRentalInvestorPlaybook: PlaybookEntry = {
         ],
       },
     },
-    { slot: 'cta', en: 'See Short-Term Rental Projections' },
-    { slot: 'feature', en: 'Short-Term Rental Projections' },
+    { slot: 'cta', en: 'Ask the Agent About Short-Term Rental' },
+    { slot: 'feature', en: 'Short-Term Rental' },
   ],
   listing_rules: {
     boost_if: ['tourist_zone', 'short_term_rental_license', 'near_beach', 'near_airport'],

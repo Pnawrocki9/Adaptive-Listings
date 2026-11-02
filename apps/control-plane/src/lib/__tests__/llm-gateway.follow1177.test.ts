@@ -14,7 +14,7 @@
  * it re-creates precisely the blindness MP-012's `watch_status` describes for the canary, where
  * a served batch looks identical whether a flag was cleared or never raised. Both populations
  * are exercised here against the same slot on the same band, and the shipped CTA is measured to
- * belong to the first: `Request Investment Pack` DOES flag `hallucinated_proper_name` (the
+ * belong to the first: `Ask the Agent About Returns` DOES flag `hallucinated_proper_name` (the
  * `Pack` token, RETRO-319) and is cleared only by provenance.
  *
  * WHAT ELSE IS PINNED:
@@ -196,7 +196,7 @@ describe('FOLLOW-1177 — the provenance exemption is countable', () => {
 
   describe('RED-FIRST — the exemption fires and the register says so', () => {
     it('HAIKU band: the shipped CTA is exempted and writes ONE row tagged with the band', async () => {
-      expect(SHIPPED_CTA).toBe('Request Investment Pack');
+      expect(SHIPPED_CTA).toBe('Ask the Agent About Returns');
       mockCreate
         .mockResolvedValueOnce(anthropicResponse(directives(['cta', SHIPPED_CTA])))
         .mockResolvedValue(anthropicResponse('{"grounded": true}'));
@@ -284,10 +284,10 @@ describe('FOLLOW-1177 — the provenance exemption is countable', () => {
       // RENDERED output against the RAW authored string, so an archetype whose CTA carries a
       // placeholder can never satisfy the provenance conjunct — the exemption is silently off
       // for that archetype. It stops being silent here: the flag lands in the judge's bucket.
-      const tokenisedCta = playbookWithCta('Request the {city} Investment Pack');
+      const tokenisedCta = playbookWithCta('Ask the {city} Investment Desk');
       mockCreate
         .mockResolvedValueOnce(
-          anthropicResponse(directives(['cta', 'Request the Alfama Investment Pack'])),
+          anthropicResponse(directives(['cta', 'Ask the Alfama Investment Desk'])),
         )
         .mockResolvedValue(anthropicResponse('{"grounded": true}'));
 

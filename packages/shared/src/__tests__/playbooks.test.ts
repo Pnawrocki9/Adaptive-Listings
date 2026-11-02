@@ -154,13 +154,13 @@ describe('getPlaybook — spot checks for key archetypes', () => {
   });
 
   // FOLLOW-1412 (ESC-089): the family-fitted CTA and section label FOLLOW-1366 retired are back.
-  // Neither asserts a fact about a listing (an offer and a heading), so they ground nothing.
+  // Neither asserts a fact about a listing (a question for the agent and a heading), so they ground nothing.
   it('family_buyer serves the family-fitted CTA, feature label and headline (FOLLOW-1412)', () => {
     const playbook = getPlaybook('family_buyer');
     const slot = (n: string) => playbook.slots.find((s) => s.slot === n);
-    expect(slot('cta')?.en).toBe('Get Family Buyer Guide');
-    expect(slot('cta')?.pl).toBe('Pobierz poradnik dla rodzin');
-    expect(slot('cta')?.es).toBe('Descarga la guía para familias');
+    expect(slot('cta')?.en).toBe('Ask the Agent About Family Living');
+    expect(slot('cta')?.pl).toBe('Zapytaj agenta o życie z rodziną');
+    expect(slot('cta')?.es).toBe('Pregunta al agente sobre la vida en familia');
     expect(slot('feature')?.en).toBe('Family Essentials');
     expect(slot('headline')?.en).toBe('{bedrooms}BR Family Home — Room to Grow');
     expect(slot('headline')?.variants?.en).toContain('{bedrooms}BR Family Home — Room to Grow');

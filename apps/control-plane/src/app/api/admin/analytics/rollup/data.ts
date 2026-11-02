@@ -42,6 +42,7 @@ import {
   conversionCountColumns,
   conversionEventsSubquery,
   readConversionCounts,
+  sessionArmJoin,
   type ConversionCounts,
   type ConversionSource,
 } from '@/app/api/dashboard/analytics/lift/route-helpers';
@@ -246,18 +247,20 @@ async function fetchChRollup(tenantId: string, callerClass: boolean): Promise<Ch
   // FOLLOW-1203 builders (one definition of a conversion); the per-arm conditions sit inside the
   // columns. FOLLOW-1303: the same FOLLOW-371 contamination predicate as the lift route (one shared
   // constant), so a holdout row with a non-control variant never enters any count — sessions,
-  // holdout, or the conversion counts `ctaLift` is computed from.
+  // holdout, or the conversion counts `ctaLift` is computed from. FOLLOW-1458: the same per-session
+  // arm, the first decision's, so a session holding both arms is in one.
   const query = `
     SELECT
       countDistinct(ad.session_id)                                          AS sessions,
-      countDistinctIf(ad.session_id, ad.holdout_group = 0)                  AS adapted,
-      countDistinctIf(ad.session_id, ad.holdout_group = 1)                  AS holdout,
-      countDistinctIf(ad.session_id, ad.holdout_group = 0)                  AS adapted_n,
-      countDistinctIf(ad.session_id, ad.holdout_group = 1)                  AS holdout_n,
+      countDistinctIf(ad.session_id, arm.first_arm = 0)                     AS adapted,
+      countDistinctIf(ad.session_id, arm.first_arm = 1)                     AS holdout,
+      countDistinctIf(ad.session_id, arm.first_arm = 0)                     AS adapted_n,
+      countDistinctIf(ad.session_id, arm.first_arm = 1)                     AS holdout_n,
       ${conversionCountColumns({ callerClass, prefix: 'all_', arm: null })},
-      ${conversionCountColumns({ callerClass, prefix: 'adapted_', arm: 'ad.holdout_group = 0' })},
-      ${conversionCountColumns({ callerClass, prefix: 'holdout_', arm: 'ad.holdout_group = 1' })}
+      ${conversionCountColumns({ callerClass, prefix: 'adapted_', arm: 'arm.first_arm = 0' })},
+      ${conversionCountColumns({ callerClass, prefix: 'holdout_', arm: 'arm.first_arm = 1' })}
     FROM adaptation_decisions AS ad
+    ${sessionArmJoin(`now() - toIntervalDay(${String(WINDOW_DAYS)})`)}
     LEFT JOIN (${conversionEventsSubquery({
       callerClass,
       tenantFence: 'tenant_id = {tenant_id:String}',

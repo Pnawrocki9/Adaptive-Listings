@@ -197,10 +197,24 @@ function greenObs(): Obs {
       },
       d: {
         error: null,
+        allHeldOut: false,
+        before: present(),
+        pairRestored: true,
+        pairArchetype: LEAF,
+        pairReadError: false,
         leaf: 'diaspora_buyer',
         followUp: { reason: null, xidSent: true, archetypeSourceSent: 'quiz', answered: true },
-        before: present(),
-        after: present({ pttlMs: 89 * DAY_MS - 5000 }),
+        after: absent(),
+        replay: {
+          error: null,
+          xidSent: true,
+          answered: true,
+          profileRestore: 'miss',
+          archetype: 'neutral',
+          directives: 0,
+          attempts: ['miss'],
+        },
+        keyAfterReplay: absent(),
       },
       b: {
         error: null,
@@ -595,9 +609,9 @@ describe('AC(9) negative control (b): withdrawal through the real control', () =
       'b:replayCarriedNoXid',
     ],
     [
-      'the replay was a store error',
-      (o) => (o.controls.b.replay.profileRestore = 'error'),
-      'b:replayProfileRestore=error',
+      'the replay answered no read at all',
+      (o) => (o.controls.b.replay.profileRestore = null),
+      'b:replayProfileRestore=null',
     ],
     ['threw', (o) => (o.controls.b.error = 'boom'), 'b:threw'],
   ];
@@ -648,43 +662,80 @@ describe('AC(9) negative control (c): revoked through DSR on a seeded row', () =
   });
 });
 
-describe('AC(9) negative control (d): a non-persistable result writes nothing', () => {
-  it('the stored value changing is a privacy violation and RED', () => {
+describe('AC(9) negative control (d): a non-persistable quiz result deletes the key', () => {
+  it('the key gone and staying gone, a fresh context answering miss: PASS', () => {
+    expect(unmet(greenObs())).toEqual([]);
+  });
+
+  it('the superseded key surviving is a privacy violation and RED', () => {
     const o = greenObs();
-    o.controls.d.after = present({
-      raw: STORED.replace(LEAF, 'diaspora_buyer'),
-      pttlMs: 89 * DAY_MS - 5000,
-    });
-    expect(privacy(o)).toContain('privacy:d:storedValueChanged');
+    o.controls.d.after = present();
+    expect(privacy(o)).toContain('privacy:d:supersededKeySurvived');
     expect(graded(o).verdict).toBe('FAIL');
   });
 
-  it('the expiry growing is a privacy violation (R21)', () => {
+  it('a new value written is a privacy violation and RED', () => {
     const o = greenObs();
-    o.controls.d.after = present({ pttlMs: 89 * DAY_MS + 3_600_000 });
-    expect(privacy(o).join()).toContain('privacy:d:pttlGrew');
+    o.controls.d.after = present({ raw: STORED.replace(LEAF, 'diaspora_buyer') });
+    expect(privacy(o)).toContain('privacy:d:newValueWritten');
+    expect(graded(o).verdict).toBe('FAIL');
+  });
+
+  it('a restore in the fresh context is a privacy violation and RED', () => {
+    const o = greenObs();
+    o.controls.d.replay.profileRestore = 'restored';
+    expect(privacy(o)).toContain('privacy:d:restoredAfterSupersede');
+    expect(graded(o).verdict).toBe('FAIL');
+  });
+
+  it('the key coming back after the replay is a privacy violation and RED', () => {
+    const o = greenObs();
+    o.controls.d.keyAfterReplay = present();
+    expect(privacy(o)).toContain('privacy:d:keyResurrected');
+    expect(graded(o).verdict).toBe('FAIL');
   });
 
   const red: [string, (o: Obs) => void, string | RegExp][] = [
     ['another leaf', (o) => (o.controls.d.leaf = LEAF), 'd:leaf=yield_hunter'],
     [
-      'no write attempted, so "nothing written" is vacuous',
-      (o) => (o.controls.d.followUp.archetypeSourceSent = null),
-      /^d:writeNotAttempted/,
+      'no key before: an empty store would pass',
+      (o) => (o.controls.d.before = absent()),
+      'd:profileNotWritten',
+    ],
+    ['unpaired', (o) => (o.controls.d.pairRestored = false), 'd:notPaired'],
+    [
+      'pair on another archetype',
+      (o) => (o.controls.d.pairArchetype = 'flip_investor'),
+      'd:notPaired',
     ],
     [
-      'no xid on the follow-up',
-      (o) => (o.controls.d.followUp.xidSent = false),
-      /^d:writeNotAttempted/,
+      'the result never sent, so "the key is gone" proves nothing about this path',
+      (o) => (o.controls.d.followUp.archetypeSourceSent = null),
+      /^d:resultNotSent/,
     ],
+    ['no xid on the follow-up', (o) => (o.controls.d.followUp.xidSent = false), /^d:resultNotSent/],
     ['no answer yet', (o) => (o.controls.d.followUp.answered = false), 'd:followUpNotAnswered'],
-    ['the key vanished', (o) => (o.controls.d.after = absent()), 'd:keyGone'],
+    [
+      'the replay sent no xid',
+      (o) => (o.controls.d.replay.xidSent = false),
+      'd:replayCarriedNoXid',
+    ],
+    ['the replay unanswered', (o) => (o.controls.d.replay.answered = false), 'd:replayNotAnswered'],
     ['threw', (o) => (o.controls.d.error = 'boom'), 'd:threw'],
   ];
   it.each(red)('%s is RED', (_n, breakIt, entry) => {
     const o = greenObs();
     breakIt(o);
     expectRed(o, entry);
+  });
+
+  it('its own xid held out on every draw: UNMEASURED:holdout, and the rest still grades', () => {
+    const o = greenObs();
+    o.controls.d = { allHeldOut: true, error: null };
+    expect(unmet(o)).toEqual(['nonPersistable:drewHoldout']);
+    expectUnmeasured(o, 'holdout');
+    o.controls.c.replay.profileRestore = 'restored';
+    expect(graded(o).verdict).toBe('FAIL');
   });
 });
 
@@ -848,6 +899,42 @@ describe('AC(9) UNMEASURED, each reason', () => {
   });
 
   const unreadable: [string, (o: Obs) => void, string][] = [
+    [
+      "(b)'s replay read errored twice",
+      (o) => (o.controls.b.replay.profileRestore = 'error'),
+      'unreadable:profileRead(b)',
+    ],
+    [
+      "(c)'s replay read errored twice (run 271's shape)",
+      (o) => (o.controls.c.replay.profileRestore = 'error'),
+      'unreadable:profileRead(c)',
+    ],
+    [
+      "(d)'s replay read errored twice",
+      (o) => (o.controls.d.replay.profileRestore = 'error'),
+      'unreadable:profileRead(d)',
+    ],
+    [
+      "(c)'s positive restore errored twice",
+      (o) => {
+        o.controls.c.pairRestored = false;
+        o.controls.c.pairReadError = true;
+      },
+      'unreadable:profileRead(c pair)',
+    ],
+    [
+      "(d)'s positive restore errored twice",
+      (o) => {
+        o.controls.d.pairRestored = false;
+        o.controls.d.pairReadError = true;
+      },
+      'unreadable:profileRead(d pair)',
+    ],
+    [
+      'Redis after the replay of (d)',
+      (o) => (o.controls.d.keyAfterReplay = unreadableKey()),
+      'unreadable:redis(d)',
+    ],
     ['Redis in session 1', (o) => (o.mint.key = unreadableKey()), 'unreadable:redis(s1)'],
     ['Redis after (a)', (o) => (o.controls.a.keyAfter = unreadableKey()), 'unreadable:redis(a)'],
     ['Redis before (d)', (o) => (o.controls.d.before = unreadableKey()), 'unreadable:redis(d)'],
@@ -906,6 +993,30 @@ describe('AC(9) UNMEASURED, each reason', () => {
     expect(unmet(o)).toContain(entry);
     expect(evaluate(o).ok).toBe(false);
     expectUnmeasured(o, 'unreadable');
+  });
+
+  it('session 2 is not retried: a store error on the restore itself stays RED', () => {
+    const o = greenObs();
+    o.restore.call.profileRestore = 'error';
+    expect(graded(o).verdict).toBe('FAIL');
+  });
+
+  it('an errored read cannot excuse a restore seen elsewhere', () => {
+    const o = greenObs();
+    o.controls.c.replay.profileRestore = 'error';
+    o.controls.b.replay.profileRestore = 'restored';
+    expect(graded(o).verdict).toBe('FAIL');
+  });
+
+  it('a control read is asked twice, 3 s apart, and only on `error`', () => {
+    const fn = harnessSrc.slice(
+      harnessSrc.indexOf('async function ac9RetryOnReadError('),
+      harnessSrc.indexOf('function replayAc9InBrowser('),
+    );
+    expect(fn).toContain("first.profileRestore !== 'error'");
+    expect(fn).toContain('await sleep(AC9_READ_RETRY_MS)');
+    expect(fn.match(/await ask\(\)/g)).toHaveLength(2);
+    expect(harnessSrc).toContain('const AC9_READ_RETRY_MS = 3000;');
   });
 
   it('NC-12: Redis down makes the restore itself RED; the unreadable reader cannot excuse it', () => {
@@ -1026,7 +1137,7 @@ describe('the driver, against the source', () => {
       harnessSrc.indexOf('// ─── Preflight: the substrate is real'),
     );
 
-  it('each control follows the positive restore on its xid; withdrawal comes after (a) and (d)', () => {
+  it('each control follows the positive restore on its xid; (d), which destroys the key, comes last', () => {
     const d = driver();
     const at = (s: string) => {
       const i = d.indexOf(s);
@@ -1034,10 +1145,10 @@ describe('the driver, against the source', () => {
       return i;
     };
     expect(at('driveAc9Restore(')).toBeLessThan(at('driveAc9NoConsent('));
-    expect(at('driveAc9NoConsent(')).toBeLessThan(at('driveAc9NonPersistable('));
-    expect(at('driveAc9NonPersistable(')).toBeLessThan(at('driveAc9Withdrawal('));
+    expect(at('driveAc9NoConsent(')).toBeLessThan(at('driveAc9Withdrawal('));
     expect(at('driveAc9Withdrawal(')).toBeLessThan(at('driveAc9Dsr('));
-    expect(at('driveAc9Dsr(')).toBeLessThan(at('readAc9Nc8('));
+    expect(at('driveAc9Dsr(')).toBeLessThan(at('driveAc9NonPersistable('));
+    expect(at('driveAc9NonPersistable(')).toBeLessThan(at('readAc9Nc8('));
   });
 
   it('session 2 is a fresh context seeded by storageState: nothing in sessionStorage, once only', () => {
@@ -1100,6 +1211,13 @@ describe('parity with the product source', () => {
   it('the server gate honours exactly `consented`, so the seven states are all refusals', () => {
     expect(storeSrc).toContain("input.consentState !== 'consented'");
     expect(AC9_NO_CONSENT_STATES).not.toContain('consented');
+  });
+
+  it('a quiz result that may not persist deletes the key in the store, a behavior label does not', () => {
+    expect(storeSrc).toContain(
+      "if (candidate.source === 'quiz' && NON_PERSISTABLE_ARCHETYPES.has(candidate.archetype)) {",
+    );
+    expect(storeSrc).toContain("redisPipeline([['DEL', key]])");
   });
 
   it('`diaspora_buyer` is non-persistable in the store, and `yield_hunter` is not', () => {

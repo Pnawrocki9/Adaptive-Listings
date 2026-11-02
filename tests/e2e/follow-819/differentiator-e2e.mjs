@@ -3683,17 +3683,20 @@ async function driveAc10(browser) {
 //              consent `granted` and no text version (the SDK runs and must not send the xid), then
 //              seven direct POSTs carrying the xid under every consent_state but `consented` (NC-1,
 //              NC-2). A browser cannot send those, so only a direct POST reaches the server's gate.
-//   (d)        a fresh session on A, the quiz walked to `diaspora_buyer` and confirmed. The follow-up
-//              carries the xid and `archetype_source: quiz`, so the write is really attempted; the
-//              stored value must be unchanged, byte for byte, and its expiry must not have grown.
-//   (b)        a fresh session on A shows `restored` (this is also the proof that (a) and (d) left the
-//              profile alone), then the real `[data-estalara-withdraw]` click. Key gone, local xid
+//   (b)        a fresh session on A shows `restored` (this is also the proof that (a) left the profile
+//              alone), then the real `[data-estalara-withdraw]` click. Key gone, local xid
 //              gone, the next page in that context silent, and a fresh context replaying the OLD xid
 //              with consent gets no restore.
 //   (c)        a second xid B minted like A, a positive restore by direct POST, then `POST
 //              /api/dsr/erase` with `xid` on a SEEDED `dsr_verifications` row: `/api/dsr/initiate`
 //              refuses every caller today (design review B5, R33). The row's session is a throwaway
 //              uuid, so the cascade touches no row of this run.
+//   (d)        a third xid C minted like A, a positive restore by direct POST, then a fresh session on C
+//              with the quiz walked to `diaspora_buyer` and confirmed. A quiz result that may not persist
+//              supersedes the stored label, so the key must be DELETED and stay deleted, nothing new
+//              written, and a fresh context on C answers `miss`. Last and on its own xid because it
+//              destroys the key. A `behavior` label leaves the key alone; no walk reaches one cheaply,
+//              so that half belongs to the route tests.
 //   (e)        NC-8 as far as the harness can: every request of these contexts, the four ClickHouse
 //              tables, Redis key names, `intent_sessions.cross_session_id`, the control-plane log.
 //
@@ -3707,6 +3710,11 @@ async function driveAc10(browser) {
 // are named in the evidence and the AC is UNMEASURED:holdout. (a) and (e) ARE driven, on the held-out
 // xid, because "no xid on the wire without consent" and "the xid in no store" need no restore; any
 // violation they find, like a key on a held-out xid or a moved arm, is RED on that run all the same.
+//
+// A REPLAY THAT ANSWERS `error` IS NOT A RESTORE, AND NOT A CLEAN MISS EITHER. The read has a 1 s budget
+// and this machine swaps, so a single store timeout can land on a control's read (run 271, (c)). It
+// is retried once after `AC9_READ_RETRY_MS`; a second `error` is `unreadable:profileRead(...)`,
+// UNMEASURED, never PASS. Session 2's own read is not retried: there `error` means no restore (NC-12).
 //
 // A VIOLATION IS NEVER SOFTENED. Every `privacy:*` entry fails `evaluateAc9()` and `gradeRun()` does
 // not excuse it, whatever else the run saw (`isAc9Excusable()`). The plan's K4b STOP rule: do not
@@ -3752,6 +3760,8 @@ const AC9_TARGET_TICKS_STORED = Object.freeze(['seasoned_investor']);
 const AC9_NON_PERSISTABLE_TICKS = Object.freeze(['premium']);
 /** How long the fire-and-forget write may take to show up in Redis. */
 const AC9_KEY_WAIT_MS = 15000;
+/** The pause before a control's read is asked again: past the erase's own after-response work. */
+const AC9_READ_RETRY_MS = 3000;
 /** How long to wait before believing no write happened: three pipeline calls at 2 s each. */
 const AC9_NO_WRITE_SETTLE_MS = 6000;
 /** A key's PTTL may only fall; this is the slack for two reads taken at different moments. */
@@ -3835,6 +3845,7 @@ export function scanWireForXid(wire, xids) {
 const isAc9Excusable = (u) =>
   u === 'restore:drewHoldout' ||
   u === 'dsr:drewHoldout' ||
+  u === 'nonPersistable:drewHoldout' ||
   u.startsWith('unreadable:') ||
   u.startsWith('config:') ||
   u.startsWith('s2:lateConfig(');
@@ -3992,29 +4003,58 @@ function ac9ControlAUnmet(a, leaf, heldOutOnly, unmet, privacy) {
   if (ac9KeyPresent(a.keyAfter, 'a', unmet) === false) unmet.push('a:keyGoneAfterControl');
 }
 
-/** Control (d): a non-persistable result writes nothing. */
-function ac9ControlDUnmet(d, unmet, privacy) {
+/**
+ * Control (d): a quiz result that may not persist deletes the stored key, so the superseded label can
+ * never come back. A surviving key or a new value is a privacy violation.
+ */
+function ac9ControlDUnmet(d, leaf, unmet, privacy) {
   if (!d) {
     unmet.push('d:notRun');
     return;
   }
+  if (d.allHeldOut === true) {
+    unmet.push('nonPersistable:drewHoldout');
+    return;
+  }
   if (d.error) unmet.push('d:threw');
+  const before = ac9KeyPresent(d.before, 'd', unmet);
+  if (before === false) unmet.push('d:profileNotWritten');
+  if (d.pairReadError === true) unmet.push('unreadable:profileRead(d pair)');
+  else if (d.pairRestored !== true || d.pairArchetype !== leaf) unmet.push('d:notPaired');
   if (d.leaf !== AC9_NON_PERSISTABLE_LEAF) unmet.push(`d:leaf=${String(d.leaf)}`);
   const f = d.followUp ?? {};
   if (f.xidSent !== true || f.archetypeSourceSent !== 'quiz') {
     unmet.push(
-      `d:writeNotAttempted(xid=${String(f.xidSent)}, source=${String(f.archetypeSourceSent)})`,
+      `d:resultNotSent(xid=${String(f.xidSent)}, source=${String(f.archetypeSourceSent)})`,
     );
   }
   if (f.answered !== true) unmet.push('d:followUpNotAnswered');
-  const before = ac9KeyPresent(d.before, 'd', unmet);
-  const after = ac9KeyPresent(d.after, 'd', unmet);
-  if (before === false || after === false) unmet.push('d:keyGone');
-  if (before === true && after === true) {
-    if (d.after.raw !== d.before.raw) privacy.push('privacy:d:storedValueChanged');
-    if (d.after.pttlMs > d.before.pttlMs + AC9_PTTL_SLACK_MS) {
-      privacy.push(`privacy:d:pttlGrew=${String(d.before.pttlMs)}→${String(d.after.pttlMs)}`);
-    }
+  if (ac9KeyPresent(d.after, 'd', unmet) === true) {
+    privacy.push(
+      before === true && d.after.raw === d.before.raw
+        ? 'privacy:d:supersededKeySurvived'
+        : 'privacy:d:newValueWritten',
+    );
+  }
+  const replay = d.replay ?? {};
+  if (replay.error) unmet.push('d:threw');
+  if (replay.xidSent !== true) unmet.push('d:replayCarriedNoXid');
+  if (replay.answered !== true) unmet.push('d:replayNotAnswered');
+  if (replay.profileRestore === 'restored' || (replay.directives ?? 0) > 0) {
+    privacy.push('privacy:d:restoredAfterSupersede');
+  } else if (replay.answered === true) {
+    ac9ReplayReadUnmet(replay, 'd', unmet);
+  }
+  if (ac9KeyPresent(d.keyAfterReplay, 'd', unmet) === true) {
+    privacy.push('privacy:d:keyResurrected');
+  }
+}
+
+/** A replay that is no restore must be a clean `miss`; a retried `error` could not read the store. */
+function ac9ReplayReadUnmet(replay, where, unmet) {
+  if (replay.profileRestore === 'error') unmet.push(`unreadable:profileRead(${where})`);
+  else if (replay.profileRestore !== 'miss') {
+    unmet.push(`${where}:replayProfileRestore=${String(replay.profileRestore)}`);
   }
 }
 
@@ -4046,8 +4086,8 @@ function ac9ControlBUnmet(b, unmet, privacy) {
   if (replay.answered !== true) unmet.push('b:replayNotAnswered');
   if (replay.profileRestore === 'restored' || (replay.directives ?? 0) > 0) {
     privacy.push('privacy:b:restoredAfterWithdrawal');
-  } else if (replay.answered === true && replay.profileRestore !== 'miss') {
-    unmet.push(`b:replayProfileRestore=${String(replay.profileRestore)}`);
+  } else if (replay.answered === true) {
+    ac9ReplayReadUnmet(replay, 'b', unmet);
   }
   if (ac9KeyPresent(b.keyAfterReplay, 'b', unmet) === true)
     privacy.push('privacy:b:keyResurrected');
@@ -4065,7 +4105,8 @@ function ac9ControlCUnmet(c, leaf, unmet, privacy) {
   }
   if (c.error) unmet.push('c:threw');
   if (ac9KeyPresent(c.keyBefore, 'c', unmet) === false) unmet.push('c:profileNotWritten');
-  if (c.pairRestored !== true || c.pairArchetype !== leaf) unmet.push('c:notPaired');
+  if (c.pairReadError === true) unmet.push('unreadable:profileRead(c pair)');
+  else if (c.pairRestored !== true || c.pairArchetype !== leaf) unmet.push('c:notPaired');
   if (c.seeded !== true) {
     unmet.push('unreadable:dsrSeed');
     return;
@@ -4080,8 +4121,8 @@ function ac9ControlCUnmet(c, leaf, unmet, privacy) {
   if (replay.status !== 200) unmet.push(`c:replayStatus=${String(replay.status ?? replay.error)}`);
   if (replay.profileRestore === 'restored' || replay.archetype === leaf) {
     privacy.push('privacy:c:restoredAfterDsr');
-  } else if (replay.status === 200 && replay.profileRestore !== 'miss') {
-    unmet.push(`c:replayProfileRestore=${String(replay.profileRestore)}`);
+  } else if (replay.status === 200) {
+    ac9ReplayReadUnmet(replay, 'c', unmet);
   }
 }
 
@@ -4187,9 +4228,9 @@ export function evaluateAc9(obs, serverGate) {
   if (obs.mint?.configUnreached) return finish();
   ac9RestoreUnmet(obs, serverGate, unmet);
   ac9ControlAUnmet(obs.controls?.a, leaf, false, unmet, privacy);
-  ac9ControlDUnmet(obs.controls?.d, unmet, privacy);
   ac9ControlBUnmet(obs.controls?.b, unmet, privacy);
   ac9ControlCUnmet(obs.controls?.c, leaf, unmet, privacy);
+  ac9ControlDUnmet(obs.controls?.d, leaf, unmet, privacy);
   ac9ControlEUnmet(obs.nc8, unmet, privacy);
   return finish();
 }
@@ -4763,10 +4804,83 @@ async function driveAc9NoConsent(browser, wire, seed, tenantId, heldOutOnly, ses
   return out;
 }
 
-/** Control (d). The bytes before and after: nothing else tells "refused" from "never attempted". */
-async function driveAc9NonPersistable(browser, wire, served, seed, sessionIds) {
-  const out = { error: null, leaf: null, followUp: null, before: null, after: null };
-  out.before = await readAc9Key(seed.xid);
+/** Ask once more when a read answered `error`: see the section header. `attempts` is the evidence. */
+async function ac9RetryOnReadError(ask) {
+  const first = await ask();
+  if (first.profileRestore !== 'error') return { ...first, attempts: [first.profileRestore] };
+  await sleep(AC9_READ_RETRY_MS);
+  const second = await ask();
+  return { ...second, attempts: ['error', second.profileRestore] };
+}
+
+/** A new session holding an erased xid and a consent: the worst case the store has to refuse. */
+function replayAc9InBrowser(browser, wire, seed, sessionIds) {
+  return ac9RetryOnReadError(async () => {
+    try {
+      const { s, call } = await openAc9Returning(browser, wire, seed);
+      if (call?.sessionId) sessionIds.add(call.sessionId);
+      await s.close();
+      return {
+        error: null,
+        xidSent: call?.xid !== null && call !== null,
+        answered: Boolean(call?.body),
+        profileRestore: call?.body?.profile_restore ?? null,
+        archetype: call?.body?.archetype ?? null,
+        directives: nonReorderSlots(call?.body ?? null).length,
+      };
+    } catch (err) {
+      return { error: String(err), profileRestore: null };
+    }
+  });
+}
+
+/** The positive restore of a control minted on its own xid, by direct POST. */
+async function pairAc9Restore(out, tenantId, seed, sessionIds) {
+  const pair = await ac9RetryOnReadError(() =>
+    postAc9Adapt({
+      tenantId,
+      xid: seed.xid,
+      createdAt: seed.createdAt,
+      consentState: 'consented',
+      sessionIds,
+    }),
+  );
+  out.pairRestored = pair.profileRestore === 'restored';
+  out.pairArchetype = pair.archetype;
+  out.pairReadError = pair.profileRestore === 'error';
+}
+
+/**
+ * Control (d), on its own xid and last, because a quiz result that may not persist deletes the key.
+ * The follow-up must carry the xid and `archetype_source: quiz`, or "the key is gone" proves nothing
+ * about this path.
+ */
+async function driveAc9NonPersistable(browser, wire, served, tenantId, heldOut, sessionIds, xids) {
+  const { mint, seed, allHeldOut } = await mintAc9Xid(
+    browser,
+    wire,
+    served,
+    'nonPersistable',
+    heldOut,
+    sessionIds,
+    xids,
+  );
+  const out = {
+    error: mint.error ? 'session 1 threw' : null,
+    allHeldOut,
+    xidTag: mint.xidTag,
+    before: mint.key,
+    pairRestored: false,
+    pairArchetype: null,
+    pairReadError: false,
+    leaf: null,
+    followUp: null,
+    after: null,
+    replay: null,
+    keyAfterReplay: null,
+  };
+  if (allHeldOut || seed === null) return out;
+  await pairAc9Restore(out, tenantId, seed, sessionIds);
   const s = await openAc9Session(browser, wire, ac9FullSeed(seed));
   try {
     await waitForAc9Call(s, (c) => c.xid !== null);
@@ -4779,6 +4893,9 @@ async function driveAc9NonPersistable(browser, wire, served, seed, sessionIds) {
     await s.close();
   }
   out.after = await readAc9Key(seed.xid);
+  out.replay = await replayAc9InBrowser(browser, wire, seed, sessionIds);
+  await sleep(AC9_NO_WRITE_SETTLE_MS);
+  out.keyAfterReplay = await readAc9Key(seed.xid);
   return out;
 }
 
@@ -4833,22 +4950,7 @@ async function driveAc9Withdrawal(browser, wire, seed, sessionIds) {
     await s.close();
   }
 
-  // A new session holding the OLD xid and a consent: the worst case the store still has to refuse.
-  try {
-    const { s: replay, call } = await openAc9Returning(browser, wire, seed);
-    if (call?.sessionId) sessionIds.add(call.sessionId);
-    await replay.close();
-    out.replay = {
-      error: null,
-      xidSent: call?.xid !== null && call !== null,
-      answered: Boolean(call?.body),
-      profileRestore: call?.body?.profile_restore ?? null,
-      archetype: call?.body?.archetype ?? null,
-      directives: nonReorderSlots(call?.body ?? null).length,
-    };
-  } catch (err) {
-    out.replay = { error: String(err) };
-  }
+  out.replay = await replayAc9InBrowser(browser, wire, seed, sessionIds);
   await sleep(AC9_NO_WRITE_SETTLE_MS);
   out.keyAfterReplay = await readAc9Key(seed.xid);
   const tombstone = await shadowCommand([
@@ -4881,6 +4983,7 @@ async function driveAc9Dsr(browser, wire, served, tenantId, heldOut, sessionIds,
     keyBefore: mint.key,
     pairRestored: false,
     pairArchetype: null,
+    pairReadError: false,
     seeded: false,
     seedError: null,
     seededVerificationRow: false,
@@ -4891,15 +4994,7 @@ async function driveAc9Dsr(browser, wire, served, tenantId, heldOut, sessionIds,
     replay: null,
   };
   if (allHeldOut || seed === null) return out;
-  const pair = await postAc9Adapt({
-    tenantId,
-    xid: seed.xid,
-    createdAt: seed.createdAt,
-    consentState: 'consented',
-    sessionIds,
-  });
-  out.pairRestored = pair.profileRestore === 'restored';
-  out.pairArchetype = pair.archetype;
+  await pairAc9Restore(out, tenantId, seed, sessionIds);
 
   const keyTenant = mint.key?.tenantId ?? null;
   if (!DATABASE_URL_ADMIN || !keyTenant) {
@@ -4940,13 +5035,15 @@ async function driveAc9Dsr(browser, wire, served, tenantId, heldOut, sessionIds,
     await deleteDsrVerification(DATABASE_URL_ADMIN, verificationId).catch(() => {});
   }
   out.keyAfter = await readAc9Key(seed.xid);
-  out.replay = await postAc9Adapt({
-    tenantId,
-    xid: seed.xid,
-    createdAt: seed.createdAt,
-    consentState: 'consented',
-    sessionIds,
-  });
+  out.replay = await ac9RetryOnReadError(() =>
+    postAc9Adapt({
+      tenantId,
+      xid: seed.xid,
+      createdAt: seed.createdAt,
+      consentState: 'consented',
+      sessionIds,
+    }),
+  );
   return out;
 }
 
@@ -5063,9 +5160,17 @@ async function driveAc9(browser) {
     // Every control is paired with this restore: on a broken one they would prove nothing.
     if (obs.restore.call?.profileRestore === 'restored') {
       obs.controls.a = await driveAc9NoConsent(browser, wire, seed, tenantId, false, sessionIds);
-      obs.controls.d = await driveAc9NonPersistable(browser, wire, served, seed, sessionIds);
       obs.controls.b = await driveAc9Withdrawal(browser, wire, seed, sessionIds);
       obs.controls.c = await driveAc9Dsr(
+        browser,
+        wire,
+        served,
+        tenantId,
+        obs.heldOut,
+        sessionIds,
+        xids,
+      );
+      obs.controls.d = await driveAc9NonPersistable(
         browser,
         wire,
         served,

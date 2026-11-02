@@ -1,0 +1,78 @@
+--- a/web-master/src/lib/ui/listing/Section.svelte
++++ b/web-master/src/lib/ui/listing/Section.svelte
+@@ -1,8 +1,15 @@
+ <script lang="ts">
+ 	export let name: string;
++	/** Optional Estalara slot name; renders `data-estalara-slot` on the heading. */
++	export let estalaraSlot = '';
+ </script>
+ 
+ <div class="mb-6">
+-	<h2 class="text-2xl font-bold text-gray-900 mb-2">{name}</h2>
++	<h2
++		class="text-2xl font-bold text-gray-900 mb-2"
++		{...estalaraSlot ? { 'data-estalara-slot': estalaraSlot } : {}}
++	>
++		{name}
++	</h2>
+ 	<div class="w-16 h-1 bg-primary rounded-full"></div>
+-</div>
+\ No newline at end of file
++</div>
+--- a/web-master/src/lib/ui/listing/StickyContactBar.svelte
++++ b/web-master/src/lib/ui/listing/StickyContactBar.svelte
+@@ -9,6 +9,8 @@
+ 	export let phone = '';
+ 	/** Opens the AI assistant — hides the AI button when null. */
+ 	export let onAi: (() => void) | null = null;
++	/** Marks the contact button as the Estalara `cta` slot (SDK flag on). */
++	export let ctaSlot = false;
+ </script>
+ 
+ <!-- Actions only — the price is already the first thing under the gallery. -->
+@@ -37,6 +39,7 @@
+ 	<button
+ 		class="flex-1 min-w-0 h-11 bg-secondary hover:bg-secondary-hover text-white px-4 rounded-lg font-medium transition-colors truncate"
+ 		on:click={onContact}
++		{...ctaSlot ? { 'data-estalara-slot': 'cta' } : {}}
+ 	>
+ 		{$_('listing.contactBar.cta')}
+ 	</button>
+--- a/web-master/src/routes/(buyer)/[lang]/listing/[slug]/+page.svelte
++++ b/web-master/src/routes/(buyer)/[lang]/listing/[slug]/+page.svelte
+@@ -1263,7 +1263,10 @@
+ 						<!-- Amenities -->
+ 						{#if amenitiesList.length > 0}
+ 							<div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+-								<Section name={$_('listing.amenitiesTitle')} />
++								<Section
++									name={$_('listing.amenitiesTitle')}
++									estalaraSlot={estalaraEnabled ? 'feature' : ''}
++								/>
+ 								<AmenitiesGrid amenities={amenitiesList} />
+ 							</div>
+ 						{/if}
+@@ -1368,6 +1371,7 @@
+ 														class="mt-4 w-full bg-tertiary hover:bg-tertiary-hover text-white px-4 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center gap-2 disabled:opacity-50"
+ 														on:click={() => requestLiveTour()}
+ 														disabled={isRequestingLiveTour}
++														{...estalaraEnabled ? { 'data-estalara-slot': 'cta' } : {}}
+ 													>
+ 														{$_('listing.liveTours.sendMessage')}
+ 													</button>
+@@ -1385,6 +1389,7 @@
+ 													on:click={() =>
+ 														requestLiveTour('listing.liveTours.draftMessageOtherTime')}
+ 													disabled={isRequestingLiveTour}
++													{...estalaraEnabled ? { 'data-estalara-slot': 'cta' } : {}}
+ 												>
+ 													{$_('listing.liveTours.sendMessage')}
+ 												</button>
+@@ -1426,6 +1431,7 @@
+ 				phone={property.isOwnListing ? '' : (property.agent.phone ?? '')}
+ 				onContact={scrollToContact}
+ 				onAi={() => openAiChat()}
++				ctaSlot={estalaraEnabled}
+ 			/>
+ 		{/if}
+ 

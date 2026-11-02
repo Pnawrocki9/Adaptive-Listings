@@ -18,9 +18,9 @@ export const familyBuyerPlaybook: PlaybookEntry = {
     },
     {
       slot: 'cta',
-      en: 'Get Family Buyer Guide',
-      pl: 'Pobierz poradnik dla rodzin',
-      es: 'Descarga la guía para familias',
+      en: 'Ask the Agent About Family Living',
+      pl: 'Zapytaj agenta o życie z rodziną',
+      es: 'Pregunta al agente sobre la vida en familia',
     },
     {
       slot: 'feature',

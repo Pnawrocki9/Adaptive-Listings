@@ -117,7 +117,7 @@ describe('FOLLOW-1173 — a fixed non-property label no longer buys a judge roun
   it('red-first: the shipped CTA costs ONE Anthropic call, not two, and is served', async () => {
     // Before this change: 2 calls (generation + judge). `Request` and `Investment` are in
     // FACT_CHECK_STOP_CAPS; `Pack` is not, and is not segment-initial.
-    expect(SHIPPED_CTA).toBe('Request Investment Pack');
+    expect(SHIPPED_CTA).toBe('Ask the Agent About Returns');
     mockCreate.mockResolvedValueOnce(anthropicResponse(directives(['cta', SHIPPED_CTA])));
 
     const result = await callLlmGateway(BASE_INPUT);

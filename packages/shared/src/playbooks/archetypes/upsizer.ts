@@ -16,7 +16,7 @@ export const upsizerPlaybook: PlaybookEntry = {
         ],
       },
     },
-    { slot: 'cta', en: 'Compare Properties' },
+    { slot: 'cta', en: 'Ask the Agent About Moving Up' },
     { slot: 'feature', en: 'Why Upgrade?' },
   ],
   listing_rules: {

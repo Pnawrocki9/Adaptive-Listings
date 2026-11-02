@@ -15,7 +15,7 @@ export const flipInvestorPlaybook: PlaybookEntry = {
         ],
       },
     },
-    { slot: 'cta', en: 'Get Renovation Report' },
+    { slot: 'cta', en: 'Ask the Agent About Renovation' },
     { slot: 'feature', en: 'Renovation Scope' },
   ],
   listing_rules: {

@@ -18,11 +18,11 @@ export const diasporaBuyerPlaybook: PlaybookEntry = {
     },
     {
       slot: 'cta',
-      en: 'Speak with a Relocation Specialist',
-      pl: 'Porozmawiaj z doradcą ds. relokacji',
-      es: 'Habla con un especialista en reubicación',
+      en: 'Ask the Agent About Buying From Abroad',
+      pl: 'Zapytaj agenta o zakup z zagranicy',
+      es: 'Pregunta al agente sobre comprar desde el extranjero',
     },
-    { slot: 'feature', en: 'Remote Purchase Guide' },
+    { slot: 'feature', en: 'Buying From Abroad' },
   ],
   listing_rules: {
     boost_if: ['remote_purchase_supported', 'legal_support_available'],

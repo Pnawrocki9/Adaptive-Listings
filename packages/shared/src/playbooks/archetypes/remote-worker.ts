@@ -15,7 +15,7 @@ export const remoteWorkerPlaybook: PlaybookEntry = {
         ],
       },
     },
-    { slot: 'cta', en: 'Check Connectivity' },
+    { slot: 'cta', en: 'Ask the Agent About Connectivity' },
     { slot: 'feature', en: 'Remote Work Ready' },
   ],
   listing_rules: {

@@ -15,7 +15,7 @@ export const retireeRelocatorPlaybook: PlaybookEntry = {
         ],
       },
     },
-    { slot: 'cta', en: 'Download Retirement Living Guide' },
+    { slot: 'cta', en: 'Ask the Agent About Retiring Here' },
     { slot: 'feature', en: 'Retirement Living Highlights' },
   ],
   listing_rules: {

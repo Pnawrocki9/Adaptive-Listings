@@ -15,8 +15,8 @@ export const commercialInvestorPlaybook: PlaybookEntry = {
         ],
       },
     },
-    { slot: 'cta', en: 'Request Commercial Pack' },
-    { slot: 'feature', en: 'Commercial Due Diligence Pack' },
+    { slot: 'cta', en: 'Ask the Agent About Commercial Terms' },
+    { slot: 'feature', en: 'Commercial Due Diligence' },
   ],
   listing_rules: {
     boost_if: ['commercial_zoning', 'rental_tenant_in_place', 'triple_net_lease'],

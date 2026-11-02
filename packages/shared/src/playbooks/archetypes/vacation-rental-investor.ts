@@ -15,7 +15,7 @@ export const vacationRentalInvestorPlaybook: PlaybookEntry = {
         ],
       },
     },
-    { slot: 'cta', en: 'See Short-Term Rental Projections' },
+    { slot: 'cta', en: 'Ask the Agent About Short-Term Rental' },
     { slot: 'feature', en: 'Short-Term Rental Projections' },
   ],
   listing_rules: {

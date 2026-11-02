@@ -15,7 +15,7 @@ export const studentParentPlaybook: PlaybookEntry = {
         ],
       },
     },
-    { slot: 'cta', en: 'Calculate Student Rental Return' },
+    { slot: 'cta', en: 'Ask the Agent About Student Lets' },
     { slot: 'feature', en: 'Student Area Insights' },
   ],
   listing_rules: {

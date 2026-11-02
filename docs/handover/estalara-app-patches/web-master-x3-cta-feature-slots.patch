@@ -1,0 +1,118 @@
+--- a/web-master/src/lib/ui/listing/Section.svelte
++++ b/web-master/src/lib/ui/listing/Section.svelte
+@@ -1,8 +1,15 @@
+ <script lang="ts">
+ 	export let name: string;
++	/** Optional Estalara slot name; renders `data-estalara-slot` on the heading. */
++	export let estalaraSlot = '';
+ </script>
+ 
+ <div class="mb-6">
+-	<h2 class="text-2xl font-bold text-gray-900 mb-2">{name}</h2>
++	<h2
++		class="text-2xl font-bold text-gray-900 mb-2"
++		{...estalaraSlot ? { 'data-estalara-slot': estalaraSlot } : {}}
++	>
++		{name}
++	</h2>
+ 	<div class="w-16 h-1 bg-primary rounded-full"></div>
+-</div>
+\ No newline at end of file
++</div>
+--- a/web-master/src/lib/ui/listing/StickyContactBar.svelte
++++ b/web-master/src/lib/ui/listing/StickyContactBar.svelte
+@@ -9,6 +9,8 @@
+ 	export let phone = '';
+ 	/** Opens the AI assistant — hides the AI button when null. */
+ 	export let onAi: (() => void) | null = null;
++	/** Marks the contact button as the Estalara `cta` slot (SDK flag on). */
++	export let ctaSlot = false;
+ </script>
+ 
+ <!-- Actions only — the price is already the first thing under the gallery. -->
+@@ -37,6 +39,7 @@
+ 	<button
+ 		class="flex-1 min-w-0 h-11 bg-secondary hover:bg-secondary-hover text-white px-4 rounded-lg font-medium transition-colors truncate"
+ 		on:click={onContact}
++		{...ctaSlot ? { 'data-estalara-slot': 'cta' } : {}}
+ 	>
+ 		{$_('listing.contactBar.cta')}
+ 	</button>
+--- a/web-master/src/routes/(buyer)/[lang]/listing/[slug]/+page.svelte
++++ b/web-master/src/routes/(buyer)/[lang]/listing/[slug]/+page.svelte
+@@ -1263,7 +1263,10 @@
+ 						<!-- Amenities -->
+ 						{#if amenitiesList.length > 0}
+ 							<div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+-								<Section name={$_('listing.amenitiesTitle')} />
++								<Section
++									name={$_('listing.amenitiesTitle')}
++									estalaraSlot={estalaraEnabled ? 'feature' : ''}
++								/>
+ 								<AmenitiesGrid amenities={amenitiesList} />
+ 							</div>
+ 						{/if}
+@@ -1344,6 +1347,8 @@
+ 											{onJoin}
+ 										/>
+ 
++										<!-- One button for both cases: `hasLiveSessions` flips when the calendar loads, and swapping
++										     elements there would drop the text the Estalara SDK has already applied. -->
+ 										{#if !hasLiveSessions}
+ 											<!-- Live tours are a platform differentiator — promote them even
+ 											     when nothing is scheduled yet. -->
+@@ -1363,16 +1368,6 @@
+ 														</p>
+ 													</div>
+ 												</div>
+-												{#if !property.isOwnListing}
+-													<button
+-														class="mt-4 w-full bg-tertiary hover:bg-tertiary-hover text-white px-4 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center gap-2 disabled:opacity-50"
+-														on:click={() => requestLiveTour()}
+-														disabled={isRequestingLiveTour}
+-													>
+-														{$_('listing.liveTours.sendMessage')}
+-													</button>
+-												{/if}
+-												<div class="mt-6 border-t border-gray-100"></div>
+ 											</div>
+ 										{:else if !property.isOwnListing}
+ 											<!-- Sessions are scheduled but the dates may not suit the buyer. -->
+@@ -1380,14 +1375,27 @@
+ 												<p class="text-sm text-gray-600">
+ 													{$_('listing.liveTours.otherTimeText')}
+ 												</p>
++											</div>
++										{/if}
++										{#if !property.isOwnListing}
++											<div class="px-6">
+ 												<button
+-													class="mt-3 w-full bg-tertiary hover:bg-tertiary-hover text-white px-4 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center gap-2 disabled:opacity-50"
++													class="w-full bg-tertiary hover:bg-tertiary-hover text-white px-4 py-3 rounded-lg font-medium transition-colors duration-200 flex items-center justify-center gap-2 disabled:opacity-50"
++													class:mt-3={hasLiveSessions}
++													class:mt-4={!hasLiveSessions}
+ 													on:click={() =>
+-														requestLiveTour('listing.liveTours.draftMessageOtherTime')}
++														hasLiveSessions
++															? requestLiveTour('listing.liveTours.draftMessageOtherTime')
++															: requestLiveTour()}
+ 													disabled={isRequestingLiveTour}
++													{...estalaraEnabled ? { 'data-estalara-slot': 'cta' } : {}}
+ 												>
+ 													{$_('listing.liveTours.sendMessage')}
+ 												</button>
++											</div>
++										{/if}
++										{#if !hasLiveSessions || !property.isOwnListing}
++											<div class="px-6">
+ 												<div class="mt-6 border-t border-gray-100"></div>
+ 											</div>
+ 										{/if}
+@@ -1426,6 +1434,7 @@
+ 				phone={property.isOwnListing ? '' : (property.agent.phone ?? '')}
+ 				onContact={scrollToContact}
+ 				onAi={() => openAiChat()}
++				ctaSlot={estalaraEnabled}
+ 			/>
+ 		{/if}
+ 

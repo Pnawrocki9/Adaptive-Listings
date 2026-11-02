@@ -1,0 +1,24 @@
+--- a/web-master/src/lib/publicEnv.ts
++++ b/web-master/src/lib/publicEnv.ts
+@@ -46,7 +46,9 @@
+ 			apiKey: env.PUBLIC_ESTALARA_API_KEY ?? '',
+ 			tenantId: env.PUBLIC_ESTALARA_TENANT_ID ?? '',
+ 			decisionUrl: env.PUBLIC_ESTALARA_DECISION_URL ?? '',
+-			ingestUrl: env.PUBLIC_ESTALARA_INGEST_URL ?? ''
++			ingestUrl: env.PUBLIC_ESTALARA_INGEST_URL ?? '',
++			// Loader `data-debug`. Off unless exactly 'true' (hooks.server.ts never sets it).
++			debug: env.PUBLIC_ESTALARA_DEBUG === 'true'
+ 		}
+ 	};
+ }
+--- a/web-master/src/routes/+layout.svelte
++++ b/web-master/src/routes/+layout.svelte
+@@ -58,7 +58,7 @@
+ 		s.setAttribute('data-tenant-id', cfg.tenantId);
+ 		s.setAttribute('data-decision-url', cfg.decisionUrl);
+ 		s.setAttribute('data-ingest-url', cfg.ingestUrl);
+-		s.setAttribute('data-debug', 'true');
++		if (cfg.debug) s.setAttribute('data-debug', 'true');
+ 		document.head.appendChild(s);
+ 	}
+ 	let openLoginRequiredPopup: () => void;

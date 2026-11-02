@@ -41,9 +41,10 @@ this package gains no dependency. `N2_REPORT_DIR` moves the JSON report and fail
   sidebar, Live Monitor `tenant_id` and "every sidebar page < 500" are covered from source by the
   reachability test and the FOLLOW-1322 unit tests, and appear as the skipped `K3 gap` test.
 - **API staff JWT:** `lib/tracer-auth.ts` `via: 'staff_jwt'` verifies HS256 with
-  `SUPABASE_JWT_SECRET`, which is in neither Doppler `dev` nor `localhost-up.sh`, so the path
-  refuses every JWT on localhost. The readonly/ops rows run only when the same `SUPABASE_JWT_SECRET`
-  is set for both this process and the control plane; otherwise they are skipped with that reason.
+  `SUPABASE_JWT_SECRET`. Doppler `dev` has none; since FOLLOW-1460 `localhost-up.sh` generates a
+  local one into `.localhost-up/local-staff-jwt-secret` and passes it to the control plane. The
+  readonly/ops rows run only when this process has the same value
+  (`SUPABASE_JWT_SECRET="$(cat .localhost-up/local-staff-jwt-secret)"`); otherwise they are skipped.
 
 ## What K3 adds (FOLLOW-1336 and the full N2)
 

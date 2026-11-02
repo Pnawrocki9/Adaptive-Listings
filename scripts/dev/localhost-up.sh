@@ -70,6 +70,11 @@ FIXTURE_SERVER_HMAC_SECRET_FILE="$STATE_DIR/fixture-server-hmac-secret"
 # carries none and the webhook fails closed without it, so the FOLLOW-1291 revision bump could not be
 # exercised locally. Generated below into .localhost-up/, never committed, never a production value.
 LISTING_UPDATED_WEBHOOK_SECRET_FILE="$STATE_DIR/listing-updated-webhook-secret"
+# FOLLOW-1460: signs and verifies staff JWTs on THIS control plane only, so the staff-gated API routes
+# (the lift route first) can be reached locally. Doppler dev carries none. Hosted Supabase never sees
+# it: `packages/auth` only compares a token's signature with it, in this process. It does not log
+# anyone in to /admin. Generated below into .localhost-up/, never committed, never a production value.
+SUPABASE_JWT_SECRET_FILE="$STATE_DIR/local-staff-jwt-secret"
 
 step() { printf '\n=== [%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 log() { printf '    %s\n' "$*"; }
@@ -448,6 +453,15 @@ fi
 LISTING_UPDATED_WEBHOOK_SECRET="$(cat "$LISTING_UPDATED_WEBHOOK_SECRET_FILE")"
 [[ "$LISTING_UPDATED_WEBHOOK_SECRET" =~ ^[0-9a-f]{64}$ ]] ||
   die "$LISTING_UPDATED_WEBHOOK_SECRET_FILE does not hold 32 hex bytes - delete it and re-run"
+# FOLLOW-1460: same pattern as the webhook secret above.
+if [ ! -s "$SUPABASE_JWT_SECRET_FILE" ]; then
+  (umask 077 && node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))' \
+    >"$SUPABASE_JWT_SECRET_FILE") || die "could not generate the local staff-token secret"
+  log "generated a local staff-token secret (.localhost-up/, not committed)"
+fi
+SUPABASE_JWT_SECRET="$(cat "$SUPABASE_JWT_SECRET_FILE")"
+[[ "$SUPABASE_JWT_SECRET" =~ ^[0-9a-f]{64}$ ]] ||
+  die "$SUPABASE_JWT_SECRET_FILE does not hold 32 hex bytes - delete it and re-run"
 # FOLLOW-1246: RESTART_CP=1 stops an already-running control plane (this script's pid file: wrapper,
 # children, the next-server on :3000) instead of "already running - leaving it", which kept serving an
 # older build while the artefact read [FRESH]. Opt-in; a :3000 held by a foreign process still dies below.
@@ -480,6 +494,7 @@ start_bg control-plane-3000 3000 "$REPO_ROOT/apps/control-plane" \
   doppler run -c dev -- env \
   "${CP_REDIS_ENV[@]}" \
   "LISTING_UPDATED_WEBHOOK_SECRET=$LISTING_UPDATED_WEBHOOK_SECRET" \
+  "SUPABASE_JWT_SECRET=$SUPABASE_JWT_SECRET" \
   FEEDBACK_ENDPOINT_ENABLED=true \
   BUYER_PROFILE_ENABLED=true \
   "DEMO_MODE=$CP_DEMO_MODE" \
@@ -655,6 +670,11 @@ Advance the fixture listing's revision (listing.updated, FOLLOW-1291; README 6.1
     -H "X-Webhook-Secret: \$(cat .localhost-up/listing-updated-webhook-secret)" \\
     -H 'content-type: application/json' \\
     -d '{"tenant_id":"$OPS_TENANT_ID","listing_id":"$LISTING_ID"}'
+
+Staff-gated API routes (FOLLOW-1460): sign an HS256 JWT with .localhost-up/local-staff-jwt-secret,
+claims sub, email, estalara_staff=true, estalara_role=estalara:readonly; send it as a Bearer token.
+It takes effect on a plane started with this script version (RESTART_CP=1). /admin still needs a
+Supabase sign-in, which this does not provide.
 
 Stop everything this script started:  scripts/dev/localhost-down.sh
 Logs: .localhost-up/logs/

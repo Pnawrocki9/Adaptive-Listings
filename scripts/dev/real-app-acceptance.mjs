@@ -89,6 +89,7 @@ const QUIZ_MOUNT_MS = 60000; // 15 s config budget plus a swapping box
 const DWELL_MS = Number(process.env.N3_DWELL_MS ?? 30000); // the plan's "~30 s" of browsing
 const ADAPT_MS = 120000; // an LLM decision on a cold plane
 const SLOT_PAINT_MS = 20000;
+const CTA_SETTLE_MS = 60000; // a decision after a host reload, on a loaded box
 const INGEST_ACK_MS = 60000; // 22-25 s OPTIONS were measured on this box (2026-10-16)
 const PROFILE_SETTLE_MS = 15000; // the profile is written in after(), past the response
 // Each GET on a miss starts one more generation (`after()` has no dedupe), so the poll is sparse.
@@ -1095,6 +1096,18 @@ function observeContext(context, h) {
     const call = callOf.get(req);
     if (call && !call.status) call.failure = req.failure()?.errorText ?? call.failure;
   };
+  // A reload of the whole page starts a new silent SSO check, so the old answer no longer counts. The
+  // check can also answer on the page itself, not in its iframe (`#error=login_required`).
+  context.on('request', (req) => {
+    if (req.isNavigationRequest() && req.frame().parentFrame() === null) seen.silentSsoDone = false;
+  });
+  context.on('page', (page) => {
+    page.on('framenavigated', (frame) => {
+      if (frame.parentFrame() === null && frame.url().includes('error=login_required')) {
+        seen.silentSsoDone = true;
+      }
+    });
+  });
   context.on('requestfinished', finished);
   context.on('requestfailed', finished);
   return seen;
@@ -1696,6 +1709,18 @@ async function driveSessionOne(page, seen, served, obs, h, buyer) {
     ];
   }
 
+  // The host can re-render or reload here, which puts the seller's copy back until the next decision
+  // lands (N3 run 3 of the K5 series clicked in that window). Graded on what a buyer about to click sees.
+  if (buyer) {
+    await pollUntil(
+      async () => {
+        const facts = await readSlotFacts(page, 'cta').catch(() => null);
+        return facts !== null && squash(facts.text) !== squash(obs.slots.before?.cta?.text);
+      },
+      CTA_SETTLE_MS,
+      500,
+    );
+  }
   obs.slots.after = {
     cta: await readSlotFacts(page, 'cta'),
     feature: await readSlotFacts(page, 'feature'),

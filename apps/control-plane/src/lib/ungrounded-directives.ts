@@ -27,7 +27,7 @@
  *   `Enquire About Holiday Use` does not claim holiday use is permitted.
  * - **`trait_note` — non-assertive, SERVED [FOLLOW-1360].** One invitation per buyer trait, all six
  *   read: `Request a Private Viewing`, `Ask About Home Office Space`, `Ask About Residency
- *   Requirements`, `Request an Investment Pack`, `Ask About Buying From Abroad`, `Ask About
+ *   Requirements`, `Ask About the Investment Figures`, `Ask About Buying From Abroad`, `Ask About
  *   Letting This Home` (and their PL/ES). Each is an offer or a question the buyer may ask; none
  *   says the property has an office, qualifies for residency, yields anything or may be let.
  *   `has_children` has no slot. The set lives in `packages/shared/src/playbooks/traits.ts`, whose

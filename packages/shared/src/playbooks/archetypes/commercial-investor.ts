@@ -10,7 +10,7 @@ export const commercialInvestorPlaybook: PlaybookEntry = {
       variants: {
         en: [
           'Commercial Investment — {sqm}m² Income-Producing Asset',
-          'Commercial Asset — {sqm}m², Full Due Diligence Pack',
+          'Commercial Asset — {sqm}m² for Investors',
           'Office/Retail Investment — Triple Net Lease, Stable Returns',
         ],
       },

@@ -1,0 +1,116 @@
+--- a/web-master/src/lib/estalaraConversionHeaders.ts
++++ b/web-master/src/lib/estalaraConversionHeaders.ts
+@@ -0,0 +1,16 @@
++/**
++ * Estalara conversion header. Sent only on the requests that convert (a conversation with an
++ * agent, a LIVE registration, joining a LIVE); never from a shared interceptor.
++ * Returns the SDK's session id only while the buyer's consent is granted: the SDK mints a
++ * session id even after a denial, so the presence of an id is not proof of consent.
++ */
++export function estalaraConversionHeaders(): Record<string, string> {
++	try {
++		if (localStorage.getItem('estalara_consent') !== 'granted') return {};
++		const raw = sessionStorage.getItem('__estalara_session__');
++		const id = raw ? (JSON.parse(raw) as { sessionId?: unknown }).sessionId : undefined;
++		return typeof id === 'string' ? { 'X-Estalara-Session-Id': id } : {};
++	} catch {
++		return {};
++	}
++}
+--- a/web-master/src/lib/ui/listing/Agent.svelte
++++ b/web-master/src/lib/ui/listing/Agent.svelte
+@@ -1,5 +1,6 @@
+ <script lang="ts">
+ 	import { fade } from 'svelte/transition';
++	import { estalaraConversionHeaders } from '$lib/estalaraConversionHeaders';
+ 	import {
+ 		type CreateOrFindConversationLocaleEnum,
+ 		type ListingAgentTO,
+@@ -61,7 +62,8 @@
+ 		try {
+ 			const response = await api.createOrFindConversation(
+ 				localeAcceptedByAPI($locale) as CreateOrFindConversationLocaleEnum,
+-				{ recipientSlug: agent.slug }
++				{ recipientSlug: agent.slug },
++				{ headers: estalaraConversionHeaders() }
+ 			);
+ 			const conversation = response.data.conversation;
+ 			if (conversation?.uuid) {
+--- a/web-master/src/routes/live/[id]/+page.svelte
++++ b/web-master/src/routes/live/[id]/+page.svelte
+@@ -5,6 +5,7 @@
+ 		type SocketConnectionState
+ 	} from '$lib/realtimekit-compat';
+ 	import { browser } from '$app/environment';
++	import { estalaraConversionHeaders } from '$lib/estalaraConversionHeaders';
+ 	import { onDestroy, onMount, tick } from 'svelte';
+ 	import { page } from '$app/stores';
+ 	import { goto } from '$app/navigation';
+@@ -162,7 +163,8 @@
+ 		try {
+ 			const response = await apiClient.joinLivestream(
+ 				localeAcceptedByAPI($locale) as JoinLivestreamLocaleEnum,
+-				{ uuidLive: liveUuid }
++				{ uuidLive: liveUuid },
++				{ headers: estalaraConversionHeaders() }
+ 			);
+ 
+ 			if (response.data) {
+--- a/web-master/src/routes/(buyer)/[lang]/agent/[slug]/+page.svelte
++++ b/web-master/src/routes/(buyer)/[lang]/agent/[slug]/+page.svelte
+@@ -1,5 +1,6 @@
+ <script lang="ts">
+ 	import { type AxiosResponse, isAxiosError } from 'axios';
++	import { estalaraConversionHeaders } from '$lib/estalaraConversionHeaders';
+ 	import { showErrorToast } from '$lib/toaster';
+ 	import { pageTitle } from '$lib/brands/utils';
+ 	import { page } from '$app/stores';
+@@ -243,7 +244,8 @@
+ 		try {
+ 			const response = await api.createOrFindConversation(
+ 				localeAcceptedByAPI($locale) as CreateOrFindConversationLocaleEnum,
+-				{ recipientSlug: agent.slug }
++				{ recipientSlug: agent.slug },
++				{ headers: estalaraConversionHeaders() }
+ 			);
+ 			const conversation = response.data.conversation;
+ 			if (conversation?.uuid) {
+--- a/web-master/src/routes/(buyer)/[lang]/listing/[slug]/+page.svelte
++++ b/web-master/src/routes/(buyer)/[lang]/listing/[slug]/+page.svelte
+@@ -1,5 +1,6 @@
+ <script lang="ts">
+ 	import { _, locale } from 'svelte-i18n';
++	import { estalaraConversionHeaders } from '$lib/estalaraConversionHeaders';
+ 	import { fullLocales, defaultLocale } from '$lib/langConfig';
+ 	import { localeAcceptedByAPI, locales } from '$lib/l10n';
+ 
+@@ -592,7 +593,8 @@
+ 
+ 		await calendarApiClient.createLiveEnrollmentEvent(
+ 			$locale?.toUpperCase() as CreateLiveEnrollmentEventLocaleEnum,
+-			{ uuidLive: slotUuid }
++			{ uuidLive: slotUuid },
++			{ headers: estalaraConversionHeaders() }
+ 		);
+ 		await loadListingEvents();
+ 	}
+@@ -617,7 +619,8 @@
+ 		if (enroll) {
+ 			await calendarApiClient.createLiveEnrollmentEvent(
+ 				$locale?.toUpperCase() as CreateLiveEnrollmentEventLocaleEnum,
+-				{ uuidLive: slotUuid }
++				{ uuidLive: slotUuid },
++				{ headers: estalaraConversionHeaders() }
+ 			);
+ 			await loadListingEvents();
+ 		}
+@@ -815,7 +818,8 @@
+ 		try {
+ 			const response = await api.createOrFindConversation(
+ 				localeAcceptedByAPI($locale) as CreateOrFindConversationLocaleEnum,
+-				{ recipientSlug: agentSlug }
++				{ recipientSlug: agentSlug },
++				{ headers: estalaraConversionHeaders() }
+ 			);
+ 			const conversationUuid = response.data.conversation?.uuid;
+ 			if (conversationUuid) {

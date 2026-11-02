@@ -94,3 +94,54 @@ for `cta` and `feature` (and not `no_slot_elements`), that clicking the adapted 
 `PUBLIC_ESTALARA_DEBUG` unset (N3 `no_debug_attribute`), and that the page without adaptation is
 unchanged. N3 currently grades only `headline_dom_changed` and `description_*`; it has no hop for
 `cta`/`feature`, so K5 needs one if "both slots adapt" is to be asserted by the script.
+
+## X1 front end: conversion session header (FOLLOW-1339)
+
+Apply after the X3 and X4 patches (it is a diff against the state after them):
+
+    patch -p1 < web-master-x1-conversion-header.patch
+
+Spec: "What `web-master` must do" in `README.md` on branch
+`backend-engineer/FOLLOW-1339-signed-events`.
+
+New file `src/lib/estalaraConversionHeaders.ts` exports `estalaraConversionHeaders()`. It returns
+`{ 'X-Estalara-Session-Id': <id> }` only while `localStorage['estalara_consent'] === 'granted'`,
+with the id read from `sessionStorage['__estalara_session__'].sessionId`; otherwise (or on any
+storage error) `{}`. Nothing is written to storage. It is passed as the generated client's last
+argument, `{ headers: estalaraConversionHeaders() }`, at exactly these six calls:
+
+| Call                        | File                                                                         | Count |
+| --------------------------- | ---------------------------------------------------------------------------- | ----- |
+| `createOrFindConversation`  | `src/lib/ui/listing/Agent.svelte`                                            | 1     |
+| `createOrFindConversation`  | `src/routes/(buyer)/[lang]/agent/[slug]/+page.svelte`                        | 1     |
+| `createOrFindConversation`  | `src/routes/(buyer)/[lang]/listing/[slug]/+page.svelte` (`requestLiveTour`)  | 1     |
+| `createLiveEnrollmentEvent` | `src/routes/(buyer)/[lang]/listing/[slug]/+page.svelte` (`onBook`, `onJoin`) | 2     |
+| `joinLivestream`            | `src/routes/live/[id]/+page.svelte`                                          | 1     |
+
+No axios interceptor was touched.
+
+Verified against code before editing:
+
+- Consent: the SDK stores `'granted' | 'denied'` under `localStorage['estalara_consent']`; absent
+  means `pending` (`packages/sdk/src/core/session.ts`, `getConsentState`). The spec is right.
+- Session: `sessionStorage['__estalara_session__']` holds JSON
+  `{ sessionId, startedAt, pageCount }`; `sessionId` is a UUID v4 (36 chars), or a 64-char hex from
+  a pre-FOLLOW-1106 build. Both fit the backend's 32 to 64 char `[A-Za-z0-9-]` check. The spec is
+  right.
+- Generated client: all three methods are `(locale, body, options?: RawAxiosRequestConfig)` in
+  `src/lib/api/api.ts`, and the param creator merges `options.headers` over the base headers
+  (`{...localVarHeaderParameter, ...headersFromBaseOptions, ...options.headers}`). The spec is
+  right.
+- Call sites: `grep` over `src` finds exactly these six API calls, nothing else. The
+  `joinLivestream` in `src/routes/(agent)/livestream/[id]/+page.svelte` is a local function that
+  only navigates; it calls no API method and is correctly left alone.
+
+Nothing in the spec was false. Note: `src/routes/live/[id]/+page.svelte` is not prettier-clean in
+the snapshot (unrelated lines), so it was not reformatted, to keep the patch to the one call and the
+import. The other four files and the new helper pass `prettier --check`; eslint exit 0 on all five;
+`svelte-check` shows the same 4 pre-existing errors, none in these files.
+
+Only a live run can show: that the browser sends the header on those six requests and on no other
+(including the CORS preflight for `X-Estalara-Session-Id` against the real backend), that it is
+absent after a denial or before consent, that the value equals the SDK's `session_id` for the tab,
+and that the backend then emits `inquiry.completed` / `live.signup` under that session.

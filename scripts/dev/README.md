@@ -77,6 +77,13 @@ Env overrides: `LISTING_URL`, `INGEST_ORIGIN` (`http://localhost:8787`), `DECISI
 Playwright is resolved from `packages/sdk`'s devDependencies, so this script adds nothing to the
 root lockfile or to CI installs.
 
+## `real-app-acceptance.mjs`
+
+Instrument N3 (FOLLOW-1344): one buyer on the real Estalara app, real control plane, real clicks,
+then the same xid in a new context. Not a CI test; its pure verdict is pinned by
+`tests/e2e/follow-819/real-app-acceptance-verdict.test.ts`. Preconditions, run command and the
+failure of every hop: `docs/runbooks/LOCAL_PILOT_ENVIRONMENT.md` §5.1.
+
 ## `fixture-listing-details-server.mjs`
 
 The **grounding source** the FOLLOW-819 differentiator E2E needs (FOLLOW-1225). A stand-in for the

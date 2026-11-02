@@ -3900,6 +3900,82 @@ was run. No RED in §5.61 to §5.66.
 
 `df7fb177` and the squash on `main` (`179b4d4c`) have the same tree. No RED in §5.67 or §5.68.
 
+### 5.69 — 2026-11-01 (FOLLOW-1429 at `ec72617a`) — **three consecutive `run=GREEN` with `total=8` — the per-PR series of #1129**
+
+| Run | Started (UTC)            | Result                                               | Note                             |
+| --- | ------------------------ | ---------------------------------------------------- | -------------------------------- |
+| 252 | 2026-11-01T17:21:14.114Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `ec72617a…` |
+| 253 | 2026-11-01T17:23:18.355Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `ec72617a…` |
+| 254 | 2026-11-01T17:25:29.257Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN` | `[FRESH]` harnessSha `ec72617a…` |
+
+### 5.70 — 2026-11-01 (`df41aef3`, a version of #1130 that was not merged) — **RED, superseded**
+
+| Run                          | Started (UTC)            | Result                                                    | Note                             |
+| ---------------------------- | ------------------------ | --------------------------------------------------------- | -------------------------------- |
+| 255                          | 2026-11-01T18:45:28.371Z | harness aborted, no tally                                 | `                                |
+| [ABORT`harnessSha`df41aef3…` |
+| 256                          | 2026-11-01T18:45:48.539Z | `TALLY green=3 red=0 unmeasured=5 total=8 run=UNMEASURED` | `[FRESH]` harnessSha `df41aef3…` |
+| 257                          | 2026-11-01T18:49:47.303Z | `TALLY green=6 red=2 unmeasured=0 total=8 run=RED`        | `[FRESH]` harnessSha `df41aef3…` |
+| 258                          | 2026-11-01T18:54:38.496Z | harness aborted, no tally                                 | `                                |
+| [ABORT`harnessSha`df41aef3…` |
+| 259                          | 2026-11-01T18:55:04.404Z | `TALLY green=6 red=2 unmeasured=0 total=8 run=RED`        | `[FRESH]` harnessSha `df41aef3…` |
+| 260                          | 2026-11-01T19:03:56.137Z | `TALLY green=3 red=0 unmeasured=5 total=8 run=UNMEASURED` | `[FRESH]` harnessSha `df41aef3…` |
+| 261                          | 2026-11-01T19:08:19.929Z | harness aborted, no tally                                 | `                                |
+| [ABORT`harnessSha`df41aef3…` |
+| 262                          | 2026-11-01T19:08:45.523Z | `TALLY green=7 red=1 unmeasured=0 total=8 run=RED`        | `[FRESH]` harnessSha `df41aef3…` |
+| 263                          | 2026-11-01T19:13:31.830Z | `TALLY green=7 red=1 unmeasured=0 total=8 run=RED`        | `[FRESH]` harnessSha `df41aef3…` |
+| 264                          | not recorded             | harness aborted, the session restart cut it off           | no artefact                      |
+
+AC(1b) was RED in every measured run with `claim_check_unavailable`: the branch imported a subpath
+of `@estalara/shared` with no CommonJS build. AC(1b) caught a real defect of that branch. Runs 255,
+258, 261 and 264 aborted on health probes or a closed browser, with agents running beside the series
+and the box out of memory; 257 failed AC(10) and 259 failed AC(7), cause not established.
+
+### 5.71 — 2026-11-01 (`1a1b4495`, final code of #1130) — **three `run=GREEN` with `total=8` (267, 268, 270; 269 drew holdout), and one RED (266)**
+
+| Run | Started (UTC)            | Result                                                    | Note                             |
+| --- | ------------------------ | --------------------------------------------------------- | -------------------------------- |
+| 265 | 2026-11-01T22:59:43.499Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `1a1b4495…` |
+| 266 | 2026-11-01T23:03:27.875Z | `TALLY green=7 red=1 unmeasured=0 total=8 run=RED`        | `[FRESH]` harnessSha `1a1b4495…` |
+| 267 | 2026-11-01T23:07:58.731Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `1a1b4495…` |
+| 268 | 2026-11-01T23:11:16.718Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `1a1b4495…` |
+| 269 | 2026-11-01T23:14:41.964Z | `TALLY green=3 red=0 unmeasured=5 total=8 run=UNMEASURED` | `[FRESH]` harnessSha `1a1b4495…` |
+| 270 | 2026-11-01T23:17:24.154Z | `TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN`      | `[FRESH]` harnessSha `1a1b4495…` |
+
+Run 266 failed AC(8) at hop 4: no shadow record from the chat shim. The cause is unknown; #1130 does
+not touch that path and it did not recur. Later commits on #1130 changed tests only.
+
+### 5.72 — 2026-11-02 (FOLLOW-1316 and AC(9)) — **first live runs of AC(9), then three `run=GREEN` with `total=9` on the code that merged as #1133**
+
+| Run | Started (UTC)            | Result                                             | Note                             |
+| --- | ------------------------ | -------------------------------------------------- | -------------------------------- |
+| 271 | 2026-11-02T01:25:09.709Z | `TALLY green=8 red=1 unmeasured=0 total=9 run=RED` | `[FRESH]` harnessSha `3714e592…` |
+
+Run 271 at `3714e592`: restore worked; RED because control (d) contradicted the later ruling that a
+non-persistable quiz result deletes the key, and (b) then had no key. Fixed in the harness.
+
+| Run | Started (UTC)            | Result                                                    | Note                             |
+| --- | ------------------------ | --------------------------------------------------------- | -------------------------------- |
+| 272 | 2026-11-02T01:56:59.999Z | `TALLY green=9 red=0 unmeasured=0 total=9 run=GREEN`      | `[FRESH]` harnessSha `685b4e35…` |
+| 273 | 2026-11-02T02:00:26.069Z | `TALLY green=9 red=0 unmeasured=0 total=9 run=GREEN`      | `[FRESH]` harnessSha `685b4e35…` |
+| 274 | 2026-11-02T02:03:48.734Z | `TALLY green=4 red=0 unmeasured=5 total=9 run=UNMEASURED` | `[FRESH]` harnessSha `685b4e35…` |
+| 275 | 2026-11-02T02:06:49.770Z | `TALLY green=4 red=0 unmeasured=5 total=9 run=UNMEASURED` | `[FRESH]` harnessSha `685b4e35…` |
+| 276 | 2026-11-02T02:09:55.942Z | `TALLY green=9 red=0 unmeasured=0 total=9 run=GREEN`      | `[FRESH]` harnessSha `685b4e35…` |
+
+At `685b4e35`: GREEN 272, 273, 276; 274 and 275 drew holdout. AC(9) PASS in all five, every DSR
+replay `miss` at the first attempt.
+
+| Run | Started (UTC)            | Result                                                    | Note                             |
+| --- | ------------------------ | --------------------------------------------------------- | -------------------------------- |
+| 277 | 2026-11-02T03:06:30.291Z | `TALLY green=9 red=0 unmeasured=0 total=9 run=GREEN`      | `[FRESH]` harnessSha `a28ffa36…` |
+| 278 | 2026-11-02T03:09:55.263Z | `TALLY green=4 red=0 unmeasured=5 total=9 run=UNMEASURED` | `[FRESH]` harnessSha `a28ffa36…` |
+| 279 | 2026-11-02T03:13:30.165Z | `TALLY green=9 red=0 unmeasured=0 total=9 run=GREEN`      | `[FRESH]` harnessSha `a28ffa36…` |
+| 280 | 2026-11-02T03:16:38.191Z | `TALLY green=4 red=0 unmeasured=5 total=9 run=UNMEASURED` | `[FRESH]` harnessSha `a28ffa36…` |
+| 281 | 2026-11-02T03:19:44.500Z | `TALLY green=9 red=0 unmeasured=0 total=9 run=GREEN`      | `[FRESH]` harnessSha `a28ffa36…` |
+
+At `a28ffa36`, code identical to #1133 (`93cfa9bb`): GREEN 277, 279, 281; 278 and 280 drew holdout.
+AC(9) PASS in all five. Control I1 of K4b.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

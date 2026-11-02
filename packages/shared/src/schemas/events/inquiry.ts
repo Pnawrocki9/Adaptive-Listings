@@ -32,10 +32,13 @@ export type InquiryStartedEvent = z.infer<typeof InquiryStartedEventSchema>;
  * the tenant's own CRM via a separate channel. This payload only captures aggregate signals
  * (whether contact details were filled, channel preference, budget hint, timeline hint).
  *
+ * `channel: 'conversation'` is the Estalara host backend's emission: a buyer started a conversation
+ * with the selling agent (`ConversationCreatedEvent`, CEO ruling D-J; FOLLOW-1339).
+ *
  * @example { type: 'inquiry.completed', payload: { channel: 'email', has_phone: true, budget_hint: '300k-500k', timeline: '0-3m' } }
  */
 export const InquiryCompletedPayloadSchema = z.object({
-  channel: z.enum(['email', 'phone', 'whatsapp', 'sms', 'in_person']).optional(),
+  channel: z.enum(['email', 'phone', 'whatsapp', 'sms', 'in_person', 'conversation']).optional(),
   has_phone: z.boolean().optional(),
   budget_hint: z.string().optional(),
   timeline: z.enum(['0-3m', '3-6m', '6-12m', '12m+']).optional(),

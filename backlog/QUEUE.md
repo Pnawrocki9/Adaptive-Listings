@@ -192,7 +192,21 @@
   step.
 - **FOLLOW-1452** — status: BACKLOG # P3 gate. `@estalara/shared/playbook-traits` has a `require`
   condition naming a file dist does not have; AC(1b)'s CommonJS helper breaks on any import of it.
-  Next free: FOLLOW-1453, RETRO-381, ESC-091.
+- **FOLLOW-1453** — status: BACKLOG # P2 product. Playbook `cta` and `feature` text promises what
+  the slot does not do on the real page: "Download Expat Relocation Guide" on a button that opens a
+  message, "Your First Step" over the amenities grid. Measure on the K5 live run, then decide before
+  the CEO walk.
+- **FOLLOW-1454** — status: BACKLOG # P1 before go-live, depends_on FOLLOW-1308. Production
+  conditions H-1 to H-12 of `docs/compliance/FOLLOW-1339-session-header-review.md`, including the
+  FOLLOW-1308 erase test with a `caller_signed = 1` row; ESC-091 C-1 to C-5.
+- **FOLLOW-1455** — status: BACKLOG # P1 before go-live, compliance. Notice §1 "does not read … any
+  account credentials" is false today, `boot.ts:160` reads `kc_token` and parses `sub`. Production
+  serves no SDK per ESC-081/082 (not re-checked), so no buyer reads it yet; correct it before any
+  production SDK.
+- **FOLLOW-1456** — status: BACKLOG # P2 counsel. Same review, section 12: DPIA §1 claims Art. 3(1)
+  while the host policy says Art. 3(2); `deriveLeadId` is unkeyed; the host's optional-analytics box
+  is pre-ticked. Wiring `adaptation_decisions.lead_id` (FOLLOW-170) returns to compliance first, it
+  would link every session to an account. Next free: FOLLOW-1457, RETRO-381, ESC-092.
 - **FOLLOW-1429** — status: DONE # PR #1129, README §5.69. Was: P2 product. Blind audit of
   2026-11-01: 32 firm language errors on PL and ES pages, in 21 of 56 texts, many of them translated
   persona phrases ("matematyka wyjścia", "ogon najmu", "zaprojektowany pod więcej weekendów"), plus

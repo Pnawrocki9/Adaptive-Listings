@@ -158,6 +158,10 @@ paths = [
   # false-positive on this generic heuristic. Provider-specific secret rules stay active here.
   '''docs/adr/''',
   '''docs/runbooks/''',
+  # Handover patches for the Estalara app: long Kotlin identifiers in diffs false-positive on this
+  # generic heuristic (CEO decision 2026-11-02, FOLLOW-1339). This rule only; provider-specific
+  # secret rules stay active here.
+  '''^docs/handover/estalara-app-patches/[^/]+\.patch$''',
   '''packages/sdk/src/auto-detect/__fixtures__/''',
   # Python test files use long descriptive method names (test_empty_selectors_list_returns_empty_dict
   # etc.) whose substrings of exactly 40 chars trigger this rule as false positives.

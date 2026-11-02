@@ -21,6 +21,58 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## OPEN — ESC-091: signed conversions from the Estalara backend: event payloads, emission sites, the session-id header and the basis for measuring them [FOLLOW-1339]
+
+**Filed by:** backend-engineer and compliance-engineer via PM **Date:** 2026-11-02 **Affects:**
+FOLLOW-1339, FOLLOW-1340, FOLLOW-1308, `packages/shared` event schemas, `POST /v1/events`,
+`core-master`, `web-master`, DPIA, ROPA, Privacy Notice. **Type:** public contract + compliance
+posture.
+
+**Description.** Plan Phase 5 X1 needs the buyer's session id on the host backend. Record:
+`docs/compliance/FOLLOW-1339-session-header-review.md` (localhost PASS WITH CONDITIONS, production
+NOT PASSED).
+
+Contract changes, additive under ADR-0003, no `schema_version` bump, as D-J foresaw but never
+implemented: `inquiry.completed.payload.channel` gains `conversation`; `live.signup.payload` gains
+optional `event_kind`. Deploy order: ingest first, an older Worker refuses `channel: conversation`.
+
+New header `X-Estalara-Session-Id`, front end to host backend, on six calls only, sent only while
+the SDK's consent is granted. No cookie, no xid (ESC-090 item 4). Without it nothing is emitted and
+nothing is counted.
+
+**Where the code is wider or narrower than D-J's wording** (PM proceeds on localhost as written, CEO
+to confirm):
+
+- (a) `live.signup` fires at both writers of `LIVE_PRESENTATION_REGISTRATION`: the register button
+  (`CalendarServiceImpl.createLiveEnrollmentEvent`, not named by D-J) and a first join
+  (`LivestreamServiceImpl.joinLivestreamIVS`). Wiring only the named class would emit nothing when a
+  buyer presses register.
+- (b) `inquiry.completed` fires when the buyer opens a thread, not on the first message: the front
+  end creates the conversation on the click. A buyer who opens a thread and writes nothing counts.
+- (c) Only a new buyer-agent pair converts. A returning buyer's contact in a later session is not
+  counted, in either arm.
+
+**Rulings the CEO must make** (none is needed for localhost; all before production):
+
+- **C-1. Basis for conversion measurement.** ROPA Activity 12 records legitimate interest; no served
+  text mentions conversions or a holdout. Compliance recommends consent only, matching ESC-090 item
+  1. Cost: a banner bump and a re-prompt.
+- **C-2. Keep the header, or build a signed receipt so the id never reaches the backend.**
+  Compliance recommends keeping it, with the receipt as fallback if counsel rejects it. A receipt
+  does not end time matching and needs SDK bytes.
+- **C-3. Coarsen `ts` and `ingest_received_at`** to make matching against host timestamps harder, at
+  a small lift bias. Decide after the gap is measured.
+- **C-4. A logged-in buyer's erasure:** an account-to-session lookup, or an answer under Art. 11.
+- **C-5. A buyer who refused optional analytics but accepted personalization.** Compliance
+  recommends no header. Applied on localhost as recommended, pending this ruling.
+
+**Required action:** CEO rules (a)–(c) and C-1 to C-5. Production conditions H-1 to H-12 of the
+record go to the CTO (FOLLOW-1454). Counsel's questions are in section 7 of the record.
+
+**Resolution:**
+
+---
+
 ## RESOLVED — ESC-090: FOLLOW-1316 changes the lawful basis of `__estalara_xid__`, the holdout unit and public surfaces; §E.7.5 reversal confirmed [FOLLOW-1316]
 
 **Filed by:** compliance-engineer via PM **Date:** 2026-11-01 **Resolved:** 2026-11-01, CEO wrote

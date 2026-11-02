@@ -1,6 +1,6 @@
 # Legitimate Interest Assessment (LIA) — Per-Tenant Template
 
-**Template Version:** v2.1 **Template Date:** 2026-11-02 **Prepared by:** Estalara Compliance
+**Template Version:** v2.2 **Template Date:** 2026-11-02 **Prepared by:** Estalara Compliance
 Engineering — Time2Show, Inc. **Document Classification:** Confidential — To be retained by the
 completing tenant
 
@@ -233,8 +233,9 @@ are used only for within-session adaptation, not for profiling or decisioning ou
   `sessionStorage` too, and the same identifier resumes. That is browser behaviour, not an Estalara
   store, and it is the reason this template says "discarded when the tab is closed" rather than
   "unrecoverable"._
-- **What the identifier does not close, and must be weighed here.** Three linkage vectors survive
-  the identifier's randomness and are part of the tenant's balancing decision:
+- **What the identifier does not close, and must be weighed here.** Three linkage vectors (a fourth,
+  on the Estalara platform and localhost only, is DPIA §2.2.1 item 4) survive the identifier's
+  randomness and are part of the tenant's balancing decision:
   1. `__estalara_xid__` — a 90-day cross-session identifier in `localStorage`, created **only** in
      Mode B after consent is granted and erased on denial or withdrawal. A Mode A tenant completing
      this LIA does not enable it. It rests on consent, never on this LIA (ESC-090 item 1). With the
@@ -462,10 +463,20 @@ Estalara does not collect, transmit, or store any of the following in connection
 sessions:
 
 - Name, email address, phone number, physical address, or government identifier
-- Login credentials or authenticated identity
+- Login credentials or authenticated identity (_corrected v2.2, FOLLOW-1339: true of the Adaptive
+  Listings stack, read with the SDK's use of the login token's subject to derive `lead_id`, not of a
+  host operated by the same company; see the note below_)
 - Payment information
 - IP address in personally identifiable form (the ingest layer processes IP for geo-routing and
   immediately discards it; no IP is stored in the event record)
+
+> **Added v2.2 (FOLLOW-1339; localhost only, production not enabled).** On the Estalara platform,
+> for a consented logged-in buyer, the host backend receives the session identifier in the same
+> request as the login on the requests that register for a live presentation or create a
+> conversation with an agent, holds it in memory for one event, and posts a signed conversion under
+> it. The event has no account field and can still be matched to the account by the company holding
+> both stores (DPIA §2.2.1 item 4). **This LIA is not the basis for that measurement.** Its basis is
+> open (ESC-091 C-1), and no tenant answer here may rely on it.
 
 Data minimization is enforced at the ingest layer. Raw behavioral events contain only: session
 identifier (random UUID v4), tenant identifier, event type, listing identifier (where applicable),
@@ -651,6 +662,7 @@ _Appendix B added 2026-06-21 (FOLLOW-373) — Compliance Engineering._
 | v1.1     | 2026-06-21 | Compliance Engineering | Appendix B added (FOLLOW-373) — platform-wide consent LIA for buying-intent profiling.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | **v2.0** | 2026-08-24 | Compliance Engineering | **FOLLOW-1107, after ESC-070 Path C shipped (FOLLOW-1106 / PR #844, `d9160da0`).** §2(b), §2(c), §3.1, §3.2, §3.3, §3.4, §3.6, §A.1, §A.2, §A.3 corrected against the shipped mechanism, each claim anchored to a named symbol or a named test. The two **inverted** claims — §3.6's "Persistence: None — session-scoped, HMAC rotation" and §A.3's "cross-site correlation is architecturally precluded" — are replaced by bounded statements, not softened, and §A.3 records why the absolute form must not return. The balancing test in §3.6 is **re-derived**, not edited: two new factors (event-store retention; residual cross-session linkage vectors) were added because removing the false weights would otherwise have left the test unrun, and a "was (v1.0)" column shows every weight that moved. §2(b) and §A.1 now state that `localStorage`/`sessionStorage` **are** written, reconciling this template with `PRIVACY_NOTICE_TEMPLATE.md` §4, which the two documents previously contradicted. §A.2's chat-text claim reconciled with the ESC-049 ruling. §3.4's opt-out scope corrected in both directions. Retention promises with no mechanism marked UNENFORCED (FOLLOW-1110/1111/1112/1113). No legal conclusion is drawn: the Art. 5(3)(b) question is explicitly referred to tenant counsel in §A.1. |
 | v2.1     | 2026-11-02 | Compliance Engineering | **FOLLOW-1316 (ESC-090).** §3.3 item 1, the linkage row of the balancing table and §A.3 no longer say `__estalara_xid__` is untransmitted: it is, with the flag on, and that processing rests on consent and is outside any LIA. Key count corrected to thirteen in §2 and §A.1. No other answer changes. Production is not enabled, pending counsel.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| v2.2     | 2026-11-02 | Compliance Engineering | **FOLLOW-1339 (ESC-091 OPEN).** §A.2's "authenticated identity" limited to the Adaptive Listings stack, with a note on the conversion header; the linkage-vector sentence points at DPIA §2.2.1 item 4. Localhost only. Conversions rest on no LIA unless ESC-091 C-1 says so.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 _Tenants holding a signed v1.0 LIA: it was completed against false pre-filled answers and should be
 re-run against v2.0._

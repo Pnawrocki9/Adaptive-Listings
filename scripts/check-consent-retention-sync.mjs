@@ -78,7 +78,7 @@ const P = {
   dpia: 'docs/compliance/dpia.md',
   notice: 'docs/compliance/PRIVACY_NOTICE_TEMPLATE.md',
   example: 'packages/shared/src/examples/consent-text.ts',
-  sdkSession: 'packages/sdk/src/core/session.ts',
+  sdkSession: 'packages/sdk/src/core/xid.ts',
   profileStore: 'apps/control-plane/src/lib/buyer-profile-store.ts',
 };
 

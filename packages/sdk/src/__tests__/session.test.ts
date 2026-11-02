@@ -1,13 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  generateSessionId,
-  getOrCreateSession,
-  getOrCreateCrossSessionId,
-  eraseCrossSessionId,
-  XSESSION_STORAGE_KEY,
-} from '../core/session.js';
+import { generateSessionId, getOrCreateSession } from '../core/session.js';
+import { getOrCreateCrossSessionId, eraseCrossSessionId } from '../core/xid.js';
 import type { SessionState } from '../core/session.js';
+
+const XSESSION_STORAGE_KEY = '__estalara_xid__';
 
 // sessionStorage is not available in Node — stub it at globalThis level
 const mockSessionStorage = new Map<string, string>();

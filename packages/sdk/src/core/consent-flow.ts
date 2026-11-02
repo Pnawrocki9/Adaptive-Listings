@@ -11,15 +11,12 @@ import {
   getOrCreateSession,
   getConsentState,
   setConsentState,
-  eraseCrossSessionId,
-  getOrCreateCrossSessionId,
   eraseIntentState,
   isConsentTextStale,
-  isXidLive,
   peekStoredSessionId,
-  readStoredXid,
   setConsentTextVersion,
 } from './session.js';
+import { eraseCrossSessionId, getOrCreateCrossSessionId, isXidLive, readStoredXid } from './xid.js';
 import { postProfileErase } from './adapt.js';
 import type { ShadowHost } from '../ui/shadow-host.js';
 import { fetchConsentText } from './consent-text.js';

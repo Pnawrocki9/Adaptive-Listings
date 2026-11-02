@@ -154,7 +154,8 @@ export async function boot(queue: CollectedEvent[]): Promise<BootContext | null>
   const session = await getOrCreateSession();
   const currentSession = incrementPageCount(session);
 
-  // Lead id = SHA-256 prefix of the `sub`, sessionStorage only (Rule L) [FOLLOW-197].
+  // Lead id = SHA-256 prefix of the `sub`, kept in sessionStorage (Rule L) [FOLLOW-197]. See
+  // LEAD_ID_STORAGE_KEY for the localStorage copies.
   try {
     const kcToken = localStorage.getItem('kc_token');
     if (kcToken) {

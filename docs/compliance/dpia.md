@@ -1377,7 +1377,7 @@ The three consent modes described in Section 2.2 implement the following consent
    (Section 8).
 
 **Items 2, 5 and 6 checked against the code (v2.27, FOLLOW-1316).** _Item 2:_ the only code that
-reads `navigator.globalPrivacyControl` is `readSendableXid()` in `packages/sdk/src/core/session.ts`,
+reads `navigator.globalPrivacyControl` is `readSendableXid()` in `packages/sdk/src/core/xid.ts`,
 where it stops the xid being sent. That is all this feature makes true; the mode lock item 2
 describes has no implementing code, and FOLLOW-1438 owns that claim. _Item 5:_ **no shipped code
 does this for the SDK banner.** `estalara_consent` has no expiry and nothing reads an `expired_at`;
@@ -2046,7 +2046,7 @@ nature of the identifier, creating a gap between the actual behavior and the dis
 tracked as FOLLOW-150.** The cross-session identifier is `__estalara_xid__`: a **randomly generated
 UUID v4** with a creation timestamp, written to `localStorage` and treated as expired after 90 days.
 It is **not** a fingerprint, not an HMAC, and not derived from any browser attribute. Verify against
-`packages/sdk/src/core/session.ts`: `XSESSION_STORAGE_KEY = '__estalara_xid__'`;
+`packages/sdk/src/core/xid.ts`: `XSESSION_STORAGE_KEY = '__estalara_xid__'`;
 `XID_TTL_MS = 90 * 24 * 60 * 60 * 1000`; `getOrCreateCrossSessionId()` (mints via `generateUuid()`,
 rotates when `Date.now() - created_at > XID_TTL_MS`); `eraseCrossSessionId()` (`removeItem` plus
 in-memory cache clear). `generateUuid()` uses `crypto.randomUUID()` where available and a
@@ -2161,8 +2161,8 @@ Gate).
 **Staging QA — tracked pending verification (owner: Compliance Engineering):** QA engineer must
 confirm that clicking "Deny" or "Withdraw" on a staging session removes the cross-session
 `localStorage` key (`__estalara_xid__`, set by `getOrCreateCrossSessionId()` in
-`packages/sdk/src/core/session.ts`). This verification cannot be automated from CI because it
-requires a real browser session against the staging environment. It is a manual pre-flight gate: see
+`packages/sdk/src/core/xid.ts`). This verification cannot be automated from CI because it requires a
+real browser session against the staging environment. It is a manual pre-flight gate: see
 `docs/ops/PILOT_RUNBOOK.md` §EU pre-flight, "consent disclosure and localStorage QA" gate item.
 Status: **READY FOR STAGING VERIFICATION** — FOLLOW-139 implementation deployed to `main`; staging
 deploy and manual QA verification pending.

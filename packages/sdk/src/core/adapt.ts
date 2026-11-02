@@ -4,7 +4,8 @@
  */
 
 import type { SessionState } from './session.js';
-import { getConsentState, markXidSent, readSendableXid } from './session.js';
+import { getConsentState } from './session.js';
+import { markXidSent, readSendableXid } from './xid.js';
 import type { SdkConfig } from './config.js';
 import type {
   TextDirective,

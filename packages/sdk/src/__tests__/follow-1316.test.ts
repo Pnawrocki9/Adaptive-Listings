@@ -20,7 +20,7 @@ import { _initForTest } from '../index.js';
 import { fetchDirectives } from '../core/adapt.js';
 import type { SdkConfig } from '../core/config.js';
 import { applyQuizLeaf, initIntentState } from '../core/intent.js';
-import { eraseCrossSessionId, getOrCreateCrossSessionId } from '../core/session.js';
+import { eraseCrossSessionId, getOrCreateCrossSessionId } from '../core/xid.js';
 
 const SESSION_ID = 'a'.repeat(64);
 const API_KEY = 'test-follow1316-api-key';
@@ -739,9 +739,10 @@ describe('FOLLOW-1316 R1: the xid is a credential', () => {
     expect(random).not.toHaveBeenCalled();
   });
 
-  it('Math.random is gone from the module that mints and reads the xid', () => {
-    const source = readFileSync(join(__dirname, '../core/session.ts'), 'utf8');
-    expect(source).not.toContain('Math.random');
+  it('Math.random is gone from the modules that mint and read the xid', () => {
+    for (const file of ['../core/session.ts', '../core/xid.ts']) {
+      expect(readFileSync(join(__dirname, file), 'utf8')).not.toContain('Math.random');
+    }
   });
 
   it('getRandomValues only: a strict v4', async () => {

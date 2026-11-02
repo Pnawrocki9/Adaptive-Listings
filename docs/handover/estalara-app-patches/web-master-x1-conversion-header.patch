@@ -1,15 +1,21 @@
 --- a/web-master/src/lib/estalaraConversionHeaders.ts
 +++ b/web-master/src/lib/estalaraConversionHeaders.ts
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,22 @@
 +/**
 + * Estalara conversion header. Sent only on the requests that convert (a conversation with an
 + * agent, a LIVE registration, joining a LIVE); never from a shared interceptor.
 + * Returns the SDK's session id only while the buyer's consent is granted: the SDK mints a
 + * session id even after a denial, so the presence of an id is not proof of consent.
++ * Also requires the host's optional-analytics choice (CookieConsent.svelte, stored by
++ * `$lib/stores/cookieStore` as JSON in localStorage['cookieConsent']) to be explicitly
++ * `optional: true`; absent or refused means no header (ESC-091 C-5, pending CEO ruling).
++ * Reads localStorage directly so the helper has no store or posthog import.
 + */
 +export function estalaraConversionHeaders(): Record<string, string> {
 +	try {
 +		if (localStorage.getItem('estalara_consent') !== 'granted') return {};
++		const cookies = localStorage.getItem('cookieConsent');
++		if (!cookies || (JSON.parse(cookies) as { optional?: unknown }).optional !== true) return {};
 +		const raw = sessionStorage.getItem('__estalara_session__');
 +		const id = raw ? (JSON.parse(raw) as { sessionId?: unknown }).sessionId : undefined;
 +		return typeof id === 'string' ? { 'X-Estalara-Session-Id': id } : {};
@@ -17,6 +23,92 @@
 +		return {};
 +	}
 +}
+--- a/web-master/src/lib/estalaraConversionHeaders.test.ts
++++ b/web-master/src/lib/estalaraConversionHeaders.test.ts
+@@ -0,0 +1,83 @@
++import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
++import { estalaraConversionHeaders } from './estalaraConversionHeaders';
++
++const SID = '123e4567-e89b-42d3-a456-426614174000';
++const HEADER = { 'X-Estalara-Session-Id': SID };
++
++function arrange({
++	consent = 'granted' as string | null,
++	cookies = JSON.stringify({ necessary: true, optional: true }) as string | null,
++	session = JSON.stringify({ sessionId: SID, startedAt: 1, pageCount: 1 }) as string | null
++} = {}) {
++	if (consent !== null) localStorage.setItem('estalara_consent', consent);
++	if (cookies !== null) localStorage.setItem('cookieConsent', cookies);
++	if (session !== null) sessionStorage.setItem('__estalara_session__', session);
++}
++
++describe('estalaraConversionHeaders', () => {
++	beforeEach(() => {
++		localStorage.clear();
++		sessionStorage.clear();
++	});
++	afterEach(() => {
++		vi.unstubAllGlobals();
++	});
++
++	it('returns the SDK session id when consent is granted and optional is true', () => {
++		arrange();
++		expect(estalaraConversionHeaders()).toEqual(HEADER);
++	});
++
++	it('returns {} while consent is pending', () => {
++		arrange();
++		expect(estalaraConversionHeaders()).toEqual(HEADER);
++		localStorage.removeItem('estalara_consent');
++		expect(estalaraConversionHeaders()).toEqual({});
++	});
++
++	it('returns {} after denial', () => {
++		arrange({ consent: 'denied' });
++		expect(estalaraConversionHeaders()).toEqual({});
++		localStorage.setItem('estalara_consent', 'granted');
++		expect(estalaraConversionHeaders()).toEqual(HEADER);
++	});
++
++	it('returns {} when the buyer refused optional cookies', () => {
++		arrange({ cookies: JSON.stringify({ necessary: true, optional: false }) });
++		expect(estalaraConversionHeaders()).toEqual({});
++		localStorage.setItem('cookieConsent', JSON.stringify({ necessary: true, optional: true }));
++		expect(estalaraConversionHeaders()).toEqual(HEADER);
++	});
++
++	it('returns {} when the optional choice is absent', () => {
++		arrange({ cookies: null });
++		expect(estalaraConversionHeaders()).toEqual({});
++		localStorage.setItem('cookieConsent', JSON.stringify({ necessary: true }));
++		expect(estalaraConversionHeaders()).toEqual({});
++		localStorage.setItem('cookieConsent', JSON.stringify({ necessary: true, optional: true }));
++		expect(estalaraConversionHeaders()).toEqual(HEADER);
++	});
++
++	it('returns {} for malformed session JSON', () => {
++		arrange({ session: '{not json' });
++		expect(estalaraConversionHeaders()).toEqual({});
++		sessionStorage.setItem('__estalara_session__', JSON.stringify({ sessionId: SID }));
++		expect(estalaraConversionHeaders()).toEqual(HEADER);
++	});
++
++	it('returns {} when the session has no string sessionId', () => {
++		arrange({ session: JSON.stringify({ sessionId: 42 }) });
++		expect(estalaraConversionHeaders()).toEqual({});
++	});
++
++	it('returns {} when storage throws', () => {
++		arrange();
++		expect(estalaraConversionHeaders()).toEqual(HEADER);
++		vi.stubGlobal('localStorage', {
++			getItem: () => {
++				throw new Error('SecurityError');
++			}
++		});
++		expect(estalaraConversionHeaders()).toEqual({});
++	});
++});
 --- a/web-master/src/lib/ui/listing/Agent.svelte
 +++ b/web-master/src/lib/ui/listing/Agent.svelte
 @@ -1,5 +1,6 @@

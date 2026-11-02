@@ -104,6 +104,21 @@ Apply after the X3 and X4 patches (it is a diff against the state after them):
 Spec: "What `web-master` must do" in `README.md` on branch
 `backend-engineer/FOLLOW-1339-signed-events`.
 
+Update (ESC-091 C-5, applied on localhost pending a CEO ruling): a buyer who refused the host's
+optional analytics in `CookieConsent.svelte` sends no header. `$lib/stores/cookieStore` stores the
+choice as JSON in `localStorage['cookieConsent']`, shape `{"necessary":true,"optional":<boolean>}`.
+The helper now also returns `{}` unless that JSON parses and `optional === true`; an absent or
+malformed value means no header. It reads `localStorage` directly, so it imports neither the store
+nor posthog. N3 must therefore set, before the conversion step,
+`localStorage.setItem('cookieConsent', JSON.stringify({necessary: true, optional: true}))`
+(alongside the SDK's `estalara_consent` = `granted`).
+
+New unit test `src/lib/estalaraConversionHeaders.test.ts` (vitest, happy-dom, 8 tests): granted with
+optional true returns the SDK id; pending, denied, optional refused, optional absent, malformed
+session JSON, a session without a string id, and throwing storage each return `{}`. Every negative
+is paired with a positive assertion on the same fixture, so it cannot pass vacuously. Run:
+`NODE_OPTIONS=--max-old-space-size=1024 vitest run src/lib/estalaraConversionHeaders.test.ts`.
+
 New file `src/lib/estalaraConversionHeaders.ts` exports `estalaraConversionHeaders()`. It returns
 `{ 'X-Estalara-Session-Id': <id> }` only while `localStorage['estalara_consent'] === 'granted'`,
 with the id read from `sessionStorage['__estalara_session__'].sessionId`; otherwise (or on any

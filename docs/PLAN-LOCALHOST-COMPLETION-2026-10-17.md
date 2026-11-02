@@ -306,19 +306,20 @@ w `docs/handover/estalara-app-patches/`.
 
 Zmiana kontraktu zdarzeń = wpis w ESC przed X1.
 
-**K5 — [CEO 2]:** repo Estalara: test sygnatury; `grep -r 'data-debug="true"'` = 0; repo AL: testy
-ingest `/v1/events` dla obu zdarzeń z HMAC; **N3 pełne 3× pod rząd** na jednym nierestartowanym
-control plane (ta sama dyscyplina co seria; seria harnessu tylko jeśli zmienił się kod AL). **Moment
-CEO** na prawdziwym ogłoszeniu :5173: zgoda → quiz (Investment → Rental income → Steady yield) →
-zmiana nagłówka i opisu → **(1) zapis na prezentację LIVE** i **(2) napisanie do agenta** → `/admin`
-analityka: jego sesja policzona jako **jedna** konwersja „signed", z rozbiciem `live_signup_rate` /
-`agent_contact_rate`. Potem **N3 w trybie batch** (`--arms 40`): 40 sesji adaptowanych + 40 holdout
-przeprowadzonych skryptem na prawdziwej aplikacji → czytnik liftu pokazuje `relative_lift_pct` jako
-liczbę w % z klasą `confidence` (nie `insufficient`, bo ≥ 30 na ramię). Brief mówi wprost: wartość i
-znak na localhost **nie są** dowodem efektu produktu (sesje syntetyczne) — dowodem jest, że pipeline
-liczy **właściwe zdarzenia właściwym wzorem**. STOP: N3 `conversion_source ≠ signed_events`, lift
-null przy ≥ 30/ramię, niepodpisana konwersja policzona, albo zdarzenie LIVE/rozmowa nie trafia do CH
-→ stop; rollback `al-real-down.sh --restore-fixture` + przywrócenie snapshotu.
+**K5 — [CEO 2]:** repo Estalara: test sygnatury; N3 `no_debug_attribute` GREEN (a `grep` for
+`data-debug="true"` misses `setAttribute`); repo AL: testy ingest `/v1/events` dla obu zdarzeń z
+HMAC; **N3 pełne 3× pod rząd** na jednym nierestartowanym control plane (ta sama dyscyplina co
+seria; seria harnessu tylko jeśli zmienił się kod AL). **Moment CEO** na prawdziwym ogłoszeniu
+:5173: zgoda → quiz (Investment → Rental income → Steady yield) → zmiana nagłówka i opisu → **(1)
+zapis na prezentację LIVE** i **(2) napisanie do agenta** → `/admin` analityka: jego sesja policzona
+jako **jedna** konwersja „signed", z rozbiciem `live_signup_rate` / `agent_contact_rate`. Potem **N3
+w trybie batch** (`--arms 40`): 40 sesji adaptowanych + 40 holdout przeprowadzonych skryptem na
+prawdziwej aplikacji → czytnik liftu pokazuje `relative_lift_pct` jako liczbę w % z klasą
+`confidence` (nie `insufficient`, bo ≥ 30 na ramię). Brief mówi wprost: wartość i znak na localhost
+**nie są** dowodem efektu produktu (sesje syntetyczne) — dowodem jest, że pipeline liczy **właściwe
+zdarzenia właściwym wzorem**. STOP: N3 `conversion_source ≠ signed_events`, lift null przy ≥
+30/ramię, niepodpisana konwersja policzona, albo zdarzenie LIVE/rozmowa nie trafia do CH → stop;
+rollback `al-real-down.sh --restore-fixture` + przywrócenie snapshotu.
 
 ## Faza 6 — bezpieczeństwo (oś B) · 4 PR · ~3 dni
 

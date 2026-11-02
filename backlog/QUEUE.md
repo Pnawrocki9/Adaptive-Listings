@@ -144,11 +144,11 @@
 - **FOLLOW-1428** — status: BACKLOG # P3 product. FAILED descriptions (truncated, empty, wrong
   language) also follow a billed call, write nothing and regenerate on every miss; FOLLOW-1427
   guards REFUSED only.
-- **FOLLOW-1431** — status: IN_PROGRESS # P2 product, RETRO-372. Own address refused by the
-  protected-ground guard. Own-address blanking was tried three times and stopped by independent
-  readers each time (#1130 not merged): it spares sensitive copy. Being reduced to tightenings only;
-  the ticket stays open.
-- **FOLLOW-1436** — status: IN_PROGRESS # P2 product, RETRO-380, in #1130.
+- **FOLLOW-1431** — status: BACKLOG # P2 product, RETRO-372. A listing's own address with a
+  sensitive street name is refused unless it carries a street marker; the buyer keeps the seller's
+  copy. Blanking the address was stopped by readers three times (#1130 shipped tightenings only): it
+  spares sensitive copy.
+- **FOLLOW-1436** — status: DONE # PR #1130, README §5.71.
 - **FOLLOW-1432** — status: BACKLOG # P2 product. `recentEvents` is printed in every adapt prompt
   and set by nothing.
 - **FOLLOW-1433** — status: BACKLOG # P2 measurement. Discharge MP-012, MP-013, MP-017.
@@ -193,10 +193,10 @@
 - **FOLLOW-1452** — status: BACKLOG # P3 gate. `@estalara/shared/playbook-traits` has a `require`
   condition naming a file dist does not have; AC(1b)'s CommonJS helper breaks on any import of it.
   Next free: FOLLOW-1453, RETRO-381, ESC-091.
-- **FOLLOW-1429** — status: READY # P2 product. Blind audit of 2026-11-01: 32 firm language errors
-  on PL and ES pages, in 21 of 56 texts, many of them translated persona phrases ("matematyka
-  wyjścia", "ogon najmu", "zaprojektowany pod więcej weekendów"), plus "sqm" and "Lisbon" on Polish
-  pages. `docs/checkpoints/K4a.md`.
+- **FOLLOW-1429** — status: DONE # PR #1129, README §5.69. Was: P2 product. Blind audit of
+  2026-11-01: 32 firm language errors on PL and ES pages, in 21 of 56 texts, many of them translated
+  persona phrases ("matematyka wyjścia", "ogon najmu", "zaprojektowany pod więcej weekendów"), plus
+  "sqm" and "Lisbon" on Polish pages. `docs/checkpoints/K4a.md`.
 - **FOLLOW-1430** — status: READY # P3 gate. `check-measured-premises.mjs` fails on dated
   measurements in `generation-models.ts` and the FOLLOW-1377 tests (#1081 on). K7 gate; runs only
   weekly. Move them to `docs/ops/MEASURED_PREMISES.md`.
@@ -360,8 +360,8 @@
 - **FOLLOW-1343** — status: DONE # #1021 `ca39406d`, 2026-10-18 (N2 v0) + #1045 `3952ac29`,
   2026-10-19 (page tests for every remaining `/admin` page = N2 full). Instrument N2 (nav
   reachability + Playwright admin-smoke). K3 full = the authenticated rows (decision in M3).
-- **FOLLOW-1344** — status: READY # Instrument N3 (`real-app-acceptance.mjs`). K4b first use, K5
-  full.
+- **FOLLOW-1344** — status: IN_PROGRESS # K4b run GREEN_K4B, docs/checkpoints/K4b.md; conversions
+  and --arms remain for K5. # Instrument N3 (`real-app-acceptance.mjs`). K4b first use, K5 full.
 - **FOLLOW-1345** — status: IN_PROGRESS # Ledgers K0 #1018, K1 #1022, K2a #1031, K2b #1034, K2c
   (this PR, `k2c-green`). Harness AC(1b), AC(9) at K4a/K4b.
 - **FOLLOW-1346** — status: BACKLOG # Phase 7 H1/H2 final proof and handover v1. K7.
@@ -440,7 +440,8 @@
 - **FOLLOW-820** — status: READY_FOR_REVIEW # every condition measured: 1 (README §5.24, `main` HEAD
   `e8d1a04d`, 3× GREEN `[FRESH]`, not ruled on), 1b MET, 1c MET, 2 DONE. Awaiting the CEO GO/NO-GO.
   CEO 2026-10-16: ruling deferred until localhost completion.
-- **FOLLOW-1316** — status: IN_PROGRESS # P1, ESC-090 RESOLVED 2026-11-01, build to
+- **FOLLOW-1316** — status: DONE # PR #1133, K4b, signed review PASS WITH CONDITIONS for localhost;
+  production gated by ESC-090 and FOLLOW-1442 to 1449. Was: ESC-090 RESOLVED 2026-11-01, build to
   docs/compliance/FOLLOW-1316-design-review.md R1-R46. CEO-approved 2026-10-16. Cross-visit buyer
   profile persistence (`xid` to the server, profile restored on a new session); compliance-engineer
   review is a gate. sdk + backend. Plan 2026-10-17: Phase 4 P7, gate K4b.

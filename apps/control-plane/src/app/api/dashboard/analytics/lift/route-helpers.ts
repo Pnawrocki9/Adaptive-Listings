@@ -672,16 +672,17 @@ export async function fetchLiftRaw(
     GROUP BY ad.archetype, ad.holdout_group
   `;
 
-  // 3. Funnel: distinct sessions per event-type stage per arm. Joins the
-  //    holdout assignment from adaptation_decisions onto events.
+  // 3. Funnel: distinct sessions per event-type stage per arm. Joins the holdout assignment from
+  //    adaptation_decisions onto events. The inner alias must not be a column name: the WHERE would
+  //    bind to the aggregate, code 184 ILLEGAL_AGGREGATION, and fail the whole route [FOLLOW-1457].
   const funnelSql = `
     SELECT
       ev.type AS stage,
-      ad.holdout_group AS holdout,
+      ad.session_arm AS holdout,
       countDistinct(ev.session_id) AS sessions
     FROM events AS ev
     INNER JOIN (
-      SELECT session_id, anyHeavy(holdout_group) AS holdout_group
+      SELECT session_id, anyHeavy(holdout_group) AS session_arm
       FROM adaptation_decisions
       WHERE tenant_id = {tenant_id:String}
         AND ts >= now() - toIntervalDay({window_days:UInt16})
@@ -692,7 +693,7 @@ export async function fetchLiftRaw(
     WHERE ev.tenant_id = {tenant_id:String}
       AND ev.ingest_received_at >= now() - toIntervalDay({window_days:UInt16})
       AND ev.type IN ('page.view','listing.viewed','cta.clicked','inquiry.started','inquiry.completed')
-    GROUP BY ev.type, ad.holdout_group
+    GROUP BY ev.type, ad.session_arm
   `;
 
   const [groupsRaw, archetypesRaw, funnelRaw] = await Promise.all([

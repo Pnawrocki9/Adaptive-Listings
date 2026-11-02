@@ -14,8 +14,13 @@ import {
   eraseCrossSessionId,
   getOrCreateCrossSessionId,
   eraseIntentState,
+  isConsentTextStale,
+  isXidLive,
   peekStoredSessionId,
+  readStoredXid,
+  setConsentTextVersion,
 } from './session.js';
+import { postProfileErase } from './adapt.js';
 import type { ShadowHost } from '../ui/shadow-host.js';
 import { fetchConsentText } from './consent-text.js';
 import { renderConsentBanner } from '../ui/consent-banner.js';
@@ -24,6 +29,59 @@ import type { ProfilingToggleController } from '../ui/profiling-toggle.js';
 import { setProfilingOptOut, eraseProfilingOptOut } from './profiling-opt-out.js';
 import type { BootContext } from './boot.js';
 import type { AdaptLoop } from './adapt-loop.js';
+
+/**
+ * Delete first, erase the local xid only on a 2xx; any other answer keeps it for the next load's
+ * stored-denied branch, because the id is the only key to the profile (FOLLOW-1316, R25, R26). An id
+ * that never left the browser, or has expired along with its profile, has nothing to delete, so it
+ * is erased without a request: with the server flag off the xid never leaves, denial included.
+ */
+async function deleteThenEraseXid(config: SdkConfig): Promise<void> {
+  const xid = readStoredXid();
+  if (!xid?.sent || !isXidLive(xid) || (await postProfileErase(config, xid.id))) {
+    eraseCrossSessionId();
+  }
+}
+
+/** Consent audit event — compliance audit trail, also on a denial or withdrawal. */
+function deniedEvent(config: SdkConfig): CollectedEvent {
+  return {
+    type: 'consent.denied',
+    payload: { language: config.language, method: 'banner' },
+    ts: Date.now(),
+  };
+}
+
+/** The local erases of every denial path, the xid apart (DPIA §13.2, ADR-0011, §H.9). */
+function eraseConsentedState(): void {
+  eraseCachedQuizConfig();
+  eraseProfilingOptOut();
+  setConsentTextVersion(null);
+}
+
+/**
+ * The withdrawal control's click (FOLLOW-1316, R25, R28): `denied` first, so sending stops; then the
+ * delete, the DOM revert, the local erases and the halt. The audit event is the only other request.
+ */
+async function withdrawConsent(ctx: BootContext, adapt: AdaptLoop): Promise<void> {
+  setConsentState('denied');
+  const erasing = deleteThenEraseXid(ctx.config);
+  adapt.revert();
+  eraseIntentState(ctx.session.sessionId);
+  eraseConsentedState();
+  ctx.queue.length = 0;
+  (window as Window & { __estalaraTeardown?: () => void }).__estalaraTeardown?.();
+  await Promise.all([erasing, dispatchEvents([deniedEvent(ctx.config)], ctx.config, ctx.session)]);
+}
+
+/** Show the withdrawal control in the toggle [FOLLOW-1316, R24]. */
+export function offerWithdrawal(
+  ctx: BootContext,
+  adapt: AdaptLoop,
+  toggle: ProfilingToggleController,
+): void {
+  toggle.showWithdraw(() => void withdrawConsent(ctx, adapt));
+}
 
 /**
  * The consent gate. Resolves `true` when init may proceed (granted, or no shadow host in a
@@ -43,27 +101,26 @@ export async function resolveConsent(
 
   if (consentState === 'denied') {
     // User previously declined — halt SDK entirely, no events dispatched.
-    // DPIA §13.2 / FOLLOW-139: ensure cross-session xid is absent on a denied session.
-    eraseCrossSessionId();
     // FOLLOW-176: erase any persisted intent state for this session (if one exists
     // in sessionStorage from a prior page load where consent was still granted).
     eraseIntentState(peekStoredSessionId());
-    // ADR-0011 / FOLLOW-275: erase cached quiz config on consent denial (Mode A compliance).
-    eraseCachedQuizConfig();
-    // FOLLOW-372 / §H.9: erase profiling opt-out flag on consent denial (storage cleanup).
-    eraseProfilingOptOut();
+    eraseConsentedState();
     // The shadow host is destroyed to avoid leaving a DOM node.
     earlyHost?.destroy();
+    // DPIA §13.2 / FOLLOW-139: the xid does not outlive a denied session. This is also the retry of
+    // a delete that failed earlier, and the only request a halted SDK sends (R25, R26).
+    await deleteThenEraseXid(config);
     return false;
   }
 
-  if (consentState === 'pending') {
+  // A grant of an older text than this feature requires is asked again (FOLLOW-1316, R6).
+  if (consentState === 'pending' || isConsentTextStale()) {
     if (earlyHost) {
       // No TENANT-data fetch before consent, but the consent-text GET MUST precede the banner
       // (ADR-0021 §D5).
-      const consentCopy = await fetchConsentText(config.language);
+      const consentText = await fetchConsentText(config.language);
 
-      if (consentCopy === null) {
+      if (consentText === null) {
         // §D4 fail closed: no banner, no events, NO fallback text (ADR-0021 §D5) [ESC-051].
         earlyHost.destroy();
         return false;
@@ -72,44 +129,42 @@ export async function resolveConsent(
       const granted = await new Promise<boolean>((resolve) => {
         renderConsentBanner(earlyHost.root, {
           language: config.language,
-          copy: consentCopy,
+          copy: consentText.copy,
           accentColor: config.accentColor,
           ...(config.privacyPolicyUrl !== undefined
             ? { privacyPolicyUrl: config.privacyPolicyUrl }
             : {}),
           onGranted: () => {
             setConsentState('granted');
+            // What the buyer accepted: below the minimum, or absent, no xid is sent (R6).
+            setConsentTextVersion(consentText.textVersion);
             // DPIA §13.2 / FOLLOW-139: create the cross-session xid now that consent is granted.
-            // Fire-and-forget — future tickets (FOLLOW-146) will attach xid to event payloads.
+            // It stays off events (ESC-090 item 4); only `readSendableXid` may send it.
             void getOrCreateCrossSessionId();
             // Consent audit event — compliance audit trail, dispatched unconditionally.
             queue.push({
               type: 'consent.granted',
-              payload: { language: config.language, method: 'banner' },
+              payload: {
+                language: config.language,
+                method: 'banner',
+                text_version: consentText.textVersion,
+              },
               ts: Date.now(),
             });
             resolve(true);
           },
           onDenied: () => {
             setConsentState('denied');
-            // DPIA §13.2 / FOLLOW-139: erase cross-session xid on consent denial.
-            eraseCrossSessionId();
-            // ADR-0011 / FOLLOW-275: erase cached quiz config on consent denial.
-            eraseCachedQuizConfig();
-            // FOLLOW-372 / §H.9: erase profiling opt-out flag on consent denial.
-            eraseProfilingOptOut();
-            // Consent audit event — dispatched even when consent is denied.
-            queue.push({
-              type: 'consent.denied',
-              payload: { language: config.language, method: 'banner' },
-              ts: Date.now(),
-            });
+            eraseConsentedState();
+            queue.push(deniedEvent(config));
             resolve(false);
           },
         });
       });
 
       if (!granted) {
+        // DPIA §13.2 / FOLLOW-139, R26: the xid goes on denial, its server profile first.
+        const erasing = deleteThenEraseXid(config);
         // User declined — flush the consent.denied audit event, then halt.
         if (queue.length > 0) {
           const batch = queue.splice(0);
@@ -119,6 +174,7 @@ export async function resolveConsent(
           await dispatchEvents(batch, config, auditSession);
         }
         earlyHost.destroy();
+        await erasing;
         return false;
       }
     }
@@ -143,7 +199,7 @@ export function mountOptOutToggle(
 ): ProfilingToggleController | null {
   const { config, host } = ctx;
   if (!host) return null;
-  return renderProfilingToggle(host.root, {
+  const toggle = renderProfilingToggle(host.root, {
     language: config.language,
     // FOLLOW-641 / ADR-0019 D4: the opt-out toggle has no per-widget color, so the brand
     // umbrella color becomes its accent; absent → the SDK accentColor (byte-identical).
@@ -169,4 +225,7 @@ export function mountOptOutToggle(
       adapt.revert();
     },
   });
+  // With the flag on, or once this id left the browser: never strand a stored profile (FOLLOW-1316).
+  if (config.buyerProfileEnabled || readStoredXid()?.sent) offerWithdrawal(ctx, adapt, toggle);
+  return toggle;
 }

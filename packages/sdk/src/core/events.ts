@@ -39,8 +39,8 @@ export function mapConsentState(
   return 'legitimate-interest';
 }
 
-/** Generate a UUIDv4 using the Web Crypto API. */
-function generateEventId(): string {
+/** Generate a UUIDv4 using the Web Crypto API; also the quiz's run id. Never the xid (R1). */
+export function generateEventId(): string {
   try {
     return globalThis.crypto.randomUUID();
   } catch {

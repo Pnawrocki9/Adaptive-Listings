@@ -221,6 +221,7 @@ export function createIntentLoop(ctx: BootContext): IntentLoop {
             ? { ...ctx.state, quiz_rejected: true as const }
             : applyQuizLeaf(ctx.state, final, evidence)),
           quiz_traits: outcome.traits,
+          ...(final !== 'neutral' ? { quiz_result: final } : {}),
         };
         // Seed the SoT from a NON-neutral result only — "None of these" pins nothing
         // (ADR-0014) [FOLLOW-554].

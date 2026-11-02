@@ -230,6 +230,7 @@ export function createAdaptLoop(
           ...ctx.state,
           archetype: sot.archetype as Archetype,
           confidence: sot.confidence,
+          source: 'sot',
         };
       }
     }
@@ -353,7 +354,10 @@ export function createAdaptLoop(
       }
 
       if (config.debug) {
-        console.log(`[Estalara] Archetype: ${resp.archetype} (${String(resp.confidence)})`);
+        console.log(
+          `[Estalara] Archetype: ${resp.archetype} (${String(resp.confidence)})`,
+          resp.profile_restore ?? '',
+        );
       }
 
       // Sidebar widget is admin-only — profiling visibility is in admin.estalara.com.

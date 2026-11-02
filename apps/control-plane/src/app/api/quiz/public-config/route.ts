@@ -365,6 +365,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       quiz_definition: served.quiz_definition,
       definition_version: served.definition_version,
       definition_hash: served.definition_hash,
+      // FOLLOW-1316: the SDK's own gate on sending the xid. Read here, not through the store module,
+      // whose importers are an allow-list (R15). A `fallback` response leaves it out: fail closed.
+      ...(process.env.BUYER_PROFILE_ENABLED === 'true' ? { buyer_profile_enabled: true } : {}),
     };
 
     // Validate outbound shape with the canonical superset schema (belt-and-suspenders).

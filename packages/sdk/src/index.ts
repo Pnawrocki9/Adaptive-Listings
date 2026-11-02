@@ -4,7 +4,7 @@
  */
 
 import { boot } from './core/boot.js';
-import { mountOptOutToggle } from './core/consent-flow.js';
+import { mountOptOutToggle, offerWithdrawal } from './core/consent-flow.js';
 import { createAdaptLoop } from './core/adapt-loop.js';
 import { createIntentLoop } from './core/intent-loop.js';
 import { dispatchEvents } from './core/events.js';
@@ -60,6 +60,8 @@ async function init(): Promise<IntentState | null> {
     // `estalara:adapt:settled` signal.
     const intent = createIntentLoop(ctx);
     const adapt = createAdaptLoop(ctx, intent, flush);
+    // `intent.quiz` consumes this; the flag it may carry matters past the quiz [FOLLOW-1316].
+    const lateConfig = ctx.lateConfig;
     // The quiz card opens on the served config alone, never after a slow first decision; a quiz
     // refresh supersedes the cold-start one (latest wins, FOLLOW-380) [FOLLOW-1370].
     intent.quiz(adapt);
@@ -68,6 +70,14 @@ async function init(): Promise<IntentState | null> {
     // 5. Reuse the Shadow DOM host created by boot's consent gate. 5b. Opt-out toggle.
     const shadowHost = ctx.host;
     const profilingToggle = mountOptOutToggle(ctx, adapt);
+    // A config past the 1 s budget: the first decision went without the xid (fail closed), so ask
+    // again once the server has said yes, or a slow config costs the returning buyer the page.
+    void lateConfig?.then((late) => {
+      if (late?.buyerProfileEnabled !== true || ctx.lifetime.signal.aborted) return;
+      ctx.config.buyerProfileEnabled = true;
+      if (profilingToggle) offerWithdrawal(ctx, adapt, profilingToggle);
+      if (!ctx.optedOut) void adapt.refresh();
+    });
 
     // 6. Behavioral observers and the favorites bridge; then the chat bridge and the
     // live.signup / inquiry.completed listeners.

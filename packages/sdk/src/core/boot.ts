@@ -101,6 +101,8 @@ export function mergeQuizConfig(
     // FOLLOW-641 / ADR-0019 D2: overlay the optional opt-out widget config. Absent → key
     // omitted so renderProfilingToggle uses hardcoded defaults (byte-identical, D4).
     ...(fetched.opt_out_widget ? { optOutWidget: fetched.opt_out_widget } : {}),
+    // FOLLOW-1316: omitted unless the server says true.
+    ...(fetched.buyer_profile_enabled === true ? { buyerProfileEnabled: true } : {}),
   };
 }
 

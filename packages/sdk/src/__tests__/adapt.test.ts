@@ -281,7 +281,7 @@ describe('fetchDirectives', () => {
     expect(body.similarity).toBeUndefined();
   });
 
-  it('sends consent_state: "granted" when getConsentState returns "granted"', async () => {
+  it('sends canonical consent_state: "consented" when getConsentState returns "granted"', async () => {
     vi.spyOn(sessionModule, 'getConsentState').mockReturnValue('granted');
     const mockFetch = vi.fn(() =>
       Promise.resolve({
@@ -300,10 +300,10 @@ describe('fetchDirectives', () => {
 
     const [, requestInit] = mockFetch.mock.lastCall as unknown as [string, RequestInit];
     const body = JSON.parse(requestInit.body as string) as Record<string, unknown>;
-    expect(body.consent_state).toBe('granted');
+    expect(body.consent_state).toBe('consented');
   });
 
-  it('sends consent_state: "denied" when getConsentState returns "denied"', async () => {
+  it('sends canonical consent_state: "none" when getConsentState returns "denied"', async () => {
     vi.spyOn(sessionModule, 'getConsentState').mockReturnValue('denied');
     const mockFetch = vi.fn(() =>
       Promise.resolve({
@@ -322,7 +322,7 @@ describe('fetchDirectives', () => {
 
     const [, requestInit] = mockFetch.mock.lastCall as unknown as [string, RequestInit];
     const body = JSON.parse(requestInit.body as string) as Record<string, unknown>;
-    expect(body.consent_state).toBe('denied');
+    expect(body.consent_state).toBe('none');
   });
 
   it('sends consent_state: "unknown" when getConsentState returns "pending"', async () => {

@@ -228,7 +228,7 @@ describe('cross-session id (localStorage)', () => {
   });
 
   it('creates xid with id + created_at on first call', async () => {
-    const xid = await getOrCreateCrossSessionId();
+    const xid = (await getOrCreateCrossSessionId())!;
     expect(typeof xid.id).toBe('string');
     expect(xid.id.length).toBeGreaterThan(0);
     expect(typeof xid.created_at).toBe('number');
@@ -242,14 +242,14 @@ describe('cross-session id (localStorage)', () => {
   });
 
   it('returns same id within 90 days', async () => {
-    const first = await getOrCreateCrossSessionId();
+    const first = (await getOrCreateCrossSessionId())!;
     // Flush in-memory cache to simulate a new page load that reads from localStorage
     eraseCrossSessionId();
     // Re-populate localStorage with the stored value from the first call
     // (eraseCrossSessionId clears it, so we restore it manually)
     mockLocalStorage.set(XSESSION_STORAGE_KEY, JSON.stringify(first));
 
-    const second = await getOrCreateCrossSessionId();
+    const second = (await getOrCreateCrossSessionId())!;
     expect(second.id).toBe(first.id);
     expect(second.created_at).toBe(first.created_at);
   });
@@ -265,7 +265,7 @@ describe('cross-session id (localStorage)', () => {
     // Advance Date.now to 91 days after oldXid.created_at
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(BASE_TIME + NINETY_ONE_DAYS_MS);
 
-    const rotated = await getOrCreateCrossSessionId();
+    const rotated = (await getOrCreateCrossSessionId())!;
     expect(rotated.id).not.toBe(oldXid.id);
     expect(rotated.created_at).toBe(BASE_TIME + NINETY_ONE_DAYS_MS);
 
@@ -281,9 +281,9 @@ describe('cross-session id (localStorage)', () => {
   });
 
   it('eraseCrossSessionId clears in-memory cache so next call generates a new id', async () => {
-    const first = await getOrCreateCrossSessionId();
+    const first = (await getOrCreateCrossSessionId())!;
     eraseCrossSessionId();
-    const second = await getOrCreateCrossSessionId();
+    const second = (await getOrCreateCrossSessionId())!;
     // Without storage, a fresh UUID is generated; ids must differ
     expect(second.id).not.toBe(first.id);
   });

@@ -639,6 +639,13 @@ export const PresentationConfigResponseSchema = QuizPublicConfigResponseSchema.e
    * `quiz_definition` is.
    */
   definition_hash: z.string().max(128).optional(),
+  /**
+   * True only when the server's `BUYER_PROFILE_ENABLED` is on (FOLLOW-1316, ESC-090 item 1). The SDK
+   * keeps the xid in the browser unless this is true; absent or false means off. Producer:
+   * `apps/control-plane/src/app/api/quiz/public-config/route.ts`. Consumer:
+   * `packages/sdk/src/core/boot.ts` (`mergeQuizConfig`), then `fetchDirectives`.
+   */
+  buyer_profile_enabled: z.boolean().optional(),
 });
 
 /** TypeScript type for the unified `GET /api/quiz/public-config` 200 response body. */

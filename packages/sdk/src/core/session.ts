@@ -10,7 +10,7 @@
  *
  * Cross-session ID (xid) is a UUID stored in localStorage with a 90-day TTL.
  * It provides cross-session continuity for returning visitors as disclosed in
- * DPIA §13.2. It is erased on consent denial or withdrawal (FOLLOW-139).
+ * DPIA §13.2. It is erased on consent denial or withdrawal (FOLLOW-139). It lives in `xid.ts`.
  *
  * Intent-state persistence (FOLLOW-176):
  * The resolved archetype/intent is written to sessionStorage keyed by sessionId
@@ -52,6 +52,48 @@ export function setConsentState(state: 'granted' | 'denied'): void {
   } catch {
     // swallow — consent persists only for this session if storage unavailable
   }
+}
+
+/** localStorage key of the consent text version the buyer accepted (FOLLOW-1316, R6). */
+const CONSENT_TEXT_VERSION_KEY = 'estalara_consent_text_version';
+
+/**
+ * The oldest accepted consent text under which the xid may leave the browser (FOLLOW-1316, R6).
+ * Raising it stops sending and re-prompts every grant recorded below it, which is how counsel's text
+ * change reaches existing consents. Compared as a string: `text_version` is `YYYY-MM-DD.n`.
+ */
+const MIN_PROFILE_TEXT_VERSION = '2026-08-24.1';
+
+/**
+ * The accepted consent text version, or null when none was recorded: storage unavailable, or a
+ * grant made before FOLLOW-1316.
+ */
+export function readConsentTextVersion(): string | null {
+  try {
+    return localStorage.getItem(CONSENT_TEXT_VERSION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Record the accepted version; null erases it (every denial path). */
+export function setConsentTextVersion(version: string | null): void {
+  try {
+    if (version === null) localStorage.removeItem(CONSENT_TEXT_VERSION_KEY);
+    else localStorage.setItem(CONSENT_TEXT_VERSION_KEY, version);
+  } catch {
+    // Unrecorded means no xid is sent, the safe side (R6).
+  }
+}
+
+/**
+ * True when a recorded grant predates the minimum text, so the banner shows again (R6). A grant with
+ * NO recorded version is not stale: it sends no xid, and it is not re-asked, because nothing tells a
+ * pre-FOLLOW-1316 grant from a page that seeded the key, and the in-session product does not need it.
+ */
+export function isConsentTextStale(): boolean {
+  const version = readConsentTextVersion();
+  return version !== null && version < MIN_PROFILE_TEXT_VERSION;
 }
 
 export interface SessionState {
@@ -120,23 +162,29 @@ function rfc4122Byte(byte: number, index: number): string {
  * reinstate the defect on precisely the browsers nobody is watching.
  *
  * Returns `Promise<string>` (without `async`, matching
- * {@link getOrCreateCrossSessionId} in this file) so every existing
+ * `getOrCreateCrossSessionId` in `xid.ts`) so every existing
  * `await generateSessionId()` call site is untouched by the change.
  */
 export function generateSessionId(): Promise<string> {
+  const id = drawUuid();
+  // Deliberately terse: the reasoning lives in this docblock, not in the bundle.
+  return id
+    ? Promise.resolve(id)
+    : Promise.reject(new Error('[Estalara] No CSPRNG — no session id (FOLLOW-1106)'));
+}
+
+/** The CSPRNG ladder of {@link generateSessionId}, shared with the xid; null without a CSPRNG. */
+export function drawUuid(): string | null {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return Promise.resolve(crypto.randomUUID());
+    return crypto.randomUUID();
   }
 
   if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
     const hex = Array.from(crypto.getRandomValues(new Uint8Array(16)), rfc4122Byte).join('');
-    return Promise.resolve(
-      `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`,
-    );
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   }
 
-  // Deliberately terse: the reasoning lives in this docblock, not in the bundle.
-  return Promise.reject(new Error('[Estalara] No CSPRNG — no session id (FOLLOW-1106)'));
+  return null;
 }
 
 /** Read a session from sessionStorage. Returns null if unavailable or missing. */
@@ -199,108 +247,6 @@ export function incrementPageCount(session: SessionState): SessionState {
 }
 
 // ---------------------------------------------------------------------------
-// Cross-session identifier (localStorage, 90-day TTL) — DPIA §13.2 / FOLLOW-139
-// ---------------------------------------------------------------------------
-
-/** localStorage key for the cross-session pseudonymous identifier. */
-export const XSESSION_STORAGE_KEY = '__estalara_xid__';
-
-/** 90 days expressed in milliseconds. */
-const XID_TTL_MS = 90 * 24 * 60 * 60 * 1000;
-
-/**
- * Cross-session identifier shape persisted to localStorage.
- * `id` is a UUID v4 string. `created_at` is a Unix millisecond timestamp.
- */
-export interface CrossSessionId {
-  id: string;
-  created_at: number;
-}
-
-/** In-memory cache so repeated calls within a page load do not hit localStorage. */
-let _xidCache: CrossSessionId | null = null;
-
-/**
- * Generate a UUID v4 string using `crypto.randomUUID()` when available,
- * falling back to a Math.random-based implementation for environments that
- * lack SubtleCrypto (e.g. very old browsers).
- */
-function generateUuid(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  // Fallback: RFC 4122 v4 UUID using Math.random
-
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
-
-/**
- * Get the cross-session identifier, creating or rotating it as needed.
- *
- * - On first call (no entry in localStorage): generates a new UUID and persists it.
- * - If the stored entry is older than 90 days: rotates to a new UUID.
- * - Otherwise: returns the existing entry unchanged.
- *
- * Never throws — returns an in-memory-only entry if localStorage is unavailable.
- * Does NOT erase on any path; call `eraseCrossSessionId()` for that.
- */
-export function getOrCreateCrossSessionId(): Promise<CrossSessionId> {
-  if (_xidCache !== null) return Promise.resolve(_xidCache);
-
-  try {
-    const raw = localStorage.getItem(XSESSION_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as CrossSessionId;
-      if (
-        typeof parsed.id === 'string' &&
-        typeof parsed.created_at === 'number' &&
-        Date.now() - parsed.created_at <= XID_TTL_MS
-      ) {
-        _xidCache = parsed;
-        return Promise.resolve(_xidCache);
-      }
-    }
-  } catch {
-    // localStorage unavailable or JSON parse failure — fall through to create new
-  }
-
-  const fresh: CrossSessionId = {
-    id: generateUuid(),
-    created_at: Date.now(),
-  };
-
-  try {
-    localStorage.setItem(XSESSION_STORAGE_KEY, JSON.stringify(fresh));
-  } catch {
-    // localStorage unavailable — continue with in-memory-only entry
-  }
-
-  _xidCache = fresh;
-  return Promise.resolve(_xidCache);
-}
-
-/**
- * Erase the cross-session identifier from localStorage and clear the in-memory cache.
- *
- * Call this when the user denies or withdraws consent (DPIA §13.2 erasure obligation).
- * After this call, `getOrCreateCrossSessionId()` will generate a fresh identifier on
- * its next invocation — do not call it again until/unless consent is re-granted.
- */
-export function eraseCrossSessionId(): void {
-  _xidCache = null;
-  try {
-    localStorage.removeItem(XSESSION_STORAGE_KEY);
-  } catch {
-    // localStorage unavailable — in-memory cache already cleared above
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Registered-user lead ID derivation (FOLLOW-197 / CHAT-003)
 // ---------------------------------------------------------------------------
 
@@ -311,8 +257,8 @@ export function eraseCrossSessionId(): void {
  * the first 16 hex chars of its SHA-256 digest are persisted here. This token
  * cannot be reversed to the original UUID without the pre-image.
  *
- * Stored in sessionStorage (tab-lifetime) — NOT localStorage — so it cannot
- * accumulate across sessions without repeated authentication (Mode A compliance).
+ * Stored in sessionStorage (tab-lifetime). The same token also reaches localStorage in two places:
+ * the xid record's `lead` once that id is sent (FOLLOW-1316, R43) and the scoped opt-out key.
  */
 export const LEAD_ID_STORAGE_KEY = '__estalara_lead_id__';
 

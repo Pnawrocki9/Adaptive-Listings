@@ -50,7 +50,7 @@
 import { createRequire } from 'node:module';
 import { readFile, writeFile, readdir, realpath, stat } from 'node:fs/promises';
 import nodePath from 'node:path';
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomInt, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -189,7 +189,7 @@ let groundingSource = null;
  * @param {string} name - What was asserted, in one line.
  * @param {boolean} ok  - Whether it held.
  * @param {unknown} evidence - The observation the verdict rests on.
- * @param {'holdout'|'window'|'config'|null} [unmeasured] - FOLLOW-1240: when the predicate failed for a reason
+ * @param {'holdout'|'window'|'config'|'late_config'|'unreadable'|null} [unmeasured] - FOLLOW-1240: when the predicate failed for a reason
  *        already known at record time, the line prints `[UNMEASURED]` instead of `[FAIL]`. `ok` is
  *        stored unchanged; the final grade is `gradeRun()`'s, over the same facts.
  */
@@ -1337,7 +1337,7 @@ export function evaluateAc4Frozen({
  * @param {{ac: string, evidence?: any}} result
  * @param {{adaptedArmDrewHoldout: boolean|null, adaptedResponsesArrivedAfterVerdict: number,
  *   chatArmDrewHoldout?: boolean|null}} facts
- * @returns {'holdout'|'window'|'config'|'no_description'|null}
+ * @returns {'holdout'|'window'|'config'|'no_description'|'late_config'|'unreadable'|null}
  */
 function unmeasuredBecause(result, facts) {
   const holdout = facts.adaptedArmDrewHoldout === true;
@@ -1397,16 +1397,20 @@ function unmeasuredBecause(result, facts) {
       if (unmet.length === 0 || !unmet.every(excusable)) return null;
       return unmet.some((u) => AC10_HOLDOUT_UNMET.includes(u)) ? 'holdout' : 'config';
     }
+    case 'AC(9)': {
+      // FOLLOW-1345: only the draw, a late config or a reader can excuse it; `privacy:*` never can.
+      return ac9UnmeasuredReason(Array.isArray(ev.unmetPreconditions) ? ev.unmetPreconditions : []);
+    }
     default:
       return null;
   }
 }
 
 /**
- * Every AC a full run grades, in record order (FOLLOW-1361: AC(10) makes it eight; AC(6) is the
- * manual-runbook criterion and is never recorded, AC(9) does not exist, AC(1b) is folded into AC(1)
- * and has no row of its own). `main()` records any of
- * these that a run did not evaluate as RED (`missingGradedAcs()`), so `TALLY total=8` cannot be
+ * Every AC a full run grades, in record order (FOLLOW-1361: AC(10) made it eight; FOLLOW-1345: AC(9),
+ * driven after AC(10), makes it nine; AC(6) is the manual-runbook criterion and is never recorded,
+ * AC(1b) is folded into AC(1) and has no row of its own). `main()` records any of
+ * these that a run did not evaluate as RED (`missingGradedAcs()`), so `TALLY total=9` cannot be
  * reached by a run that silently skipped one, and a TALLY with another total is not a full run.
  */
 export const GRADED_ACS = Object.freeze([
@@ -1418,6 +1422,7 @@ export const GRADED_ACS = Object.freeze([
   'AC(7)',
   'AC(8)',
   'AC(10)',
+  'AC(9)',
 ]);
 
 /**
@@ -3658,6 +3663,1529 @@ async function driveAc10(browser) {
     },
     sessions,
   };
+}
+
+// ─── FOLLOW-1345: AC(9), the returning buyer (checkpoint K4b; FOLLOW-1316, ESC-090) ─────────
+//
+// A buyer who consented and took the quiz comes back in a fresh browser context, holding only what
+// the SDK left in localStorage, and the FIRST `/api/adapt` is already adapted for the same archetype
+// with no signal of this session behind it. Then the negative controls, each on an xid that has just
+// shown a positive restore, because on an empty store every one of them passes.
+//
+// WHAT IS DRIVEN, in order, one xid (A) unless said otherwise:
+//   session 1  a fresh context, the real banner's Accept (it writes the consent, the text version and
+//              the xid), the quiz walked to `yield_hunter` by real clicks, `seasoned_investor` and
+//              `residency_goal` ticked, confirmed. The key is read back from Redis: the stored value
+//              must hold the first trait and not the second (R12).
+//   session 2  a fresh context seeded through `storageState` with the three localStorage values the
+//              SDK itself left, sessionStorage empty, no interaction of any kind.
+//   (a)        the same xid with no consent key (the banner shows, nothing goes out), then with
+//              consent `granted` and no text version (the SDK runs and must not send the xid), then
+//              seven direct POSTs carrying the xid under every consent_state but `consented` (NC-1,
+//              NC-2). A browser cannot send those, so only a direct POST reaches the server's gate.
+//   (b)        a fresh session on A shows `restored` (this is also the proof that (a) left the profile
+//              alone), then the real `[data-estalara-withdraw]` click. Key gone, local xid
+//              gone, the next page in that context silent, and a fresh context replaying the OLD xid
+//              with consent gets no restore.
+//   (c)        a second xid B minted like A, a positive restore by direct POST, then `POST
+//              /api/dsr/erase` with `xid` on a SEEDED `dsr_verifications` row: `/api/dsr/initiate`
+//              refuses every caller today (design review B5, R33). The row's session is a throwaway
+//              uuid, so the cascade touches no row of this run.
+//   (d)        a third xid C minted like A, a positive restore by direct POST, then a fresh session on C
+//              with the quiz walked to `diaspora_buyer` and confirmed. A quiz result that may not persist
+//              supersedes the stored label, so the key must be DELETED and stay deleted, nothing new
+//              written, and a fresh context on C answers `miss`. Last and on its own xid because it
+//              destroys the key. A `behavior` label leaves the key alone; no walk reaches one cheaply,
+//              so that half belongs to the route tests.
+//   (e)        NC-8 as far as the harness can: every request of these contexts, the four ClickHouse
+//              tables, Redis key names, `intent_sessions.cross_session_id`, the control-plane log.
+//
+// HOLDOUT. The arm is keyed per xid for a consented session (ESC-090 item 2), so it is read only off
+// responses to requests that carried the xid. A held-out xid is replaced, at most `AC9_MAX_DRAWS` per
+// xid, like AC(10). A held-out draw still walks the quiz and opens a second session: it must keep its
+// arm and must never have a key (NC-10), and that check counts whatever the later draws do.
+//
+// HOW THE CONTROLS GRADE WHEN EVERY DRAW HELD OUT. (b), (c), (d) are not driven: each needs a positive
+// restore on its own xid, and a held-out xid can never show one, so their absence is not a pass. They
+// are named in the evidence and the AC is UNMEASURED:holdout. (a) and (e) ARE driven, on the held-out
+// xid, because "no xid on the wire without consent" and "the xid in no store" need no restore; any
+// violation they find, like a key on a held-out xid or a moved arm, is RED on that run all the same.
+//
+// A REPLAY THAT ANSWERS `error` IS NOT A RESTORE, AND NOT A CLEAN MISS EITHER. The read has a 1 s budget
+// and this machine swaps, so a single store timeout can land on a control's read (run 271, (c)). It
+// is retried once after `AC9_READ_RETRY_MS`; a second `error` is `unreadable:profileRead(...)`,
+// UNMEASURED, never PASS. Session 2's own read is not retried: there `error` means no restore (NC-12).
+//
+// A VIOLATION IS NEVER SOFTENED. Every `privacy:*` entry fails `evaluateAc9()` and `gradeRun()` does
+// not excuse it, whatever else the run saw (`isAc9Excusable()`). The plan's K4b STOP rule: do not
+// merge. Being unable to read something is `unreadable:*`, which is UNMEASURED and never PASS.
+//
+// THE RAW XID STAYS OUT OF THE EVIDENCE: the artefact gets a 12-hex tag of its hash (`xidTag`). It is
+// a bearer credential, synthetic here, and NC-8 should not have to explain its own artefact.
+
+/** How many fresh xids a sub-session may draw before a holdout draw is graded UNMEASURED. */
+export const AC9_MAX_DRAWS = 3;
+/**
+ * The `source` the plan's criterion names for the restored first response. `isAdaptedResponse()` also
+ * accepts `llm_full`; a restore must not read as that: `RESTORED_SIMILARITY` bands as `llm_tweaked`.
+ */
+export const AC9_RESTORE_SOURCES = Object.freeze(['llm_tweaked']);
+/** Every `consent_state` the server's gate must refuse (null = absent), NC-1 and NC-2. */
+export const AC9_NO_CONSENT_STATES = Object.freeze([
+  null,
+  'none',
+  'session-only',
+  'legitimate-interest',
+  'granted',
+  'denied',
+  'unknown',
+]);
+/** Mirrors `StoredBuyerProfileSchema` (R9). */
+const AC9_STORED_FIELDS = Object.freeze(['v', 'archetype', 'confidence', 'source', 'traits']);
+/** Mirrors `PERSISTABLE_TRAITS` in `buyer-profile-store.ts` (R12); parity pinned in the test. */
+export const AC9_STORED_TRAITS = Object.freeze([
+  'premium',
+  'works_from_home',
+  'seasoned_investor',
+  'will_let',
+]);
+/** `XID_RETENTION_DAYS`, the longest a profile may live (R21); parity pinned in the test. */
+export const AC9_MAX_PTTL_MS = 90 * 24 * 60 * 60 * 1000;
+
+const AC9_TARGET_LEAF = 'yield_hunter';
+const AC9_NON_PERSISTABLE_LEAF = 'diaspora_buyer';
+/** The persistable one must be stored, the other must not (R12). `t_invest` offers both. */
+const AC9_TARGET_TICKS = Object.freeze(['seasoned_investor', 'residency_goal']);
+const AC9_TARGET_TICKS_STORED = Object.freeze(['seasoned_investor']);
+const AC9_NON_PERSISTABLE_TICKS = Object.freeze(['premium']);
+/** How long the fire-and-forget write may take to show up in Redis. */
+const AC9_KEY_WAIT_MS = 15000;
+/** The pause before a control's read is asked again: past the erase's own after-response work. */
+const AC9_READ_RETRY_MS = 3000;
+/** How long to wait before believing no write happened: three pipeline calls at 2 s each. */
+const AC9_NO_WRITE_SETTLE_MS = 6000;
+/** A key's PTTL may only fall; this is the slack for two reads taken at different moments. */
+const AC9_PTTL_SLACK_MS = 2000;
+/** The SDK's init budget for the config (`boot.ts`): past it the first decision goes without an xid. */
+const AC9_CONFIG_BUDGET_MS = 1000;
+const AC9_STRICT_UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const AC9_XID_STORAGE_KEY = '__estalara_xid__';
+const AC9_TEXT_VERSION_STORAGE_KEY = 'estalara_consent_text_version';
+const AC9_DSR_NOTE =
+  'The DSR control ran on a SEEDED dsr_verifications row with a throwaway session: ' +
+  'POST /api/dsr/initiate refuses every caller today (design review B5, R33).';
+/** The tables NC-8 reads. A run must have rows in the first two, or "0 hits" says nothing. */
+const AC9_NC8_REQUIRED_TABLES = Object.freeze(['events', 'adaptation_decisions']);
+const AC9_NC8_TABLES = Object.freeze([...AC9_NC8_REQUIRED_TABLES, 'llm_calls', 'intent_events']);
+
+const ac9XidHash = (xid) => createHash('sha256').update(xid).digest('hex');
+const ac9XidTag = (xid) => (xid ? ac9XidHash(xid).slice(0, 12) : null);
+
+/**
+ * The answers to click to reach `leaf` on a served definition: a walk whose every answer weighs only
+ * `leaf` or nothing, ending on a trait screen or a terminal answer. On a `multi` step, the answers
+ * carrying one of `traits`. Pure; null when the tree offers no such walk (the verdict then says so).
+ * Each answer is its label in every served language, so the DOM's language does not matter.
+ *
+ * @param {any} definition - The served `quiz_definition`.
+ * @param {string} leaf
+ * @param {ReadonlyArray<string>} [traits]
+ * @returns {Array<{questionId: string, multi: boolean, answers: string[][]}>|null}
+ */
+export function quizPathToLeaf(definition, leaf, traits = []) {
+  const questions = new Map((definition?.questions ?? []).map((q) => [q.id, q]));
+  const labels = (a) => Object.values(a.label_i18n ?? {}).map((t) => String(t).trim());
+  const walk = (questionId, seen, reached) => {
+    const q = questions.get(questionId);
+    if (!q || seen.has(questionId)) return null;
+    if (q.kind === 'multi') {
+      if (!reached) return null;
+      const picked = q.answers.filter((a) => (a.traits ?? []).some((t) => traits.includes(t)));
+      return [{ questionId, multi: true, answers: picked.map(labels) }];
+    }
+    for (const a of q.answers) {
+      const weights = Object.entries(a.weights ?? {}).filter(([, w]) => w > 0);
+      if (weights.some(([id]) => id !== leaf)) continue;
+      const nowReached = reached || weights.length > 0;
+      const step = { questionId, multi: false, answers: [labels(a)] };
+      if (a.next === null) {
+        if (nowReached) return [step];
+        continue;
+      }
+      const rest = walk(a.next, new Set([...seen, questionId]), nowReached);
+      if (rest) return [step, ...rest];
+    }
+    return null;
+  };
+  return walk(definition?.root, new Set(), false);
+}
+
+/**
+ * Where an xid appeared on the wire and should not have: in ANY url, or in a body other than the two
+ * routes allowed to carry it (R3). Pure; the url in a leak has the xid masked.
+ *
+ * @param {ReadonlyArray<{url: string, postData: string|null}>} wire
+ * @param {ReadonlyArray<string>} xids
+ * @returns {Array<{url: string, where: 'url'|'body'}>}
+ */
+export function scanWireForXid(wire, xids) {
+  const allowedBody = /\/api\/(adapt|profile\/erase)(\?|$)/;
+  const mask = (url) => xids.reduce((u, x) => u.split(x).join('<xid>'), url);
+  const leaks = [];
+  for (const { url, postData } of wire) {
+    if (xids.some((x) => url.includes(x))) leaks.push({ url: mask(url), where: 'url' });
+    else if (!allowedBody.test(url) && postData && xids.some((x) => postData.includes(x))) {
+      leaks.push({ url: mask(url), where: 'body' });
+    }
+  }
+  return leaks;
+}
+
+/** Unmet entries `gradeRun()` may read as UNMEASURED: the draw, the config, a reader. Never `privacy:`. */
+const isAc9Excusable = (u) =>
+  u === 'restore:drewHoldout' ||
+  u === 'dsr:drewHoldout' ||
+  u === 'nonPersistable:drewHoldout' ||
+  u.startsWith('unreadable:') ||
+  u.startsWith('config:') ||
+  u.startsWith('s2:lateConfig(');
+
+/** The `unmeasuredBecause` reason of an AC(9) whose every unmet entry is excusable; else null. */
+function ac9UnmeasuredReason(unmet) {
+  if (unmet.length === 0 || !unmet.every(isAc9Excusable)) return null;
+  if (unmet.some((u) => u.endsWith(':drewHoldout'))) return 'holdout';
+  if (unmet.some((u) => u.startsWith('s2:lateConfig('))) return 'late_config';
+  if (unmet.some((u) => u.startsWith('config:'))) return 'config';
+  return 'unreadable';
+}
+
+/**
+ * Grade one key read: `unreadable:redis(<where>)` when it could not be read, and whether it is there.
+ *
+ * @returns {boolean|null} null when unreadable.
+ */
+function ac9KeyPresent(key, where, unmet) {
+  if (!key || key.readable !== true) {
+    unmet.push(`unreadable:redis(${where})`);
+    return null;
+  }
+  return key.present === true;
+}
+
+/** R9, R12, R21 over the raw stored value of session 1. */
+function ac9StoredValueUnmet(m, leaf, unmet, privacy) {
+  let stored = null;
+  try {
+    stored = JSON.parse(m.key.raw);
+  } catch {
+    unmet.push('s1:storedValueNotJson');
+    return;
+  }
+  for (const field of Object.keys(stored ?? {})) {
+    if (!AC9_STORED_FIELDS.includes(field)) privacy.push(`privacy:s1:storedField=${field}`);
+  }
+  for (const trait of stored?.traits ?? []) {
+    if (!AC9_STORED_TRAITS.includes(trait)) privacy.push(`privacy:s1:storedTrait=${trait}`);
+  }
+  if (stored?.archetype !== leaf) unmet.push(`s1:storedArchetype=${String(stored?.archetype)}`);
+  if (stored?.source !== 'quiz') unmet.push(`s1:storedSource=${String(stored?.source)}`);
+  for (const trait of m.tickedPersistable ?? []) {
+    if (!(stored?.traits ?? []).includes(trait)) unmet.push(`s1:tickedTraitNotStored=${trait}`);
+  }
+  const pttl = m.key.pttlMs;
+  if (typeof pttl !== 'number' || pttl <= 0) unmet.push(`s1:pttl=${String(pttl)}`);
+  else if (pttl > AC9_MAX_PTTL_MS + AC9_PTTL_SLACK_MS) {
+    privacy.push(`privacy:s1:pttlBeyondRetention=${String(pttl)}`);
+  }
+}
+
+/** Session 1 (the write). */
+function ac9MintUnmet(m, leaf, unmet, privacy) {
+  if (m.configUnreached) {
+    unmet.push(`config:s1(${m.configUnreached})`);
+    return;
+  }
+  if (m.error) unmet.push('s1:threw');
+  if (m.accepted !== true) unmet.push('s1:bannerAcceptNotClicked');
+  if (!m.textVersion) unmet.push('s1:noTextVersionRecorded');
+  if (m.xidStrict !== true) unmet.push('s1:noXidMinted');
+  if (m.pathFound === false) unmet.push('s1:noQuizPathToLeaf');
+  if (m.leaf !== leaf) unmet.push(`s1:leaf=${String(m.leaf)}`);
+  const f = m.followUp ?? null;
+  if (!f || f.reason) {
+    unmet.push(`s1:noFollowUp(${String(f?.reason ?? 'not_observed')})`);
+  } else {
+    if (f.xidSent !== true) unmet.push('s1:followUpCarriedNoXid');
+    if (f.consentState !== 'consented') unmet.push(`s1:followUpConsent=${String(f.consentState)}`);
+    if (f.archetypeSourceSent !== 'quiz') {
+      unmet.push(`s1:followUpArchetypeSource=${String(f.archetypeSourceSent)}`);
+    }
+  }
+  const present = ac9KeyPresent(m.key, 's1', unmet);
+  if (present === false) unmet.push('s1:profileNotWritten');
+  if (present === true) ac9StoredValueUnmet(m, leaf, unmet, privacy);
+}
+
+/** Session 2 (the restore). */
+function ac9RestoreUnmet(obs, serverGate, unmet) {
+  const r = obs.restore;
+  if (!r) {
+    unmet.push('s2:notRun');
+    return;
+  }
+  if (r.error) {
+    unmet.push('s2:threw');
+    return;
+  }
+  if (r.sessionId && r.sessionId === obs.mint?.sessionId) unmet.push('s2:sameSession');
+  if (r.firstCarriedXid !== true) {
+    unmet.push(
+      typeof r.lateConfigMs === 'number'
+        ? `s2:lateConfig(${String(r.lateConfigMs)})`
+        : 's2:firstRequestCarriedNoXid',
+    );
+  }
+  const c = r.call ?? null;
+  if (c === null) return;
+  if (c.xidMatches !== true) unmet.push('s2:xidDiffers');
+  if (c.consentState !== 'consented') unmet.push(`s2:consent=${String(c.consentState)}`);
+  const sentSignal =
+    Boolean(c.hint) && c.hint !== 'neutral' && (c.confidenceSent ?? 0) > serverGate.value;
+  if (sentSignal) {
+    unmet.push(`s2:sessionHadOwnSignal(${String(c.hint)}@${String(c.confidenceSent)})`);
+  }
+  // A cold label may send `behavior` under the gate; `quiz` here would mean sessionStorage was not empty.
+  if (c.archetypeSourceSent === 'quiz') unmet.push('s2:archetypeSourceSent=quiz');
+  if (c.holdoutGroup === true) unmet.push('s2:armChanged');
+  if (c.profileRestore !== 'restored') unmet.push(`s2:profileRestore=${String(c.profileRestore)}`);
+  const b = c.body ?? null;
+  if (b?.archetype !== obs.mint?.leaf) unmet.push(`s2:archetype=${String(b?.archetype ?? null)}`);
+  if (!isAdaptedResponse(b, serverGate)) {
+    unmet.push(
+      `s2:notAdapted(${String(b?.source ?? null)}/${String(b?.fallback_reason ?? '')}` +
+        ` @ ${String(b?.confidence ?? null)})`,
+    );
+  } else if (!AC9_RESTORE_SOURCES.includes(b.source)) {
+    unmet.push(`s2:source=${String(b.source)}`);
+  }
+}
+
+/** Control (a): the same xid without consent, in the browser and at the server's gate. */
+function ac9ControlAUnmet(a, leaf, heldOutOnly, unmet, privacy) {
+  if (!a) {
+    unmet.push('a:notRun');
+    return;
+  }
+  const none = a.noConsent ?? {};
+  if (none.error) unmet.push('a:threw');
+  if (none.bannerShown !== true) unmet.push('a:bannerNotShown');
+  if (none.xidOnWire === true) privacy.push('privacy:a:xidOnWireWithoutConsent');
+  if ((none.restored ?? 0) > 0) privacy.push('privacy:a:restoredWithoutConsent');
+  const noVersion = a.noTextVersion ?? {};
+  if (noVersion.error) unmet.push('a:threw');
+  if (!(noVersion.adaptAnswered > 0)) unmet.push('a:noTextVersionSessionNeverAnswered');
+  if (noVersion.xidOnWire === true) privacy.push('privacy:a:xidOnWireWithoutTextVersion');
+  if ((noVersion.restored ?? 0) > 0) privacy.push('privacy:a:restoredWithoutTextVersion');
+  const rows = a.server ?? [];
+  if (rows.length !== AC9_NO_CONSENT_STATES.length) {
+    unmet.push(`a:serverTableIncomplete=${String(rows.length)}`);
+  }
+  for (const row of rows) {
+    const state = row.consentState ?? 'absent';
+    if (row.status !== 200) unmet.push(`a:probe(${state})=${String(row.status ?? row.error)}`);
+    if (row.profileRestore === 'restored' || row.archetype === leaf) {
+      privacy.push(`privacy:a:restoredWithConsentState=${state}`);
+    } else if (row.profileRestore) {
+      privacy.push(`privacy:a:storeReadWithConsentState=${state}`);
+    }
+  }
+  if (heldOutOnly) return;
+  if (ac9KeyPresent(a.keyAfter, 'a', unmet) === false) unmet.push('a:keyGoneAfterControl');
+}
+
+/**
+ * Control (d): a quiz result that may not persist deletes the stored key, so the superseded label can
+ * never come back. A surviving key or a new value is a privacy violation.
+ */
+function ac9ControlDUnmet(d, leaf, unmet, privacy) {
+  if (!d) {
+    unmet.push('d:notRun');
+    return;
+  }
+  if (d.allHeldOut === true) {
+    unmet.push('nonPersistable:drewHoldout');
+    return;
+  }
+  if (d.error) unmet.push('d:threw');
+  const before = ac9KeyPresent(d.before, 'd', unmet);
+  if (before === false) unmet.push('d:profileNotWritten');
+  if (d.pairReadError === true) unmet.push('unreadable:profileRead(d pair)');
+  else if (d.pairRestored !== true || d.pairArchetype !== leaf) unmet.push('d:notPaired');
+  if (d.leaf !== AC9_NON_PERSISTABLE_LEAF) unmet.push(`d:leaf=${String(d.leaf)}`);
+  const f = d.followUp ?? {};
+  if (f.xidSent !== true || f.archetypeSourceSent !== 'quiz') {
+    unmet.push(
+      `d:resultNotSent(xid=${String(f.xidSent)}, source=${String(f.archetypeSourceSent)})`,
+    );
+  }
+  if (f.answered !== true) unmet.push('d:followUpNotAnswered');
+  if (ac9KeyPresent(d.after, 'd', unmet) === true) {
+    privacy.push(
+      before === true && d.after.raw === d.before.raw
+        ? 'privacy:d:supersededKeySurvived'
+        : 'privacy:d:newValueWritten',
+    );
+  }
+  const replay = d.replay ?? {};
+  if (replay.error) unmet.push('d:threw');
+  if (replay.xidSent !== true) unmet.push('d:replayCarriedNoXid');
+  if (replay.answered !== true) unmet.push('d:replayNotAnswered');
+  if (replay.profileRestore === 'restored' || (replay.directives ?? 0) > 0) {
+    privacy.push('privacy:d:restoredAfterSupersede');
+  } else if (replay.answered === true) {
+    ac9ReplayReadUnmet(replay, 'd', unmet);
+  }
+  if (ac9KeyPresent(d.keyAfterReplay, 'd', unmet) === true) {
+    privacy.push('privacy:d:keyResurrected');
+  }
+}
+
+/** A replay that is no restore must be a clean `miss`; a retried `error` could not read the store. */
+function ac9ReplayReadUnmet(replay, where, unmet) {
+  if (replay.profileRestore === 'error') unmet.push(`unreadable:profileRead(${where})`);
+  else if (replay.profileRestore !== 'miss') {
+    unmet.push(`${where}:replayProfileRestore=${String(replay.profileRestore)}`);
+  }
+}
+
+/** Control (b): withdrawal through the real control. */
+function ac9ControlBUnmet(b, unmet, privacy) {
+  if (!b) {
+    unmet.push('b:notRun');
+    return;
+  }
+  if (b.error) unmet.push('b:threw');
+  if (b.pairRestored !== true) unmet.push('b:notPaired');
+  if (ac9KeyPresent(b.keyBefore, 'b', unmet) === false) unmet.push('b:noKeyBeforeWithdrawal');
+  if (b.controlShown !== true) unmet.push('b:withdrawControlMissing');
+  if (!(b.eraseStatus >= 200 && b.eraseStatus < 300)) {
+    unmet.push(`b:eraseStatus=${String(b.eraseStatus)}`);
+  }
+  if (b.consentAfter !== 'denied') unmet.push(`b:consentAfter=${String(b.consentAfter)}`);
+  if (b.localXidAfter === true) privacy.push('privacy:b:localXidKept');
+  if (b.localXidAfter !== true && b.localXidAfter !== false) unmet.push('b:localXidNotRead');
+  if (ac9KeyPresent(b.keyAfterErase, 'b', unmet) === true) {
+    privacy.push('privacy:b:keyStillPresentAfterWithdrawal');
+  }
+  if (!b.reload) unmet.push('b:reloadNotRun');
+  if (b.reload?.xidOnWire === true) privacy.push('privacy:b:xidOnWireAfterWithdrawal');
+  if ((b.reload?.adaptCalls ?? 0) > 0) privacy.push('privacy:b:adaptAfterWithdrawal');
+  const replay = b.replay ?? {};
+  if (replay.error) unmet.push('b:threw');
+  if (replay.xidSent !== true) unmet.push('b:replayCarriedNoXid');
+  if (replay.answered !== true) unmet.push('b:replayNotAnswered');
+  if (replay.profileRestore === 'restored' || (replay.directives ?? 0) > 0) {
+    privacy.push('privacy:b:restoredAfterWithdrawal');
+  } else if (replay.answered === true) {
+    ac9ReplayReadUnmet(replay, 'b', unmet);
+  }
+  if (ac9KeyPresent(b.keyAfterReplay, 'b', unmet) === true)
+    privacy.push('privacy:b:keyResurrected');
+}
+
+/** Control (c): revoked through DSR, on a seeded row. */
+function ac9ControlCUnmet(c, leaf, unmet, privacy) {
+  if (!c) {
+    unmet.push('c:notRun');
+    return;
+  }
+  if (c.allHeldOut === true) {
+    unmet.push('dsr:drewHoldout');
+    return;
+  }
+  if (c.error) unmet.push('c:threw');
+  if (ac9KeyPresent(c.keyBefore, 'c', unmet) === false) unmet.push('c:profileNotWritten');
+  if (c.pairReadError === true) unmet.push('unreadable:profileRead(c pair)');
+  else if (c.pairRestored !== true || c.pairArchetype !== leaf) unmet.push('c:notPaired');
+  if (c.seeded !== true) {
+    unmet.push('unreadable:dsrSeed');
+    return;
+  }
+  if (c.eraseStatus !== 200) unmet.push(`c:eraseStatus=${String(c.eraseStatus)}`);
+  if (c.erasure !== 'deleted') unmet.push(`c:erasure=${String(c.erasure)}`);
+  if (c.deletedAtPresent !== true) unmet.push('c:noDeletedAt');
+  if (ac9KeyPresent(c.keyAfter, 'c', unmet) === true) {
+    privacy.push('privacy:c:keyStillPresentAfterDsr');
+  }
+  const replay = c.replay ?? {};
+  if (replay.status !== 200) unmet.push(`c:replayStatus=${String(replay.status ?? replay.error)}`);
+  if (replay.profileRestore === 'restored' || replay.archetype === leaf) {
+    privacy.push('privacy:c:restoredAfterDsr');
+  } else if (replay.status === 200) {
+    ac9ReplayReadUnmet(replay, 'c', unmet);
+  }
+}
+
+/** Control (e): NC-8. An unread log is evidence only: the graded floor is ClickHouse and the wire. */
+function ac9ControlEUnmet(e, unmet, privacy) {
+  if (!e) {
+    unmet.push('e:notRun');
+    return;
+  }
+  if (!(e.xidCount > 0)) unmet.push('e:nothingSearched');
+  for (const leak of e.wireLeaks ?? []) {
+    privacy.push(`privacy:e:xidOnWire(${leak.where} ${leak.url})`);
+  }
+  for (const table of AC9_NC8_TABLES) {
+    const t = e.clickhouse?.[table] ?? null;
+    if (!t || t.error) {
+      unmet.push(`unreadable:clickhouse(${table})`);
+      continue;
+    }
+    if (t.hits > 0) privacy.push(`privacy:e:xidInClickHouse(${table})`);
+    if (AC9_NC8_REQUIRED_TABLES.includes(table) && !(t.rows > 0)) {
+      unmet.push(`unreadable:clickhouseEmpty(${table})`);
+    }
+  }
+  if (e.redisRawKeys?.readable !== true) unmet.push('unreadable:redis(e)');
+  else if (e.redisRawKeys.count > 0) privacy.push('privacy:e:xidInRedisKey');
+  if (e.postgres?.readable !== true) unmet.push('unreadable:postgres(e)');
+  else if (e.postgres.hits > 0) privacy.push('privacy:e:xidInIntentSessions');
+  if (e.logs?.read === true && e.logs.hits > 0) privacy.push('privacy:e:xidInControlPlaneLog');
+}
+
+/**
+ * AC(9)'s verdict, as a pure function over what `driveAc9()` observed (FOLLOW-1345). See the section
+ * header. `unmetPreconditions` holds every unmet conjunct, the `privacy:*` ones included;
+ * `privacyViolations` is that subset on its own, the plan's STOP rule.
+ *
+ * @param {any} obs - `driveAc9()`'s return value.
+ * @param {{value: number}} serverGate
+ * @returns {{ok: boolean, name: string, summary: string, evidence: object}}
+ */
+export function evaluateAc9(obs, serverGate) {
+  const unmet = [];
+  const privacy = [];
+  const leaf = obs.target ?? AC9_TARGET_LEAF;
+  const finish = () => {
+    const unmetPreconditions = [...unmet, ...privacy];
+    const seeded = obs.controls?.c?.seededVerificationRow === true;
+    return {
+      ok: unmetPreconditions.length === 0,
+      name:
+        'returning buyer: a fresh context with the same consented xid and no signal of its own gets ' +
+        'a first /api/adapt already adapted for the same archetype; without consent, after ' +
+        'withdrawal, after a DSR erase and for a non-persistable result it does not',
+      summary:
+        `restore ${String(obs.restore?.call?.profileRestore ?? null)} ` +
+        `${String(obs.restore?.call?.body?.source ?? null)} ` +
+        `${String(obs.restore?.call?.body?.archetype ?? null)}; ` +
+        `held-out draws ${String((obs.heldOut ?? []).length)}; ` +
+        `DSR ${seeded ? 'on a seeded row' : 'not run'}; ` +
+        `unmet: [${unmetPreconditions.join(', ')}]`,
+      evidence: {
+        unmetPreconditions,
+        privacyViolations: privacy,
+        dsrNote: AC9_DSR_NOTE,
+        served: obs.served ?? null,
+        heldOut: obs.heldOut ?? [],
+        allHeldOut: obs.allHeldOut ?? false,
+        notDrivenBecauseHoldout: obs.notDrivenBecauseHoldout ?? [],
+        mint: obs.mint ?? null,
+        restore: obs.restore ?? null,
+        controls: obs.controls ?? null,
+        nc8: obs.nc8 ?? null,
+      },
+    };
+  };
+
+  if (!obs.served?.ok) {
+    unmet.push(`served:${String(obs.served?.reason ?? 'not read')}`);
+    return finish();
+  }
+  if (obs.served.flagOn !== true) {
+    unmet.push('served:flagOff');
+    return finish();
+  }
+
+  // NC-10: counts on every draw, whatever the later ones do.
+  for (const d of obs.heldOut ?? []) {
+    const key = ac9KeyPresent(d.key, 'heldOut', unmet);
+    if (key === true) privacy.push('privacy:holdout:profileWritten');
+    if ((d.restored ?? 0) > 0) privacy.push('privacy:holdout:restored');
+    if (d.armSessionTwo !== true) unmet.push('holdout:armChangedBetweenSessions');
+  }
+
+  if (obs.allHeldOut === true) {
+    unmet.push('restore:drewHoldout');
+    ac9ControlAUnmet(obs.controls?.a, leaf, true, unmet, privacy);
+    ac9ControlEUnmet(obs.nc8, unmet, privacy);
+    return finish();
+  }
+
+  if (!obs.mint) unmet.push('s1:notRun');
+  else ac9MintUnmet(obs.mint, leaf, unmet, privacy);
+  if (obs.mint?.configUnreached) return finish();
+  ac9RestoreUnmet(obs, serverGate, unmet);
+  ac9ControlAUnmet(obs.controls?.a, leaf, false, unmet, privacy);
+  ac9ControlBUnmet(obs.controls?.b, unmet, privacy);
+  ac9ControlCUnmet(obs.controls?.c, leaf, unmet, privacy);
+  ac9ControlDUnmet(obs.controls?.d, leaf, unmet, privacy);
+  ac9ControlEUnmet(obs.nc8, unmet, privacy);
+  return finish();
+}
+
+/** One call's facts, for the verdict and the artefact. The xid itself stays out. */
+function ac9CallFacts(c, xid) {
+  if (!c) return null;
+  return {
+    seq: c.seq,
+    xidSent: c.xid !== null,
+    xidMatches: xid !== null && c.xid === xid,
+    consentState: c.consentState,
+    hint: c.archetypeHint,
+    confidenceSent: c.confidence,
+    archetypeSourceSent: c.archetypeSource,
+    status: c.status,
+    failure: c.failure,
+    holdoutGroup: c.body?.holdout_group === true,
+    profileRestore: c.body?.profile_restore ?? null,
+    body: c.body
+      ? {
+          source: c.body.source ?? null,
+          archetype: c.body.archetype ?? null,
+          confidence: c.body.confidence ?? null,
+          fallback_reason: c.body.fallback_reason ?? null,
+          directives: directivesOf(c.body).map((d) => ({ type: d?.type, slot: d?.slot })),
+        }
+      : null,
+  };
+}
+
+/**
+ * A fresh context on the fixture page. `seed` is the localStorage it starts with, through
+ * `storageState`: written once, before the first document, with sessionStorage empty, so a withdrawal
+ * in this context is not undone by the next navigation. Every request goes to the run's `wire` for
+ * NC-8. Asserts nothing.
+ *
+ * @param {import('playwright').Browser} browser
+ * @param {Array<{url: string, postData: string|null}>} wire
+ * @param {Record<string, string>|null} [seed]
+ */
+async function openAc9Session(browser, wire, seed = null) {
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 900 },
+    ...(seed
+      ? {
+          storageState: {
+            cookies: [],
+            origins: [
+              {
+                origin: new URL(LISTING_URL).origin,
+                localStorage: Object.entries(seed).map(([name, value]) => ({ name, value })),
+              },
+            ],
+          },
+        }
+      : {}),
+  });
+  const calls = [];
+  const callOf = new WeakMap();
+  const pending = [];
+  const own = [];
+  const configNet = { options: [], get: [] };
+  const configOf = new WeakMap();
+  const erase = { sent: 0, status: null };
+  context.on('request', (req) => {
+    const url = req.url();
+    const method = req.method();
+    let postData = null;
+    try {
+      postData = req.postData();
+    } catch {
+      /* a binary body carries no text to search */
+    }
+    const seen = { url, postData };
+    own.push(seen);
+    wire.push(seen);
+    if ((method === 'GET' || method === 'OPTIONS') && url.includes('/api/quiz/public-config')) {
+      const e = {
+        method,
+        startedMono: performance.now(),
+        finishedMono: null,
+        status: null,
+        failure: null,
+      };
+      configOf.set(req, e);
+      (method === 'GET' ? configNet.get : configNet.options).push(e);
+      return;
+    }
+    if (method !== 'POST' || !url.startsWith(DECISION_ORIGIN)) return;
+    if (url.endsWith('/api/profile/erase')) {
+      erase.sent += 1;
+      return;
+    }
+    if (!/\/adapt(\?|$)/.test(url)) return;
+    let sent = null;
+    try {
+      sent = JSON.parse(postData ?? 'null');
+    } catch {
+      /* recorded with no body */
+    }
+    const entry = {
+      seq: calls.length + 1,
+      requestedMono: performance.now(),
+      sessionId: sent?.session_id ?? null,
+      archetypeHint: sent?.archetype_hint ?? null,
+      confidence: sent?.confidence ?? null,
+      consentState: sent?.consent_state ?? null,
+      archetypeSource: sent?.archetype_source ?? null,
+      xid: typeof sent?.xid === 'string' ? sent.xid : null,
+      traitsSent: Array.isArray(sent?.traits),
+      status: null,
+      body: null,
+      failure: null,
+    };
+    callOf.set(req, entry);
+    calls.push(entry);
+  });
+  context.on('response', (res) => {
+    const net = configOf.get(res.request());
+    if (net) net.status = res.status();
+    if (res.url().endsWith('/api/profile/erase') && res.request().method() === 'POST') {
+      erase.status = res.status();
+    }
+    const call = callOf.get(res.request());
+    if (!call) return;
+    call.status = res.status();
+    pending.push(
+      res.text().then(
+        (t) => {
+          try {
+            call.body = JSON.parse(t.slice(0, 20000));
+          } catch {
+            call.failure = `non-JSON body: ${t.slice(0, 200)}`;
+          }
+        },
+        (e) => {
+          call.failure = String(e);
+        },
+      ),
+    );
+  });
+  context.on('requestfinished', (req) => {
+    const net = configOf.get(req);
+    if (net) net.finishedMono = performance.now();
+  });
+  context.on('requestfailed', (req) => {
+    const net = configOf.get(req);
+    if (net) {
+      net.finishedMono = performance.now();
+      net.failure = req.failure()?.errorText ?? 'request failed';
+    }
+    const entry = callOf.get(req);
+    if (entry) entry.failure = req.failure()?.errorText ?? 'request failed';
+  });
+  let page;
+  try {
+    page = await context.newPage();
+    await page.goto(LISTING_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  } catch (err) {
+    await context.close().catch(() => {});
+    throw err;
+  }
+  return {
+    page,
+    calls,
+    own,
+    pending,
+    configNet,
+    erase,
+    readLocal: (key) => page.evaluate((k) => window.localStorage.getItem(k), key),
+    xidOnWire: (xid, from = 0) =>
+      own.slice(from).some((r) => r.url.includes(xid) || (r.postData ?? '').includes(xid)),
+    close: () => context.close().catch(() => {}),
+  };
+}
+
+/** Poll until a call matching `pick` has its answer; returns it, or null on the budget. */
+async function waitForAc9Call(s, pick, budgetMs = 2 * CHAT_ARM_PAGE_BUDGET_MS) {
+  const found = await pollUntil(
+    () => s.calls.find((c) => pick(c) && (c.body !== null || c.failure !== null)) ?? null,
+    budgetMs,
+  );
+  await Promise.all(s.pending);
+  return found;
+}
+
+/**
+ * Walk the served quiz to `leaf` by real clicks, confirm it, and record the first request after the
+ * fold. `pickFirstRequestAfterQuizFold()` is AC(10)'s: `traits` on a body marks a post-fold request.
+ * Writes into `into`; throws what a click throws.
+ */
+async function resolveAc9Quiz(s, served, leaf, ticks, into) {
+  const { page } = s;
+  const path = quizPathToLeaf(served.definition, leaf, ticks);
+  into.pathFound = path !== null;
+  into.quizShown = await page
+    .locator('.estalara-quiz-card')
+    .first()
+    .waitFor({ state: 'visible', timeout: AC10_QUIZ_MOUNT_MS })
+    .then(() => true)
+    .catch(() => false);
+  if (!into.quizShown || path === null) return;
+  for (const step of path) {
+    const answers = page.locator('.estalara-quiz-answer');
+    const texts = (await answers.allTextContents()).map((t) => t.trim());
+    for (const labels of step.answers) {
+      const index = texts.findIndex((t) => labels.includes(t));
+      if (index === -1) {
+        throw new Error(`no answer on ${step.questionId} reads ${JSON.stringify(labels)}`);
+      }
+      await answers.nth(index).click({ timeout: 3000 });
+      await sleep(150);
+    }
+    await sleep(300);
+    const cta = page.locator('.estalara-quiz-cta').first();
+    if ((await cta.count().catch(() => 0)) > 0 && (await cta.isEnabled().catch(() => false))) {
+      await cta.click({ timeout: 3000 }).catch(() => {});
+    }
+    await sleep(600);
+  }
+  const result = page.locator('.estalara-quiz-result').first();
+  await result.waitFor({ state: 'visible', timeout: 5000 });
+  const leafText = await page
+    .locator('.estalara-quiz-result strong')
+    .first()
+    .textContent({ timeout: 3000 });
+  into.leaf = archetypeFromDisplayName(served.names, leafText);
+
+  const sessionId = s.calls.find((c) => c.sessionId)?.sessionId ?? null;
+  into.sessionId = sessionId;
+  const resolveClickMono = performance.now();
+  await page.locator('.estalara-quiz-confirm').first().click({ timeout: 3000 });
+  const folded = await pollUntil(
+    async () => {
+      const state = await page
+        .evaluate(
+          (key) => JSON.parse(window.sessionStorage.getItem(key) ?? 'null')?.state ?? null,
+          `estalara_intent_${String(sessionId)}`,
+        )
+        .catch(() => null);
+      return state?.quiz_answered === true;
+    },
+    AC10_FOLD_WAIT_MS,
+    50,
+  );
+  const pickNow = () =>
+    pickFirstRequestAfterQuizFold({ calls: s.calls, resolveClickMono, foldSeen: folded === true });
+  const found = await pollUntil(() => pickNow().next, folded ? AC10_FOLD_WAIT_MS : 0);
+  if (found) {
+    await pollUntil(
+      () => found.body !== null || found.failure !== null,
+      2 * CHAT_ARM_PAGE_BUDGET_MS,
+    );
+  }
+  await Promise.all(s.pending);
+  into.followUp = found
+    ? {
+        reason: null,
+        xidSent: found.xid !== null,
+        consentState: found.consentState,
+        archetypeHint: found.archetypeHint,
+        archetypeSourceSent: found.archetypeSource,
+        answered: found.body !== null,
+        status: found.status,
+        holdoutGroup: found.body?.holdout_group === true,
+      }
+    : { reason: pickNow().reason ?? 'not_observed' };
+}
+
+/**
+ * The profile key of one xid, by hash under any tenant (the fixture's page does not know the tenant
+ * the control plane resolves, README §5.5), read through the same SRH the shadow key is. Never
+ * throws: an unreadable store is a fact the verdict names.
+ *
+ * @param {string} xid
+ * @returns {Promise<{readable: boolean, error?: string, present: boolean, raw: string|null,
+ *   pttlMs: number|null, tenantId: string|null}>}
+ */
+async function readAc9Key(xid) {
+  const unreadable = (error) => ({
+    readable: false,
+    error,
+    present: false,
+    raw: null,
+    pttlMs: null,
+    tenantId: null,
+  });
+  const keys = await shadowCommand(['KEYS', `buyer_profile:*:${ac9XidHash(xid)}`]);
+  if (!keys.ok) return unreadable(keys.error);
+  const list = Array.isArray(keys.result) ? keys.result : [];
+  if (list.length === 0) {
+    return { readable: true, present: false, raw: null, pttlMs: null, tenantId: null };
+  }
+  const got = await shadowCommand(['GET', list[0]]);
+  if (!got.ok) return unreadable(got.error);
+  const pttl = await shadowCommand(['PTTL', list[0]]);
+  if (!pttl.ok) return unreadable(pttl.error);
+  return {
+    readable: true,
+    present: got.result !== null,
+    raw: typeof got.result === 'string' ? got.result : null,
+    pttlMs: typeof pttl.result === 'number' ? pttl.result : null,
+    tenantId: list[0].split(':')[1] ?? null,
+  };
+}
+
+/** What the SDK left in localStorage, verbatim, as the next session's `storageState`. */
+async function readAc9Seed(s) {
+  const raw = await s.readLocal(AC9_XID_STORAGE_KEY);
+  let parsed = null;
+  try {
+    parsed = JSON.parse(raw ?? 'null');
+  } catch {
+    /* an unparseable record is no xid */
+  }
+  return {
+    xid: typeof parsed?.id === 'string' ? parsed.id : null,
+    createdAt: typeof parsed?.created_at === 'number' ? parsed.created_at : null,
+    raw,
+    consent: await s.readLocal(CONSENT_STORAGE_KEY),
+    textVersion: await s.readLocal(AC9_TEXT_VERSION_STORAGE_KEY),
+  };
+}
+
+const ac9FullSeed = (seed) => ({
+  [AC9_XID_STORAGE_KEY]: seed.raw,
+  [CONSENT_STORAGE_KEY]: seed.consent,
+  [AC9_TEXT_VERSION_STORAGE_KEY]: seed.textVersion,
+});
+
+/** A session on `seed`, and its first answered request that carried the xid (or null). */
+async function openAc9Returning(browser, wire, seed) {
+  const s = await openAc9Session(browser, wire, ac9FullSeed(seed));
+  const call = await waitForAc9Call(s, (c) => c.xid !== null);
+  return { s, call };
+}
+
+/**
+ * Session 1, drawing a fresh xid until one lands in treatment (at most `AC9_MAX_DRAWS`). A held-out
+ * draw is checked and kept: same arm in a second session, never a key (NC-10). Every xid drawn goes
+ * to `xids` for NC-8.
+ *
+ * @returns {Promise<{mint: object, seed: object|null, allHeldOut: boolean}>}
+ */
+async function mintAc9Xid(browser, wire, served, label, heldOut, sessionIds, xids) {
+  for (let attempt = 1; ; attempt++) {
+    const s = await openAc9Session(browser, wire);
+    const mint = {
+      label,
+      attempt,
+      error: null,
+      accepted: false,
+      textVersion: null,
+      xidStrict: false,
+      xidTag: null,
+      sessionId: null,
+      leaf: null,
+      followUp: null,
+      drewHoldout: null,
+      configUnreached: null,
+      tickedPersistable: [...AC9_TARGET_TICKS_STORED],
+      key: null,
+    };
+    let seed = null;
+    try {
+      const accept = s.page.locator('[data-estalara-consent="accept"]').first();
+      await accept.waitFor({ state: 'visible', timeout: AC10_QUIZ_MOUNT_MS });
+      await accept.click({ timeout: 3000 });
+      mint.accepted = true;
+      // Every pre-fold request is out before the walk, as AC(10)'s sessions are.
+      await waitForAc9Call(s, () => true);
+      await resolveAc9Quiz(s, served, AC9_TARGET_LEAF, AC9_TARGET_TICKS, mint);
+      seed = await readAc9Seed(s);
+    } catch (err) {
+      mint.error = String(err && err.stack ? err.stack : err);
+      seed = await readAc9Seed(s).catch(() => null);
+    }
+    await Promise.all(s.pending);
+    if (seed?.xid) xids.push(seed.xid);
+    mint.textVersion = seed?.textVersion ?? null;
+    mint.xidStrict = AC9_STRICT_UUID_V4.test(seed?.xid ?? '');
+    mint.xidTag = ac9XidTag(seed?.xid);
+    if (mint.sessionId === null) mint.sessionId = s.calls[0]?.sessionId ?? null;
+    if (mint.sessionId) sessionIds.add(mint.sessionId);
+    const carried = s.calls.filter((c) => c.xid !== null && c.body !== null);
+    mint.drewHoldout = holdoutFromResponses(carried.map((c) => c.body)).drewHoldout;
+    mint.configUnreached = mint.accepted
+      ? servedConfigNeverReachedBrowser({ configNet: s.configNet, quizShown: mint.quizShown })
+      : null;
+    const restoredOnDraw = carried.filter((c) => c.body?.profile_restore === 'restored').length;
+    await s.close();
+
+    if (mint.configUnreached !== null) {
+      if (attempt < AC9_MAX_DRAWS) continue;
+      return { mint, seed: null, allHeldOut: false };
+    }
+
+    if (mint.drewHoldout === true && seed?.xid) {
+      await sleep(AC9_NO_WRITE_SETTLE_MS);
+      const { s: second, call } = await openAc9Returning(browser, wire, seed);
+      if (call?.sessionId) sessionIds.add(call.sessionId);
+      await second.close();
+      heldOut.push({
+        label,
+        attempt,
+        xidTag: mint.xidTag,
+        armSessionOne: true,
+        armSessionTwo: call?.body?.holdout_group === true,
+        followUpCarriedXid: mint.followUp?.xidSent ?? null,
+        restored: restoredOnDraw + (call?.body?.profile_restore === 'restored' ? 1 : 0),
+        key: await readAc9Key(seed.xid),
+      });
+      if (attempt < AC9_MAX_DRAWS) continue;
+      return { mint, seed, allHeldOut: true };
+    }
+
+    if (seed?.xid) {
+      await pollUntil(async () => (await readAc9Key(seed.xid)).present, AC9_KEY_WAIT_MS, 500);
+      mint.key = await readAc9Key(seed.xid);
+    }
+    return { mint, seed: seed?.xid ? seed : null, allHeldOut: false };
+  }
+}
+
+/**
+ * Session 2: the restore. A session whose config arrived past the init budget sends its first
+ * decision with no xid by design, so it is redrawn; the last draw still late is `s2:lateConfig`.
+ */
+async function driveAc9Restore(browser, wire, seed, sessionIds) {
+  for (let attempt = 1; ; attempt++) {
+    const s = await openAc9Session(browser, wire, ac9FullSeed(seed));
+    try {
+      const anyCall = await waitForAc9Call(s, () => true);
+      const first = s.calls[0] ?? null;
+      const firstCarriedXid = first !== null && first.xid !== null;
+      let call = first;
+      let lateConfigMs = null;
+      if (!firstCarriedXid) {
+        call = await waitForAc9Call(s, (c) => c.xid !== null);
+        const get = s.configNet.get[0] ?? null;
+        const late = get
+          ? Math.round((get.finishedMono ?? performance.now()) - get.startedMono)
+          : null;
+        lateConfigMs = late !== null && late > AC9_CONFIG_BUDGET_MS ? late : null;
+        if (lateConfigMs !== null && attempt < AC9_MAX_DRAWS) continue;
+      }
+      await Promise.all(s.pending);
+      if (first?.sessionId) sessionIds.add(first.sessionId);
+      return {
+        error: anyCall === null ? 'no /api/adapt answered in the page budget' : null,
+        attempt,
+        sessionId: first?.sessionId ?? null,
+        firstCarriedXid,
+        lateConfigMs,
+        call: ac9CallFacts(call, seed.xid),
+        // Evidence, not a conjunct: the harness drives nothing here, and the server's `restored` is
+        // what says the request carried no qualifying signal (`sessionHasSignal` in the route).
+        calls: s.calls.map((c) => ac9CallFacts(c, seed.xid)),
+      };
+    } finally {
+      await s.close();
+    }
+  }
+}
+
+/** One direct `POST /api/adapt` with the fixture's own key: what a browser cannot send. */
+async function postAc9Adapt({ tenantId, xid, createdAt, consentState, sessionIds }) {
+  const sessionId = randomUUID();
+  sessionIds.add(sessionId);
+  try {
+    const res = await fetch(`${DECISION_ORIGIN}/api/adapt`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${await readFixtureApiKey()}`,
+        Origin: new URL(LISTING_URL).origin,
+      },
+      body: JSON.stringify({
+        tenant_id: tenantId,
+        session_id: sessionId,
+        page_type: 'listing_detail',
+        listing_id: await readFixtureListingId(),
+        locale: 'en',
+        xid,
+        xid_created_at: createdAt,
+        ...(consentState === null ? {} : { consent_state: consentState }),
+      }),
+      signal: AbortSignal.timeout(2 * CHAT_ARM_PAGE_BUDGET_MS),
+    });
+    const body = await res.json().catch(() => null);
+    return {
+      consentState,
+      status: res.status,
+      error: null,
+      profileRestore: body?.profile_restore ?? null,
+      archetype: body?.archetype ?? null,
+      directives: nonReorderSlots(body).length,
+    };
+  } catch (err) {
+    return {
+      consentState,
+      status: null,
+      error: String(err),
+      profileRestore: null,
+      archetype: null,
+      directives: 0,
+    };
+  }
+}
+
+/** Control (a). See the section header. Never touches the key: a denied state would delete it. */
+async function driveAc9NoConsent(browser, wire, seed, tenantId, heldOutOnly, sessionIds) {
+  const out = { noConsent: null, noTextVersion: null, server: [], keyAfter: null };
+  const facts = (s) => {
+    for (const c of s.calls) if (c.sessionId) sessionIds.add(c.sessionId);
+    return {
+      adaptCalls: s.calls.length,
+      adaptAnswered: s.calls.filter((c) => c.body !== null).length,
+      xidOnWire: s.xidOnWire(seed.xid),
+      restored: s.calls.filter((c) => c.body?.profile_restore === 'restored').length,
+    };
+  };
+
+  const pendingSession = await openAc9Session(browser, wire, {
+    [AC9_XID_STORAGE_KEY]: seed.raw,
+  });
+  try {
+    const bannerShown = await pendingSession.page
+      .locator('[data-estalara-consent="accept"]')
+      .first()
+      .waitFor({ state: 'visible', timeout: AC10_QUIZ_MOUNT_MS })
+      .then(() => true)
+      .catch(() => false);
+    await sleep(2000);
+    await Promise.all(pendingSession.pending);
+    out.noConsent = { error: null, bannerShown, ...facts(pendingSession) };
+  } catch (err) {
+    out.noConsent = { error: String(err) };
+  } finally {
+    await pendingSession.close();
+  }
+
+  const unversioned = await openAc9Session(browser, wire, {
+    [AC9_XID_STORAGE_KEY]: seed.raw,
+    [CONSENT_STORAGE_KEY]: 'granted',
+  });
+  try {
+    await waitForAc9Call(unversioned, () => true);
+    await sleep(1000);
+    await Promise.all(unversioned.pending);
+    out.noTextVersion = { error: null, ...facts(unversioned) };
+  } catch (err) {
+    out.noTextVersion = { error: String(err) };
+  } finally {
+    await unversioned.close();
+  }
+
+  for (const consentState of AC9_NO_CONSENT_STATES) {
+    out.server.push(
+      await postAc9Adapt({
+        tenantId,
+        xid: seed.xid,
+        createdAt: seed.createdAt,
+        consentState,
+        sessionIds,
+      }),
+    );
+  }
+  if (!heldOutOnly) out.keyAfter = await readAc9Key(seed.xid);
+  return out;
+}
+
+/** Ask once more when a read answered `error`: see the section header. `attempts` is the evidence. */
+async function ac9RetryOnReadError(ask) {
+  const first = await ask();
+  if (first.profileRestore !== 'error') return { ...first, attempts: [first.profileRestore] };
+  await sleep(AC9_READ_RETRY_MS);
+  const second = await ask();
+  return { ...second, attempts: ['error', second.profileRestore] };
+}
+
+/** A new session holding an erased xid and a consent: the worst case the store has to refuse. */
+function replayAc9InBrowser(browser, wire, seed, sessionIds) {
+  return ac9RetryOnReadError(async () => {
+    try {
+      const { s, call } = await openAc9Returning(browser, wire, seed);
+      if (call?.sessionId) sessionIds.add(call.sessionId);
+      await s.close();
+      return {
+        error: null,
+        xidSent: call?.xid !== null && call !== null,
+        answered: Boolean(call?.body),
+        profileRestore: call?.body?.profile_restore ?? null,
+        archetype: call?.body?.archetype ?? null,
+        directives: nonReorderSlots(call?.body ?? null).length,
+      };
+    } catch (err) {
+      return { error: String(err), profileRestore: null };
+    }
+  });
+}
+
+/** The positive restore of a control minted on its own xid, by direct POST. */
+async function pairAc9Restore(out, tenantId, seed, sessionIds) {
+  const pair = await ac9RetryOnReadError(() =>
+    postAc9Adapt({
+      tenantId,
+      xid: seed.xid,
+      createdAt: seed.createdAt,
+      consentState: 'consented',
+      sessionIds,
+    }),
+  );
+  out.pairRestored = pair.profileRestore === 'restored';
+  out.pairArchetype = pair.archetype;
+  out.pairReadError = pair.profileRestore === 'error';
+}
+
+/**
+ * Control (d), on its own xid and last, because a quiz result that may not persist deletes the key.
+ * The follow-up must carry the xid and `archetype_source: quiz`, or "the key is gone" proves nothing
+ * about this path.
+ */
+async function driveAc9NonPersistable(browser, wire, served, tenantId, heldOut, sessionIds, xids) {
+  const { mint, seed, allHeldOut } = await mintAc9Xid(
+    browser,
+    wire,
+    served,
+    'nonPersistable',
+    heldOut,
+    sessionIds,
+    xids,
+  );
+  const out = {
+    error: mint.error ? 'session 1 threw' : null,
+    allHeldOut,
+    xidTag: mint.xidTag,
+    before: mint.key,
+    pairRestored: false,
+    pairArchetype: null,
+    pairReadError: false,
+    leaf: null,
+    followUp: null,
+    after: null,
+    replay: null,
+    keyAfterReplay: null,
+  };
+  if (allHeldOut || seed === null) return out;
+  await pairAc9Restore(out, tenantId, seed, sessionIds);
+  const s = await openAc9Session(browser, wire, ac9FullSeed(seed));
+  try {
+    await waitForAc9Call(s, (c) => c.xid !== null);
+    await resolveAc9Quiz(s, served, AC9_NON_PERSISTABLE_LEAF, AC9_NON_PERSISTABLE_TICKS, out);
+    await sleep(AC9_NO_WRITE_SETTLE_MS);
+  } catch (err) {
+    out.error = String(err && err.stack ? err.stack : err);
+  } finally {
+    for (const c of s.calls) if (c.sessionId) sessionIds.add(c.sessionId);
+    await s.close();
+  }
+  out.after = await readAc9Key(seed.xid);
+  out.replay = await replayAc9InBrowser(browser, wire, seed, sessionIds);
+  await sleep(AC9_NO_WRITE_SETTLE_MS);
+  out.keyAfterReplay = await readAc9Key(seed.xid);
+  return out;
+}
+
+/** Control (b). The positive restore is this same page's, immediately before the click. */
+async function driveAc9Withdrawal(browser, wire, seed, sessionIds) {
+  const out = {
+    error: null,
+    pairRestored: false,
+    keyBefore: await readAc9Key(seed.xid),
+    controlShown: false,
+    eraseStatus: null,
+    consentAfter: null,
+    localXidAfter: null,
+    keyAfterErase: null,
+    reload: null,
+    replay: null,
+    keyAfterReplay: null,
+    tombstonePresent: null,
+  };
+  const s = await openAc9Session(browser, wire, ac9FullSeed(seed));
+  try {
+    const restored = await waitForAc9Call(s, (c) => c.xid !== null);
+    out.pairRestored = restored?.body?.profile_restore === 'restored';
+    const control = s.page.locator('[data-estalara-withdraw]').first();
+    out.controlShown = await control
+      .waitFor({ state: 'visible', timeout: AC10_QUIZ_MOUNT_MS })
+      .then(() => true)
+      .catch(() => false);
+    if (out.controlShown) {
+      await control.click({ timeout: 3000 });
+      await pollUntil(() => s.erase.status !== null, AC9_KEY_WAIT_MS);
+      out.eraseStatus = s.erase.status;
+      await pollUntil(async () => (await s.readLocal(AC9_XID_STORAGE_KEY)) === null, 5000);
+      out.consentAfter = await s.readLocal(CONSENT_STORAGE_KEY);
+      out.localXidAfter = (await s.readLocal(AC9_XID_STORAGE_KEY)) !== null;
+      out.keyAfterErase = await readAc9Key(seed.xid);
+
+      // The next page in the same browser: the stored-denied branch halts the SDK.
+      const callsBefore = s.calls.length;
+      const wireBefore = s.own.length;
+      await s.page.goto(LISTING_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await sleep(2000);
+      out.reload = {
+        adaptCalls: s.calls.length - callsBefore,
+        xidOnWire: s.xidOnWire(seed.xid, wireBefore),
+      };
+    }
+  } catch (err) {
+    out.error = String(err && err.stack ? err.stack : err);
+  } finally {
+    for (const c of s.calls) if (c.sessionId) sessionIds.add(c.sessionId);
+    await s.close();
+  }
+
+  out.replay = await replayAc9InBrowser(browser, wire, seed, sessionIds);
+  await sleep(AC9_NO_WRITE_SETTLE_MS);
+  out.keyAfterReplay = await readAc9Key(seed.xid);
+  const tombstone = await shadowCommand([
+    'KEYS',
+    `buyer_profile_tombstone:*:${ac9XidHash(seed.xid)}`,
+  ]);
+  out.tombstonePresent = tombstone.ok ? (tombstone.result ?? []).length > 0 : null;
+  return out;
+}
+
+/**
+ * Control (c). `POST /api/dsr/initiate` refuses every caller today, so the row is seeded and the
+ * evidence says so (`seededVerificationRow`). The row is deleted afterwards; a failure to delete it
+ * changes nothing the verdict reads.
+ */
+async function driveAc9Dsr(browser, wire, served, tenantId, heldOut, sessionIds, xids) {
+  const { mint, seed, allHeldOut } = await mintAc9Xid(
+    browser,
+    wire,
+    served,
+    'dsr',
+    heldOut,
+    sessionIds,
+    xids,
+  );
+  const out = {
+    error: mint.error ? 'session 1 threw' : null,
+    allHeldOut,
+    xidTag: mint.xidTag,
+    keyBefore: mint.key,
+    pairRestored: false,
+    pairArchetype: null,
+    pairReadError: false,
+    seeded: false,
+    seedError: null,
+    seededVerificationRow: false,
+    eraseStatus: null,
+    erasure: null,
+    deletedAtPresent: false,
+    keyAfter: null,
+    replay: null,
+  };
+  if (allHeldOut || seed === null) return out;
+  await pairAc9Restore(out, tenantId, seed, sessionIds);
+
+  const keyTenant = mint.key?.tenantId ?? null;
+  if (!DATABASE_URL_ADMIN || !keyTenant) {
+    out.seedError = !DATABASE_URL_ADMIN
+      ? 'DATABASE_URL_ADMIN not set'
+      : 'no key to read a tenant from';
+    return out;
+  }
+  const { seedDsrEraseVerification, deleteDsrVerification } = await import('./bandit-probe.mjs');
+  const otp = String(randomInt(0, 1_000_000)).padStart(6, '0');
+  let verificationId;
+  try {
+    verificationId = await seedDsrEraseVerification(DATABASE_URL_ADMIN, {
+      tenantId: keyTenant,
+      sessionId: `ac9-dsr-${randomUUID()}`,
+      otpHash: createHash('sha256').update(otp).digest('hex'),
+    });
+    out.seeded = true;
+    out.seededVerificationRow = true;
+  } catch (err) {
+    out.seedError = String(err);
+    return out;
+  }
+  try {
+    const res = await fetch(`${DECISION_ORIGIN}/api/dsr/erase`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ request_id: verificationId, token: otp, xid: seed.xid }),
+      signal: AbortSignal.timeout(2 * CHAT_ARM_PAGE_BUDGET_MS),
+    });
+    const body = await res.json().catch(() => null);
+    out.eraseStatus = res.status;
+    out.erasure = body?.buyer_profile_erasure ?? null;
+    out.deletedAtPresent = typeof body?.deleted_at === 'string';
+  } catch (err) {
+    out.error = String(err);
+  } finally {
+    await deleteDsrVerification(DATABASE_URL_ADMIN, verificationId).catch(() => {});
+  }
+  out.keyAfter = await readAc9Key(seed.xid);
+  out.replay = await ac9RetryOnReadError(() =>
+    postAc9Adapt({
+      tenantId,
+      xid: seed.xid,
+      createdAt: seed.createdAt,
+      consentState: 'consented',
+      sessionIds,
+    }),
+  );
+  return out;
+}
+
+/**
+ * Control (e), NC-8, after everything else. Whole-table searches, so a row filed under another session
+ * still counts; `rows` is how many rows these sessions left, so an empty table cannot read as clean.
+ * Reads the local control-plane log when `localhost-up.sh` wrote one; not finding it is evidence only.
+ */
+async function readAc9Nc8(wire, xids, sessionIds) {
+  const clean = [...new Set(xids)].filter((x) => AC9_STRICT_UUID_V4.test(x));
+  const out = {
+    xidCount: clean.length,
+    requestsScanned: wire.length,
+    wireLeaks: scanWireForXid(wire, clean),
+    clickhouse: {},
+    redisRawKeys: { readable: false, count: 0 },
+    postgres: { readable: false, hits: 0 },
+    logs: { read: false, hits: 0 },
+  };
+  if (clean.length === 0) return out;
+  // Decision rows and event batches land after the response; AC(5)'s slack is the bound.
+  await sleep(INGEST_TO_CLICKHOUSE_SLACK_MS);
+  const sessions = [...sessionIds].map((id) => `'${String(id).replace(/[^0-9a-zA-Z-]/g, '')}'`);
+  const needles = clean.map((x) => `'${x}'`).join(',');
+  for (const table of AC9_NC8_TABLES) {
+    try {
+      const hits = await chQuery(
+        `SELECT count() AS n FROM ${table} ` +
+          `WHERE multiSearchAnyCaseInsensitive(formatRow('TSVRaw', *), [${needles}]) > 0`,
+      );
+      let rows = null;
+      if (AC9_NC8_REQUIRED_TABLES.includes(table) && sessions.length > 0) {
+        const r = await chQuery(
+          `SELECT count() AS n FROM ${table} WHERE session_id IN (${sessions.join(',')})`,
+        );
+        rows = Number(r[0]?.n ?? 0);
+      }
+      out.clickhouse[table] = { rows, hits: Number(hits[0]?.n ?? 0), error: null };
+    } catch (err) {
+      out.clickhouse[table] = { rows: null, hits: null, error: String(err) };
+    }
+  }
+  let keyCount = 0;
+  let keysReadable = true;
+  for (const x of clean) {
+    const keys = await shadowCommand(['KEYS', `*${x}*`]);
+    if (!keys.ok) keysReadable = false;
+    else keyCount += (keys.result ?? []).length;
+  }
+  out.redisRawKeys = { readable: keysReadable, count: keyCount };
+  if (DATABASE_URL_ADMIN) {
+    try {
+      const { countIntentSessionsWithXid } = await import('./bandit-probe.mjs');
+      out.postgres = {
+        readable: true,
+        hits: await countIntentSessionsWithXid(DATABASE_URL_ADMIN, clean),
+      };
+    } catch (err) {
+      out.postgres = { readable: false, hits: 0, error: String(err) };
+    }
+  }
+  try {
+    // An output of the bring-up, not an input of the run: outside HARNESS_TREE_PATHSPEC by design.
+    const log = await readFile(
+      nodePath.join(REPO_ROOT, '.localhost-up/logs/control-plane-3000.log'),
+      'utf8',
+    );
+    out.logs = { read: true, hits: clean.filter((x) => log.includes(x)).length };
+  } catch {
+    out.logs = { read: false, hits: 0 };
+  }
+  return out;
+}
+
+/**
+ * Drive AC(9). Asserts nothing: `evaluateAc9()` grades the return value. See the section header for
+ * the order; a control runs only after the positive restore it is paired with.
+ *
+ * @param {import('playwright').Browser} browser
+ * @returns {Promise<object>}
+ */
+async function driveAc9(browser) {
+  const servedConfig = await fetchServedQuizConfig();
+  const v = evaluateServedQuizConfig(servedConfig);
+  const obs = {
+    target: AC9_TARGET_LEAF,
+    served: {
+      ok: v.ok,
+      reason: v.reason,
+      flagOn: servedConfig.body?.buyer_profile_enabled === true,
+      definitionHash: v.definitionHash,
+    },
+    allHeldOut: false,
+    heldOut: [],
+    mint: null,
+    restore: null,
+    controls: {},
+    nc8: null,
+  };
+  if (!v.ok || !obs.served.flagOn) return obs;
+  const served = { names: v.names, definition: servedConfig.body?.quiz_definition ?? null };
+  const wire = [];
+  const sessionIds = new Set();
+  const xids = [];
+  const tenantId = /data-tenant-id="([^"]+)"/.exec(await readFile(FIXTURE_PATH, 'utf8'))?.[1];
+
+  const primary = await mintAc9Xid(browser, wire, served, 'primary', obs.heldOut, sessionIds, xids);
+  obs.mint = primary.mint;
+  obs.allHeldOut = primary.allHeldOut;
+  const seed = primary.seed;
+
+  if (!primary.allHeldOut && seed) {
+    obs.restore = await driveAc9Restore(browser, wire, seed, sessionIds);
+    // Every control is paired with this restore: on a broken one they would prove nothing.
+    if (obs.restore.call?.profileRestore === 'restored') {
+      obs.controls.a = await driveAc9NoConsent(browser, wire, seed, tenantId, false, sessionIds);
+      obs.controls.b = await driveAc9Withdrawal(browser, wire, seed, sessionIds);
+      obs.controls.c = await driveAc9Dsr(
+        browser,
+        wire,
+        served,
+        tenantId,
+        obs.heldOut,
+        sessionIds,
+        xids,
+      );
+      obs.controls.d = await driveAc9NonPersistable(
+        browser,
+        wire,
+        served,
+        tenantId,
+        obs.heldOut,
+        sessionIds,
+        xids,
+      );
+    }
+  } else if (primary.allHeldOut) {
+    obs.controls.a = await driveAc9NoConsent(browser, wire, seed, tenantId, true, sessionIds);
+    obs.notDrivenBecauseHoldout = ['b', 'c', 'd'];
+  }
+  obs.nc8 = await readAc9Nc8(wire, xids, sessionIds);
+  return obs;
 }
 
 // ─── Preflight: the substrate is real, or nothing below means anything ──────────────────
@@ -7336,6 +8864,37 @@ async function main() {
       ac10.ok,
       ac10.evidence,
       ac10.ok ? null : unmeasuredBecause({ ac: 'AC(10)', evidence: ac10.evidence }, {}),
+    );
+  }
+
+  // ── AC(9) — FOLLOW-1345, the returning buyer (FOLLOW-1316, checkpoint K4b) ────────────────
+  // Its own fresh contexts too, after AC(10), so nothing it does enters another AC's population.
+  console.log('\n[FOLLOW-1345] driving the returning buyer and its negative controls…');
+  let ac9Obs = null;
+  try {
+    ac9Obs = await driveAc9(browser);
+  } catch (err) {
+    ac9Obs = { error: String(err && err.stack ? err.stack : err) };
+  }
+  if (ac9Obs.error) {
+    record('AC(9)', 'returning buyer (FOLLOW-1345)', false, {
+      error: ac9Obs.error,
+      unmetPreconditions: ['ac9Threw'],
+    });
+  } else {
+    const ac9 = evaluateAc9(ac9Obs, serverGate);
+    if (ac9.evidence.privacyViolations.length > 0) {
+      console.log(
+        `\n[FOLLOW-1345] ⚠ PRIVACY DEFECT, K4b STOP rule, do not merge and do not re-run it away: ` +
+          ac9.evidence.privacyViolations.join(', '),
+      );
+    }
+    record(
+      'AC(9)',
+      `${ac9.name} — ${ac9.summary}`,
+      ac9.ok,
+      ac9.evidence,
+      ac9.ok ? null : unmeasuredBecause({ ac: 'AC(9)', evidence: ac9.evidence }, {}),
     );
   }
 

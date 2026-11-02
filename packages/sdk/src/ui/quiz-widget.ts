@@ -47,6 +47,7 @@ import {
 } from '@estalara/shared';
 
 import type { Archetype } from '../core/intent.js';
+import { generateEventId } from '../core/events.js';
 import { quizAnswerSteps } from '../core/adapt.js';
 import type { QuizAnswerPath, QuizRunPingFields } from '../core/adapt.js';
 import { placementToCss } from './placement.js';
@@ -193,17 +194,6 @@ const CHROME_LABELS: Record<
  */
 export { resolveArchetypeFromPath, resolveLabel };
 
-/** A random v4 uuid: `crypto.randomUUID`, else a `Math.random` fallback in the same format. */
-function newQuizRunId(): string {
-  try {
-    return crypto.randomUUID();
-  } catch {
-    return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (c) =>
-      (+c ^ ((Math.random() * 16) & (15 >> (+c / 4)))).toString(16),
-    );
-  }
-}
-
 // ─── Renderer ─────────────────────────────────────────────────────────────────
 
 /**
@@ -229,7 +219,7 @@ export function renderQuizWidget(
     const confirm = def.confirm;
     const byId = new Map(def.questions.map((q) => [q.id, q]));
     const hash = config.definitionHash ?? 'unhashed';
-    const runId = newQuizRunId();
+    const runId = generateEventId();
     // The switcher lists the definition's languages that carry texts (CEO ruling Q-D).
     const langs = def.languages.filter((l) => byId.get(def.root)?.prompt_i18n[l]);
     const stored = readQuizLanguage();

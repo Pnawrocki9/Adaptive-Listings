@@ -131,6 +131,11 @@ export interface SdkConfig {
    * hashes. Absent when the server sends none (pre-FOLLOW-1358 control planes).
    */
   quizDefinitionHash?: string;
+  /**
+   * The server's `buyer_profile_enabled` (FOLLOW-1316). Absent until the config arrives, and the xid
+   * stays in the browser until it is true: fail closed.
+   */
+  buyerProfileEnabled?: boolean;
   quizDefinitionVersion?: number | null;
 
   /**

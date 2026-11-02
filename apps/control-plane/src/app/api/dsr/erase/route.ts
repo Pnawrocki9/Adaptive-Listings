@@ -5,10 +5,15 @@
  * No JWT required — the (request_id, OTP) pair is the authorisation mechanism.
  *
  * Flow:
- *   1. Verify (request_id, token) via verifyAndConsumeOtp() — request-scoped
- *      lookup + per-capability attempt cap/lockout + atomic mark-used
- *      (FOLLOW-455 / audit F-20; see apps/control-plane/src/lib/dsr-verify.ts).
- *   2. In a single transaction:
+ *   1. Verify (request_id, token) via verifyOtpWithoutConsuming() — request-scoped
+ *      lookup + per-capability attempt cap/lockout (FOLLOW-455 / audit F-20; see
+ *      apps/control-plane/src/lib/dsr-verify.ts). The OTP is NOT spent yet (FOLLOW-1316).
+ *   1a. FOLLOW-1316 (R31, R34): an optional body `xid` deletes the returning-buyer profile, awaited,
+ *      before anything else. A store failure answers 503 with nothing done and the OTP unspent. The
+ *      xid reaches no log or audit row.
+ *   2. In a single transaction, first marking the OTP used, so that any failure rolls that back and
+ *      the same OTP retries (500 `erase_failed`; no new OTP can be had while `initiate` refuses every
+ *      caller). No order can leave a spent OTP with a live profile:
  *      - DELETE FROM session_embeddings WHERE session_id AND tenant_id
  *      - DELETE FROM consent_records WHERE session_id AND tenant_id (FOLLOW-1108)
  *        GUARD: ne(session_id, '') — an empty key must never match rows wholesale.
@@ -39,7 +44,7 @@
  *      Cron polls `system.mutations` and finalises the audit log.
  *   5. Idempotency: re-running for an already-erased session inspects
  *      `dsr_clickhouse_mutations` and returns current status without reissuing.
- *   6. Return 200 { deleted_at, clickhouse_deletion: { status, mutations: [...] } }.
+ *   6. Return 200 { deleted_at, buyer_profile_erasure, clickhouse_deletion: { status, mutations } }.
  *
  * @module apps/control-plane/src/app/api/dsr/erase/route
  */
@@ -58,8 +63,13 @@ import {
   intentSessions,
   dsrClickhouseMutations,
 } from '@estalara/db';
-import { verifyAndConsumeOtp, dsrVerifyFailureResponse } from '@/lib/dsr-verify';
+import {
+  consumeVerifiedOtp,
+  dsrVerifyFailureResponse,
+  verifyOtpWithoutConsuming,
+} from '@/lib/dsr-verify';
 import { eraseQuizRunsForSession } from '@/lib/quiz-runs';
+import { deleteBuyerProfile, isStrictXid } from '@/lib/buyer-profile-store';
 import { deleteShadowChatIntent } from '@/lib/chat-intent-cache';
 import { DSR_AUDIT_ACTIONS, writeDsrAuditLog } from '../_clickhouse';
 import {
@@ -73,7 +83,12 @@ import {
 const EraseBodySchema = z.object({
   request_id: z.string().min(1),
   token: z.string().min(1),
+  /** The buyer's cross-visit id, in the body only; its profile is erased too [FOLLOW-1316, R31]. */
+  xid: z.string().refine(isStrictXid).optional(),
 });
+
+/** Another request spent the OTP between verification and this transaction. */
+class OtpAlreadyConsumedError extends Error {}
 
 // ─── Redis session DEL (fire-and-forget) ─────────────────────────────────────
 
@@ -269,11 +284,14 @@ async function issueClickHouseEraseMutations(args: {
 /**
  * POST /api/dsr/erase
  *
- * Body: `{ request_id: string, token: string }` — the DSR request id and the
- * 6-digit OTP.
+ * Body: `{ request_id: string, token: string, xid?: string }` — the DSR request id, the 6-digit
+ * OTP, and optionally the buyer's cross-visit id.
  *
  * @returns 200 `{ deleted_at, clickhouse_deletion: { status, mutations } }` on success.
  * @returns 400 on invalid body.
+ * @returns 500 `erase_failed` when the Postgres transaction failed: nothing there changed, the OTP
+ *   is unspent, and the same request retries.
+ * @returns 503 when `xid` was given and the profile store failed: nothing ran, the OTP is unspent.
  * @returns 401 when OTP is expired, already used, or incorrect.
  * @returns 404 when request_id is not found or is a different capability.
  * @returns 429 when the request has been locked out after too many wrong guesses.
@@ -304,11 +322,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const { request_id: requestId, token } = parsed.data;
+  const { request_id: requestId, token, xid } = parsed.data;
   const db = createAdminClient();
 
-  // ── Verify (request-scoped lookup + attempt cap/lockout + atomic mark-used) ─
-  const verification = await verifyAndConsumeOtp(db, { requestId, token, dsrType: 'erase' });
+  // ── Verify (request-scoped lookup + attempt cap/lockout), not yet spent ────
+  const verification = await verifyOtpWithoutConsuming(db, { requestId, token, dsrType: 'erase' });
   if (!verification.ok) {
     const { status, code, message } = dsrVerifyFailureResponse(verification.reason);
     return NextResponse.json({ error: { code, message } }, { status });
@@ -316,134 +334,200 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const record = verification.record;
   const now = new Date();
 
+  // ── FOLLOW-1316 (R31): the returning-buyer profile, first and awaited ──────
+  // Not in `afterResponse`: the response has to say whether it happened. First, so that neither a
+  // store failure nor a Postgres failure can leave a spent OTP with a live profile.
+  const buyerProfileErasure = xid
+    ? await deleteBuyerProfile(record.tenantId, xid, 'dsr')
+    : 'not_requested';
+  const auditFailure = (): void => {
+    afterResponse(() =>
+      writeDsrAuditLog({
+        tenant_id: record.tenantId,
+        session_id: record.sessionId,
+        dsr_type: 'erase',
+        action: DSR_AUDIT_ACTIONS.failed,
+        email: record.email,
+        requested_at: record.createdAt,
+        completed_at: now,
+      }),
+    );
+  };
+  if (buyerProfileErasure === 'failed') {
+    auditFailure();
+    return NextResponse.json(
+      {
+        error: {
+          code: 'buyer_profile_erase_failed',
+          message: 'Nothing was erased and the code is still valid. Retry this request.',
+        },
+        buyer_profile_erasure: buyerProfileErasure,
+      },
+      { status: 503 },
+    );
+  }
+
   // FOLLOW-1358: the quiz_runs leg's outcome (rows deleted, or H002 not applied) is reported on
   // the wire so the erase record states it rather than implying it.
   let quizRunsErasure: number | 'table_missing' = 0;
 
   // ── Delete session data in a transaction ──────────────────────────────────
-  await db.transaction(async (tx) => {
-    await tx
-      .delete(sessionEmbeddings)
-      .where(
-        and(
-          eq(sessionEmbeddings.sessionId, record.sessionId),
-          eq(sessionEmbeddings.tenantId, record.tenantId),
-        ),
-      );
+  try {
+    await db.transaction(async (tx) => {
+      // FOLLOW-1316: spent here, so a rollback below leaves the OTP valid for a retry.
+      if (!(await consumeVerifiedOtp(tx, record.id))) throw new OtpAlreadyConsumedError();
 
-    // ── FOLLOW-1108: consent_records erasure MUST be tenant-scoped ──────────
-    //
-    // session_id is a device fingerprint, not a per-subject or per-tenant key:
-    // packages/sdk/src/core/session.ts generateSessionId() is an unkeyed
-    // SHA-256 over (user-agent | screen WxH | timezone | language), so the same
-    // value can legitimately exist under more than one tenant — and, on the
-    // same tenant, under more than one person (that second half is ESC-070 /
-    // FOLLOW-1105 / FOLLOW-1106 and is NOT closed by this predicate).
-    //
-    // Without eq(tenantId) this DELETE destroyed another controller's Art. 7(1)
-    // proof-of-consent rows. Served by consent_records_tenant_session_idx
-    // (tenant_id, session_id) — see packages/db/src/schema/consent_records.ts.
-    //
-    // ne(sessionId, '') is the same LG-2 empty-key guard the conversion_labels
-    // passes below carry: an empty key must never match rows wholesale. Only
-    // the DB-layer half is needed here — unlike the conversion_labels passes
-    // there is a single DELETE with no separate empty-key branch to skip, and
-    // `session_id = '' AND session_id <> ''` already matches zero rows.
-    await tx
-      .delete(consentRecords)
-      .where(
-        and(
-          eq(consentRecords.sessionId, record.sessionId),
-          eq(consentRecords.tenantId, record.tenantId),
-          ne(consentRecords.sessionId, ''),
-        ),
-      );
+      await tx
+        .delete(sessionEmbeddings)
+        .where(
+          and(
+            eq(sessionEmbeddings.sessionId, record.sessionId),
+            eq(sessionEmbeddings.tenantId, record.tenantId),
+          ),
+        );
 
-    // ── FOLLOW-172 / FOLLOW-184: conversion_labels erasure cascade (GDPR Art. 17) ─
-    //
-    // Two DELETE passes cover both identifier namespaces for this data subject:
-    //
-    //   Pass A — SDK feedback-ping labels (existing, FOLLOW-172):
-    //     conversion_labels WHERE lead_id = session_id
-    //     These are rows written by the SDK feedback ping with lead_id = session_id.
-    //
-    //   Pass B — CRM deep-outcome labels (NEW, FOLLOW-184):
-    //     conversion_labels WHERE lead_id = durable_lead_id
-    //     CRM webhook writes use an opaque tenant-supplied token as lead_id, which is
-    //     a DIFFERENT namespace from session_id. Without this pass those rows survive
-    //     a DSR erasure — GDPR Art. 17 gap (RETRO-031 §4a LG-1).
-    //
-    // CRITICAL GUARD on BOTH passes (FOLLOW-180/LG-2):
-    //   NEVER delete when the key is empty — an empty lead_id would erase ALL system
-    //   labels for the tenant (data loss). Guarded at two layers:
-    //     (a) application-layer: key !== '' before issuing the DELETE
-    //     (b) DB-layer: ne(conversionLabels.leadId, '') predicate in the WHERE clause
-    //
-    // Pass A: session_id path (SDK ping labels).
-    if (record.sessionId !== '') {
-      await tx.delete(conversionLabels).where(
-        and(
-          eq(conversionLabels.tenantId, record.tenantId),
-          eq(conversionLabels.leadId, record.sessionId),
-          // Double-guard: skip any row where lead_id was somehow stored as ''.
-          ne(conversionLabels.leadId, ''),
-        ),
-      );
+      // ── FOLLOW-1108: consent_records erasure MUST be tenant-scoped ──────────
+      //
+      // session_id is a device fingerprint, not a per-subject or per-tenant key:
+      // packages/sdk/src/core/session.ts generateSessionId() is an unkeyed
+      // SHA-256 over (user-agent | screen WxH | timezone | language), so the same
+      // value can legitimately exist under more than one tenant — and, on the
+      // same tenant, under more than one person (that second half is ESC-070 /
+      // FOLLOW-1105 / FOLLOW-1106 and is NOT closed by this predicate).
+      //
+      // Without eq(tenantId) this DELETE destroyed another controller's Art. 7(1)
+      // proof-of-consent rows. Served by consent_records_tenant_session_idx
+      // (tenant_id, session_id) — see packages/db/src/schema/consent_records.ts.
+      //
+      // ne(sessionId, '') is the same LG-2 empty-key guard the conversion_labels
+      // passes below carry: an empty key must never match rows wholesale. Only
+      // the DB-layer half is needed here — unlike the conversion_labels passes
+      // there is a single DELETE with no separate empty-key branch to skip, and
+      // `session_id = '' AND session_id <> ''` already matches zero rows.
+      await tx
+        .delete(consentRecords)
+        .where(
+          and(
+            eq(consentRecords.sessionId, record.sessionId),
+            eq(consentRecords.tenantId, record.tenantId),
+            ne(consentRecords.sessionId, ''),
+          ),
+        );
+
+      // ── FOLLOW-172 / FOLLOW-184: conversion_labels erasure cascade (GDPR Art. 17) ─
+      //
+      // Two DELETE passes cover both identifier namespaces for this data subject:
+      //
+      //   Pass A — SDK feedback-ping labels (existing, FOLLOW-172):
+      //     conversion_labels WHERE lead_id = session_id
+      //     These are rows written by the SDK feedback ping with lead_id = session_id.
+      //
+      //   Pass B — CRM deep-outcome labels (NEW, FOLLOW-184):
+      //     conversion_labels WHERE lead_id = durable_lead_id
+      //     CRM webhook writes use an opaque tenant-supplied token as lead_id, which is
+      //     a DIFFERENT namespace from session_id. Without this pass those rows survive
+      //     a DSR erasure — GDPR Art. 17 gap (RETRO-031 §4a LG-1).
+      //
+      // CRITICAL GUARD on BOTH passes (FOLLOW-180/LG-2):
+      //   NEVER delete when the key is empty — an empty lead_id would erase ALL system
+      //   labels for the tenant (data loss). Guarded at two layers:
+      //     (a) application-layer: key !== '' before issuing the DELETE
+      //     (b) DB-layer: ne(conversionLabels.leadId, '') predicate in the WHERE clause
+      //
+      // Pass A: session_id path (SDK ping labels).
+      if (record.sessionId !== '') {
+        await tx.delete(conversionLabels).where(
+          and(
+            eq(conversionLabels.tenantId, record.tenantId),
+            eq(conversionLabels.leadId, record.sessionId),
+            // Double-guard: skip any row where lead_id was somehow stored as ''.
+            ne(conversionLabels.leadId, ''),
+          ),
+        );
+      }
+
+      // Pass B: durable CRM lead_id path (CRM deep-outcome labels, FOLLOW-184).
+      // Only runs when the DSR initiator supplied a durable_lead_id AND it differs
+      // from the session_id (dedup: if they happen to be equal, Pass A already covered
+      // those rows — issuing a second DELETE is safe but wasteful).
+      const durableLeadId = record.durableLeadId;
+      if (
+        typeof durableLeadId === 'string' &&
+        durableLeadId !== '' &&
+        durableLeadId !== record.sessionId
+      ) {
+        await tx.delete(conversionLabels).where(
+          and(
+            eq(conversionLabels.tenantId, record.tenantId),
+            eq(conversionLabels.leadId, durableLeadId),
+            // Double-guard: belt-and-suspenders — an empty stored lead_id must never match.
+            ne(conversionLabels.leadId, ''),
+          ),
+        );
+      }
+
+      // ── FOLLOW-455 / audit F-20: quiz_completions erasure cascade ────────────
+      // MOAT training-data rows written by POST /api/quiz/completion. Session-
+      // scoped, same erasure obligation as session_embeddings.
+      await tx
+        .delete(quizCompletions)
+        .where(
+          and(
+            eq(quizCompletions.sessionId, record.sessionId),
+            eq(quizCompletions.tenantId, record.tenantId),
+          ),
+        );
+
+      // ── FOLLOW-1358: quiz_runs erasure cascade ───────────────────────────────
+      // One row per quiz shown (handover table H002), keyed like quiz_completions. Runs in a
+      // SAVEPOINT inside this transaction: if H002 is not applied yet (SQLSTATE 42P01) only the
+      // savepoint rolls back and the cascade continues — a table that does not exist holds no data.
+      // Any other error aborts the whole erase, as every other DELETE here does.
+      quizRunsErasure = await eraseQuizRunsForSession(tx, record.tenantId, record.sessionId);
+
+      // ── FOLLOW-455 / audit F-20: intent_sessions erasure cascade ─────────────
+      // K.3.6 archetype tracer aggregate state (archetype weights, confidence,
+      // quiz/chat signal counts). The matching ClickHouse intent_events rows are
+      // erased separately below on the SDK session_id key (FOLLOW-581) —
+      // independent of this Postgres row, so ordering no longer matters.
+      await tx
+        .delete(intentSessions)
+        .where(
+          and(
+            eq(intentSessions.sessionId, record.sessionId),
+            eq(intentSessions.tenantId, record.tenantId),
+          ),
+        );
+    });
+  } catch (err: unknown) {
+    if (err instanceof OtpAlreadyConsumedError) {
+      const { status, code, message } = dsrVerifyFailureResponse('already_used');
+      return NextResponse.json({ error: { code, message } }, { status });
     }
-
-    // Pass B: durable CRM lead_id path (CRM deep-outcome labels, FOLLOW-184).
-    // Only runs when the DSR initiator supplied a durable_lead_id AND it differs
-    // from the session_id (dedup: if they happen to be equal, Pass A already covered
-    // those rows — issuing a second DELETE is safe but wasteful).
-    const durableLeadId = record.durableLeadId;
-    if (
-      typeof durableLeadId === 'string' &&
-      durableLeadId !== '' &&
-      durableLeadId !== record.sessionId
-    ) {
-      await tx.delete(conversionLabels).where(
-        and(
-          eq(conversionLabels.tenantId, record.tenantId),
-          eq(conversionLabels.leadId, durableLeadId),
-          // Double-guard: belt-and-suspenders — an empty stored lead_id must never match.
-          ne(conversionLabels.leadId, ''),
-        ),
-      );
+    // A code only: a driver error's message carries the failed query and its params.
+    console.error('[dsr/erase] transaction failed: erase_failed');
+    if (typeof process !== 'undefined' && process.env.SENTRY_DSN_CONTROL_PLANE) {
+      try {
+        const Sentry = await import('@sentry/nextjs');
+        Sentry.captureException(new Error('dsr_erase erase_failed'), {
+          tags: { route: 'dsr/erase', tenant_id: record.tenantId, error_code: 'erase_failed' },
+        });
+      } catch {
+        // Sentry failure must not mask the real error.
+      }
     }
-
-    // ── FOLLOW-455 / audit F-20: quiz_completions erasure cascade ────────────
-    // MOAT training-data rows written by POST /api/quiz/completion. Session-
-    // scoped, same erasure obligation as session_embeddings.
-    await tx
-      .delete(quizCompletions)
-      .where(
-        and(
-          eq(quizCompletions.sessionId, record.sessionId),
-          eq(quizCompletions.tenantId, record.tenantId),
-        ),
-      );
-
-    // ── FOLLOW-1358: quiz_runs erasure cascade ───────────────────────────────
-    // One row per quiz shown (handover table H002), keyed like quiz_completions. Runs in a
-    // SAVEPOINT inside this transaction: if H002 is not applied yet (SQLSTATE 42P01) only the
-    // savepoint rolls back and the cascade continues — a table that does not exist holds no data.
-    // Any other error aborts the whole erase, as every other DELETE here does.
-    quizRunsErasure = await eraseQuizRunsForSession(tx, record.tenantId, record.sessionId);
-
-    // ── FOLLOW-455 / audit F-20: intent_sessions erasure cascade ─────────────
-    // K.3.6 archetype tracer aggregate state (archetype weights, confidence,
-    // quiz/chat signal counts). The matching ClickHouse intent_events rows are
-    // erased separately below on the SDK session_id key (FOLLOW-581) —
-    // independent of this Postgres row, so ordering no longer matters.
-    await tx
-      .delete(intentSessions)
-      .where(
-        and(
-          eq(intentSessions.sessionId, record.sessionId),
-          eq(intentSessions.tenantId, record.tenantId),
-        ),
-      );
-  });
+    auditFailure();
+    return NextResponse.json(
+      {
+        error: {
+          code: 'erase_failed',
+          message: 'The erase did not complete and the code is still valid. Retry this request.',
+        },
+        buyer_profile_erasure: buyerProfileErasure,
+      },
+      { status: 500 },
+    );
+  }
 
   // ── FOLLOW-239 / FOLLOW-238: CRM erasure tenant-capability check (GDPR Art. 17) ──
   //
@@ -639,6 +723,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   return NextResponse.json(
     {
       deleted_at: now.toISOString(),
+      // FOLLOW-1316: deleted | not_found | not_configured | not_requested.
+      buyer_profile_erasure: buyerProfileErasure,
       // FOLLOW-238 / FOLLOW-239: observable CRM capability provenance (Rule K.2 — not silent).
       // 'complete'                 — Pass B ran, or no CRM-namespace rows exist for this tenant.
       // 'crm_tenant_unverifiable'  — Pass B skipped; tenant has CRM rows but subject membership

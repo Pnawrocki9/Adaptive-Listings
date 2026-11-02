@@ -5,6 +5,7 @@
 
 import type { SessionState } from './session.js';
 import { getConsentState } from './session.js';
+import { markXidSent, readSendableXid } from './xid.js';
 import type { SdkConfig } from './config.js';
 import type {
   TextDirective,
@@ -18,7 +19,7 @@ import type { CollectedEvent } from './events.js';
 import { mapConsentState } from './events.js';
 import { SDK_VERSION } from './version.js';
 import type { IntentState } from './intent.js';
-import { applyChatIntentPrior } from './intent.js';
+import { applyChatIntentPrior, archetypeSource } from './intent.js';
 import { adaptResponseSchema } from './adapt-schema.js';
 import { buildEndpoint } from './endpoint.js';
 import { getHeadlineOwner, setHeadlineOwner, clearHeadlineOwner } from './headline-ownership.js';
@@ -223,6 +224,34 @@ export function postQuizRunPing(
 }
 
 /**
+ * POST /api/profile/erase, signed like the quiz pings (FOLLOW-1316, R25). `keepalive`, since a buyer
+ * may leave right after withdrawing. The xid goes in the body only (R3).
+ * @returns true only on a 2xx; anything else, 429 included, means the caller keeps the local xid.
+ */
+export async function postProfileErase(config: SdkConfig, xid: string): Promise<boolean> {
+  if (!config.decisionApiUrl || !config.tenantId) return false;
+  const eraseUrl = buildEndpoint(config.decisionApiUrl, '/profile/erase');
+  const body = JSON.stringify({ tenant_id: config.tenantId, xid });
+  const signatureHex = await computeHmacSha256Hex(config.apiKey, body);
+  if (signatureHex === null) return false;
+  try {
+    const res = await fetch(eraseUrl, {
+      method: 'POST',
+      keepalive: true,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey}`,
+        'X-Estalara-Signature': signatureHex,
+      },
+      body,
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * @deprecated Use TextDirective or ClassDirective from @estalara/shared instead.
  * Kept for backward compatibility with existing consumers.
  */
@@ -234,6 +263,8 @@ export interface Directive {
 }
 
 export interface AdaptResponse {
+  /** What the returning-buyer restore did on this call (FOLLOW-1316); absent = no store read. */
+  profile_restore?: string;
   /** Per-decision UUID, mirrors `AdaptationDirectives.adapt_decision_id` [FOLLOW-105]. */
   adapt_decision_id: string;
   session_id: string;
@@ -791,9 +822,22 @@ export async function fetchDirectives(
     }
     if (listingIds.length > 0) body.listing_ids = listingIds;
 
-    // 'pending' never reaches here; 'unknown' is the safe mapping.
+    // The canonical vocabulary (FOLLOW-1316, R5). 'pending' never reaches here; 'unknown' is the
+    // safe mapping.
     const sdkConsent = getConsentState();
-    body.consent_state = sdkConsent === 'pending' ? 'unknown' : sdkConsent;
+    body.consent_state = sdkConsent === 'pending' ? 'unknown' : mapConsentState(sdkConsent);
+
+    // The returning buyer's id: only with the server flag on, only if every R2 condition holds right
+    // now, and in this POST body only (FOLLOW-1316, ESC-090 item 4).
+    if (config.buyerProfileEnabled && !profilingOptedOut) {
+      const xid = readSendableXid(leadId);
+      if (xid && markXidSent(xid, leadId)) {
+        body.xid = xid.id;
+        body.xid_created_at = xid.created_at;
+        // Undefined for a chat-moved or neutral label: `JSON.stringify` drops the key.
+        body.archetype_source = intentState && archetypeSource(intentState);
+      }
+    }
 
     // Opt-out rides the URL query (§H.9) [FOLLOW-383].
     const adaptPath = profilingOptedOut ? '/adapt?profiling_opt_out=1' : '/adapt';

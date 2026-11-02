@@ -75,6 +75,28 @@ export async function verifyAndConsumeOtp(
   db: ReturnType<typeof createAdminClient>,
   args: { requestId: string; token: string; dsrType: DsrCapability },
 ): Promise<DsrVerifyResult> {
+  const verified = await verifyOtpWithoutConsuming(db, args);
+  if (!verified.ok) return verified;
+  if (!(await consumeVerifiedOtp(db, args.requestId))) {
+    return { ok: false, reason: 'already_used' };
+  }
+  return verified;
+}
+
+/**
+ * The verification half of {@link verifyAndConsumeOtp}: lockout, used, expired, the code, and the
+ * attempt counter on a wrong code. The request stays unspent until {@link consumeVerifiedOtp}.
+ *
+ * For a route whose work can fail in a way the data subject must be able to retry (FOLLOW-1316:
+ * `/api/dsr/erase`, because no new OTP can be had while `initiate` refuses every caller).
+ *
+ * @param db - Admin Drizzle client, as for {@link verifyAndConsumeOtp}.
+ * @param args - As for {@link verifyAndConsumeOtp}.
+ */
+export async function verifyOtpWithoutConsuming(
+  db: ReturnType<typeof createAdminClient>,
+  args: { requestId: string; token: string; dsrType: DsrCapability },
+): Promise<DsrVerifyResult> {
   const [record] = await db
     .select()
     .from(dsrVerifications)
@@ -112,21 +134,27 @@ export async function verifyAndConsumeOtp(
     return { ok: false, reason: 'invalid_code' };
   }
 
-  // Atomic mark-used: WHERE used_at IS NULL guards against a race where two
-  // concurrent requests both passed the used_at check above.
-  const [consumed] = await db
+  return { ok: true, record };
+}
+
+/**
+ * Atomically mark a verified request consumed. Inside a transaction, a rollback leaves it unspent.
+ *
+ * @param db - The admin client or a transaction on it.
+ * @param requestId - The verified request.
+ * @returns false when another request consumed it first: WHERE used_at IS NULL guards against two
+ *   concurrent requests that both passed the used_at check in verification.
+ */
+export async function consumeVerifiedOtp(
+  db: Pick<ReturnType<typeof createAdminClient>, 'update'>,
+  requestId: string,
+): Promise<boolean> {
+  const consumed = await db
     .update(dsrVerifications)
     .set({ usedAt: new Date() })
-    .where(and(eq(dsrVerifications.id, args.requestId), isNull(dsrVerifications.usedAt)))
-    .returning();
-
-  if (!consumed) {
-    // Lost the race — another request already consumed this token between
-    // our SELECT and our UPDATE.
-    return { ok: false, reason: 'already_used' };
-  }
-
-  return { ok: true, record: consumed };
+    .where(and(eq(dsrVerifications.id, requestId), isNull(dsrVerifications.usedAt)))
+    .returning({ id: dsrVerifications.id });
+  return consumed.length > 0;
 }
 
 /**

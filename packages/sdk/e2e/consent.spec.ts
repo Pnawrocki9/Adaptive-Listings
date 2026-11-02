@@ -8,10 +8,9 @@
  * 4. Returning after Accept → no banner shown, events flow immediately.
  *
  * NOTE — TICKET-GDPR-004 consent_state propagation:
- * When the user accepts consent ('granted'), fetchDirectives() in core/adapt.ts now sends
- * consent_state: 'granted' in the Decision API POST body. This prevents the EU gate in the
- * Decision API from returning neutral directives for consented EU buyers.
- * Mapping: SDK 'granted'→'granted', 'denied'→'denied', 'pending'→'unknown' (safe conservative).
+ * When the user accepts consent ('granted'), fetchDirectives() in core/adapt.ts sends the canonical
+ * consent_state: 'consented' in the Decision API POST body (FOLLOW-1316, R5).
+ * Mapping: SDK 'granted'→'consented', 'denied'→'none', 'pending'→'unknown' (safe conservative).
  * Unit-level coverage for this mapping is in packages/sdk/src/__tests__/adapt.test.ts.
  */
 import { readFileSync } from 'node:fs';

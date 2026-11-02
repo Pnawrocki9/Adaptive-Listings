@@ -50,9 +50,12 @@ const CONSENT_TEXT_TIMEOUT_MS = 3000;
  * @param language - locale chosen by the existing level-2/3/4 chain (`data-language` →
  *   `navigator.language` → `'en'`). Selection is client-side by contract: the document ships
  *   every locale so the URL cannot leak one (§D3).
- * @returns the locale's copy, or `null` for EVERY failure mode — the caller must fail closed.
+ * @returns the locale's copy and the document's `text_version` (recorded at grant, FOLLOW-1316 R6),
+ *   or `null` for EVERY failure mode — the caller must fail closed.
  */
-export async function fetchConsentText(language: QuizLanguage): Promise<ConsentTextLocale | null> {
+export async function fetchConsentText(
+  language: QuizLanguage,
+): Promise<{ copy: ConsentTextLocale; textVersion: string } | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => {
     controller.abort();
@@ -71,7 +74,8 @@ export async function fetchConsentText(language: QuizLanguage): Promise<ConsentT
     const parsed = ConsentTextDocumentSchema.safeParse(await response.json());
     if (!parsed.success) return null;
 
-    return parsed.data.locales[language] ?? null;
+    const copy = parsed.data.locales[language];
+    return copy ? { copy, textVersion: parsed.data.text_version } : null;
   } catch {
     // Network error, abort, or malformed JSON — all one outcome by design (§D4).
     return null;

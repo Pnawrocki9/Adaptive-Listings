@@ -62,6 +62,23 @@ export function isProfilingOptedOut(userId?: string): boolean {
   }
 }
 
+/** Every opt-out key in this browser, scoped or not. */
+function optOutKeys(): string[] {
+  try {
+    return Object.keys(localStorage).filter((key) => key.startsWith(PROFILING_OPT_OUT_KEY));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * True when ANY opt-out key exists: the flag is scoped by lead id and the xid by browser, so an
+ * anonymous session under a lead's opt-out still sends no xid (FOLLOW-1316, R37).
+ */
+export function hasProfilingOptOutKey(): boolean {
+  return optOutKeys().length > 0;
+}
+
 /**
  * Persist the profiling opt-out choice for a user.
  *
@@ -86,13 +103,19 @@ export function setProfilingOptOut(optedOut: boolean, userId?: string): void {
  * Erase the profiling opt-out flag.
  *
  * Called on consent denial / withdrawal so the storage is cleaned up consistently
- * with other AL keys (DPIA §13.2 erasure obligation pattern, RETRO-019/020).
+ * with other AL keys (DPIA §13.2 erasure obligation pattern, RETRO-019/020). Without a user id it
+ * clears every scoped key too: one left behind would mute a later grant's xid (R37).
  *
  * @param userId - Optional scoped user identifier.
  */
 export function eraseProfilingOptOut(userId?: string): void {
   try {
     localStorage.removeItem(profilingOptOutKey(userId));
+    if (!userId) {
+      optOutKeys().forEach((key) => {
+        localStorage.removeItem(key);
+      });
+    }
   } catch {
     // localStorage unavailable — nothing to erase
   }

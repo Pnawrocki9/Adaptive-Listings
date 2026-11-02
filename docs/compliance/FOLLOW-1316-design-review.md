@@ -367,15 +367,15 @@ line states its test.
 **Legal confirmation needed before production. I am not a lawyer, and every lawful-basis statement
 in this record is an engineering read.**
 
-| #   | Question                                                                                                                                                                                                           |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| L-1 | Does the banner cover server-side persistence of an inferred profile for up to 90 days? If not, is the section-9 draft sufficient, and do earlier consents need renewal? (ESC-086(b) packet.)                      |
-| L-2 | One Accept for personalisation and persistence, or a separate choice (granularity)?                                                                                                                                |
-| L-3 | Do archetype labels or traits reveal Art. 9 data by inference (`diaspora_buyer`, `golden_visa_buyer`, `residency_goal`, `buying_from_abroad`), requiring explicit consent? Is `has_children` otherwise acceptable? |
-| L-4 | After withdrawal, does Art. 17(1)(b) require erasing consent-based rows from earlier sessions that cannot be located (R35)?                                                                                        |
-| L-5 | Shared browsers: can one person's consent carry processing that reaches another? Is the consent's indefinite lifetime acceptable?                                                                                  |
-| L-6 | Does §13.5 suspend-not-erase still hold with a 90-day server-side profile? (DPO gate already PENDING.)                                                                                                             |
-| L-7 | Is Art. 22 engaged by persistent copy adaptation? UAE PDPL and CCPA treatment of the same flow?                                                                                                                    |
+| #   | Question                                                                                                                                                                                                                                                |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| L-1 | Does the banner cover server-side persistence of an inferred profile for up to 90 days? If not, is the section-9 draft sufficient, and do earlier consents need renewal? (ESC-086(b) packet.)                                                           |
+| L-2 | One Accept for personalisation and persistence, or a separate choice (granularity)?                                                                                                                                                                     |
+| L-3 | Do archetype labels or traits reveal Art. 9 data by inference (`diaspora_buyer`, `golden_visa_buyer`, `lifestyle_expat`, `student_parent`, `residency_goal`, `buying_from_abroad`), requiring explicit consent? Is `has_children` otherwise acceptable? |
+| L-4 | After withdrawal, does Art. 17(1)(b) require erasing consent-based rows from earlier sessions that cannot be located (R35)?                                                                                                                             |
+| L-5 | Shared browsers: can one person's consent carry processing that reaches another? Is the consent's indefinite lifetime acceptable?                                                                                                                       |
+| L-6 | Does §13.5 suspend-not-erase still hold with a 90-day server-side profile? (DPO gate already PENDING.)                                                                                                                                                  |
+| L-7 | Is Art. 22 engaged by persistent copy adaptation? UAE PDPL and CCPA treatment of the same flow?                                                                                                                                                         |
 
 **Before production (CTO handover row, R20):** L-1 to L-6 answered; DPO sign-off of the rewritten
 §13.2 and §13.5; Upstash EU region confirmed or H003 applied; R8 flag set by the CTO only after
@@ -433,3 +433,23 @@ adaptation.
 
 Per the plan's K4b STOP rule, a profile restored in any of NC-1 to NC-7 or NC-14 is a privacy
 defect: do not merge.
+
+## 12. Build record (server half, 2026-11-02)
+
+Departures from the text above, decided on an independent reading of the server PR. They describe
+behaviour behind the R8 flag.
+
+- **R27, tombstone length.** A self-service erase keeps 24 hours, because the browser forgets the
+  id. An erase through `/api/dsr/erase` keeps the tombstone 90 days, because that browser is never
+  told and keeps writing until its id rotates. A tombstone holds only `sha256(xid)` in its key and
+  the value `1`; it holds no profile data. A later erase never shortens a longer one.
+- **R27, NC-11, atomicity.** A write and a delete are each one Lua `EVAL`. Measured through the
+  localhost adapter, SRH and redis 7.4. Upstash documents `EVAL` over REST; hosted Upstash was not
+  probed, and that is part of CTO_HANDOVER section 4 row 20.
+- **R31, order.** `/api/dsr/erase` deletes the profile first, and spends the OTP inside the Postgres
+  transaction. A store failure or a Postgres failure leaves the OTP valid, and the same request
+  retries.
+- **R21.** An `xid_created_at` more than 5 minutes ahead of the server clock means the xid is not
+  honoured.
+- **R13, R14, Art. 5(1)(d).** A quiz result that may not persist deletes the stored key and leaves
+  no tombstone. Source ranking: `quiz` overwrites anything; `behavior` overwrites `behavior` only.

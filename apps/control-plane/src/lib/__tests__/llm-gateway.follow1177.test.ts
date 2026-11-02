@@ -284,7 +284,7 @@ describe('FOLLOW-1177 — the provenance exemption is countable', () => {
       // RENDERED output against the RAW authored string, so an archetype whose CTA carries a
       // placeholder can never satisfy the provenance conjunct — the exemption is silently off
       // for that archetype. It stops being silent here: the flag lands in the judge's bucket.
-      const tokenisedCta = playbookWithCta('Request the {city} Investment Pack');
+      const tokenisedCta = playbookWithCta('Ask the {city} Investment Desk');
       mockCreate
         .mockResolvedValueOnce(
           anthropicResponse(directives(['cta', 'Ask the Alfama Investment Desk'])),

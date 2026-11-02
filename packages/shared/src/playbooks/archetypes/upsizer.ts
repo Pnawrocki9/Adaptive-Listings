@@ -17,7 +17,7 @@ export const upsizerPlaybook: PlaybookEntry = {
       },
     },
     { slot: 'cta', en: 'Ask the Agent About Moving Up' },
-    { slot: 'feature', en: 'Why Upgrade?' },
+    { slot: 'feature', en: 'Why Upgrade' },
   ],
   listing_rules: {
     boost_if: ['larger_than_area_avg', 'premium_finish', 'good_location_score'],

@@ -4,10 +4,10 @@
   "new_body_refusals": 0,
   "headlines_newly_suppressed": 0,
   "headlines_newly_served": 0,
-  "adapt_slots_newly_refused": 28,
+  "adapt_slots_newly_refused": 27,
   "adapt_slots_total": 84,
   "un_refused": 0,
-  "note": "The recordings predate the slot rule in the prompt, so this is the old output under the new check, not a forecast of the refusal rate: every recorded feature is a paragraph of 92 to 317 characters, none is a label. Slot refused, seller's copy stands. Body verdicts unmoved.",
+  "note": "The recordings predate the slot rule in the prompt, so this is the old output under the new check, not a forecast of the refusal rate: every recorded feature is a paragraph of 92 to 317 characters, none is a label. Slot refused, seller's copy stands. Body verdicts unmoved. The review's added CTA shapes and the question exemption moved no other case: the one CTA first refused here (\"Zapytaj o szczegóły umowy najmu i dokumentację lokalu\") is a question to the agent and passes again.",
   "moved": {
     "adapt.fx.family_buyer": [
       {
@@ -167,13 +167,6 @@
         "violation": "feature_not_a_label",
         "chars": 158,
         "class": "true_positive"
-      },
-      {
-        "slot": "cta",
-        "violation": "cta_promises_deliverable",
-        "chars": 53,
-        "class": "false_positive",
-        "why": "It asks the agent about the lease and the premises documentation; it promises no document. The word list cannot tell a question from an offer. Accepted: the cost is one cta, and the seller's copy stands."
       }
     ],
     "adapt.lok.yield_hunter": [
@@ -234,5 +227,5 @@
     ]
   },
   "true_positives": 27,
-  "false_positives": 1
+  "false_positives": 0
 }

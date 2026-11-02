@@ -36,20 +36,25 @@ const RECORDED_PARAGRAPH =
   'cul-de-sac minutes from I-95.';
 
 describe('checkSlotFit: feature is a short section label', () => {
-  it.each([
-    'Investment Performance',
-    'Why Upgrade?',
-    'Dla rodziny — najważniejsze',
-    'a'.repeat(40),
-  ])('accepts %s', (value) => {
-    expect(checkSlotFit('feature', value)).toBeNull();
-  });
+  it.each(['Investment Performance', 'Why Upgrade', 'Dla rodziny — najważniejsze', 'a'.repeat(40)])(
+    'accepts %s',
+    (value) => {
+      expect(checkSlotFit('feature', value)).toBeNull();
+    },
+  );
 
   it.each([
     RECORDED_PARAGRAPH,
     'a'.repeat(41),
     'Rents and resells well.',
     'Quiet street. Close to I-95',
+    'Why upgrade?',
+    'Is this the one? Yes',
+    'Line one\nLine two',
+    'Line one\r\nLine two',
+    'Line one\u2028Line two',
+    // Fails safe: a heading that happens to hold an abbreviation (left refused on purpose).
+    "St. Mary's Quarter",
   ])('refuses %s', (value) => {
     expect(checkSlotFit('feature', value)).toBe('feature_not_a_label');
   });
@@ -64,7 +69,29 @@ describe('checkSlotFit: cta says what the button does', () => {
     'See the rental report',
     'Send me the documents',
     'Get the PDF',
+    // The shapes the review got past the first list.
+    'Request the guidebook',
+    'Get the prospectus',
+    'See the factsheet',
+    'See the fact sheet',
+    'Open the rental calculator',
+    'Request a financial summary',
+    'Request the downloadable pack',
+    // Normalised before matching: NBSP, other spaces and decomposed accents.
+    'Request\u00a0the\u00a0pack',
+    'financial\u00a0details',
+    'financial\n  details',
+    'Ver la gui\u0301a',
+    // Asking about something is fine; asking and getting it is not.
+    'Ask about returns and get the guide',
+    'Ask the agent about this home and download the brochure',
+    'Ask for the guide',
     // PL, inflected
+    'Otrzymaj dosier inwestycyjny',
+    'Pobierz materiały',
+    'Zobacz zestawienie kosztów',
+    'Otwórz kalkulator najmu',
+    'Zamów analizę rentowności',
     'Pobierz poradnik dla rodzin',
     'Zamów pakiet inwestycyjny',
     'Poproś o broszurę',
@@ -81,6 +108,12 @@ describe('checkSlotFit: cta says what the button does', () => {
     'Solicita los documentos',
     'Ver los detalles financieros',
     'Pide el paquete de inversión',
+    'Solicita el dosier',
+    'Solicita la ficha',
+    'Ver el catálogo',
+    'Ver el catalogo',
+    'Solicita la información financiera',
+    'Solicita la informacion financiera',
   ])('refuses %s', (value) => {
     expect(checkSlotFit('cta', value)).toBe('cta_promises_deliverable');
   });
@@ -95,8 +128,24 @@ describe('checkSlotFit: cta says what the button does', () => {
     // A stem inside a longer word is no promise.
     'Ask about the backpacking trails',
     'Ask about the reporter',
+    // A question to the agent, whatever it names: the button does exactly that.
+    'Ask about the lease documents',
+    'Ask the agent about the financial details',
+    'Zapytaj o szczegóły umowy najmu i dokumentację lokalu',
+    'Pregunta al agente sobre la ficha del local',
   ])('accepts %s', (value) => {
     expect(checkSlotFit('cta', value)).toBeNull();
+  });
+
+  // Known false positives, left refused: they fail safe, the seller's copy stands. Pinned so a change
+  // of the list shows up here.
+  it.each([
+    'Let the agent guide you',
+    'Message the agent about the lease documents',
+    'Zobacz materiały wykończeniowe',
+    'Ask about the documents to see',
+  ])('still refuses %s', (value) => {
+    expect(checkSlotFit('cta', value)).toBe('cta_promises_deliverable');
   });
 
   it('family wording is not what it reads (ESC-089)', () => {

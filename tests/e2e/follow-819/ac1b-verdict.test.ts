@@ -520,27 +520,27 @@ describe('the fold: AC(1b) is inside AC(1), and the TALLY keeps its meaning', ()
 
   it('GRADED_ACS has no row of its own for AC(1b)', () => {
     expect(GRADED_ACS).not.toContain('AC(1b)');
-    expect(GRADED_ACS).toHaveLength(8);
+    expect(GRADED_ACS).toHaveLength(9);
   });
 
-  it('adapted + faithful: AC(1) PASS, total=8, run GREEN', () => {
+  it('adapted + faithful: AC(1) PASS, total=9, run GREEN', () => {
     const g = gradedAfterFold([adapted], grade('clean'));
     expect(ac1In(g).verdict).toBe('PASS');
-    expect(g.tallyLine).toBe('TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN');
+    expect(g.tallyLine).toBe('TALLY green=9 red=0 unmeasured=0 total=9 run=GREEN');
   });
 
-  it('adapted + a wrong price: AC(1) FAIL, total=8, run RED', () => {
+  it('adapted + a wrong price: AC(1) FAIL, total=9, run RED', () => {
     const g = gradedAfterFold([adapted], grade('wrongPrice'));
     expect(ac1In(g).verdict).toBe('FAIL');
     expect(ac1In(g).unmeasuredBecause).toBeNull();
-    expect(g.tallyLine).toBe('TALLY green=7 red=1 unmeasured=0 total=8 run=RED');
+    expect(g.tallyLine).toBe('TALLY green=8 red=1 unmeasured=0 total=9 run=RED');
   });
 
   it('adapted + no description: AC(1) UNMEASURED[no_description], never green', () => {
     const g = gradedAfterFold([adapted], noDescription());
     expect(ac1In(g).verdict).toBe('UNMEASURED');
     expect(ac1In(g).unmeasuredBecause).toBe('no_description');
-    expect(g.tallyLine).toBe('TALLY green=7 red=0 unmeasured=1 total=8 run=UNMEASURED');
+    expect(g.tallyLine).toBe('TALLY green=8 red=0 unmeasured=1 total=9 run=UNMEASURED');
     expect(g.summaryLine).toContain('AC(1)[no_description]');
   });
 

@@ -944,7 +944,7 @@ describe('FOLLOW-1367 — evaluateServedQuizConfig(): the tree AC(10) walks is s
   });
 });
 
-// ─── FOLLOW-1367: AC(5)'s CTA click; TALLY 8; AC(1) at the new values ───────────────────────
+// ─── FOLLOW-1367: AC(5)'s CTA click; TALLY 9; AC(1) at the new values ───────────────────────
 
 describe('FOLLOW-1367 — AC(5) closes the quiz card before its CTA click, never force-clicks', () => {
   it('closeQuizCardBeforeCta() runs before the click and its result lands in AC(5) evidence', () => {
@@ -970,21 +970,23 @@ describe('FOLLOW-1367 — AC(5) closes the quiz card before its CTA click, never
   });
 });
 
-describe('FOLLOW-1361 — TALLY total=8, every graded AC listed', () => {
+describe('FOLLOW-1361, FOLLOW-1345 — TALLY total=9, every graded AC listed', () => {
   const all = (): Result[] =>
-    ['AC(1)', 'AC(2)', 'AC(3)', 'AC(4)', 'AC(5)', 'AC(7)', 'AC(8)', 'AC(10)'].map((ac) => ({
-      ac,
-      name: ac,
-      ok: true,
-    }));
+    ['AC(1)', 'AC(2)', 'AC(3)', 'AC(4)', 'AC(5)', 'AC(7)', 'AC(8)', 'AC(10)', 'AC(9)'].map(
+      (ac) => ({
+        ac,
+        name: ac,
+        ok: true,
+      }),
+    );
 
-  it('lists eight graded ACs, AC(10) among them', () => {
+  it('lists nine graded ACs, AC(10) and AC(9) among them', () => {
     expect([...GRADED_ACS]).toEqual(all().map((r) => r.ac));
   });
 
-  it('a full green run reads TALLY green=8 … total=8 run=GREEN', () => {
+  it('a full green run reads TALLY green=9 … total=9 run=GREEN', () => {
     expect(gradeRun(all(), facts).tallyLine).toBe(
-      'TALLY green=8 red=0 unmeasured=0 total=8 run=GREEN',
+      'TALLY green=9 red=0 unmeasured=0 total=9 run=GREEN',
     );
   });
 

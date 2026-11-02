@@ -75,6 +75,9 @@ apps/control-plane/src/app/api/listings/embed/route.ts
 apps/control-plane/src/app/api/pilot/calibration/route.ts
 apps/control-plane/src/app/api/pilot/cta-lift/route.ts
 apps/control-plane/src/app/api/pilot/inquiry-starts/route.ts
+apps/control-plane/src/app/api/profile/access/route.ts
+apps/control-plane/src/app/api/profile/erase/route.ts
+apps/control-plane/src/app/api/profile/portability/route.ts
 apps/control-plane/src/app/api/quiz/analytics/route.ts
 apps/control-plane/src/app/api/quiz/completion/route.ts
 apps/control-plane/src/app/api/quiz/config/route.ts

@@ -101,6 +101,8 @@ export function mergeQuizConfig(
     // FOLLOW-641 / ADR-0019 D2: overlay the optional opt-out widget config. Absent → key
     // omitted so renderProfilingToggle uses hardcoded defaults (byte-identical, D4).
     ...(fetched.opt_out_widget ? { optOutWidget: fetched.opt_out_widget } : {}),
+    // FOLLOW-1316: omitted unless the server says true.
+    ...(fetched.buyer_profile_enabled === true ? { buyerProfileEnabled: true } : {}),
   };
 }
 
@@ -152,7 +154,8 @@ export async function boot(queue: CollectedEvent[]): Promise<BootContext | null>
   const session = await getOrCreateSession();
   const currentSession = incrementPageCount(session);
 
-  // Lead id = SHA-256 prefix of the `sub`, sessionStorage only (Rule L) [FOLLOW-197].
+  // Lead id = SHA-256 prefix of the `sub`, kept in sessionStorage (Rule L) [FOLLOW-197]. See
+  // LEAD_ID_STORAGE_KEY for the localStorage copies.
   try {
     const kcToken = localStorage.getItem('kc_token');
     if (kcToken) {

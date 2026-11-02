@@ -54,6 +54,12 @@ export interface AssignHoldoutOptions {
   /** Session fingerprint (32–64 chars). */
   session_id: string;
   /**
+   * The id to key the arm on instead of `session_id`: a consented, validated xid, so one returning
+   * buyer keeps one arm across sessions (FOLLOW-1316, ESC-090 item 2). Absent = keyed per session.
+   * Denominators stay per session, so rows of one xid are correlated (MASTER_DESIGN "Decision #5").
+   */
+  assignment_unit_id?: string;
+  /**
    * Consent state from the inbound request.
    * If 'opted_out' | 'unknown' | 'none' AND consent_mode_enabled is true, assignment is skipped.
    */
@@ -92,14 +98,15 @@ export const MIN_ASSIGNMENT_SECRET_LENGTH = 16;
  * emit any events. Callers are responsible for event emission and DB upserts.
  *
  * Algorithm:
- *   HMAC-SHA-256(key = assignment_secret, message = tenant_id + "\n" + session_id) → 32 bytes.
+ *   HMAC-SHA-256(key = assignment_secret, message = tenant_id + "\n" + unit) → 32 bytes, where unit
+ *   is `assignment_unit_id` when given, else `session_id`.
  *   Take first 4 bytes as a big-endian uint32.
  *   holdout = (uint32 / 0xFFFFFFFF) < holdout_pct.
  *
  * Properties:
  *   - Deterministic: same (secret, tenant_id, session_id) → same group on every call.
  *   - Uniform: fraction assigned converges to holdout_pct within ±1pp at N=10,000.
- *   - Fair-housing safe: input is purely (tenant_id, session_id) — no user attributes.
+ *   - Fair-housing safe: input is purely (tenant_id, unit id) — no user attributes.
  *   - Unpredictable without the secret: `ab-holdout.test.ts` runs the pre-FOLLOW-1201 public
  *     algorithm as an offline grinder and shows its predictions land at chance.
  *   - Idempotent: pure function, no state.
@@ -112,6 +119,7 @@ export async function assignHoldout(opts: AssignHoldoutOptions): Promise<Assignm
   const {
     tenant_id,
     session_id,
+    assignment_unit_id,
     consent_state,
     consent_mode_enabled = false,
     holdout_pct = DEFAULT_HOLDOUT_PCT,
@@ -136,7 +144,7 @@ export async function assignHoldout(opts: AssignHoldoutOptions): Promise<Assignm
   }
 
   // Deterministic hash-based assignment.
-  // HMAC-SHA-256 with key=assignment_secret, message=tenant_id\nsession_id.
+  // HMAC-SHA-256 with key=assignment_secret, message=tenant_id\nunit.
   const encoder = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
@@ -148,7 +156,7 @@ export async function assignHoldout(opts: AssignHoldoutOptions): Promise<Assignm
   const signature = await crypto.subtle.sign(
     'HMAC',
     keyMaterial,
-    encoder.encode(`${tenant_id}\n${session_id}`),
+    encoder.encode(`${tenant_id}\n${assignment_unit_id ?? session_id}`),
   );
 
   // Take first 4 bytes as big-endian uint32.

@@ -17,7 +17,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ─── Mock @estalara/db ────────────────────────────────────────────────────────
 // We mock createAdminClient so we can control what the DB returns per test.
@@ -463,6 +463,54 @@ describe('GET /api/quiz/public-config — quiz_definition slice (FOLLOW-639)', (
     expect(body.definition_hash).toBe(DEFAULT_V2_HASH);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+});
+
+// The SDK's own gate on the xid: without this field it never leaves the browser [FOLLOW-1316].
+describe('GET /api/quiz/public-config — buyer_profile_enabled (FOLLOW-1316)', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.stubEnv('DATABASE_URL_ADMIN', 'postgresql://test:test@localhost:5432/test');
+    const validKeyHash = await sha256Hex(VALID_KEY_RAW);
+    mockLimit.mockReset();
+    mockLimit
+      .mockResolvedValueOnce([{ tenantId: TENANT_ID, hashedKey: validKeyHash }])
+      .mockResolvedValueOnce([{ quizConfig: {}, quizEnabled: true }])
+      .mockResolvedValue([]);
+    mockWhere.mockReturnValue({ limit: mockLimit });
+    mockFrom.mockReturnValue({ where: mockWhere });
+    mockSelect.mockReturnValue({ from: mockFrom });
+  });
+
+  afterEach(() => {
+    // Later describes queue their own lookups: leave no unconsumed answer and no flag behind.
+    mockLimit.mockReset();
+    vi.stubEnv('BUYER_PROFILE_ENABLED', '');
+  });
+
+  it.each([
+    ['unset', ''],
+    ['any other value', '1'],
+  ])('the flag %s: the field is absent, byte-identical to before', async (_name, value) => {
+    vi.stubEnv('BUYER_PROFILE_ENABLED', value);
+    const body = await parseBody<Record<string, unknown>>(await GET(makeGetRequest(VALID_KEY_RAW)));
+    expect(body.data_source).toBe('db');
+    expect(body).not.toHaveProperty('buyer_profile_enabled');
+  });
+
+  it('BUYER_PROFILE_ENABLED=true: the field is true, through the real outbound schema', async () => {
+    vi.stubEnv('BUYER_PROFILE_ENABLED', 'true');
+    const body = await parseBody<Record<string, unknown>>(await GET(makeGetRequest(VALID_KEY_RAW)));
+    expect(body.buyer_profile_enabled).toBe(true);
+  });
+
+  it('a fallback answer leaves it out even with the flag on: fail closed', async () => {
+    vi.stubEnv('BUYER_PROFILE_ENABLED', 'true');
+    vi.stubEnv('DATABASE_URL_ADMIN', '');
+    vi.stubEnv('DATABASE_URL_DIRECT', '');
+    const body = await parseBody<Record<string, unknown>>(await GET(makeGetRequest('any-key')));
+    expect(body.data_source).toBe('fallback');
+    expect(body).not.toHaveProperty('buyer_profile_enabled');
   });
 });
 

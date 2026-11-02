@@ -143,6 +143,9 @@ export const adaptResponseSchema = z
      * call so pages without hand-coded slot attributes visibly adapt.
      */
     slot_selectors: z.record(z.string()).optional(),
+    // FOLLOW-1316: see `profile_restore` in `@estalara/shared`. A string, like `fallback_reason`, so a
+    // new value can never fail this parse and cost the buyer the whole response.
+    profile_restore: z.string().optional(),
   })
   .passthrough();
 

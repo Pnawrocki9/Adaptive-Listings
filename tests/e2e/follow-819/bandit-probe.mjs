@@ -134,3 +134,59 @@ export async function readCosinePreconditionFacts(databaseUrl, tenantId, listing
     await sql.end({ timeout: 5 });
   }
 }
+
+/**
+ * FOLLOW-1345 AC(9)(c) — seed one `dsr_verifications` row for `POST /api/dsr/erase`.
+ *
+ * `POST /api/dsr/initiate` refuses every caller today (FOLLOW-1316 design review B5, R33), so this is
+ * the only way to reach the erase route, and AC(9)'s evidence says so. The caller hands in the
+ * sha-256 of a one-time code it drew itself and a throwaway session id. Same columns as the
+ * route-driven test (`dsr/erase/route-driven-pglite.test.ts`).
+ *
+ * @param {string} databaseUrl - `DATABASE_URL_ADMIN` for the LOCAL Postgres (:5433).
+ * @param {{tenantId: string, sessionId: string, otpHash: string}} row
+ * @returns {Promise<string>} The row's id, the erase request's `request_id`.
+ */
+export async function seedDsrEraseVerification(databaseUrl, { tenantId, sessionId, otpHash }) {
+  const sql = postgres(databaseUrl, { max: 1, idle_timeout: 5, connect_timeout: 10 });
+  try {
+    const [row] = await sql`
+      INSERT INTO dsr_verifications (tenant_id, session_id, email, dsr_type, otp_hash, expires_at)
+      VALUES (${tenantId}::uuid, ${sessionId}, 'ac9-seeded@example.invalid', 'erase', ${otpHash},
+              now() + interval '15 minutes')
+      RETURNING id
+    `;
+    return String(row.id);
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
+/** FOLLOW-1345 AC(9)(c) — remove the seeded row once the erase has answered. */
+export async function deleteDsrVerification(databaseUrl, id) {
+  const sql = postgres(databaseUrl, { max: 1, idle_timeout: 5, connect_timeout: 10 });
+  try {
+    await sql`DELETE FROM dsr_verifications WHERE id = ${id}::uuid`;
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
+/**
+ * FOLLOW-1345 AC(9)(e), NC-8 — how many `intent_sessions` rows carry one of these xids (R4: none may).
+ *
+ * @param {string} databaseUrl - `DATABASE_URL_ADMIN` for the LOCAL Postgres (:5433).
+ * @param {ReadonlyArray<string>} xids
+ * @returns {Promise<number>}
+ */
+export async function countIntentSessionsWithXid(databaseUrl, xids) {
+  const sql = postgres(databaseUrl, { max: 1, idle_timeout: 5, connect_timeout: 10 });
+  try {
+    const [row] = await sql`
+      SELECT count(*)::int AS n FROM intent_sessions WHERE cross_session_id = ANY(${[...xids]})
+    `;
+    return Number(row.n);
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}

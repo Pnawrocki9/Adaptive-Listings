@@ -164,8 +164,35 @@
   terms with the marker exemption (`Ghetto Road.`, `Birkenau Road.`),
   `ul. Treblinki 3. Tu był obóz.`. Closing them tightens.
 - **FOLLOW-1441** — status: BACKLOG # P3 product. Body names: `Located in Miami` passes (slice 5
-  limit). A judge was tried and removed: 4 of 24 harmless cases passed. Next free: FOLLOW-1442,
-  RETRO-381, ESC-091.
+  limit). A judge was tried and removed: 4 of 24 harmless cases passed.
+- **FOLLOW-1442** — status: READY # P1 before go-live (record P-7). Server Sentry looks
+  uninitialised: `apps/control-plane` has no `instrumentation.ts`, so every server capture reaches
+  the console only. Read from code, not measured at runtime.
+- **FOLLOW-1443** — status: BACKLOG # P3 measurement. Returning holdout rows log `neutral`,
+  treatment rows the restored archetype, so `by_archetype` lift compares unlike cohorts.
+- **FOLLOW-1444** — status: READY # P1 before go-live (P-2), depends_on FOLLOW-1316. The withdrawal
+  control renders with the flag off, explains itself, confirms the result, reports a failed delete.
+  Binds the SDK embed even if the flag is never set. The SDK bundle has 8 B of room: an ESC or a
+  trim first.
+- **FOLLOW-1445** — status: BACKLOG # P1 before go-live (P-3). A buyer can reach access and export;
+  nothing in the SDK calls `/api/profile/access` or `/portability`.
+- **FOLLOW-1446** — status: BACKLOG # P1 before go-live (P-4). Withdrawal restores all directives
+  (`cta`, `feature` stay today), other open tabs stop adapting (no `storage` listener), and a way
+  back from `denied` is decided.
+- **FOLLOW-1447** — status: BACKLOG # P2 before go-live (P-5). Trust in `x-forwarded-for` for the
+  quota, and a keyed rather than unsalted address hash.
+- **FOLLOW-1448** — status: BACKLOG # P2 before go-live (P-6). Retention for self-service
+  `dsr_audit_log` rows; a withdrawal distinguishable from a Decline in the log.
+- **FOLLOW-1449** — status: BACKLOG # P2 before go-live (P-8). "None of these" leaves the stored
+  label, restored in that session.
+- **FOLLOW-1450** — status: BACKLOG # P3 gate. The privacy keys gate misses `*_VERSION_KEY` and
+  `*_CACHE_KEY`; also a stale MASTER_DESIGN §Snapshot line from the review.
+- **FOLLOW-1451** — status: BACKLOG # P2 gate. CI does not run the Lua of `buyer-profile-store.ts`,
+  only a JavaScript mirror; a Lua regression passes CI. Needs a job with Redis, or a checkpoint
+  step.
+- **FOLLOW-1452** — status: BACKLOG # P3 gate. `@estalara/shared/playbook-traits` has a `require`
+  condition naming a file dist does not have; AC(1b)'s CommonJS helper breaks on any import of it.
+  Next free: FOLLOW-1453, RETRO-381, ESC-091.
 - **FOLLOW-1429** — status: READY # P2 product. Blind audit of 2026-11-01: 32 firm language errors
   on PL and ES pages, in 21 of 56 texts, many of them translated persona phrases ("matematyka
   wyjścia", "ogon najmu", "zaprojektowany pod więcej weekendów"), plus "sqm" and "Lisbon" on Polish

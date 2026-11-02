@@ -14,8 +14,8 @@
  * page can send the user back after successful authentication.
  *
  * CORS for SDK-facing routes:
- *   /api/adapt, /api/adapt/description, /api/adapt/feedback, /api/quiz/completion and
- *   /api/quiz/run need CORS headers for the browser SDK. Both the preflight and the actual
+ *   /api/adapt, /api/adapt/description, /api/adapt/feedback, /api/quiz/completion, /api/quiz/run and
+ *   /api/profile/{erase,access,portability} need CORS headers for the browser SDK. Both the preflight and the actual
  *   response answer `Access-Control-Allow-Origin` for a LISTED origin only — the constant list in
  *   `lib/origin-policy.ts` (`https://app.estalara.com`, `https://admin.estalara.com`; plus
  *   `http://localhost:5173` and `http://localhost:3000` outside `NODE_ENV=production`). Until
@@ -74,8 +74,18 @@ import { resolveOriginDecision } from '@/lib/origin-policy';
  * widget POSTs its lifecycle pings with the same three non-safelisted headers, HMAC-signed, and the
  * route writes tenant-scoped `quiz_runs` rows — without this entry the browser would never send a
  * single ping (FOLLOW-936's silent failure, again).
+ *
+ * The `/api/profile/*` routes (FOLLOW-1316, R30) take the same answer: same three headers, signed,
+ * and without this entry a buyer's withdrawal delete would never leave the browser.
  */
-const SDK_CORS_PREFIXES = ['/api/adapt', '/api/quiz/completion', '/api/quiz/run'] as const;
+const SDK_CORS_PREFIXES = [
+  '/api/adapt',
+  '/api/quiz/completion',
+  '/api/quiz/run',
+  '/api/profile/erase',
+  '/api/profile/access',
+  '/api/profile/portability',
+] as const;
 
 /**
  * The `Access-Control-Allow-Origin` value for a request: its own `Origin` when that origin is on

@@ -49,6 +49,13 @@ if (dsn) {
      * without a diff in this file. (FOLLOW-811 / dpia.md §2.7.1.)
      */
     sendDefaultPii: false,
+    /**
+     * No request bodies on events: `xid` is a bearer credential that travels in POST bodies
+     * (FOLLOW-1316, R16), and `requestDataIntegration` includes `data` by default. Not a redaction
+     * hook, and it changes nothing else on an event. Pinned over the real capture path by
+     * `src/lib/__tests__/sentry-xid-capture.test.ts`.
+     */
+    integrations: [Sentry.requestDataIntegration({ include: { data: false } })],
     // Capture all server-side unhandled exceptions
     autoInstrumentServerFunctions: true,
   });

@@ -75,13 +75,22 @@ export interface ProfilingToggleOptions {
 }
 
 /**
- * Per-locale copy. 3 fields per locale to minimise bundle bytes.
+ * Per-locale copy, one short string per field to minimise bundle bytes.
  * ARIA label is computed: `title + ': ' + on|off`.
+ *
+ * `withdraw` is the withdrawal control (FOLLOW-1316, R24), a separate act from the toggle, whose
+ * words imply no deletion (R38). It promises nothing about "all data", since the consent log and
+ * earlier quiz rows outlive it (design review §4, R35), and tells no buyer they were recognised (R42).
  */
 const COPY = {
-  en: { title: 'Personalization', on: 'active', off: 'disabled' },
-  pl: { title: 'Personalizacja', on: 'aktywna', off: 'wyłączona' },
-  es: { title: 'Personalización', on: 'activa', off: 'desactivada' },
+  en: { title: 'Personalization', on: 'active', off: 'disabled', withdraw: 'Withdraw consent' },
+  pl: { title: 'Personalizacja', on: 'aktywna', off: 'wyłączona', withdraw: 'Wycofaj zgodę' },
+  es: {
+    title: 'Personalización',
+    on: 'activa',
+    off: 'desactivada',
+    withdraw: 'Retirar el consentimiento',
+  },
 } as const;
 
 export interface ProfilingToggleController {
@@ -89,6 +98,8 @@ export interface ProfilingToggleController {
   destroy: () => void;
   /** Current opt-out state (true = opted out / adaptation OFF). */
   isOptedOut: () => boolean;
+  /** Show the withdrawal control, once; one click runs `onWithdraw` (FOLLOW-1316, R24). */
+  showWithdraw: (onWithdraw: () => void) => void;
 }
 
 /**
@@ -182,8 +193,9 @@ export function renderProfilingToggle(
   // FOLLOW-651: discreet "Powered by Estalara" attribution, rendered BY DEFAULT. Suppressed
   // only when the caller passes `showAttribution: false` (i.e. `brand.white_label === true`).
   // `flex-basis:100%` drops it to its own line below the label+checkbox row.
+  let attribution: HTMLElement | null = null;
   if (options.showAttribution !== false) {
-    const attribution = document.createElement('span');
+    attribution = document.createElement('span');
     attribution.setAttribute('data-estalara-attribution', '');
     attribution.textContent = 'Powered by Estalara';
     attribution.setAttribute(
@@ -196,6 +208,19 @@ export function renderProfilingToggle(
   shadowRoot.appendChild(container);
 
   return {
+    showWithdraw(onWithdraw) {
+      if (container.querySelector('button')) return;
+      const button = document.createElement('button');
+      button.setAttribute('data-estalara-withdraw', '');
+      button.textContent = copy.withdraw;
+      button.setAttribute(
+        'style',
+        'flex-basis:100%;padding:0;border:0;background:none;color:#fff;font:inherit;' +
+          'text-align:left;text-decoration:underline;cursor:pointer',
+      );
+      button.addEventListener('click', onWithdraw);
+      container.insertBefore(button, attribution);
+    },
     destroy() {
       try {
         container.remove();

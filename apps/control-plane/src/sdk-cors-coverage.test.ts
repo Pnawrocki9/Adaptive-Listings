@@ -101,6 +101,16 @@ interface Site {
 
 const REGISTRY: Site[] = [
   {
+    file: 'core/adapt.ts',
+    expr: 'fetch(eraseUrl',
+    path: '/api/profile/erase',
+    producer: 'middleware',
+    enforcedIn: 'apps/control-plane/src/lib/buyer-profile-route.ts',
+    actualResponse: 'listed',
+    methods: ['POST'],
+    note: 'FOLLOW-1316 R25: the withdrawal delete. Listed origins, not wildcard: signed, and it carries the bearer xid in the body.',
+  },
+  {
     file: 'core/consent-text.ts',
     expr: 'fetch(CONSENT_TEXT_URL',
     path: '/consent-text.json',

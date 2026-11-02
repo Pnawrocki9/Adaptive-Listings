@@ -38,6 +38,11 @@ export const ConsentGrantedPayloadSchema = z.object({
   language: QuizLanguageSchema,
   /** How consent was obtained. */
   method: z.literal('banner'),
+  /**
+   * The consent text version the buyer accepted (FOLLOW-1316, R6, ESC-090). Optional: batches from
+   * bundles older than this field still parse.
+   */
+  text_version: z.string().min(1).max(64).optional(),
 });
 export const ConsentGrantedEventSchema = EventEnvelopeBaseSchema.extend({
   type: z.literal('consent.granted'),

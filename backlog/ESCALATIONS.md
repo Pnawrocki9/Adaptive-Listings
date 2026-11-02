@@ -64,6 +64,26 @@ localStorage key in the SDK; self-service profile routes; optional `xid` on `/ap
 before production. The banner sentence changes only after counsel. The merge gate of FOLLOW-1316
 stays a signed compliance review of the finished PR.
 
+**Addendum to ESC-090, 2026-11-02, recorded by the PM from the signed compliance review
+(`docs/compliance/FOLLOW-1316-signed-review.md`, compliance-engineer agent, not a lawyer).** The
+finished build at `eba51b2f` meets rulings 1 to 4; ruling 5 is untouched by it. It goes beyond the
+approved surfaces in these respects, all additive and none carrying personal data beyond what the
+caller already holds: `archetype_source` on the `/api/adapt` request; `profile_restore` on its
+response; `buyer_profile_enabled` on `GET /api/quiz/public-config`; `buyer_profile_erasure` and the
+503 `buyer_profile_erase_failed` on `/api/dsr/erase`; `sent` and `lead` inside the
+`__estalara_xid__` entry, the second placing the 16-hex lead id in localStorage; `assignment_unit`
+and `profile_restored` in `features_snapshot`; three `dsr_type` values in `dsr_audit_log`, which has
+no TTL. Behaviours outside the original text: a 90-day hash-only tombstone after a DSR erase; an
+unsalted SHA-256 of the client address held for 60 seconds as a quota key; `/api/profile/*` deployed
+regardless of the flag. `BUYER_PROFILE_ENABLED` was absent by name from Doppler `prd` and Vercel
+production on 2026-11-02. L-3 gains `retiree_relocator`; L-4 gains the tombstone and the address
+hash. PASS WITH CONDITIONS for localhost at `eba51b2f`. Production is not passed: section 8 of the
+record adds code conditions to ruling 1's list, namely a withdrawal control present with the flag
+off, explained and confirmed; a reachable path to access and export; other open tabs halted and all
+directives restored; `MIN_PROFILE_TEXT_VERSION` raised with counsel's sentence. The first of these
+binds the SDK embed even if the flag is never set. Not yet ruled by the CEO: this addendum records
+the PM's acceptance and the compliance review, and the CEO may object.
+
 ## RESOLVED — ESC-089: fair-housing restrictions on copy — CEO ruling: archetype fit first, familial-status limits lifted [FOLLOW-1411]
 
 **Filed by:** pm-orchestrator (CEO ruling in chat, 2026-10-29) **Date:** 2026-10-29 **Affects:** the

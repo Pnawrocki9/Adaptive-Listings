@@ -1,6 +1,6 @@
 # Legitimate Interest Assessment (LIA) — Per-Tenant Template
 
-**Template Version:** v2.0 **Template Date:** 2026-08-24 **Prepared by:** Estalara Compliance
+**Template Version:** v2.1 **Template Date:** 2026-11-02 **Prepared by:** Estalara Compliance
 Engineering — Time2Show, Inc. **Document Classification:** Confidential — To be retained by the
 completing tenant
 
@@ -131,7 +131,7 @@ with the purpose:
 - No directly identifying information (name, email, phone, address, government identifier) is
   collected or required.
 - **No cookies are set.** `localStorage` and `sessionStorage` **are** used, and the complete list of
-  keys — eleven of them — is published in `PRIVACY_NOTICE_TEMPLATE.md` §4, which the tenant must
+  keys — thirteen of them — is published in `PRIVACY_NOTICE_TEMPLATE.md` §4, which the tenant must
   reproduce in its own privacy policy. The tenant should read that table before completing this
   section. _(Corrected v2.0: v1.0 of this template stated "No localStorage is written. The system
   does not rely on any persistent client-side storage mechanism." Both clauses were false —
@@ -237,8 +237,10 @@ are used only for within-session adaptation, not for profiling or decisioning ou
   the identifier's randomness and are part of the tenant's balancing decision:
   1. `__estalara_xid__` — a 90-day cross-session identifier in `localStorage`, created **only** in
      Mode B after consent is granted and erased on denial or withdrawal. A Mode A tenant completing
-     this LIA does not enable it. (At `d9160da0` it is also never transmitted to Estalara —
-     FOLLOW-146 — so it presently produces no server-side linkage even where enabled.)
+     this LIA does not enable it. It rests on consent, never on this LIA (ESC-090 item 1). With the
+     server flag `BUYER_PROFILE_ENABLED` off it is transmitted nowhere; with the flag on, today on
+     localhost only and not enabled in production pending counsel, it keys a server-side profile of
+     up to 90 days (DPIA §13.2). So no answer in this LIA may rest on it being untransmitted.
   2. `lead_id` — for a visitor authenticated through the tenant's identity provider, a deterministic
      `SHA-256` prefix of their account identifier, attached to chat and live events. This is a
      durable cross-session key **by design**, and it is the reason this document makes no absolute
@@ -309,7 +311,7 @@ deliberately: a tenant who signed the earlier version needs to see which weight 
 | Scale                         | Limited — one site, one session; the identifier contributes nothing to cross-site correlation                                                                                                                                                                        | Favors LI          | Favors LI (premise now true) |
 | Identifier persistence        | **Tab-scoped, not zero.** Discarded when the tab closes (browser session-restore excepted, §3.3); a new visit begins with a new, unrelated random identifier                                                                                                         | Favors LI          | "None" — false as written    |
 | **Event-store retention**     | **Newly weighed.** Behavioral events keyed by `session_id` are retained pseudonymously per the ROPA schedule — 13 months in `events`, and **indefinitely** in `adaptation_decisions` / `llm_calls` / `intent_events`, which carry no TTL (FOLLOW-1110 / 1111 / 1112) | **Against LI**     | absent from the v1.0 table   |
-| Cross-session linkage vectors | `__estalara_xid__` (Mode B only, consent-gated, currently untransmitted), `lead_id` (authenticated visitors, durable by design), network/behavioural metadata — §3.3                                                                                                 | Neutral to Against | absent from the v1.0 table   |
+| Cross-session linkage vectors | `__estalara_xid__` (Mode B only, consent-gated; transmitted only with `BUYER_PROFILE_ENABLED` on, localhost only, and then outside this LIA: DPIA §13.2), `lead_id` (authenticated visitors, durable by design), network/behavioural metadata — §3.3                 | Neutral to Against | absent from the v1.0 table   |
 | Reasonable expectations       | In-session relevance expected on a search service                                                                                                                                                                                                                    | Favors LI          | Favors LI (unchanged)        |
 | Opt-out availability          | SDK toggle (persistent, scope stated in §3.4) + Art. 21 DSR pathway                                                                                                                                                                                                  | Favors LI          | Favors LI (scope corrected)  |
 | Inference risk                | Moderate — household/income inferences possible                                                                                                                                                                                                                      | Neutral            | Neutral (unchanged)          |
@@ -413,7 +415,7 @@ Interest — narrow use cases only, such as fraud detection).
 
 ### A.1 — Nature of the session identifier (Purpose Test / Necessity Test)
 
-**Estalara sets no cookies. Estalara does write to `localStorage` and `sessionStorage`** — eleven
+**Estalara sets no cookies. Estalara does write to `localStorage` and `sessionStorage`** — thirteen
 keys, all enumerated in `PRIVACY_NOTICE_TEMPLATE.md` §4, which the tenant must reproduce in its own
 privacy policy.
 
@@ -491,8 +493,9 @@ to 2026-08-24 the identifier was an unkeyed device digest, so the same visitor r
 **identical** identifier on every site running the Estalara SDK, and the correlation the sentence
 called impossible was automatic. Two lessons are carried forward rather than the sentence: an
 absolute architectural claim about linkage cannot be made by an identifier alone, and the vectors
-that remain — `__estalara_xid__` in Mode B, `lead_id` for authenticated visitors, and network or
-behavioural metadata (§3.3) — are what a balancing test actually has to weigh.
+that remain — `__estalara_xid__` in Mode B (whose basis is consent, not this assessment; DPIA
+§13.2), `lead_id` for authenticated visitors, and network or behavioural metadata (§3.3) — are what
+a balancing test actually has to weigh.
 
 **Data written before 2026-08-24.** Event rows carrying the legacy device digest are still held, and
 in those rows the cross-tenant correlation is present in the data. Their expiry is governed by the
@@ -647,6 +650,7 @@ _Appendix B added 2026-06-21 (FOLLOW-373) — Compliance Engineering._
 | v1.0     | 2026-05-15 | Compliance Engineering | Initial per-tenant LIA template. **Superseded — do not use.** Its pre-filled answers described a session identifier that never existed in the product.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | v1.1     | 2026-06-21 | Compliance Engineering | Appendix B added (FOLLOW-373) — platform-wide consent LIA for buying-intent profiling.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | **v2.0** | 2026-08-24 | Compliance Engineering | **FOLLOW-1107, after ESC-070 Path C shipped (FOLLOW-1106 / PR #844, `d9160da0`).** §2(b), §2(c), §3.1, §3.2, §3.3, §3.4, §3.6, §A.1, §A.2, §A.3 corrected against the shipped mechanism, each claim anchored to a named symbol or a named test. The two **inverted** claims — §3.6's "Persistence: None — session-scoped, HMAC rotation" and §A.3's "cross-site correlation is architecturally precluded" — are replaced by bounded statements, not softened, and §A.3 records why the absolute form must not return. The balancing test in §3.6 is **re-derived**, not edited: two new factors (event-store retention; residual cross-session linkage vectors) were added because removing the false weights would otherwise have left the test unrun, and a "was (v1.0)" column shows every weight that moved. §2(b) and §A.1 now state that `localStorage`/`sessionStorage` **are** written, reconciling this template with `PRIVACY_NOTICE_TEMPLATE.md` §4, which the two documents previously contradicted. §A.2's chat-text claim reconciled with the ESC-049 ruling. §3.4's opt-out scope corrected in both directions. Retention promises with no mechanism marked UNENFORCED (FOLLOW-1110/1111/1112/1113). No legal conclusion is drawn: the Art. 5(3)(b) question is explicitly referred to tenant counsel in §A.1. |
+| v2.1     | 2026-11-02 | Compliance Engineering | **FOLLOW-1316 (ESC-090).** §3.3 item 1, the linkage row of the balancing table and §A.3 no longer say `__estalara_xid__` is untransmitted: it is, with the flag on, and that processing rests on consent and is outside any LIA. Key count corrected to thirteen in §2 and §A.1. No other answer changes. Production is not enabled, pending counsel.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 _Tenants holding a signed v1.0 LIA: it was completed against false pre-filled answers and should be
 re-run against v2.0._

@@ -57445,3 +57445,15 @@ AC:
 - [ ] No new gate, unless the reproduction shows the sentence is not enough.
 
 cross_ref: [RETRO-268, RETRO-380, Rule BA]
+
+## AMENDMENT to FOLLOW-1308 — 2026-11-01 by FOLLOW-1316: the ownership design covers the xid
+
+**AMENDMENT (2026-11-01; design review R32, R33).** FOLLOW-1316 stores a returning-buyer profile
+under `sha256(xid)` in Redis. The ownership design of this ticket must cover the xid as an
+identifier a DSR can name. Today `POST /api/dsr/erase` takes an optional body `xid`, awaited inline;
+`GET /api/dsr/access` and `GET /api/dsr/portability` do not read it, because their credentials ride
+the query string and an xid must never do so (R3). A browser holding the xid has
+`POST /api/profile/access` and `/portability` instead. So this ticket owns: the xid on the DSR
+access and portability routes, by header or POST, never the query string (R32); and an `initiate`
+that works. K4b drives DSR revocation through a seeded `dsr_verifications` row and its evidence says
+so. There is deliberately no xid-to-session mapping (R35): do not build one to close this.

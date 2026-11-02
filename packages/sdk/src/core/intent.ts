@@ -109,8 +109,26 @@ export interface IntentState {
   quiz_confirmed?: boolean;
   /** "None of these" on the result screen: the pre-quiz state, unpinned (§E.4.4) [FOLLOW-1359]. */
   quiz_rejected?: true;
-  /** The leaf was re-pinned by behavioural drift, not by the buyer (§E.4.5) [FOLLOW-1359]. */
-  source?: 'drift';
+  /**
+   * `drift`: the leaf was re-pinned by behavioural drift, not by the buyer (§E.4.5) [FOLLOW-1359].
+   * `sot`: the label was re-pinned from the session's resolved archetype, so its origin is unknown
+   * here [FOLLOW-1316].
+   */
+  source?: 'drift' | 'sot';
+  /** The archetype the quiz resolved to, when not neutral: provenance only [FOLLOW-1316, R13]. */
+  quiz_result?: Archetype;
+}
+
+/**
+ * Where the current label came from, for the server's profile write (FOLLOW-1316, R13, ESC-090 item
+ * 3): `quiz` only for the quiz result with no chat prior folded since, `behavior` for a session the
+ * chat prior never touched, and undefined otherwise, which writes nothing and lets the last write
+ * stand. The server cannot detect a wrong answer here, so this rule rests on this function.
+ */
+export function archetypeSource(state: IntentState): 'quiz' | 'behavior' | undefined {
+  if (state.archetype === 'neutral' || state.chatPriorApplied) return undefined;
+  if (state.archetype === state.quiz_result) return 'quiz';
+  return state.source === 'sot' ? undefined : 'behavior';
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────

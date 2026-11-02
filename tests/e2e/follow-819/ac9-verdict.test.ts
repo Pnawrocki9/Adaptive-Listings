@@ -449,7 +449,7 @@ describe('AC(9) session 2: the first /api/adapt is already restored', () => {
     expectRed(o, entry);
   });
 
-  it('source llm_full is the ONLY unmet entry at RESTORED_SIMILARITY today (named, so a ruling can move it)', () => {
+  it('source llm_full is the only unmet entry when a restore misses its band', () => {
     const o = greenObs();
     o.restore.call.body = adaptedBody({ source: 'llm_full' });
     expect(unmet(o)).toEqual(['s2:source=llm_full']);
@@ -1108,14 +1108,15 @@ describe('parity with the product source', () => {
     expect(m?.[1]).not.toContain("'yield_hunter'");
   });
 
-  it('FINDING, pinned: a restore serves similarity 0.5, which the route bands as llm_full', () => {
+  it('a restore serves a similarity the route bands as llm_tweaked', () => {
     const restored = /const RESTORED_SIMILARITY = ([0-9.]+);/.exec(routeSrc);
     const low = /const LOW_SIMILARITY_THRESHOLD = ([0-9.]+);/.exec(routeSrc);
     expect(routeSrc).toContain(
       "similarity <= LOW_SIMILARITY_THRESHOLD ? 'llm_full' : 'llm_tweaked'",
     );
-    // When this row fails the route changed: re-read README §1.3 and drop the finding.
-    expect(Number(restored?.[1])).toBeLessThanOrEqual(Number(low?.[1]));
+    const high = /const HIGH_SIMILARITY_THRESHOLD = ([0-9.]+);/.exec(routeSrc);
+    expect(Number(restored?.[1])).toBeGreaterThan(Number(low?.[1]));
+    expect(Number(restored?.[1])).toBeLessThanOrEqual(Number(high?.[1]));
   });
 });
 

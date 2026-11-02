@@ -404,13 +404,8 @@ A held-out xid is replaced like AC(10)'s, and is still checked: same arm in a se
 a key, never a restore (NC-10). When every draw held out, (a) and (e) still run on that xid and can
 still fail the run; the controls that need a restore cannot run, so they do not count as passed.
 
-**Open finding: this criterion cannot pass today.** The plan names `llm_tweaked`. A restore serves
-`RESTORED_SIMILARITY = 0.5`, and the route's band is
-`similarity <= 0.6 ? 'llm_full' : 'llm_tweaked'`, so every restored response is `llm_full`, and on
-an LLM failure branch 4 serves nothing rather than branch 3's playbook. AC(9) grades the plan's word
-and reports `s2:source=llm_full` as its own entry; it does not widen the criterion. Either the
-route's constant moves above 0.6 or `AC9_RESTORE_SOURCES` gets `llm_full` by a recorded ruling.
-`ac9-verdict.test.ts` pins the current band, and that row fails when the route changes.
+A restore serves `RESTORED_SIMILARITY = 0.85`, the value of a confirmed quiz result (ESC-087), which
+the route bands as `llm_tweaked`. `ac9-verdict.test.ts` pins that band.
 
 **Not driven here:** NC-5, NC-6, NC-7 beyond (a), NC-9, NC-10 with a forced arm, NC-11, NC-12 beyond
 what a down store already does to the restore, NC-13, NC-14

@@ -67,8 +67,11 @@ import * as Sentry from '@sentry/nextjs';
 const CONFIDENCE_THRESHOLD = 0.6;
 const HIGH_SIMILARITY_THRESHOLD = 0.85;
 const LOW_SIMILARITY_THRESHOLD = 0.6;
-/** Similarity of a restored profile: no signal this session, so the route's own default. */
-const RESTORED_SIMILARITY = 0.5;
+/**
+ * Similarity of a restored profile: no signal this session, so the value of a confirmed quiz result
+ * (ESC-087). It bands as `llm_tweaked`, and an LLM failure falls back to the playbook.
+ */
+const RESTORED_SIMILARITY = 0.85;
 
 // ─── POST body schema ─────────────────────────────────────────────────────────
 

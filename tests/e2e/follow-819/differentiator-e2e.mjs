@@ -3719,8 +3719,7 @@ async function driveAc10(browser) {
 export const AC9_MAX_DRAWS = 3;
 /**
  * The `source` the plan's criterion names for the restored first response. `isAdaptedResponse()` also
- * accepts `llm_full`; the route answers `llm_full` to every restore today, since
- * `RESTORED_SIMILARITY` (0.5) is under its band. That is reported, not absorbed: see README §1.3.
+ * accepts `llm_full`; a restore must not read as that: `RESTORED_SIMILARITY` bands as `llm_tweaked`.
  */
 export const AC9_RESTORE_SOURCES = Object.freeze(['llm_tweaked']);
 /** Every `consent_state` the server's gate must refuse (null = absent), NC-1 and NC-2. */

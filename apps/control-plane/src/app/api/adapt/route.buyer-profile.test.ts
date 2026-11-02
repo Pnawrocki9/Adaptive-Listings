@@ -607,6 +607,94 @@ describe('R9-R14 — what is written', () => {
   });
 });
 
+describe('source ranking and a result that may not persist', () => {
+  const signal = (
+    xid: string,
+    createdAt: number,
+    archetype: string,
+    source: 'quiz' | 'behavior',
+  ): Promise<AdaptWire> =>
+    adapt({
+      xid,
+      xid_created_at: createdAt,
+      consent_state: 'consented',
+      archetype_hint: archetype,
+      confidence: 0.9,
+      archetype_source: source,
+    });
+  const storedArchetype = async (xid: string): Promise<string | null> => {
+    const raw = await redis.raw(['GET', profileKey(xid)]);
+    return raw === null ? null : (JSON.parse(raw as string) as { archetype: string }).archetype;
+  };
+  const waitForStored = async (xid: string, archetype: string | null): Promise<void> => {
+    await vi.waitFor(
+      async () => {
+        expect(await storedArchetype(xid)).toBe(archetype);
+      },
+      { timeout: 10_000 },
+    );
+  };
+
+  it.each(['diaspora_buyer', 'golden_visa_buyer'])(
+    'a quiz result of %s deletes the stored label, so it is not restored, and a later result writes',
+    async (archetype) => {
+      const xid = newXid();
+      const createdAt = Date.now() - DAY_MS;
+      await seedByQuiz(xid, {}, createdAt);
+      await expectRestored(xid, createdAt);
+
+      const out = await signal(xid, createdAt, archetype, 'quiz');
+      expect(out.archetype).toBe(archetype);
+      await waitForStored(xid, null);
+
+      const next = await adapt({ xid, xid_created_at: createdAt, consent_state: 'consented' });
+      expect(next.archetype).toBe('neutral');
+      expect(next.profile_restore).toBe('miss');
+
+      // Nothing was withdrawn, so no tombstone: the next allowed result is stored.
+      await signal(xid, createdAt, 'family_buyer', 'quiz');
+      await waitForStored(xid, 'family_buyer');
+      await expectRestored(xid, createdAt, 'family_buyer');
+    },
+  );
+
+  it('a behaviour label that may not persist leaves the stored label alone', async () => {
+    const xid = newXid();
+    const createdAt = Date.now() - DAY_MS;
+    await seedByQuiz(xid, {}, createdAt);
+
+    await signal(xid, createdAt, 'diaspora_buyer', 'behavior');
+    await settle();
+
+    expect(await storedArchetype(xid)).toBe('yield_hunter');
+    await expectRestored(xid, createdAt);
+  });
+
+  it('behavior never overwrites a stored quiz; quiz overwrites anything; behavior overwrites behavior', async () => {
+    const xid = newXid();
+    const createdAt = Date.now() - DAY_MS;
+    await seedByQuiz(xid, {}, createdAt);
+
+    await signal(xid, createdAt, 'family_buyer', 'behavior');
+    await settle();
+    await settle();
+    expect(await storedArchetype(xid)).toBe('yield_hunter');
+    await expectRestored(xid, createdAt);
+
+    const other = newXid();
+    await seedByQuiz(other, { archetype_source: 'behavior' }, createdAt);
+    await signal(other, createdAt, 'family_buyer', 'behavior');
+    await waitForStored(other, 'family_buyer');
+    await signal(other, createdAt, 'luxury_buyer', 'quiz');
+    await waitForStored(other, 'luxury_buyer');
+    await signal(other, createdAt, 'upsizer', 'behavior');
+    await settle();
+    await settle();
+    expect(await storedArchetype(other)).toBe('luxury_buyer');
+    await expectRestored(other, createdAt, 'luxury_buyer');
+  });
+});
+
 describe('NC-13 — a demo override of neutral does not fall through to the store', () => {
   it('serves the override, reads nothing, and the profile restores once the override ends', async () => {
     const xid = newXid();
@@ -642,12 +730,40 @@ describe('R21 — absolute expiry', () => {
     expect(left).toBeLessThanOrEqual(DAY_MS + 1000);
   });
 
-  it('a far-future created_at is capped at 90 days', async () => {
+  it('a created_at within the 5-minute skew allowance is capped at 90 days from now', async () => {
     const xid = newXid();
-    await seedByQuiz(xid, {}, Date.now() + 400 * DAY_MS);
+    await seedByQuiz(xid, {}, Date.now() + 4 * 60 * 1000);
     const left = await pttl(xid);
     expect(left).toBeGreaterThan(89.9 * DAY_MS);
     expect(left).toBeLessThanOrEqual(90 * DAY_MS + 1000);
+  });
+
+  it.each([
+    ['6 minutes ahead', 6 * 60 * 1000],
+    ['400 days ahead', 400 * DAY_MS],
+  ])('a created_at %s means the xid is not honoured', async (_label, ahead) => {
+    const xid = newXid();
+    const createdAt = Date.now() - DAY_MS;
+    await seedByQuiz(xid, {}, createdAt);
+    await expectRestored(xid, createdAt);
+    const before = await redis.raw(['GET', profileKey(xid)]);
+    redis.requests.length = 0;
+
+    const forged = Date.now() + ahead;
+    expectNeutral(await adapt({ xid, xid_created_at: forged, consent_state: 'consented' }));
+    await adapt({
+      xid,
+      xid_created_at: forged,
+      consent_state: 'consented',
+      archetype_hint: 'family_buyer',
+      confidence: 0.9,
+      archetype_source: 'quiz',
+    });
+    await settle();
+
+    expect(commandsTouching(xid)).toEqual([]);
+    expect(await redis.raw(['GET', profileKey(xid)])).toBe(before);
+    await expectRestored(xid, createdAt);
   });
 
   it('a restore, an opt-out and an overwrite never extend it; a re-quiz overwrites without history (R44)', async () => {

@@ -7,6 +7,10 @@
  * The fake implements only what the control plane sends: POST `/` and `/pipeline`, and the path-form
  * GET the chat-intent cache reads with. It honours NX, XX, EX, EXAT and KEEPTTL with Redis's
  * semantics, because those are what the retention requirements (R21) rest on.
+ *
+ * LIMIT: the fake cannot run Lua. It recognises the store's two scripts by their first-line marker and
+ * runs a JavaScript mirror of them, so on the fake the scripts' text is NOT under test. Only a run
+ * with `BUYER_PROFILE_TEST_REDIS_URL` executes the real scripts, and CI has no such run.
  */
 
 interface Entry {
@@ -35,8 +39,14 @@ export interface RedisTestDouble {
   failHttp(status: number | null): void;
   /** Answer `{ error }` for this command name. Fake only; `null` restores. */
   failCommand(name: string | null): void;
-  /** Run a callback right after this command name executes, once. Fake only. */
-  afterCommand(name: string, run: () => void): void;
+  /** Run a callback once, right before the next command that writes a profile. Fake only. */
+  onceBeforeProfileWrite(run: () => void): void;
+  /** Run a callback once, right after the next command that writes a profile. Fake only. */
+  onceAfterProfileWrite(run: () => void): void;
+  /** Answer the next profile write with this reply instead of its real one. Fake only. */
+  replaceNextProfileWriteReply(reply: unknown): void;
+  /** Execute the next request, then fail its response as a lost connection does. Fake only. */
+  loseNextResponse(): void;
   /** Delete every key this test created; a no-op on the fake beyond clearing it. */
   cleanup(keys: string[]): Promise<void>;
 }
@@ -80,8 +90,17 @@ function realDouble(realFetch: typeof fetch, base: string): RedisTestDouble {
     failCommand: () => {
       throw new Error('failure injection needs the in-process fake');
     },
-    afterCommand: () => {
+    onceBeforeProfileWrite: () => {
       throw new Error('hook injection needs the in-process fake');
+    },
+    onceAfterProfileWrite: () => {
+      throw new Error('hook injection needs the in-process fake');
+    },
+    replaceNextProfileWriteReply: () => {
+      throw new Error('failure injection needs the in-process fake');
+    },
+    loseNextResponse: () => {
+      throw new Error('failure injection needs the in-process fake');
     },
     cleanup: async (keys) => {
       for (const key of keys) await raw(['DEL', key]);
@@ -93,7 +112,10 @@ function fakeDouble(): RedisTestDouble {
   const base = 'http://redis.test';
   const store = new Map<string, Entry>();
   const requests: RecordedRedisRequest[] = [];
-  const hooks = new Map<string, () => void>();
+  let beforeWrite: (() => void) | null = null;
+  let afterWrite: (() => void) | null = null;
+  let losingNextResponse = false;
+  let replacementReply: { value: unknown } | null = null;
   let httpFailure: number | null = null;
   let failingCommand: string | null = null;
 
@@ -124,12 +146,54 @@ function fakeDouble(): RedisTestDouble {
     return 'OK';
   };
 
+  /** The JavaScript mirror of the store's write script; see the LIMIT note at the top. */
+  const evalWrite = (keys: string[], args: string[]): string => {
+    const [key = '', tombstone = ''] = keys;
+    const [value = '', expiresAt = '', source = ''] = args;
+    if (live(tombstone)) return 'tombstoned';
+    const current = live(key);
+    if (current) {
+      if (source === 'behavior' && current.value.includes('"source":"quiz"')) return 'outranked';
+      current.value = value;
+      return 'overwritten';
+    }
+    store.set(key, { value, expiresAtMs: Number(expiresAt) * 1000 });
+    return 'created';
+  };
+
+  /** The JavaScript mirror of the store's delete script; see the LIMIT note at the top. */
+  const evalDelete = (keys: string[], args: string[]): number => {
+    const [key = '', tombstone = ''] = keys;
+    const ttlSeconds = Number(args[0]);
+    const existing = live(tombstone);
+    const left = existing?.expiresAtMs ? (existing.expiresAtMs - Date.now()) / 1000 : -2;
+    if (left < ttlSeconds) {
+      store.set(tombstone, { value: '1', expiresAtMs: Date.now() + ttlSeconds * 1000 });
+    }
+    const had = live(key) ? 1 : 0;
+    store.delete(key);
+    return had;
+  };
+
+  const runScript = (args: string[]): unknown => {
+    const [script = '', keyCount = '0', ...rest] = args;
+    const count = Number(keyCount);
+    const keys = rest.slice(0, count);
+    const argv = rest.slice(count);
+    if (script.startsWith('-- buyer_profile_write')) return evalWrite(keys, argv);
+    if (script.startsWith('-- buyer_profile_delete')) return evalDelete(keys, argv);
+    throw new Error('ERR the fake runs only the store scripts it mirrors');
+  };
+
   const execute = (command: string[]): unknown => {
     const [nameRaw, ...args] = command;
     const name = (nameRaw ?? '').toUpperCase();
     const key = args[0] ?? '';
     let result: unknown;
     switch (name) {
+      case 'EVAL':
+        result = runScript(args);
+        break;
       case 'SET':
         result = set(args);
         break;
@@ -165,20 +229,35 @@ function fakeDouble(): RedisTestDouble {
       default:
         throw new Error(`ERR unknown command '${name}'`);
     }
-    const hook = hooks.get(name);
-    if (hook) {
-      hooks.delete(name);
-      hook();
-    }
     return result;
   };
 
   const reply = (command: string[]): { result: unknown } | { error: string } => {
-    if ((command[0] ?? '').toUpperCase() === failingCommand) {
+    const name = (command[0] ?? '').toUpperCase();
+    if (name === failingCommand) {
       return { error: 'ERR injected failure' };
     }
+    const writesProfile =
+      (name === 'EVAL' && (command[1] ?? '').startsWith('-- buyer_profile_write')) ||
+      (name === 'SET' && (command[1] ?? '').startsWith('buyer_profile:'));
     try {
-      return { result: execute(command) };
+      if (writesProfile && beforeWrite) {
+        const run = beforeWrite;
+        beforeWrite = null;
+        run();
+      }
+      const result = execute(command);
+      if (writesProfile && afterWrite) {
+        const run = afterWrite;
+        afterWrite = null;
+        run();
+      }
+      if (writesProfile && replacementReply) {
+        const { value } = replacementReply;
+        replacementReply = null;
+        return { result: value };
+      }
+      return { result };
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
     }
@@ -197,7 +276,12 @@ function fakeDouble(): RedisTestDouble {
       const { pathname } = new URL(url);
       if (pathname === '/pipeline') {
         const commands = JSON.parse(body) as string[][];
-        return Promise.resolve(jsonResponse(200, commands.map(reply)));
+        const replies = commands.map(reply);
+        if (losingNextResponse) {
+          losingNextResponse = false;
+          return Promise.reject(new Error('injected: connection lost after the command ran'));
+        }
+        return Promise.resolve(jsonResponse(200, replies));
       }
       if (pathname === '/') {
         const out = reply(JSON.parse(body) as string[]);
@@ -213,8 +297,17 @@ function fakeDouble(): RedisTestDouble {
     failCommand: (name) => {
       failingCommand = name;
     },
-    afterCommand: (name, run) => {
-      hooks.set(name, run);
+    onceBeforeProfileWrite: (run) => {
+      beforeWrite = run;
+    },
+    onceAfterProfileWrite: (run) => {
+      afterWrite = run;
+    },
+    replaceNextProfileWriteReply: (reply) => {
+      replacementReply = { value: reply };
+    },
+    loseNextResponse: () => {
+      losingNextResponse = true;
     },
     cleanup: () => {
       store.clear();

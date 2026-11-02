@@ -35,18 +35,18 @@ empty spread adds no attribute) apart from whitespace inside the `Section` `<h2>
 | Slot      | Element                                                                                                | File                                                              |
 | --------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
 | `cta`     | mobile sticky bar button `listing.contactBar.cta` ("Ask about this property"), calls `scrollToContact` | `StickyContactBar.svelte` (new prop `ctaSlot`)                    |
-| `cta`     | desktop "Send a message" button, one element for both calendar states; the handler picks the draft | `[slug]/+page.svelte`                                             |
+| `cta`     | desktop "Send a message" button, one element for both calendar states; the handler picks the draft     | `[slug]/+page.svelte`                                             |
 | `feature` | the `<h2>` of the Amenities section (`listing.amenitiesTitle`)                                         | `Section.svelte` (new prop `estalaraSlot`), `[slug]/+page.svelte` |
 
 Why these elements. The SDK's text directive does `el.textContent = value`
 (`packages/sdk/src/core/adapt.ts`, `applyTextDirective`), so a slot must be an element whose whole
-content is one text label and whose handler lives on the element itself. Both `cta` buttons
-contain only the translated label (no icon child to be wiped), and their `on:click` handlers are
-attached to the `<button>`, which is not replaced, so the contact and live-tour handlers keep
-working. `disabled` still follows `isRequestingLiveTour`. The `LiveSessions` book/join/leave buttons
-and the `Agent` phone/WhatsApp links are deliberately not marked: they carry icons or per-session
-state. `feature` is a single-line heading, not the `AmenitiesGrid` container, because a text
-directive on a list would collapse the list (the reason `annotate-slots.ts` refuses to self-annotate
+content is one text label and whose handler lives on the element itself. Both `cta` buttons contain
+only the translated label (no icon child to be wiped), and their `on:click` handlers are attached to
+the `<button>`, which is not replaced, so the contact and live-tour handlers keep working.
+`disabled` still follows `isRequestingLiveTour`. The `LiveSessions` book/join/leave buttons and the
+`Agent` phone/WhatsApp links are deliberately not marked: they carry icons or per-session state.
+`feature` is a single-line heading, not the `AmenitiesGrid` container, because a text directive on a
+list would collapse the list (the reason `annotate-slots.ts` refuses to self-annotate
 `features_list`).
 
 How each selector reaches the SDK. This tenant is instrumented by hand: the app writes
@@ -59,9 +59,9 @@ option on the loader snippet. `annotate-slots.ts` skips nodes that already carry
 app.html pre-paint cloak (`[data-estalara-slot]{visibility:hidden!important}`) now also covers these
 elements, for at most 1500 ms and only for a session that already resolved a non-neutral archetype.
 
-The desktop button is one element on purpose. Two branches on `hasLiveSessions` swapped the button when
-the calendar loaded, after the SDK had written it, so the visible button lost the adapted text (N3 run 5,
-FOLLOW-1341). Spacing is kept with `class:mt-3` and `class:mt-4`.
+The desktop button is one element on purpose. Two branches on `hasLiveSessions` swapped the button
+when the calendar loaded, after the SDK had written it, so the visible button lost the adapted text
+(N3 run 5, FOLLOW-1341). Spacing is kept with `class:mt-3` and `class:mt-4`.
 
 Points for review (not decided here):
 

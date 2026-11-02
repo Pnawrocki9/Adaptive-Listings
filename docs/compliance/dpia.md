@@ -1902,7 +1902,7 @@ corresponding gate item.
 
 _Rewritten v2.27 (FOLLOW-1316, ESC-085 D-E, ESC-090). The title said "LIA"; this is no longer a
 legitimate-interest assessment. Every behavioural sentence down to the "Superseded record" marker
-was checked against the code at `685b4e35`; the signed record is
+was checked against the code at `eba51b2f`; the signed record is
 `docs/compliance/FOLLOW-1316-signed-review.md`. Every lawful-basis statement is an engineering read
 by a non-lawyer. Nothing here states that any of this is legally sufficient._
 

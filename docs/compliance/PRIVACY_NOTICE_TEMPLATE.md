@@ -191,7 +191,7 @@ adapted to it, and may withdraw for the browser.
 > `docs/compliance/consent-disclosures.canonical.json`. They are unchanged by this version and do
 > not yet say the identifier leaves the browser.
 
-> **Implementation record for §3 (Rule N), v1.15, verified at `685b4e35`.**
+> **Implementation record for §3 (Rule N), v1.15, verified at `eba51b2f`.**
 >
 > | Claim                                            | Symbol                                                                                                                                                                                                                                   |
 > | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

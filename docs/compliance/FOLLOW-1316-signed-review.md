@@ -3,51 +3,61 @@
 **Signed by role:** compliance-engineer agent, Estalara Adaptive Listings. **Not a lawyer.** Every
 statement about a lawful basis or a legal requirement is an engineering read, and nothing here says
 any of this is legally sufficient. **Date:** 2026-11-02. **SHA reviewed:**
-`685b4e358f3b5d5fd1666148d210c05e0e5f93e2` (PR #1132, branch
-`qa-engineer/FOLLOW-1345-ac9-returning-buyer`). **Gate of:** ESC-085 D-E, ESC-090. **Terms:**
-merging to `main`, localhost-first. Production is a separate question, section 8.
+`eba51b2fca071f6197c05f32486c7e93ade64746` (branch `sdk-engineer/FOLLOW-1316-session-imports`),
+which is the first review's `685b4e358f3b5d5fd1666148d210c05e0e5f93e2` (PR #1132), this record's
+documents, and the B-1 fix. **Gate of:** ESC-085 D-E, ESC-090. **Terms:** merging to `main`,
+localhost-first. Production is a separate question, section 8.
 
 The code was read as it is, not as its authors reported it. Where this record and the design review
 differ on what the code does, this record governs.
 
 ## 1. Verdict
 
-**BLOCK at `685b4e35`, for one reason: B-1 below, a required compliance gate that is red.** The
-processing itself does not block the merge on localhost terms: no ESC-090 ruling is broken, no
-profile was restored where it must not be, and no xid reached a store it must not reach.
+**PASS WITH CONDITIONS for merging to `main` on localhost-first terms, at `eba51b2f`.** The
+conditions are in section 9. No ESC-090 ruling is broken, no profile was restored where it must not
+be, and no xid reached a store it must not reach.
 
-**Once B-1 is fixed by a change that alters no behaviour, this verdict becomes PASS WITH CONDITIONS
-for localhost**, on the conditions of section 9, without a new review beyond that diff. A fix that
-changes behaviour comes back here.
+The first signature of this record, at `685b4e35`, was BLOCK on B-1. B-1 is resolved below.
 
 **For production: not passed.** Section 8 lists what must be true first. Several items are not legal
 questions and need code.
 
 ## 2. Blockers
 
-**B-1. `Consent corpus sync` is red on PR #1132, and it is a required check.**
+**None open.**
 
-- **Input:** `packages/sdk/src/core/session.ts:24,26` now imports `@estalara/shared` and
-  `./profiling-opt-out.js`.
-- **Output:** `node --experimental-strip-types scripts/check-session-identifier-corpus-sync.mjs`
-  exits 1: `[G3] could not import packages/sdk/src/core/session.ts to execute its claims`. Same
-  result locally, and in CI at step [5/6] (run 41376659149, job 125058273334,
-  `Cannot find package '@estalara/shared'`).
-- **Rule:** `.github/required-checks.txt:95`; CLAUDE.md lesson 1; the gate's own contract at
-  `scripts/check-session-identifier-corpus-sync.mjs:25`, "`session.ts` has zero imports, so this
-  gate imports it under Node type-stripping".
-- **Why it matters beyond CI colour:** G3 is what executes the DPIA's identifier claims against the
-  real `generateSessionId()`. Until it runs, those claims are unproven on this branch. The SDK's own
-  `session.test.ts` passes here (17 tests) but does not replace it (the gate's Rule AU argument). No
-  evidence suggests the function changed behaviour: `drawUuid()` is the same ladder.
-- **Owner:** sdk-engineer. The smallest fix keeps the gate's contract: move the xid helpers and
-  their two imports out of `session.ts` into their own module, and point G8 of
-  `scripts/check-consent-retention-sync.mjs` (`P.sdkSession`) there. Not fixed here: product code is
-  out of this review's scope.
+**B-1, resolved at `eba51b2f`: `Consent corpus sync` was red.** At `685b4e35`,
+`packages/sdk/src/core/session.ts:24,26` imported `@estalara/shared` and `./profiling-opt-out.js`,
+so `scripts/check-session-identifier-corpus-sync.mjs` exited 1 on G3
+(`could not import packages/sdk/src/core/session.ts to execute its claims`), locally and in CI (run
+41376659149, step [5/6]). Rule: `.github/required-checks.txt:95` and the gate's contract at line 25.
 
-`Rule I — wired-or-dead check` is also red on this PR. That gate has a documented pre-existing-red
-baseline; whether this PR adds to it is for `scripts/gh-pr-checks-verified.sh` and was not judged
-here.
+**The fix, judged on `git diff 5fde72e6 eba51b2f`: behaviour is unchanged.**
+
+- **The move.** The xid block went to `packages/sdk/src/core/xid.ts`. A line diff of the removed
+  block against the new file shows only the differences named in the next three bullets, plus one
+  trailing blank line. `session.ts` now has no imports, and G3 passes against the real function.
+- **Two exports dropped.** `XSESSION_STORAGE_KEY` and `CrossSessionId` lost `export`. No non-test
+  code imported them from outside the block. The keys gate matches the constant with or without
+  `export`, and still reports 8 keys.
+- **Two exports added.** `drawUuid` and `readConsentTextVersion`, unchanged in body, because
+  `xid.ts` needs them.
+- **The one logic line, `readSendableXid`.** Was: `version === null || version < MIN`, on one read.
+  Is: `readConsentTextVersion() === null || isConsentTextStale()`, where stale is
+  `version !== null && version < MIN` (`session.ts:94-97`). The same truth table on every input. It
+  reads storage twice instead of once, with no side effect. If another tab removes the version
+  between the two reads, the id can be sent once; the single read had the same outcome for a removal
+  just after it, and `denied` is set before that removal.
+- **Comments and citations.** The lead-id comments at `session.ts` and `boot.ts:157` now state the
+  localStorage copies truthfully, which closes that item of M-5. They name the scoped opt-out key
+  too, already in Notice §4. `dpia.md` and the notice changed citations only. Two of those are
+  inside the superseded record of §13.2, which is otherwise verbatim; that record states no current
+  behaviour.
+- **G8** now reads `xid.ts`; its self-test passes 13 of 13.
+
+`Rule I — wired-or-dead check` was red on #1132 at `685b4e35`. That gate has a documented
+pre-existing-red baseline; whether this PR adds to it is for `scripts/gh-pr-checks-verified.sh` and
+was not judged here.
 
 ## 3. What was checked, and how
 
@@ -66,6 +76,12 @@ here.
 | `packages/sdk/e2e/returning-buyer.spec.ts`                                                                                                        | Read, not run here: every network answer in it is stubbed. The CI job `SDK E2E tests` passes on this SHA                                                       |
 | Stack                                                                                                                                             | Not started. Nothing below is a new live measurement                                                                                                           |
 
+**At `eba51b2f`:** the SDK tests `follow-1316.test.ts` and `session.test.ts` were run here, 65
+passed, and every gate of section 10. The server tests were not re-run, since the fix touches no
+server file. **AC(9) was not re-run at this SHA.** The live evidence is from `685b4e35` and is
+carried over on the diff judgement of section 2; the bundle did change, so `SDK E2E tests` on the
+merge SHA is part of M-1.
+
 **Not exercised live in any of those runs:** a holdout xid (`heldOut: 0` in all three), Redis down,
 the flag off, a blocked delete against the real store, and hosted Upstash.
 
@@ -76,11 +92,11 @@ the flag off, a blocked delete against the real store, and hosted Upstash.
 | 1   | Consent only; up to 90 days ending with the xid, non-sliding; flag default off, on only in `localhost-up.sh`; handover row | Met         | `buyer-profile-store.ts:207-209,225-243,69-80`; `scripts/dev/localhost-up.sh:484`; the variable appears elsewhere only as an empty line in `.env.example`, in tests and in docs; `CTO_HANDOVER.md` section 4 row 20. **Whether production's environment leaves it unset cannot be seen from this repo: condition M-4**                                                                      |
 | 2   | Arm per xid for consented sessions, `session_id` fallback; correlated rows in the SoT                                      | Met         | `adapt/route.ts:775`; `ab-holdout.ts:159`; `MASTER_DESIGN.md` "Amended by ESC-090 item 2"                                                                                                                                                                                                                                                                                                   |
 | 3   | Not persisted: three traits, `diaspora_buyer`, chat-moved labels. In-session copy unchanged                                | Met         | `buyer-profile-store.ts:36-43`; `intent.ts:128-132`; `adapt/route.ts:1041-1046`. The store also refuses `golden_visa_buyer` (R11), stricter than the ruling. The chat rule rests partly on the SDK's `archetype_source`: the server's own backstop covers `behavior` only (`chatIntentDimensions === null`), and a `quiz` assertion is trusted. A tampering client affects only its own row |
-| 4   | xid in `/api/adapt` and profile bodies only; no ClickHouse column; no cross-session conversion link                        | Met         | `adapt.ts:230-251,829-837`; `assignment_unit` and `profile_restored` are JSON inside `features_snapshot`, `adapt/route.ts:388-389`; NC-8 zero hits in all four tables                                                                                                                                                                                                                       |
+| 4   | xid in `/api/adapt` and profile bodies only; no ClickHouse column; no cross-session conversion link                        | Met         | `adapt.ts:231-252,832-840`; `assignment_unit` and `profile_restored` are JSON inside `features_snapshot`, `adapt/route.ts:388-389`; NC-8 zero hits in all four tables                                                                                                                                                                                                                       |
 | 5   | §E.7.5 reversal by #1123 confirmed                                                                                         | Not touched | No playbook or claim file is in this diff. ESC-089 stands; this review restricts no copy                                                                                                                                                                                                                                                                                                    |
 | —   | Surfaces approved, all additive                                                                                            | Exceeded    | Three public fields and two behaviours are outside the list: section 7 item 6, and the addendum the PM records                                                                                                                                                                                                                                                                              |
 
-**Consent vocabulary:** `/api/adapt` is sent canonical `consented` and `none` (`adapt.ts:827`). The
+**Consent vocabulary:** `/api/adapt` is sent canonical `consented` and `none` (`adapt.ts:828`). The
 gate accepts `consented` alone. `unknown` stays on the `pending` path, which does not reach it, and
 `ConsentStateSchema` is unchanged. **Holdout input:** still one HMAC over a random id, no proxy
 signal, RETRO-002 pattern preserved. **Protected-class scan of new copy, en/pl/es:** "Withdraw
@@ -91,52 +107,52 @@ to a subset.
 
 M = met. **D** = departure, ruled in section 7. **S-tier** requirements are marked (S).
 
-| Req      | Finding           | Reference and note                                                                                                                                                           |
-| -------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R1       | M                 | `session.ts:181-192,354-364`; `Math.random` absent from that module, test line 742                                                                                           |
-| R2       | M                 | `session.ts:310-325`; also refuses without SubtleCrypto, which is an addition                                                                                                |
-| R3       | M                 | `adapt.ts:834-836`, `:230-251`; NC-8 `wireLeaks: []`                                                                                                                         |
-| R4       | M                 | No `cross_session_id` in the SDK; NC-8                                                                                                                                       |
-| R5       | M                 | `adapt.ts:827`; `buyer-profile-store.ts:225-243`; table test line 301; live seven POSTs                                                                                      |
-| R6       | **D**             | `session.ts:69,98-101,311-315`; `consent-flow.ts:117,140,150`. Section 7 item 3                                                                                              |
-| R7       | M                 | `session.ts:316-317`. **This feature's sending only**; FOLLOW-1438 owns the rest                                                                                             |
-| R8       | M                 | `buyer-profile-store.ts:207-209`; `quiz/public-config/route.ts:370`. **The routes of R30 are not behind it, by design:** section 7 item 14                                   |
-| R9, R10  | M                 | `buyer-profile-store.ts:95-107`; live raw value `{"v":1,"archetype":"yield_hunter","confidence":0.9,"source":"quiz","traits":["seasoned_investor"]}`                         |
-| R11      | M                 | `buyer-profile-store.ts:36-40`; test line 463; live control (d)                                                                                                              |
-| R12      | M                 | `buyer-profile-store.ts:43,354`; test line 451                                                                                                                               |
-| R13      | M                 | `intent.ts:128-132`; `adapt/route.ts:1041-1046`; tests lines 483, 505; SDK tests 523-614                                                                                     |
-| R14      | M                 | `adapt/route.ts:1041-1049`, past the opt-out, AL and holdout returns; test line 539                                                                                          |
-| R15      | M                 | `buyer-profile-store.importers.test.ts:15`                                                                                                                                   |
-| R16      | M                 | `buyer-profile-store.ts:133-141`; `sentry.server.config.ts` excludes `data`; test lines 1011-1075. See section 7 item 10 on whether Sentry runs at all                       |
-| R17      | M                 | `buyer-profile-store.ts:158-164,187-197`; test line 1096                                                                                                                     |
-| R18      | **D**             | Results are explicit and checked, `:148-185`. "Reported to Sentry" does not happen in effect: section 7 item 10                                                              |
-| R19      | M                 | One module; the flag read in `public-config` is an env read, kept out on purpose for R15                                                                                     |
-| R20      | M                 | `CTO_HANDOVER.md` row 20; this PR adds a pointer to section 8 below                                                                                                          |
-| R21      | M                 | `buyer-profile-store.ts:69-80,236-241`; live `pttlMs` about 90 days; test lines 725-800                                                                                      |
-| R22      | M                 | `XID_RETENTION_DAYS`; `check-consent-retention-sync.mjs` G8, self-test 13 of 13                                                                                              |
-| R23      | M                 | The store reads nothing else; test line 840                                                                                                                                  |
-| R24      | **D**             | `profiling-toggle.ts:211-223`; `consent-flow.ts:229`. Section 7 items 1 and 13                                                                                               |
-| R25      | M                 | `consent-flow.ts:39-44,66-75`; live control (b); SDK tests 802-873                                                                                                           |
-| R26      | **D**             | `consent-flow.ts:41,102-114,165-178`. Section 7 item 4                                                                                                                       |
-| R27      | M                 | `buyer-profile-store.ts:69-90`, atomic. **Length departs:** section 7 item 7                                                                                                 |
-| R28      | **D**             | `consent-flow.ts:66-75`; `adapt-loop.ts:167-183`. Section 7 item 5; wider than reported                                                                                      |
-| R29      | M                 | Test line 380                                                                                                                                                                |
-| R30      | **D**             | `buyer-profile-route.ts`, `middleware.ts:81`, allow-list present; the SDK calls only `erase`. Section 7 item 2                                                               |
-| R31      | M                 | `dsr/erase/route.ts:340-368,378`; live control (c), seeded row                                                                                                               |
-| R32 (S)  | Deferred          | DSR `GET` routes take no xid; FOLLOW-1308 amended in writing, `backlog/FOLLOW_UPS.md`                                                                                        |
-| R33      | M                 | That amendment; evidence carries `seededVerificationRow: true`                                                                                                               |
-| R34      | M                 | `buyer-profile-route.ts:257-267`; test "records the action and result, without the xid or its hash". Section 7 item 9                                                        |
-| R35      | M                 | No server mapping. The browser entry holds `lead` beside the id: section 7 item 12                                                                                           |
-| R36      | M                 | `adapt.ts:829`; route returns at `:680` before any read; test line 816; SDK test 362                                                                                         |
-| R37 (S)  | M                 | `profiling-opt-out.ts`, `hasProfilingOptOutKey()`                                                                                                                            |
-| R38      | M                 | Toggle words unchanged, `profiling-toggle.ts:85-94`                                                                                                                          |
-| R39, R40 | M                 | `adapt/route.ts:775,845-848`; tests lines 856, 935. A held-out xid was **not** exercised live                                                                                |
-| R41      | M                 | `adapt/route.ts:388-389`; MASTER_DESIGN amended                                                                                                                              |
-| R42      | M                 | `profile_restore` reaches only a debug log (`adapt-loop.ts:358-359`); no text                                                                                                |
-| R43 (S)  | Narrow            | `session.ts:324`. A different logged-in lead gets no send. A logged-out session on that browser still sends: section 7 item 13                                               |
-| R44 (S)  | M, with a gap     | Re-quiz overwrites, `KEEPTTL`; test line 769. "None of these" does not clear the label: section 7 item 15                                                                    |
-| R45      | Done here         | Section 10                                                                                                                                                                   |
-| R46 (S)  | Not measured here | The SDK author reports about 10 B of room; the budget is why R24 is thin. `Served SDK bundles build-generated` passes in CI. The size itself was not rebuilt on this machine |
+| Req      | Finding       | Reference and note                                                                                                                                         |
+| -------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1       | M             | `session.ts:177-188`, `xid.ts:116-126`; `Math.random` absent from both, test line 742                                                                      |
+| R2       | M             | `xid.ts:73-87`; also refuses without SubtleCrypto, which is an addition                                                                                    |
+| R3       | M             | `adapt.ts:835-837`, `:231-252`; NC-8 `wireLeaks: []`                                                                                                       |
+| R4       | M             | No `cross_session_id` in the SDK; NC-8                                                                                                                     |
+| R5       | M             | `adapt.ts:828`; `buyer-profile-store.ts:225-243`; table test line 301; live seven POSTs                                                                    |
+| R6       | **D**         | `session.ts:65,94-97`, `xid.ts:76-77`; `consent-flow.ts:114,137,147`. Section 7 item 3                                                                     |
+| R7       | M             | `xid.ts:78-79`. **This feature's sending only**; FOLLOW-1438 owns the rest                                                                                 |
+| R8       | M             | `buyer-profile-store.ts:207-209`; `quiz/public-config/route.ts:370`. **The routes of R30 are not behind it, by design:** section 7 item 14                 |
+| R9, R10  | M             | `buyer-profile-store.ts:95-107`; live raw value `{"v":1,"archetype":"yield_hunter","confidence":0.9,"source":"quiz","traits":["seasoned_investor"]}`       |
+| R11      | M             | `buyer-profile-store.ts:36-40`; test line 463; live control (d)                                                                                            |
+| R12      | M             | `buyer-profile-store.ts:43,354`; test line 451                                                                                                             |
+| R13      | M             | `intent.ts:128-132`; `adapt/route.ts:1041-1046`; tests lines 483, 505; SDK tests 523-614                                                                   |
+| R14      | M             | `adapt/route.ts:1041-1049`, past the opt-out, AL and holdout returns; test line 539                                                                        |
+| R15      | M             | `buyer-profile-store.importers.test.ts:15`                                                                                                                 |
+| R16      | M             | `buyer-profile-store.ts:133-141`; `sentry.server.config.ts` excludes `data`; test lines 1011-1075. See section 7 item 10 on whether Sentry runs at all     |
+| R17      | M             | `buyer-profile-store.ts:158-164,187-197`; test line 1096                                                                                                   |
+| R18      | **D**         | Results are explicit and checked, `:148-185`. "Reported to Sentry" does not happen in effect: section 7 item 10                                            |
+| R19      | M             | One module; the flag read in `public-config` is an env read, kept out on purpose for R15                                                                   |
+| R20      | M             | `CTO_HANDOVER.md` row 20; this PR adds a pointer to section 8 below                                                                                        |
+| R21      | M             | `buyer-profile-store.ts:69-80,236-241`; live `pttlMs` about 90 days; test lines 725-800                                                                    |
+| R22      | M             | `XID_RETENTION_DAYS`; `check-consent-retention-sync.mjs` G8, self-test 13 of 13                                                                            |
+| R23      | M             | The store reads nothing else; test line 840                                                                                                                |
+| R24      | **D**         | `profiling-toggle.ts:211-223`; `consent-flow.ts:226`. Section 7 items 1 and 13                                                                             |
+| R25      | M             | `consent-flow.ts:36-41,63-72`; live control (b); SDK tests 802-873                                                                                         |
+| R26      | **D**         | `consent-flow.ts:38,99-111,162-175`. Section 7 item 4                                                                                                      |
+| R27      | M             | `buyer-profile-store.ts:69-90`, atomic. **Length departs:** section 7 item 7                                                                               |
+| R28      | **D**         | `consent-flow.ts:63-72`; `adapt-loop.ts:167-183`. Section 7 item 5; wider than reported                                                                    |
+| R29      | M             | Test line 380                                                                                                                                              |
+| R30      | **D**         | `buyer-profile-route.ts`, `middleware.ts:81`, allow-list present; the SDK calls only `erase`. Section 7 item 2                                             |
+| R31      | M             | `dsr/erase/route.ts:340-368,378`; live control (c), seeded row                                                                                             |
+| R32 (S)  | Deferred      | DSR `GET` routes take no xid; FOLLOW-1308 amended in writing, `backlog/FOLLOW_UPS.md`                                                                      |
+| R33      | M             | That amendment; evidence carries `seededVerificationRow: true`                                                                                             |
+| R34      | M             | `buyer-profile-route.ts:257-267`; test "records the action and result, without the xid or its hash". Section 7 item 9                                      |
+| R35      | M             | No server mapping. The browser entry holds `lead` beside the id: section 7 item 12                                                                         |
+| R36      | M             | `adapt.ts:832`; route returns at `:680` before any read; test line 816; SDK test 362                                                                       |
+| R37 (S)  | M             | `profiling-opt-out.ts`, `hasProfilingOptOutKey()`                                                                                                          |
+| R38      | M             | Toggle words unchanged, `profiling-toggle.ts:85-94`                                                                                                        |
+| R39, R40 | M             | `adapt/route.ts:775,845-848`; tests lines 856, 935. A held-out xid was **not** exercised live                                                              |
+| R41      | M             | `adapt/route.ts:388-389`; MASTER_DESIGN amended                                                                                                            |
+| R42      | M             | `profile_restore` reaches only a debug log (`adapt-loop.ts:358-359`); no text                                                                              |
+| R43 (S)  | Narrow        | `xid.ts:86`. A different logged-in lead gets no send. A logged-out session on that browser still sends: section 7 item 13                                  |
+| R44 (S)  | M, with a gap | Re-quiz overwrites, `KEEPTTL`; test line 769. "None of these" does not clear the label: section 7 item 15                                                  |
+| R45      | Done here     | Section 10                                                                                                                                                 |
+| R46 (S)  | Reported      | 43,128 B against the 43,136 B limit, 8 B of room, as reported by the coordinator at `eba51b2f`. Not rebuilt on this machine. The budget is why R24 is thin |
 
 ## 6. Negative controls
 
@@ -185,8 +201,8 @@ names the section 8 item that holds it.
    minimum.
 4. **R26, a never-sent id erased with no request. ACCEPTED, both.** I checked the premise rather
    than taking it: `markXidSent` writes `sent` before the send and a failure to write stops the send
-   (`session.ts:331-340`, `adapt.ts:833`), and a profile can only exist under an id that was sent.
-   No bundle sent the id before this feature.
+   (`xid.ts:93-102`, `adapt.ts:834`), and a profile can only exist under an id that was sent. No
+   bundle sent the id before this feature.
 5. **R28. Localhost: ACCEPTED. Production: BLOCKER (P-4). The gap is wider than reported.**
    `restoreOriginalSlots()` (`adapt-loop.ts:167-183`) restores `headline` and `description` only. So
    **`cta` and `feature` text stay too**, not just class and reorder, and AC(9)'s restored response
@@ -233,19 +249,18 @@ names the section 8 item that holds it.
     ACCEPTED. Production: BLOCKER until L-3 (P-1).** `family_buyer` is ruled by ESC-090 item 3. The
     other two are not named there; they are in L-3. **I add `retiree_relocator` to L-3:** it implies
     age. ESC-089 governs what copy may say, not what is stored, and nothing here touches copy. The
-    `lead` field in the browser entry is **not** in this list but belongs near it:
-    `session.ts:404-405` and `boot.ts` still say the lead id is "sessionStorage only" and "NOT
-    localStorage", and that is no longer whole. It goes with the entry and is disclosed now. The two
-    comments should be corrected.
+    `lead` field in the browser entry is **not** in this list but belongs near it: the 16-hex lead
+    id now reaches localStorage, for as long as the entry lives. It is disclosed, and since
+    `eba51b2f` the code comments say so.
 13. **Withdrawal on a shared computer. Localhost: ACCEPTED. Production: BLOCKER until L-5 (P-1).**
     Person B's click erases person A's profile and denies consent for the browser, with no way back.
     That fails safe. The harder half is B being served A's label without having seen a banner, and a
-    logged-out session still sends an id bound to a lead (`session.ts:324` compares only when
-    `leadId` is non-empty). **Also not on the PM's list: the control is absent with the flag off**
-    unless the id was already sent (`consent-flow.ts:229`), against R24's "wherever the toggle
-    renders". With the flag off the banner sentence "deleted if you withdraw consent" has no control
-    behind it. Harmless on localhost, where the flag is on. **This binds the SDK embed in production
-    whether or not the flag is ever set (P-2).**
+    logged-out session still sends an id bound to a lead (`xid.ts:86` compares only when `leadId` is
+    non-empty). **Also not on the PM's list: the control is absent with the flag off** unless the id
+    was already sent (`consent-flow.ts:226`), against R24's "wherever the toggle renders". With the
+    flag off the banner sentence "deleted if you withdraw consent" has no control behind it.
+    Harmless on localhost, where the flag is on. **This binds the SDK embed in production whether or
+    not the flag is ever set (P-2).**
 14. **Found, not on the PM's list: `/api/profile/*` go live in production on merge, flag off.** By
     design (R30: a right outlives the flag). Nothing calls them there, since no `sent` id exists. A
     caller with the public key can create tombstones, quota keys and audit rows. **ACCEPTED**, and
@@ -289,17 +304,19 @@ stays a separate ticket.
 
 ## 9. Conditions of the localhost merge
 
-- **M-1.** B-1 fixed, `Consent corpus sync` green on the merge SHA, and the diff of the fix shown to
-  this role.
-- **M-2.** The document commit of this record lands with the code, in the same merge.
-- **M-3.** The PM records the ESC-090 addendum in `backlog/ESCALATIONS.md`.
-- **M-4.** Before merge, because the control plane deploys on every merge: someone with access
-  confirms `BUYER_PROFILE_ENABLED` is unset in Doppler `prd` and Vercel production. Not verifiable
-  from here.
-- **M-5.** The PM files stubs for P-2, P-3, P-4, P-5, P-6, P-7, P-8, each with a before-go-live
-  `depends_on`, plus: the `privacy-notice-keys-sync` gate does not see keys named `*_VERSION_KEY` or
-  `*_CACHE_KEY`; the stale lead-id comments in `session.ts` and `boot.ts`; `MASTER_DESIGN.md`
-  §Snapshot still says sending the xid "is the ticket's SDK half".
+- **M-1.** Open: `Consent corpus sync`, `SDK E2E tests` and the rest of the required register green
+  in CI on the merge SHA. `eba51b2f` is unpushed; the gates pass locally.
+- **M-2.** Open: this record and its documents land with the code, in the same merge.
+- **M-3.** Open: the PM records the ESC-090 addendum in `backlog/ESCALATIONS.md`.
+- **M-4.** Checked, as reported by the coordinator: on 2026-11-02 `BUYER_PROFILE_ENABLED` is absent
+  by name from Doppler `prd` and Vercel production. Not verifiable from this repo, and not re-read
+  by this role.
+- **M-5.** Open: the PM files stubs for P-2, P-3, P-4, P-5, P-6, P-7, P-8, each with a
+  before-go-live `depends_on`, plus: the `privacy-notice-keys-sync` gate does not see keys named
+  `*_VERSION_KEY` or `*_CACHE_KEY`; `MASTER_DESIGN.md` §Snapshot still says sending the xid "is the
+  ticket's SDK half".
+
+A later change that alters behaviour comes back to this role.
 
 ## 10. Documents changed, and the Rule N check
 
@@ -321,22 +338,21 @@ ROPA Activity 2. **Owed by the architect, design review section 10:** ADR-0014 n
 map is the implementation record in `PRIVACY_NOTICE_TEMPLATE.md` §3 and the retention table in DPIA
 §13.2; the references in sections 4 to 7 above are the rest. Where the code falls short, the
 documents state the shortfall as a gap rather than the requirement as a behaviour. The gates that
-read these documents were run on the edited tree:
+read these documents were run at `eba51b2f`:
 
-| Gate                                                          | Result on the edited tree                              |
-| ------------------------------------------------------------- | ------------------------------------------------------ |
-| `scripts/check-consent-retention-sync.mjs`, and `--self-test` | Pass; 13 of 13                                         |
-| `scripts/check-privacy-notice-keys.sh`                        | Pass                                                   |
-| `scripts/check-consent-text-sync.mjs`                         | Pass                                                   |
-| `scripts/check-consent-contract-sync.mjs`                     | Pass                                                   |
-| `scripts/check-adr-0021-conditions.mjs`                       | Pass                                                   |
-| `scripts/check-compliance-docs.sh`                            | Pass                                                   |
-| `scripts/check-session-identifier-corpus-sync.mjs`            | **Fails on G3 alone: B-1. Same as before these edits** |
+| Gate                                                          | Result on the edited tree               |
+| ------------------------------------------------------------- | --------------------------------------- |
+| `scripts/check-consent-retention-sync.mjs`, and `--self-test` | Pass; 13 of 13                          |
+| `scripts/check-privacy-notice-keys.sh`                        | Pass                                    |
+| `scripts/check-consent-text-sync.mjs`                         | Pass                                    |
+| `scripts/check-consent-contract-sync.mjs`                     | Pass                                    |
+| `scripts/check-adr-0021-conditions.mjs`                       | Pass                                    |
+| `scripts/check-compliance-docs.sh`                            | Pass                                    |
+| `scripts/check-session-identifier-corpus-sync.mjs`            | Pass; G3 runs against the real function |
 
 **Regulatory reference for this record:** GDPR Arts. 5(1)(c), 5(1)(d), 5(1)(e), 6(1)(a), 7(1), 7(3),
 9, 13, 15, 17, 20; ePrivacy Art. 5(3); CJEU C-184/20, for counsel to apply. **Audit-log schema
 delta:** none; three new `dsr_type` values in a `LowCardinality(String)` column. **Consent-log
 delta:** optional `text_version` on `consent.granted`.
 
-NEXT: sdk-engineer fixes B-1 with no behaviour change; this role reads that diff; the PM takes M-2
-to M-5 and merges.
+NEXT: the PM pushes, verifies CI on the merge SHA (M-1), takes M-2, M-3 and M-5, and merges.

@@ -445,6 +445,7 @@ describe('FOLLOW-1458 a session has the arm of its first decision', () => {
     expect(queries).toHaveLength(4);
     for (const sql of queries) {
       expect(sql).toContain('argMin(holdout_group, ts) AS first_arm');
+      expect(sql).not.toContain('argMax');
       expect(sql).not.toMatch(/GROUP BY[^\n]*holdout_group/);
       expect(sql).not.toMatch(/\bad\.holdout_group AS holdout\b/);
     }

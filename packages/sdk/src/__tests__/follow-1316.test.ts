@@ -74,6 +74,10 @@ interface Options {
   configFails?: boolean;
   /** Public config: answered this many ms after the request. */
   configDelayMs?: number;
+  /** Public config: headers arrive, the body never does, until the request is aborted. */
+  configBodyStalls?: boolean;
+  /** Intent weights: the same stall. */
+  weightsBodyStalls?: boolean;
   /** The `/profile/erase` status, or `'network'` for a rejected fetch. */
   eraseStatus?: number | 'network';
   /** `/adapt` answer. */
@@ -102,6 +106,19 @@ function stubWire(o: Options): void {
     'fetch',
     vi.fn().mockImplementation((url: string, init?: RequestInit) => {
       wire.push({ url, init });
+      const stalledBody = (): Promise<unknown> =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            new Promise((_resolve, reject) => {
+              init?.signal?.addEventListener('abort', () => {
+                reject(new Error('aborted'));
+              });
+            }),
+        });
+      if (url.includes('/quiz/public-config') && o.configBodyStalls) return stalledBody();
+      if (url.includes('/intent/config') && o.weightsBodyStalls) return stalledBody();
       if (url.includes('consent-text.json')) {
         return ok({
           schema_version: 1,
@@ -400,53 +417,122 @@ describe('FOLLOW-1316 send path', () => {
     expect(adaptBodies()[0]?.consent_state).toBe('none');
   });
 
-  // FOLLOW-1458: the first decision used to go without the xid here and the next with it. The server
-  // keyed the two on different units, so one visit could land in both arms.
-  it('a config answering after the 1 s budget: no decision until it answers, the first carries the xid', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    seedGranted();
-    seedXid();
-    seedSession();
-    insertScript();
-    stubWire({ flag: true, configDelayMs: 3_000 });
-    const init = _initForTest();
-    await vi.advanceTimersByTimeAsync(1_500);
-    expect(adaptBodies()).toHaveLength(0);
+  // FOLLOW-1458: a decision without the xid is keyed on the session and the next on the xid, so one
+  // visit could land in both arms. The first decision waits for a late config, up to about 3 s from
+  // boot: the 1 s race plus a 2 s cap.
+  describe('FOLLOW-1458 a late config and the first decision', () => {
+    const start = (o: Options): Promise<unknown> => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      seedGranted();
+      seedXid();
+      seedSession();
+      insertScript();
+      stubWire(o);
+      return _initForTest();
+    };
 
-    await vi.advanceTimersByTimeAsync(2_500);
-    await init;
-    expect(adaptBodies().length).toBeGreaterThan(0);
-    for (const body of adaptBodies()) expect(body.xid).toBe(XID);
-    expect(withdrawControl()).not.toBeNull();
-  });
+    it('inside the cap: no decision until it answers, and the first one carries the xid', async () => {
+      const init = start({ flag: true, configDelayMs: 2_500 });
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(adaptBodies()).toHaveLength(0);
 
-  it('a late config without the flag: the first decision goes then, without the xid', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    seedGranted();
-    seedXid();
-    seedSession();
-    insertScript();
-    stubWire({ configDelayMs: 3_000 });
-    const init = _initForTest();
-    await vi.advanceTimersByTimeAsync(4_000);
-    await init;
-    expect(adaptBodies().length).toBeGreaterThan(0);
-    for (const body of adaptBodies()) expect(body.xid).toBeUndefined();
-    expect(withdrawControl()).toBeNull();
-  });
+      await vi.advanceTimersByTimeAsync(1_000);
+      await init;
+      expect(adaptBodies().length).toBeGreaterThan(0);
+      for (const body of adaptBodies()) expect(body.xid).toBe(XID);
+      expect(withdrawControl()).not.toBeNull();
+    });
 
-  it('a config that never answers: the decision still goes, without the xid (fail closed)', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    seedGranted();
-    seedXid();
-    seedSession();
-    insertScript();
-    stubWire({ flag: true, configFails: true });
-    const init = _initForTest();
-    await vi.advanceTimersByTimeAsync(1_500);
-    await init;
-    expect(adaptBodies().length).toBeGreaterThan(0);
-    for (const body of adaptBodies()) expect(body.xid).toBeUndefined();
+    it('flag off, config past the cap: the buyer waits about 3 s, not 15', async () => {
+      const init = start({ configDelayMs: 14_000 });
+      await vi.advanceTimersByTimeAsync(2_500);
+      expect(adaptBodies()).toHaveLength(0);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      await init;
+      expect(adaptBodies()).toHaveLength(1);
+      expect(adaptBodies()[0]?.xid).toBeUndefined();
+    });
+
+    it('a stalled config body: init proceeds at the cap, and the request ends at 15 s', async () => {
+      const init = start({ flag: true, configBodyStalls: true });
+      await vi.advanceTimersByTimeAsync(3_500);
+      await init;
+      expect(adaptBodies()).toHaveLength(1);
+      expect(adaptBodies()[0]?.xid).toBeUndefined();
+
+      // The abort ends it: no flag arrives, nothing more is sent.
+      await vi.advanceTimersByTimeAsync(13_000);
+      expect(adaptBodies()).toHaveLength(1);
+      expect(withdrawControl()).toBeNull();
+    });
+
+    it('a stalled weights body cannot hold boot either', async () => {
+      const init = start({ flag: true, weightsBodyStalls: true });
+      await vi.advanceTimersByTimeAsync(1_500);
+      await init;
+      expect(adaptBodies()[0]?.xid).toBe(XID);
+    });
+
+    it('past the cap, then the flag: no refresh, a withdrawal offer, and later decisions carry it', async () => {
+      const init = start({ flag: true, configDelayMs: 6_000 });
+      await vi.advanceTimersByTimeAsync(3_500);
+      await init;
+      expect(adaptBodies()).toHaveLength(1);
+      expect(adaptBodies()[0]?.xid).toBeUndefined();
+      expect(withdrawControl()).toBeNull();
+
+      await vi.advanceTimersByTimeAsync(3_000);
+      // Offered as soon as the flag is known, before this id has left the browser.
+      expect(withdrawControl()).not.toBeNull();
+      expect(adaptBodies()).toHaveLength(1);
+
+      // The next decision, whatever triggers it: here the toggle going off and on.
+      const checkbox = query('input[type="checkbox"]') as HTMLInputElement;
+      checkbox.click();
+      checkbox.click();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(adaptBodies().at(-1)?.xid).toBe(XID);
+    });
+
+    it('the buyer leaves during the wait: what boot queued is flushed', async () => {
+      const init = start({ flag: true, configDelayMs: 2_500 });
+      await vi.advanceTimersByTimeAsync(1_500);
+      expect(adaptBodies()).toHaveLength(0);
+
+      window.dispatchEvent(new Event('beforeunload'));
+      await vi.advanceTimersByTimeAsync(10);
+      const types = ingestEvents().map((e) => e.type);
+      expect(types).toContain('page.view');
+      expect(types).toContain('session.started');
+
+      await vi.advanceTimersByTimeAsync(2_000);
+      await init;
+    });
+
+    it('the tab hides during the wait, after a banner grant: consent.granted is flushed too', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      seedSession();
+      insertScript();
+      stubWire({ flag: true, configDelayMs: 2_500 });
+      const init = _initForTest();
+      await vi.waitFor(() => {
+        expect(query('[data-estalara-consent="accept"]')).not.toBeNull();
+      });
+      query('[data-estalara-consent="accept"]')?.click();
+      await vi.advanceTimersByTimeAsync(1_500);
+      expect(adaptBodies()).toHaveLength(0);
+
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(10);
+      Reflect.deleteProperty(document, 'visibilityState');
+      expect(ingestEvents().map((e) => e.type)).toContain('consent.granted');
+
+      await vi.advanceTimersByTimeAsync(2_000);
+      await init;
+    });
   });
 
   it('R4: a whole session, events and flushes included, carries the xid only where allowed', async () => {

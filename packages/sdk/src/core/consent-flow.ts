@@ -72,7 +72,7 @@ async function withdrawConsent(ctx: BootContext, adapt: AdaptLoop): Promise<void
 }
 
 /** Show the withdrawal control in the toggle [FOLLOW-1316, R24]. */
-function offerWithdrawal(
+export function offerWithdrawal(
   ctx: BootContext,
   adapt: AdaptLoop,
   toggle: ProfilingToggleController,

@@ -102,8 +102,7 @@ export async function fetchIntentWeights(
       signal: controller.signal,
     });
 
-    clearTimeout(timer);
-
+    // The timer stays on until the body is read: `json()` has no deadline of its own [FOLLOW-1458].
     // Non-2xx responses: attempt to parse the body to check data_source before giving up.
     // HTTP 500 (data_source='error') has a parseable body per IntentConfigResponseSchema
     // (FOLLOW-299: weights field is optional so the error-path body still validates).
@@ -169,7 +168,8 @@ export async function fetchIntentWeights(
     return parsed.weights;
   } catch {
     // Network error or AbortError (timeout) — use SDK defaults.
-    clearTimeout(timer);
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }

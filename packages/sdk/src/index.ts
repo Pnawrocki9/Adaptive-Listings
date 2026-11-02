@@ -4,7 +4,8 @@
  */
 
 import { boot } from './core/boot.js';
-import { mountOptOutToggle } from './core/consent-flow.js';
+import { mountOptOutToggle, offerWithdrawal } from './core/consent-flow.js';
+import type { ProfilingToggleController } from './ui/profiling-toggle.js';
 import { createAdaptLoop } from './core/adapt-loop.js';
 import { createIntentLoop } from './core/intent-loop.js';
 import { dispatchEvents } from './core/events.js';
@@ -38,6 +39,9 @@ setDescriptionEventQueueRef(eventQueue);
 
 const BATCH_INTERVAL_MS = 5_000;
 
+/** How long past the 1 s config race the first decision waits for a late config [FOLLOW-1458]. */
+const LATE_CONFIG_WAIT_MS = 2_000;
+
 /** Main SDK init, never breaks the host; returns state for `_initForTest` only [FOLLOW-1296]. */
 async function init(): Promise<IntentState | null> {
   // FOLLOW-1033: first line of our own code — everything before this is host hydration,
@@ -60,45 +64,59 @@ async function init(): Promise<IntentState | null> {
     // `estalara:adapt:settled` signal.
     const intent = createIntentLoop(ctx);
     const adapt = createAdaptLoop(ctx, intent, flush);
-    // `intent.quiz` consumes this; the flag it may carry matters past the quiz [FOLLOW-1316].
-    const lateConfig = ctx.lateConfig;
-    // The quiz card opens on the served config alone, never after a slow first decision; a quiz
-    // refresh supersedes the cold-start one (latest wins, FOLLOW-380) [FOLLOW-1370].
-    intent.quiz(adapt);
-    // A config past the 1 s budget: wait for it. A decision without the xid is keyed on the session
-    // and the next one on the xid, which can put one visit in both arms [FOLLOW-1458].
-    if ((await lateConfig)?.buyerProfileEnabled) ctx.config.buyerProfileEnabled = true;
-    await adapt.start();
-
-    // 5. Reuse the Shadow DOM host created by boot's consent gate. 5b. Opt-out toggle.
-    const shadowHost = ctx.host;
-    const profilingToggle = mountOptOutToggle(ctx, adapt);
-
-    // 6. Behavioral observers and the favorites bridge; then the chat bridge and the
-    // live.signup / inquiry.completed listeners.
-    const cleanupObservers = intent.wire(adapt);
-    adapt.listen();
-
+    // Before any wait: a buyer who leaves during it must not lose page.view, session.started and
+    // consent.granted [FOLLOW-1458].
     flushTimer = setInterval(() => void flush(), BATCH_INTERVAL_MS);
 
-    // Flush remaining events before page unload (keepalive fetch).
-    const handleSessionEnd = (): void => {
-      // Forced: possibly the last chance, so held retries go now instead of waiting out backoff.
-      void flush(true);
-    };
-
+    // Flush remaining events before page unload (keepalive fetch). Forced: possibly the last chance,
+    // so held retries go now instead of waiting out backoff.
     ctx.on(window, 'visibilitychange', () => {
       if (document.visibilityState === 'hidden') {
         intent.stopDwell();
-        handleSessionEnd();
+        void flush(true);
       }
     });
 
     // Final intent.snapshot on unload, bound to the instance lifetime [FOLLOW-266].
     ctx.on(window, 'beforeunload', () => {
       emitIntentSnapshot(ctx.state, intent.snapshot);
-      handleSessionEnd();
+      void flush(true);
     });
+
+    // `intent.quiz` consumes this; the flag it may carry matters past the quiz [FOLLOW-1316].
+    const lateConfig = ctx.lateConfig;
+    // The quiz card opens on the served config alone, never after a slow first decision; a quiz
+    // refresh supersedes the cold-start one (latest wins, FOLLOW-380) [FOLLOW-1370].
+    intent.quiz(adapt);
+    let profilingToggle: ProfilingToggleController | null = null;
+    // Whenever the flag comes, later decisions carry the xid, so the withdrawal offer comes with it;
+    // past the mount, nothing else would offer it to a buyer whose id has not left yet (R25).
+    void lateConfig?.then((late) => {
+      if (late?.buyerProfileEnabled) {
+        ctx.config.buyerProfileEnabled = true;
+        if (profilingToggle) offerWithdrawal(ctx, adapt, profilingToggle);
+      }
+    });
+    // A config past the 1 s race holds the first decision up to LATE_CONFIG_WAIT_MS more: without
+    // the xid it is keyed on the session and the next on the xid, which can put one visit in both
+    // arms. Past the cap that flip stays possible, by choice: the flag may be off, and the buyer must
+    // not wait 15 s for nothing. The reader counts such a session once, in its first arm. No refresh
+    // when the flag then arrives, or every such visit would flip at once [FOLLOW-1458]. A null
+    // `lateConfig` (config in time) settles this race at once.
+    await Promise.race([
+      lateConfig,
+      new Promise((resolve) => setTimeout(resolve, LATE_CONFIG_WAIT_MS)),
+    ]);
+    await adapt.start();
+
+    // 5. Reuse the Shadow DOM host created by boot's consent gate. 5b. Opt-out toggle.
+    const shadowHost = ctx.host;
+    profilingToggle = mountOptOutToggle(ctx, adapt);
+
+    // 6. Behavioral observers and the favorites bridge; then the chat bridge and the
+    // live.signup / inquiry.completed listeners.
+    const cleanupObservers = intent.wire(adapt);
+    adapt.listen();
 
     if (ctx.config.debug) {
       console.log(`[Estalara] SDK ${SDK_VERSION} initialized`, {

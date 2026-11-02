@@ -587,6 +587,83 @@ done
 
 ---
 
+### 5.1 N3: `scripts/dev/real-app-acceptance.mjs` on the real app [FOLLOW-1344]
+
+Replaces the manual quiz walk (plan instrument N3, first use K4b, full form K5). One buyer on
+`~/Projects/Estalara-gitlab-2026-08-17`, deciding through the real control plane, with real clicks.
+It starts nothing and stops nothing. The bring-up is `ADAPTIVE_LISTINGS_LOCAL.md` in that tree:
+`SKIP_BUILD=1 scripts/dev/localhost-up.sh`, stop the two fixture servers, `.al-local/al-real-up.sh`.
+Run that under `timeout`: it hung 14 h once (K2c finding 5), and `pgrep -f` matches the driver
+shell, so kill on an exact cmdline + cwd match only.
+
+**Preconditions.** The control plane on `:3000` is a fresh process from the checkout N3 runs from
+(`localhost-up.sh` leaves an old one running, and the freshness check reads this checkout only). The
+`:9100` bundle is built from that checkout (a stale bundle sends no xid, so the restore hop is RED).
+No uncommitted change in the harness pathspec or in this script.
+
+```bash
+SESSION_JSON=<path>/n3.json timeout 1800 node scripts/dev/real-app-acceptance.mjs
+```
+
+Env: `LISTING_URL` (the Palm Coast listing on `:5173`), `DECISION_ORIGIN` (`:3000`), `INGEST_ORIGIN`
+(`:8787`), `ESTALARA_BACKEND_URL` (`:8081`), `ESTALARA_ROOT`, `HEADLESS`, `N3_DWELL_MS`,
+`N3_DESCRIPTION_BUDGET_MS`, `N3_DEADLINE_MS` (25 min watchdog). The last line reads
+`RESULT: verdict=…`.
+
+| Exit | Meaning                                                                                   |
+| ---- | ----------------------------------------------------------------------------------------- |
+| 0    | `GREEN`, or `GREEN_K4B`: all green but the hops `excused=[…]` names                       |
+| 1    | `RED`, or `UNMEASURED` (three holdout draws: re-run). A hop nobody recorded counts as RED |
+| 2    | Usage. `--arms N` is K5 and not implemented: nothing ran                                  |
+
+**Checked before a browser starts (no spend).** A failure stops the run RED.
+
+- The page is not the fixture: 200, a SvelteKit document, a `data-estalara-listing-id` other than
+  the fixture's.
+- `:8081` is not the fixture server: it serves that id with facts, with no `x-estalara-facts-source`
+  header (the fixture stamps it on every 200 and 404s any other id).
+- `:3000` is no mock and authenticates the key with the page's origin echoed
+  (`assertRealControlPlane()`), and it serves a quiz tree with a walk to `yield_hunter`.
+- The build freshness check of the FOLLOW-819 harness.
+
+**Hops, and how each fails.**
+
+| Hop                       | Green needs                                                                                                                     | Red when                                                                  |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `repo_identity`           | AL SHA on a clean tree; Estalara tree hash (no git there: sha-256 over `web-master/src` and `core-master/src`, `.env` excluded) | dirty or unreadable AL tree; Estalara tree unreadable                     |
+| `substrate`               | the list above                                                                                                                  | any item                                                                  |
+| `sdk_loaded`              | loader present, bundle 200, `window.Estalara`, ≥ 3 hooks, decision and ingest URLs on the stack                                 | `.env` still aimed at `:9100`; SDK flag off; bundle host down             |
+| `consent_click`           | real click on `[data-estalara-consent="accept"]`, `granted` stored                                                              | no banner; click refused                                                  |
+| `ingest_ack`              | at least one 2xx from `/v1/events`                                                                                              | origin refused; preflight slower than 60 s                                |
+| `quiz_yield_hunter`       | card opens, walk on the served tree, result screen `yield_hunter`, confirmed, fold persisted                                    | no card, a label not found, another leaf, any driver throw                |
+| `adapt_llm_tweaked`       | first `/api/adapt` past the fold: 200, `llm_tweaked`, `yield_hunter`, over the gate, a directive                                | a fallback (read `fallback_reason`), `llm_full`, no request past the fold |
+| `headline_dom_changed`    | slot changed, into text a response served                                                                                       | unchanged, or changed into text nobody served (a host re-render)          |
+| `description_answered`    | a 200 with a known source                                                                                                       | endpoint broken, or the SDK never asked                                   |
+| `description_ai_cached`   | `ai_cached` with text reached the page, on the first call or after a cold miss                                                  | `ai_cached_never_arrived` (180 s, reported apart from a broken endpoint)  |
+| `description_dom_changed` | slot changed, into served text                                                                                                  | as the headline                                                           |
+| `no_debug_attribute`      | no `[data-debug="true"]` in the document                                                                                        | **today, always** (below)                                                 |
+| `restored_first_adapt`    | new context, same xid, nothing driven: first call `restored`, `llm_tweaked`, same archetype                                     | `miss` on three draws, no xid on the first call, not adapted              |
+| `inquiry_signed_rollup`   | not implemented; `UNMEASURED:phase5` while the app has no emitter                                                               | an emitter appeared and N3 does not measure it yet; source unreadable     |
+
+**Red today, by measurement.** `web-master/src/routes/+layout.svelte:61` is
+`s.setAttribute('data-debug', 'true')`, hard-coded, so `no_debug_attribute` is RED and the run exits
+1 until X4. It is not excused: it is measured and failing. Note the K5 check
+`grep -r 'data-debug="true"'` reads 0 on this source, because the attribute is set from script: only
+this hop sees it.
+
+**What reads differently from the plan's text.** The SDK has no 30 s timer since FOLLOW-1015: the
+card opens on the served config, so `N3_DWELL_MS` is the buyer's reading time, and the walk starts
+past it. "Investment, Rental income, Steady yield" are the old tree's labels: the walk comes from
+`quizPathToLeaf()` on the served tree and `walkedLabels` in the artefact records what it clicked. A
+cold miss spends: each poll that misses starts one more generation (no dedupe in `after()`), so the
+poll is sparse, at most 4 GETs. Session 2 seeds the three keys AC(9) seeds, not the whole
+`storageState`. The raw xid and the API key stay out of the artefact.
+
+**Not measurable before Phase 5.** `inquiry.completed`, `conversion_source='signed_events'`,
+`data_source`, `ctaLift` on the real app: `core-master` and `web-master` hold no emitter (X1), and a
+browser event is excluded from the lift. On K5, the agent contact path also needs a logged-in buyer
+(`requestLiveTour` opens the login popup when anonymous), so N3 will need an account.
+
 ## 6. Hop results as observed, and how each could have failed
 
 Run of 2026-08-07 against the tree hashed in §1.

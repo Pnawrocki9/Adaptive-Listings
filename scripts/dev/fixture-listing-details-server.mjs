@@ -294,10 +294,11 @@ export function buildSignedConversionRequest({
     schema_version: 1,
     type,
     ...(listingId ? { listing_id: listingId } : {}),
+    // The payloads the real host backend sends (`ConversionEventClient` in core-master, FOLLOW-1339).
     payload:
       type === 'inquiry.completed'
-        ? { channel: 'email' }
-        : { slot_uuid: randomUUID(), source_surface: 'listing_detail' },
+        ? { channel: 'conversation' }
+        : { slot_uuid: randomUUID(), event_kind: 'live_presentation' },
   };
   const body = JSON.stringify({ events: [event] });
   const timestamp = String(now);

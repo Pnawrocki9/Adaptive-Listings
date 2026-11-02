@@ -78,6 +78,13 @@ export const LiveSignupPayloadSchema = z.object({
    * FOLLOW-258 F-04: threading adapt response for conversion attribution when slot_uuid absent.
    */
   adapt_decision_id: z.string().uuid().optional(),
+
+  /**
+   * What the buyer signed up for. A webinar is the same mechanism in the Estalara app, with no type
+   * of its own; the field keeps a future split readable (CEO ruling D-J; FOLLOW-1339). The host
+   * backend sends `live_presentation`.
+   */
+  event_kind: z.enum(['live_presentation', 'webinar']).optional(),
 });
 
 export const LiveSignupEventSchema = EventEnvelopeBaseSchema.extend({

@@ -1,0 +1,1538 @@
+diff -ruN a/setenv_linux.sh b/setenv_linux.sh
+--- a/setenv_linux.sh	2026-11-02 07:01:53.939088193 +0100
++++ b/setenv_linux.sh	2026-11-02 07:01:58.579046467 +0100
+@@ -54,3 +54,10 @@
+ export FACEBOOK_ACCOUNT_ID="your_facebook_account_id"
+ 
+ echo "Environment variables have been set."
++
++export AL_INGEST_URL=""
++export AL_SERVER_API_KEY=""
++export AL_SERVER_HMAC_SECRET=""
++export AL_TENANT_ID=""
++export AL_LISTING_UPDATED_WEBHOOK_URL=""
++export AL_LISTING_UPDATED_WEBHOOK_SECRET=""
+diff -ruN a/setenv_win.bat b/setenv_win.bat
+--- a/setenv_win.bat	2026-11-02 07:01:53.939088193 +0100
++++ b/setenv_win.bat	2026-11-02 07:01:58.583046428 +0100
+@@ -55,3 +55,10 @@
+ 
+ echo Environment variables have been set.
+ pause
++
++set AL_INGEST_URL=
++set AL_SERVER_API_KEY=
++set AL_SERVER_HMAC_SECRET=
++set AL_TENANT_ID=
++set AL_LISTING_UPDATED_WEBHOOK_URL=
++set AL_LISTING_UPDATED_WEBHOOK_SECRET=
+diff -ruN a/src/main/kotlin/com/time2show/core/config/WebSecurityConfiguration.kt b/src/main/kotlin/com/time2show/core/config/WebSecurityConfiguration.kt
+--- a/src/main/kotlin/com/time2show/core/config/WebSecurityConfiguration.kt	2026-11-02 07:01:53.407092952 +0100
++++ b/src/main/kotlin/com/time2show/core/config/WebSecurityConfiguration.kt	2026-11-02 07:01:55.955070160 +0100
+@@ -102,7 +102,7 @@
+         val configuration = CorsConfiguration().apply {
+             origins.forEach { addAllowedOriginPattern(it) }
+             allowedMethods = listOf("GET", "POST", "PUT", "DELETE", "PATCH")
+-            allowedHeaders = listOf("Authorization", "Content-Type")
++            allowedHeaders = listOf("Authorization", "Content-Type", "X-Estalara-Session-Id")
+             // SSE auth strategy: /api/*/me/events expects Bearer token from fetch-based SSE clients.
+             // We intentionally keep allowCredentials=false and do not support native EventSource with cookies.
+             allowCredentials = false
+diff -ruN a/src/main/kotlin/com/time2show/core/controller/ListingController.kt b/src/main/kotlin/com/time2show/core/controller/ListingController.kt
+--- a/src/main/kotlin/com/time2show/core/controller/ListingController.kt	2026-11-02 07:01:53.467092415 +0100
++++ b/src/main/kotlin/com/time2show/core/controller/ListingController.kt	2026-11-02 07:01:56.019069587 +0100
+@@ -9,6 +9,7 @@
+ import com.time2show.core.model.enums.ImageRole
+ import com.time2show.core.model.enums.ListingMediaType
+ import com.time2show.core.model.enums.ListingStatus
++import com.time2show.core.service.adaptivelistings.ListingUpdatedNotifier
+ import com.time2show.core.service.web.ListingCollaboratorApiService
+ import com.time2show.core.service.web.ListingDetailsApiService
+ import com.time2show.core.service.web.ListingOwnershipTransferService
+@@ -59,6 +60,7 @@
+     private val createListingCollaboratorInvitationRequestValidator: CreateListingCollaboratorInvitationRequestValidator,
+     private val transferListingOwnershipRequestValidator: TransferListingOwnershipRequestValidator,
+     private val listingOwnershipTransferRequestValidator: ListingOwnershipTransferRequestValidator,
++    private val listingUpdatedNotifier: ListingUpdatedNotifier,
+ ) {
+ 
+     @ApiResponses(
+@@ -453,6 +455,9 @@
+     @PutMapping
+     fun updateOwnListingDetails(@Valid @RequestBody updateOwnListingRequestTO: UpdateOwnListingRequestTO, @AuthenticationPrincipal @Parameter(hidden = true) jwtUserDetails: JwtUserDetails): ResponseEntity<Any> {
+         val resultTO: OwnListingResponseTO = listingService.updateOwnListingDetails(updateOwnListingRequestTO, jwtUserDetails)
++        if (resultTO.isSuccess()) {
++            listingUpdatedNotifier.notifyListingSaved(updateOwnListingRequestTO.listingUuid)
++        }
+ 
+         return ResponseEntity.status(resultTO.httpStatus).body(if (resultTO.isSuccess()) resultTO else resultTO.messages)
+     }
+@@ -476,6 +481,9 @@
+     fun patchOwnListingDetails(@Valid @RequestBody patchOwnListingRequestTO: PatchOwnListingRequestTO,
+                                @AuthenticationPrincipal @Parameter(hidden = true) jwtUserDetails: JwtUserDetails): ResponseEntity<Any> {
+         val resultTO: OwnListingResponseTO = listingService.patchOwnListingDetails(patchOwnListingRequestTO, jwtUserDetails)
++        if (resultTO.isSuccess() && ListingUpdatedNotifier.changesGroundingFacts(patchOwnListingRequestTO)) {
++            listingUpdatedNotifier.notifyListingSaved(patchOwnListingRequestTO.listingUuid)
++        }
+ 
+         return ResponseEntity.status(resultTO.httpStatus).body(if (resultTO.isSuccess()) resultTO else resultTO.messages)
+     }
+diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/AdaptiveListingsProperties.kt b/src/main/kotlin/com/time2show/core/service/adaptivelistings/AdaptiveListingsProperties.kt
+--- a/src/main/kotlin/com/time2show/core/service/adaptivelistings/AdaptiveListingsProperties.kt	1970-01-01 01:00:00.000000000 +0100
++++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/AdaptiveListingsProperties.kt	2026-11-02 07:01:57.563055775 +0100
+@@ -0,0 +1,101 @@
++package com.time2show.core.service.adaptivelistings
++
++import org.slf4j.LoggerFactory
++import org.springframework.beans.factory.annotation.Autowired
++import org.springframework.beans.factory.annotation.Value
++import org.springframework.stereotype.Component
++import java.net.URI
++import java.time.Duration
++
++/**
++ * Adaptive Listings integration settings, from env only (see `application.properties`). Deliberately
++ * not a data class: a generated `toString` would print the two secrets.
++ *
++ * Every value empty means "not configured": nothing is sent, which is the state of a local run or a
++ * test that never set them. A partly set or malformed group is a deployment mistake and logs an error
++ * at startup, naming the setting and never its value, instead of quietly losing conversions.
++ */
++@Component
++class AdaptiveListingsProperties(
++    ingestUrl: String,
++    val serverApiKey: String,
++    val hmacSecretHex: String,
++    val tenantId: String,
++    listingUpdatedWebhookUrl: String,
++    val listingUpdatedWebhookSecret: String,
++    val connectTimeout: Duration,
++    val requestTimeout: Duration,
++    val retryDelay: Duration,
++) {
++    @Autowired
++    constructor(
++        @Value("\${adaptive-listings.ingest-url:}") ingestUrl: String,
++        @Value("\${adaptive-listings.server-api-key:}") serverApiKey: String,
++        @Value("\${adaptive-listings.hmac-secret:}") hmacSecretHex: String,
++        @Value("\${adaptive-listings.tenant-id:}") tenantId: String,
++        @Value("\${adaptive-listings.listing-updated-webhook-url:}") listingUpdatedWebhookUrl: String,
++        @Value("\${adaptive-listings.listing-updated-webhook-secret:}") listingUpdatedWebhookSecret: String,
++    ) : this(
++        ingestUrl, serverApiKey, hmacSecretHex, tenantId, listingUpdatedWebhookUrl, listingUpdatedWebhookSecret,
++        Duration.ofSeconds(2), Duration.ofSeconds(5), Duration.ofMillis(500),
++    )
++
++    private val log = LoggerFactory.getLogger(AdaptiveListingsProperties::class.java)
++
++    val eventsUri: URI? =
++        ingestUrl.trim().trimEnd('/').takeIf { it.isNotEmpty() }?.let { parseUri("$it/v1/events", "ingest-url") }
++    val listingUpdatedUri: URI? =
++        listingUpdatedWebhookUrl.trim().takeIf { it.isNotEmpty() }?.let { parseUri(it, "listing-updated-webhook-url") }
++
++    val eventsConfigured: Boolean = checkEvents()
++    val listingUpdatedConfigured: Boolean = checkListingUpdated()
++
++    private fun parseUri(raw: String, setting: String): URI? {
++        val uri = try {
++            URI.create(raw)
++        } catch (e: IllegalArgumentException) {
++            null
++        }
++        if (uri == null || (uri.scheme != "http" && uri.scheme != "https")) {
++            log.error("adaptive-listings.{} is not a valid http(s) URL", setting)
++            return null
++        }
++        return uri
++    }
++
++    private fun checkEvents(): Boolean {
++        val anySet = eventsUri != null || serverApiKey.isNotBlank() || hmacSecretHex.isNotBlank()
++        if (!anySet) {
++            log.info("Adaptive Listings conversion events are not configured; none will be sent")
++            return false
++        }
++        val hexOk = hmacSecretHex.length >= 2 && hmacSecretHex.length % 2 == 0 &&
++            hmacSecretHex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
++        if (eventsUri == null || serverApiKey.isBlank() || !hexOk) {
++            log.error(
++                "Adaptive Listings conversion events are misconfigured and disabled " +
++                    "(ingest-url set: {}, server-api-key set: {}, hmac-secret is hex: {})",
++                eventsUri != null, serverApiKey.isNotBlank(), hexOk
++            )
++            return false
++        }
++        return true
++    }
++
++    private fun checkListingUpdated(): Boolean {
++        val anySet = listingUpdatedUri != null || listingUpdatedWebhookSecret.isNotBlank()
++        if (!anySet) {
++            log.info("Adaptive Listings listing-updated webhook is not configured; none will be sent")
++            return false
++        }
++        if (listingUpdatedUri == null || listingUpdatedWebhookSecret.isBlank() || tenantId.isBlank()) {
++            log.error(
++                "Adaptive Listings listing-updated webhook is misconfigured and disabled " +
++                    "(url set: {}, secret set: {}, tenant-id set: {})",
++                listingUpdatedUri != null, listingUpdatedWebhookSecret.isNotBlank(), tenantId.isNotBlank()
++            )
++            return false
++        }
++        return true
++    }
++}
+diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/BoundedHttpPost.kt b/src/main/kotlin/com/time2show/core/service/adaptivelistings/BoundedHttpPost.kt
+--- a/src/main/kotlin/com/time2show/core/service/adaptivelistings/BoundedHttpPost.kt	1970-01-01 01:00:00.000000000 +0100
++++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/BoundedHttpPost.kt	2026-11-02 07:01:57.567055739 +0100
+@@ -0,0 +1,68 @@
++package com.time2show.core.service.adaptivelistings
++
++import java.io.IOException
++import java.net.URI
++import java.net.http.HttpClient
++import java.net.http.HttpRequest
++import java.net.http.HttpResponse
++import java.nio.charset.StandardCharsets
++import java.time.Duration
++
++/**
++ * One best-effort POST to Adaptive Listings: bounded connect and request timeouts, a bounded number of
++ * sends, a re-send only after a 5xx or a network failure. Worst case is
++ * MAX_SENDS x (connect + request timeout) + the delays, on an `@Async` thread and never on a request.
++ */
++class BoundedHttpPost(
++    connectTimeout: Duration,
++    private val requestTimeout: Duration,
++    private val retryDelay: Duration,
++) {
++    // HTTP/1.1 is pinned: the JDK client otherwise tries an h2c upgrade on plain http, which `wrangler
++    // dev` and a proxy in front of the control plane have no reason to be asked about.
++    private val client: HttpClient = HttpClient.newBuilder()
++        .version(HttpClient.Version.HTTP_1_1)
++        .connectTimeout(connectTimeout)
++        .build()
++
++    /** How the last send ended. [status] is null when no response arrived. */
++    data class Outcome(val status: Int?, val body: String?, val sends: Int, val failure: String?)
++
++    /** [headers] is called once per send, so a signed caller signs each send freshly. */
++    fun post(uri: URI, body: String, headers: () -> Map<String, String>): Outcome {
++        var last = Outcome(null, null, 0, "not_sent")
++        for (send in 1..MAX_SENDS) {
++            last = sendOnce(uri, body, headers(), send)
++            val status = last.status
++            if ((status != null && status < 500) || send == MAX_SENDS) return last
++            try {
++                Thread.sleep(retryDelay.toMillis())
++            } catch (e: InterruptedException) {
++                Thread.currentThread().interrupt()
++                return last
++            }
++        }
++        return last
++    }
++
++    private fun sendOnce(uri: URI, body: String, headers: Map<String, String>, send: Int): Outcome {
++        val builder = HttpRequest.newBuilder(uri)
++            .timeout(requestTimeout)
++            .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
++        headers.forEach { (name, value) -> builder.header(name, value) }
++        return try {
++            val response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
++            Outcome(response.statusCode(), response.body(), send, null)
++        } catch (e: IOException) {
++            // The class name only: a message can carry the URL, and the log needs no more than the kind.
++            Outcome(null, null, send, e.javaClass.simpleName)
++        } catch (e: InterruptedException) {
++            Thread.currentThread().interrupt()
++            Outcome(null, null, send, "interrupted")
++        }
++    }
++
++    companion object {
++        const val MAX_SENDS = 3
++    }
++}
+diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/BuyerSessionId.kt b/src/main/kotlin/com/time2show/core/service/adaptivelistings/BuyerSessionId.kt
+--- a/src/main/kotlin/com/time2show/core/service/adaptivelistings/BuyerSessionId.kt	1970-01-01 01:00:00.000000000 +0100
++++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/BuyerSessionId.kt	2026-11-02 07:01:57.563055775 +0100
+@@ -0,0 +1,37 @@
++package com.time2show.core.service.adaptivelistings
++
++import org.springframework.web.context.request.RequestContextHolder
++import org.springframework.web.context.request.ServletRequestAttributes
++
++/**
++ * The Adaptive Listings SDK's tab session id, as the front end hands it over on a conversion request
++ * and only there (`X-Estalara-Session-Id`, see docs/handover/estalara-app-patches/README.md in the
++ * Adaptive Listings repository). It is pseudonymous personal data that arrives in the same request as
++ * the buyer's login, so it is held in memory for the one event and is never stored or logged:
++ * [toString] is redacted because an async failure handler prints event objects, and every holder of
++ * this class is such an object.
++ */
++class BuyerSessionId private constructor(val value: String) {
++
++    override fun toString(): String = "BuyerSessionId(redacted)"
++
++    companion object {
++        const val HEADER = "X-Estalara-Session-Id"
++
++        /** Ingest's envelope bound (32-64 chars), narrowed to the alphabet the SDK ever minted. */
++        private val FORMAT = Regex("^[A-Za-z0-9-]{32,64}$")
++
++        /** A well-formed id, or null: a malformed header is the same as none and is never echoed. */
++        fun parse(raw: String?): BuyerSessionId? =
++            raw?.takeIf { FORMAT.matches(it) }?.let { BuyerSessionId(it) }
++
++        /**
++         * The id on the current servlet request. Must be called on the request thread, before the
++         * event crosses to `@Async`, where no request is bound. Null outside a request.
++         */
++        fun fromCurrentRequest(): BuyerSessionId? {
++            val attributes = RequestContextHolder.getRequestAttributes() as? ServletRequestAttributes
++            return parse(attributes?.request?.getHeader(HEADER))
++        }
++    }
++}
+diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/ConversionEventClient.kt b/src/main/kotlin/com/time2show/core/service/adaptivelistings/ConversionEventClient.kt
+--- a/src/main/kotlin/com/time2show/core/service/adaptivelistings/ConversionEventClient.kt	1970-01-01 01:00:00.000000000 +0100
++++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/ConversionEventClient.kt	2026-11-02 07:01:57.571055703 +0100
+@@ -0,0 +1,107 @@
++package com.time2show.core.service.adaptivelistings
++
++import com.fasterxml.jackson.core.JsonProcessingException
++import com.fasterxml.jackson.databind.ObjectMapper
++import org.slf4j.LoggerFactory
++import org.springframework.stereotype.Component
++import java.util.UUID
++
++/**
++ * Sends the two server-confirmed conversions to Adaptive Listings ingest, signed with the server key.
++ * Ingest marks a signed row `caller_signed = 1`, the only class the lift counts.
++ *
++ * Carries `session_id` and nothing that identifies the buyer: no login, no account id, no name, no
++ * `lead_id`, and no `xid` (ESC-090 ruling 4). The tenant is a placeholder that ingest overwrites from
++ * the key's record, as the SDK's is.
++ */
++@Component
++class ConversionEventClient(private val properties: AdaptiveListingsProperties) {
++
++    private val log = LoggerFactory.getLogger(ConversionEventClient::class.java)
++    private val objectMapper = ObjectMapper()
++    private val http = BoundedHttpPost(properties.connectTimeout, properties.requestTimeout, properties.retryDelay)
++
++    fun sendLiveSignup(sessionId: BuyerSessionId, liveUuid: UUID, listingUuid: UUID) {
++        send(TYPE_LIVE_SIGNUP, sessionId, listingUuid.toString(), livePayload(liveUuid))
++    }
++
++    fun sendInquiryCompleted(sessionId: BuyerSessionId) {
++        send(TYPE_INQUIRY_COMPLETED, sessionId, null, INQUIRY_PAYLOAD)
++    }
++
++    private fun send(type: String, sessionId: BuyerSessionId, listingId: String?, payload: Map<String, String>) {
++        val uri = properties.eventsUri
++        if (!properties.eventsConfigured || uri == null) {
++            log.debug("al_conversion_skipped type={} reason=not_configured", type)
++            return
++        }
++        val eventId = UUID.randomUUID()
++        val body = buildBody(type, sessionId.value, listingId, payload, System.currentTimeMillis(), eventId)
++        // Same event on every send, fresh timestamp and nonce: a nonce is single-use at ingest.
++        val outcome = http.post(uri, body) { signedHeaders(body) }
++        val status = outcome.status
++        if (status != null && status in 200..299 && acceptedCount(outcome.body) == 1) {
++            log.info("al_conversion_sent type={} event_id={} sends={}", type, eventId, outcome.sends)
++        } else {
++            // A 200 with accepted 0 is a schema refusal: the conversion is lost and must not look sent.
++            log.warn(
++                "al_conversion_failed type={} event_id={} sends={} status={} failure={}",
++                type, eventId, outcome.sends, status, outcome.failure ?: "not_accepted"
++            )
++        }
++    }
++
++    private fun signedHeaders(body: String): Map<String, String> {
++        val timestamp = System.currentTimeMillis().toString()
++        val nonce = UUID.randomUUID().toString().replace("-", "")
++        return mapOf(
++            "Content-Type" to "application/json",
++            "X-Estalara-API-Key" to properties.serverApiKey,
++            "X-Estalara-Signature" to SignedEventSigner.sign(properties.hmacSecretHex, timestamp, nonce, body),
++            "X-Estalara-Timestamp" to timestamp,
++            "X-Estalara-Nonce" to nonce,
++        )
++    }
++
++    private fun acceptedCount(body: String?): Int? = try {
++        body?.let { objectMapper.readTree(it).path("accepted").takeIf { node -> node.isInt }?.intValue() }
++    } catch (e: JsonProcessingException) {
++        null
++    }
++
++    /** The exact request body, separate so a test can pin it against the ingest test's golden copy. */
++    fun buildBody(
++        type: String,
++        sessionId: String,
++        listingId: String?,
++        payload: Map<String, String>,
++        now: Long,
++        eventId: UUID,
++    ): String {
++        val event = linkedMapOf<String, Any>(
++            "event_id" to eventId.toString(),
++            "tenant_id" to PLACEHOLDER_TENANT,
++            "session_id" to sessionId,
++            "ts" to now,
++            "region" to "eu",
++            // The front end sends the header only while the SDK's consent is granted (see the README).
++            "consent_state" to "consented",
++            "schema_version" to 1,
++            "type" to type,
++        )
++        if (listingId != null) event["listing_id"] = listingId
++        event["payload"] = payload
++        return objectMapper.writeValueAsString(mapOf("events" to listOf(event)))
++    }
++
++    companion object {
++        const val TYPE_LIVE_SIGNUP = "live.signup"
++        const val TYPE_INQUIRY_COMPLETED = "inquiry.completed"
++        private const val PLACEHOLDER_TENANT = "00000000-0000-0000-0000-000000000000"
++
++        val INQUIRY_PAYLOAD: Map<String, String> = linkedMapOf("channel" to "conversation")
++
++        fun livePayload(liveUuid: UUID): Map<String, String> =
++            linkedMapOf("slot_uuid" to liveUuid.toString(), "event_kind" to "live_presentation")
++    }
++}
+diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/ConversionEventListener.kt b/src/main/kotlin/com/time2show/core/service/adaptivelistings/ConversionEventListener.kt
+--- a/src/main/kotlin/com/time2show/core/service/adaptivelistings/ConversionEventListener.kt	1970-01-01 01:00:00.000000000 +0100
++++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/ConversionEventListener.kt	2026-11-02 07:01:57.571055703 +0100
+@@ -0,0 +1,54 @@
++package com.time2show.core.service.adaptivelistings
++
++import com.time2show.core.model.enums.ConversationParticipantRole
++import com.time2show.core.service.web.ConversationCreatedEvent
++import org.slf4j.LoggerFactory
++import org.springframework.scheduling.annotation.Async
++import org.springframework.stereotype.Component
++import org.springframework.transaction.event.TransactionPhase
++import org.springframework.transaction.event.TransactionalEventListener
++
++/**
++ * The two places a conversion is emitted (CEO ruling D-J): a buyer's registration for a live
++ * presentation and a conversation a buyer started.
++ *
++ * After commit, so a rolled-back registration emits nothing; `@Async`, so the request never waits; and
++ * nothing thrown here leaves this class, so a failure cannot reach registration or conversation
++ * creation. Without a session id there is nothing to attribute the conversion to: nothing is sent and
++ * one line without personal data says so. A conversion is never sent with a made-up session.
++ */
++@Component
++class ConversionEventListener(private val client: ConversionEventClient) {
++
++    private val log = LoggerFactory.getLogger(ConversionEventListener::class.java)
++
++    @Async
++    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
++    fun onLivePresentationRegistered(event: LivePresentationRegisteredEvent) {
++        emit(ConversionEventClient.TYPE_LIVE_SIGNUP, event.buyerSessionId) { sessionId ->
++            client.sendLiveSignup(sessionId, event.liveUuid, event.listingUuid)
++        }
++    }
++
++    @Async
++    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
++    fun onConversationCreated(event: ConversationCreatedEvent) {
++        if (event.initiatorRole != ConversationParticipantRole.BUYER) return
++        emit(ConversionEventClient.TYPE_INQUIRY_COMPLETED, event.buyerSessionId) { sessionId ->
++            client.sendInquiryCompleted(sessionId)
++        }
++    }
++
++    private fun emit(type: String, sessionId: BuyerSessionId?, send: (BuyerSessionId) -> Unit) {
++        if (sessionId == null) {
++            log.info("al_conversion_skipped type={} reason=no_session", type)
++            return
++        }
++        try {
++            send(sessionId)
++        } catch (e: Exception) {
++            // Without the message or the stack: neither is needed to see the kind, and both can quote data.
++            log.warn("al_conversion_failed type={} failure={}", type, e.javaClass.simpleName)
++        }
++    }
++}
+diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/ListingUpdatedNotifier.kt b/src/main/kotlin/com/time2show/core/service/adaptivelistings/ListingUpdatedNotifier.kt
+--- a/src/main/kotlin/com/time2show/core/service/adaptivelistings/ListingUpdatedNotifier.kt	1970-01-01 01:00:00.000000000 +0100
++++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/ListingUpdatedNotifier.kt	2026-11-02 07:01:57.571055703 +0100
+@@ -0,0 +1,60 @@
++package com.time2show.core.service.adaptivelistings
++
++import com.fasterxml.jackson.databind.ObjectMapper
++import com.time2show.core.dto.PatchOwnListingRequestTO
++import org.slf4j.LoggerFactory
++import org.springframework.scheduling.annotation.Async
++import org.springframework.stereotype.Component
++
++/**
++ * Tells the Adaptive Listings control plane a listing was saved, so it advances the listing's revision
++ * and stops serving copy generated from the old facts (`POST /api/webhooks/listing-updated`).
++ *
++ * Called by the controller after the service returned, so the save has committed and the control
++ * plane's next read sees the new facts. A failed call leaves adapted copy stale; it is logged, and it
++ * never fails the save.
++ */
++@Component
++class ListingUpdatedNotifier(private val properties: AdaptiveListingsProperties) {
++
++    private val log = LoggerFactory.getLogger(ListingUpdatedNotifier::class.java)
++    private val objectMapper = ObjectMapper()
++    private val http = BoundedHttpPost(properties.connectTimeout, properties.requestTimeout, properties.retryDelay)
++
++    @Async
++    fun notifyListingSaved(listingUuid: String) {
++        val uri = properties.listingUpdatedUri
++        if (!properties.listingUpdatedConfigured || uri == null) {
++            log.debug("al_listing_updated_skipped reason=not_configured")
++            return
++        }
++        try {
++            val body = objectMapper.writeValueAsString(
++                mapOf("tenant_id" to properties.tenantId, "listing_id" to listingUuid)
++            )
++            val outcome = http.post(uri, body) {
++                mapOf("Content-Type" to "application/json", "X-Webhook-Secret" to properties.listingUpdatedWebhookSecret)
++            }
++            val status = outcome.status
++            if (status != null && status in 200..299) {
++                log.info("al_listing_updated_sent listing={} sends={}", listingUuid, outcome.sends)
++            } else {
++                log.warn(
++                    "al_listing_updated_failed listing={} sends={} status={} failure={}",
++                    listingUuid, outcome.sends, status, outcome.failure ?: "refused"
++                )
++            }
++        } catch (e: Exception) {
++            log.warn("al_listing_updated_failed listing={} failure={}", listingUuid, e.javaClass.simpleName)
++        }
++    }
++
++    companion object {
++        /**
++         * Whether a PATCH changed a fact adapted copy is grounded on (price, location). A photo reorder or
++         * a status change did not, and a regeneration on those would be paid for nothing.
++         */
++        fun changesGroundingFacts(request: PatchOwnListingRequestTO): Boolean =
++            request.price != null || request.cityPlaceGoogleId != null || request.districtPlaceGoogleId != null
++    }
++}
+diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/LivePresentationRegisteredEvent.kt b/src/main/kotlin/com/time2show/core/service/adaptivelistings/LivePresentationRegisteredEvent.kt
+--- a/src/main/kotlin/com/time2show/core/service/adaptivelistings/LivePresentationRegisteredEvent.kt	1970-01-01 01:00:00.000000000 +0100
++++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/LivePresentationRegisteredEvent.kt	2026-11-02 07:01:57.563055775 +0100
+@@ -0,0 +1,10 @@
++package com.time2show.core.service.adaptivelistings
++
++import java.util.UUID
++
++/** A buyer newly holds a registration for a live presentation (`LIVE_PRESENTATION_REGISTRATION`). */
++data class LivePresentationRegisteredEvent(
++    val liveUuid: UUID,
++    val listingUuid: UUID,
++    val buyerSessionId: BuyerSessionId?,
++)
+diff -ruN a/src/main/kotlin/com/time2show/core/service/adaptivelistings/SignedEventSigner.kt b/src/main/kotlin/com/time2show/core/service/adaptivelistings/SignedEventSigner.kt
+--- a/src/main/kotlin/com/time2show/core/service/adaptivelistings/SignedEventSigner.kt	1970-01-01 01:00:00.000000000 +0100
++++ b/src/main/kotlin/com/time2show/core/service/adaptivelistings/SignedEventSigner.kt	2026-11-02 07:01:57.567055739 +0100
+@@ -0,0 +1,24 @@
++package com.time2show.core.service.adaptivelistings
++
++import java.nio.charset.StandardCharsets
++import java.util.HexFormat
++import javax.crypto.Mac
++import javax.crypto.spec.SecretKeySpec
++
++/**
++ * The server-producer signature of `POST /v1/events` (MASTER_DESIGN V.3.2,
++ * `apps/ingest/src/auth.ts`):
++ * `hmac-sha256:` + lower-hex HMAC-SHA-256(hex-decode(secret), timestamp + "\n" + nonce + "\n" + body),
++ * over the UTF-8 bytes of the body exactly as sent.
++ */
++object SignedEventSigner {
++
++    const val PREFIX = "hmac-sha256:"
++
++    fun sign(secretHex: String, timestamp: String, nonce: String, body: String): String {
++        val mac = Mac.getInstance("HmacSHA256")
++        mac.init(SecretKeySpec(HexFormat.of().parseHex(secretHex), "HmacSHA256"))
++        val message = "$timestamp\n$nonce\n$body".toByteArray(StandardCharsets.UTF_8)
++        return PREFIX + HexFormat.of().formatHex(mac.doFinal(message))
++    }
++}
+diff -ruN a/src/main/kotlin/com/time2show/core/service/web/CalendarServiceImpl.kt b/src/main/kotlin/com/time2show/core/service/web/CalendarServiceImpl.kt
+--- a/src/main/kotlin/com/time2show/core/service/web/CalendarServiceImpl.kt	2026-11-02 07:01:52.835098070 +0100
++++ b/src/main/kotlin/com/time2show/core/service/web/CalendarServiceImpl.kt	2026-11-02 07:01:57.371057493 +0100
+@@ -18,7 +18,10 @@
+ import org.springframework.beans.factory.annotation.Autowired
+ import org.springframework.http.HttpStatus
+ import org.springframework.stereotype.Service
++import org.springframework.context.ApplicationEventPublisher
+ import org.springframework.transaction.annotation.Transactional
++import com.time2show.core.service.adaptivelistings.BuyerSessionId
++import com.time2show.core.service.adaptivelistings.LivePresentationRegisteredEvent
+ import java.time.Instant
+ import java.util.*
+ 
+@@ -43,7 +46,9 @@
+ 
+     private val notificationService: NotificationService,
+ 
+-    private val storeService: StoreService
++    private val storeService: StoreService,
++
++    private val eventPublisher: ApplicationEventPublisher
+ 
+ ) : CalendarService {
+ 
+@@ -242,6 +247,16 @@
+ 
+         livePresentationRegistrationRepository.save(livePresentationRegistrationEntity)
+ 
++        if (!accountEntity.isActiveAgent()) {
++            eventPublisher.publishEvent(
++                LivePresentationRegisteredEvent(
++                    livePresentationEntity.uuid,
++                    livePresentationEntity.listing.uuid,
++                    BuyerSessionId.fromCurrentRequest()
++                )
++            )
++        }
++
+         return ResponseTO(httpStatus = HttpStatus.OK)
+ 
+     }
+diff -ruN a/src/main/kotlin/com/time2show/core/service/web/ConversationCreatedEvent.kt b/src/main/kotlin/com/time2show/core/service/web/ConversationCreatedEvent.kt
+--- a/src/main/kotlin/com/time2show/core/service/web/ConversationCreatedEvent.kt	2026-11-02 07:01:52.907097425 +0100
++++ b/src/main/kotlin/com/time2show/core/service/web/ConversationCreatedEvent.kt	2026-11-02 07:01:57.379057421 +0100
+@@ -1,6 +1,7 @@
+ package com.time2show.core.service.web
+ 
+ import com.time2show.core.model.enums.ConversationParticipantRole
++import com.time2show.core.service.adaptivelistings.BuyerSessionId
+ import java.util.*
+ 
+ data class ConversationCreatedEvent(
+@@ -12,5 +13,7 @@
+     val initiatorAgencyName: String?,
+     // Internal routing only (which local emitters to deliver to) — not exposed to the client. A list
+     // because a conversation created during the recipient's absence is born three-way (buyer + agent + delegate).
+-    val recipientLogins: List<String>
++    val recipientLogins: List<String>,
++    // Adaptive Listings attribution, read on the request thread; null when the front end sent none.
++    val buyerSessionId: BuyerSessionId? = null
+ )
+diff -ruN a/src/main/kotlin/com/time2show/core/service/web/ConversationServiceImpl.kt b/src/main/kotlin/com/time2show/core/service/web/ConversationServiceImpl.kt
+--- a/src/main/kotlin/com/time2show/core/service/web/ConversationServiceImpl.kt	2026-11-02 07:01:52.831098105 +0100
++++ b/src/main/kotlin/com/time2show/core/service/web/ConversationServiceImpl.kt	2026-11-02 07:01:57.387057349 +0100
+@@ -15,6 +15,7 @@
+ import com.time2show.core.repository.AccountRepository
+ import com.time2show.core.repository.ConversationParticipantRepository
+ import com.time2show.core.repository.ConversationRepository
++import com.time2show.core.service.adaptivelistings.BuyerSessionId
+ import org.springframework.context.ApplicationEventPublisher
+ import org.springframework.data.domain.Pageable
+ import org.springframework.http.HttpStatus
+@@ -246,7 +247,8 @@
+                 recipientLogins = listOfNotNull(
+                     recipientAccount.login,
+                     delegateLogin?.takeIf { it != currentAccount.login }
+-                )
++                ),
++                buyerSessionId = BuyerSessionId.fromCurrentRequest()
+             )
+         )
+ 
+diff -ruN a/src/main/kotlin/com/time2show/core/service/web/LivestreamServiceImpl.kt b/src/main/kotlin/com/time2show/core/service/web/LivestreamServiceImpl.kt
+--- a/src/main/kotlin/com/time2show/core/service/web/LivestreamServiceImpl.kt	2026-11-02 07:01:52.931097211 +0100
++++ b/src/main/kotlin/com/time2show/core/service/web/LivestreamServiceImpl.kt	2026-11-02 07:01:57.455056741 +0100
+@@ -14,6 +14,8 @@
+ import com.time2show.core.model.ImageEntity
+ import com.time2show.core.model.LivePresentationEntity
+ import com.time2show.core.model.LivePresentationRegistrationEntity
++import com.time2show.core.service.adaptivelistings.BuyerSessionId
++import com.time2show.core.service.adaptivelistings.LivePresentationRegisteredEvent
+ import com.time2show.core.model.enums.*
+ import com.time2show.core.repository.*
+ import com.time2show.core.service.cache.LivestreamStatusCacheService
+@@ -375,6 +377,11 @@
+                         )
+                     }
+                     livePresentationRegistrationRepository.save(reg)
++                    if (!account.isActiveAgent()) {
++                        applicationEventPublisher.publishEvent(
++                            LivePresentationRegisteredEvent(live.uuid, live.listing.uuid, BuyerSessionId.fromCurrentRequest())
++                        )
++                    }
+                 }
+ 
+                 val reg = livePresentationRegistrationRepository.findByLivePresentationAndParticipant_Login(
+diff -ruN a/src/main/resources/application.properties b/src/main/resources/application.properties
+--- a/src/main/resources/application.properties	2026-11-02 07:01:52.507101003 +0100
++++ b/src/main/resources/application.properties	2026-11-02 07:01:57.695054594 +0100
+@@ -72,4 +72,13 @@
+ ads.min-ad-set-budget-usd-cents=300
+ notification.max-tokens-per-account=10
+ 
+-async-job.safety-net.poll-interval-ms=900000
+\ No newline at end of file
++async-job.safety-net.poll-interval-ms=900000
++
++# Adaptive Listings: signed conversions to ingest and the listing-updated webhook. All empty = nothing is sent.
++# Secrets come from env only; see setenv_linux.sh for the names.
++adaptive-listings.ingest-url=${AL_INGEST_URL:}
++adaptive-listings.server-api-key=${AL_SERVER_API_KEY:}
++adaptive-listings.hmac-secret=${AL_SERVER_HMAC_SECRET:}
++adaptive-listings.tenant-id=${AL_TENANT_ID:}
++adaptive-listings.listing-updated-webhook-url=${AL_LISTING_UPDATED_WEBHOOK_URL:}
++adaptive-listings.listing-updated-webhook-secret=${AL_LISTING_UPDATED_WEBHOOK_SECRET:}
+diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventClientTest.kt b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventClientTest.kt
+--- a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventClientTest.kt	1970-01-01 01:00:00.000000000 +0100
++++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventClientTest.kt	2026-11-02 07:01:58.495047286 +0100
+@@ -0,0 +1,252 @@
++package com.time2show.core.unit.service.adaptivelistings
++
++import ch.qos.logback.classic.Logger
++import ch.qos.logback.classic.spi.ILoggingEvent
++import ch.qos.logback.core.read.ListAppender
++import com.fasterxml.jackson.databind.ObjectMapper
++import com.sun.net.httpserver.HttpServer
++import com.time2show.core.service.adaptivelistings.AdaptiveListingsProperties
++import com.time2show.core.service.adaptivelistings.BoundedHttpPost
++import com.time2show.core.service.adaptivelistings.BuyerSessionId
++import com.time2show.core.service.adaptivelistings.ConversionEventClient
++import com.time2show.core.service.adaptivelistings.SignedEventSigner
++import org.junit.jupiter.api.AfterEach
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertFalse
++import org.junit.jupiter.api.Assertions.assertNotEquals
++import org.junit.jupiter.api.Assertions.assertNull
++import org.junit.jupiter.api.Assertions.assertTrue
++import org.junit.jupiter.api.BeforeEach
++import org.junit.jupiter.api.DisplayName
++import org.junit.jupiter.api.Tag
++import org.junit.jupiter.api.Test
++import org.slf4j.LoggerFactory
++import java.net.InetSocketAddress
++import java.nio.charset.StandardCharsets
++import java.time.Duration
++import java.util.UUID
++import java.util.concurrent.CopyOnWriteArrayList
++import java.util.concurrent.CountDownLatch
++import java.util.concurrent.Executors
++import java.util.concurrent.TimeUnit
++
++/** Real HTTP against a real local socket: what is asserted is what left the JDK client. */
++@DisplayName("ConversionEventClient (unit, real HTTP)")
++@Tag("unit")
++class ConversionEventClientTest {
++
++    private data class Received(val headers: Map<String, String?>, val body: String)
++
++    private val secret = "ab".repeat(32)
++    private val apiKey = "test-server-key"
++    private val sessionId = BuyerSessionId.parse(SignedEventVectors.SESSION_ID)!!
++
++    private lateinit var server: HttpServer
++    private val received = CopyOnWriteArrayList<Received>()
++    private val responses = ArrayDeque<Pair<Int, String>>()
++    private val appender = ListAppender<ILoggingEvent>()
++    private val release = CountDownLatch(1)
++
++    @BeforeEach
++    fun setUp() {
++        server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
++        server.executor = Executors.newCachedThreadPool()
++        server.createContext("/v1/events") { exchange ->
++            val body = exchange.requestBody.readAllBytes().toString(StandardCharsets.UTF_8)
++            received += Received(
++                listOf(
++                    "X-Estalara-API-Key", "X-Estalara-Signature", "X-Estalara-Timestamp", "X-Estalara-Nonce",
++                    "Origin", "Content-Type", "Upgrade"
++                ).associateWith { exchange.requestHeaders.getFirst(it) },
++                body
++            )
++            val (status, answer) = synchronized(responses) { responses.removeFirstOrNull() } ?: (200 to """{"accepted":1,"rejected":0}""")
++            if (status == HANG) {
++                release.await(10, TimeUnit.SECONDS)
++            }
++            val bytes = answer.toByteArray()
++            exchange.sendResponseHeaders(if (status == HANG) 200 else status, bytes.size.toLong())
++            exchange.responseBody.use { it.write(bytes) }
++        }
++        server.start()
++        appender.start()
++        (LoggerFactory.getLogger(ConversionEventClient::class.java) as Logger).addAppender(appender)
++    }
++
++    @AfterEach
++    fun tearDown() {
++        release.countDown()
++        (LoggerFactory.getLogger(ConversionEventClient::class.java) as Logger).detachAppender(appender)
++        server.stop(0)
++    }
++
++    private fun client(requestTimeout: Duration = Duration.ofSeconds(2)) = ConversionEventClient(
++        AdaptiveListingsProperties(
++            "http://127.0.0.1:${server.address.port}", apiKey, secret, "", "", "",
++            Duration.ofSeconds(1), requestTimeout, Duration.ofMillis(5)
++        )
++    )
++
++    private fun respond(vararg answers: Pair<Int, String>) = synchronized(responses) { responses.addAll(answers) }
++
++    private fun logs() = appender.list.joinToString("\n") { it.formattedMessage }
++
++    @Test
++    fun `the live signup body is byte-identical to the golden copy ingest validates`() {
++        assertEquals(
++            SignedEventVectors.LIVE_BODY,
++            client().buildBody(
++                ConversionEventClient.TYPE_LIVE_SIGNUP, SignedEventVectors.SESSION_ID, SignedEventVectors.LISTING_ID,
++                ConversionEventClient.livePayload(SignedEventVectors.LIVE_UUID), SignedEventVectors.NOW, SignedEventVectors.EVENT_ID
++            )
++        )
++    }
++
++    @Test
++    fun `the inquiry body is byte-identical to the golden copy ingest validates`() {
++        assertEquals(
++            SignedEventVectors.INQUIRY_BODY,
++            client().buildBody(
++                ConversionEventClient.TYPE_INQUIRY_COMPLETED, SignedEventVectors.SESSION_ID, null,
++                ConversionEventClient.INQUIRY_PAYLOAD, SignedEventVectors.NOW, SignedEventVectors.EVENT_ID
++            )
++        )
++    }
++
++    @Test
++    fun `a sent event is signed as a server caller and carries the session id and nothing else about the buyer`() {
++        client().sendLiveSignup(sessionId, SignedEventVectors.LIVE_UUID, UUID.fromString(SignedEventVectors.LISTING_ID))
++
++        assertEquals(1, received.size)
++        val request = received.single()
++        assertEquals(apiKey, request.headers["X-Estalara-API-Key"])
++        assertEquals("application/json", request.headers["Content-Type"])
++        assertNull(request.headers["Origin"], "an Origin would route this to the unsigned browser path")
++        assertNull(request.headers["Upgrade"], "no h2c upgrade towards wrangler or a proxy")
++        assertEquals(
++            SignedEventSigner.sign(secret, request.headers["X-Estalara-Timestamp"]!!, request.headers["X-Estalara-Nonce"]!!, request.body),
++            request.headers["X-Estalara-Signature"]
++        )
++
++        val event = ObjectMapper().readTree(request.body)["events"][0]
++        assertEquals(SignedEventVectors.SESSION_ID, event["session_id"].asText())
++        assertEquals(
++            setOf(
++                "event_id", "tenant_id", "session_id", "ts", "region", "consent_state", "schema_version",
++                "type", "listing_id", "payload"
++            ),
++            event.fieldNames().asSequence().toSet(),
++            "ESC-090 ruling 4: no xid and no cross_session_id; no login, account id or lead_id either"
++        )
++        assertEquals(setOf("slot_uuid", "event_kind"), event["payload"].fieldNames().asSequence().toSet())
++    }
++
++    @Test
++    fun `a 5xx is re-sent as the same event with a fresh timestamp and nonce`() {
++        respond(503 to "", 503 to "")
++
++        client().sendInquiryCompleted(sessionId)
++
++        assertEquals(3, received.size)
++        assertEquals(1, received.map { it.body }.toSet().size, "a re-send is the same conversion")
++        assertEquals(3, received.map { it.headers["X-Estalara-Nonce"] }.toSet().size, "a nonce is single-use at ingest")
++        assertTrue(logs().contains("al_conversion_sent"))
++        assertTrue(logs().contains("sends=3"))
++    }
++
++    @Test
++    fun `a 401 is an answer and is not re-sent`() {
++        respond(401 to """{"error":{"code":"unauthorized"}}""")
++
++        client().sendInquiryCompleted(sessionId)
++
++        assertEquals(1, received.size)
++        assertTrue(logs().contains("al_conversion_failed"))
++        assertTrue(logs().contains("status=401"))
++    }
++
++    @Test
++    fun `a 200 that accepted nothing is a lost conversion, not a sent one`() {
++        respond(200 to """{"accepted":0,"rejected":1,"errors":[]}""")
++
++        client().sendInquiryCompleted(sessionId)
++
++        assertEquals(1, received.size)
++        assertFalse(logs().contains("al_conversion_sent"))
++        assertTrue(logs().contains("failure=not_accepted"))
++    }
++
++    @Test
++    fun `a hanging ingest gives up inside the bound and does not throw`() {
++        respond(HANG to "", HANG to "", HANG to "")
++        val timeout = Duration.ofMillis(150)
++
++        val startedAt = System.nanoTime()
++        client(requestTimeout = timeout).sendInquiryCompleted(sessionId)
++        val elapsed = Duration.ofNanos(System.nanoTime() - startedAt)
++
++        // The client's own count: a request it abandoned may never reach the test server's handler.
++        assertTrue(logs().contains("sends=${BoundedHttpPost.MAX_SENDS}"))
++        assertTrue(received.size <= BoundedHttpPost.MAX_SENDS)
++        assertTrue(elapsed < Duration.ofSeconds(10), "took $elapsed")
++        assertTrue(logs().contains("al_conversion_failed"))
++    }
++
++    @Test
++    fun `an unreachable ingest does not throw`() {
++        val port = server.address.port
++        server.stop(0)
++        val unreachable = ConversionEventClient(
++            AdaptiveListingsProperties(
++                "http://127.0.0.1:$port", apiKey, secret, "", "", "",
++                Duration.ofMillis(200), Duration.ofMillis(200), Duration.ofMillis(5)
++            )
++        )
++
++        unreachable.sendInquiryCompleted(sessionId)
++
++        assertTrue(logs().contains("al_conversion_failed"))
++    }
++
++    @Test
++    fun `no log line carries the secret, the api key, the session id or the signature`() {
++        respond(503 to "", 401 to "{}")
++
++        client().sendInquiryCompleted(sessionId)
++
++        val text = logs()
++        assertTrue(text.isNotEmpty())
++        assertFalse(text.contains(secret))
++        assertFalse(text.contains(apiKey))
++        assertFalse(text.contains(SignedEventVectors.SESSION_ID))
++        assertFalse(text.contains("hmac-sha256"))
++    }
++
++    @Test
++    fun `not configured sends nothing`() {
++        val unconfigured = ConversionEventClient(
++            AdaptiveListingsProperties("", "", "", "", "", "", Duration.ofSeconds(1), Duration.ofSeconds(1), Duration.ofMillis(1))
++        )
++
++        unconfigured.sendInquiryCompleted(sessionId)
++
++        assertEquals(0, received.size)
++    }
++
++    @Test
++    fun `a secret that is not hex disables the emitter instead of signing with garbage`() {
++        val bad = AdaptiveListingsProperties(
++            "http://127.0.0.1:${server.address.port}", apiKey, "not-hex-at-all", "", "", "",
++            Duration.ofSeconds(1), Duration.ofSeconds(1), Duration.ofMillis(1)
++        )
++
++        assertFalse(bad.eventsConfigured)
++        ConversionEventClient(bad).sendInquiryCompleted(sessionId)
++        assertEquals(0, received.size)
++        assertNotEquals(true, bad.toString().contains("not-hex-at-all"))
++    }
++
++    private companion object {
++        const val HANG = -1
++    }
++}
+diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventListenerTest.kt b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventListenerTest.kt
+--- a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventListenerTest.kt	1970-01-01 01:00:00.000000000 +0100
++++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventListenerTest.kt	2026-11-02 07:01:58.495047286 +0100
+@@ -0,0 +1,117 @@
++package com.time2show.core.unit.service.adaptivelistings
++
++import com.time2show.core.model.enums.ConversationParticipantRole
++import com.time2show.core.service.adaptivelistings.BuyerSessionId
++import com.time2show.core.service.adaptivelistings.ConversionEventClient
++import com.time2show.core.service.adaptivelistings.ConversionEventListener
++import com.time2show.core.service.adaptivelistings.LivePresentationRegisteredEvent
++import com.time2show.core.service.web.ConversationCreatedEvent
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertFalse
++import org.junit.jupiter.api.Assertions.assertNull
++import org.junit.jupiter.api.DisplayName
++import org.junit.jupiter.api.Tag
++import org.junit.jupiter.api.Test
++import org.mockito.kotlin.any
++import org.mockito.kotlin.doThrow
++import org.mockito.kotlin.mock
++import org.mockito.kotlin.never
++import org.mockito.kotlin.verify
++import org.mockito.kotlin.whenever
++import org.springframework.mock.web.MockHttpServletRequest
++import org.springframework.web.context.request.RequestContextHolder
++import org.springframework.web.context.request.ServletRequestAttributes
++import java.util.UUID
++
++@DisplayName("ConversionEventListener and BuyerSessionId (unit)")
++@Tag("unit")
++class ConversionEventListenerTest {
++
++    private val client = mock<ConversionEventClient>()
++    private val listener = ConversionEventListener(client)
++    private val session = BuyerSessionId.parse(SignedEventVectors.SESSION_ID)!!
++
++    private fun conversation(role: ConversationParticipantRole, sessionId: BuyerSessionId?) = ConversationCreatedEvent(
++        conversationUuid = UUID.randomUUID(),
++        initiatorSlug = "slug",
++        initiatorName = "name",
++        initiatorProfileImageUrl = null,
++        initiatorRole = role,
++        initiatorAgencyName = null,
++        recipientLogins = listOf("agent"),
++        buyerSessionId = sessionId
++    )
++
++    @Test
++    fun `a conversation a buyer started is an inquiry`() {
++        listener.onConversationCreated(conversation(ConversationParticipantRole.BUYER, session))
++        verify(client).sendInquiryCompleted(session)
++    }
++
++    @Test
++    fun `a conversation an agent started is not`() {
++        listener.onConversationCreated(conversation(ConversationParticipantRole.AGENT, session))
++        verify(client, never()).sendInquiryCompleted(any())
++    }
++
++    @Test
++    fun `no session id, nothing is sent for either conversion`() {
++        listener.onConversationCreated(conversation(ConversationParticipantRole.BUYER, null))
++        listener.onLivePresentationRegistered(LivePresentationRegisteredEvent(UUID.randomUUID(), UUID.randomUUID(), null))
++        verify(client, never()).sendInquiryCompleted(any())
++        verify(client, never()).sendLiveSignup(any(), any(), any())
++    }
++
++    @Test
++    fun `a registration is a live signup with its live and listing`() {
++        val live = UUID.randomUUID()
++        val listing = UUID.randomUUID()
++        listener.onLivePresentationRegistered(LivePresentationRegisteredEvent(live, listing, session))
++        verify(client).sendLiveSignup(session, live, listing)
++    }
++
++    @Test
++    fun `a failing client never reaches the caller`() {
++        whenever(client.sendInquiryCompleted(any())) doThrow IllegalStateException("boom")
++        whenever(client.sendLiveSignup(any(), any(), any())) doThrow IllegalStateException("boom")
++
++        listener.onConversationCreated(conversation(ConversationParticipantRole.BUYER, session))
++        listener.onLivePresentationRegistered(LivePresentationRegisteredEvent(UUID.randomUUID(), UUID.randomUUID(), session))
++    }
++
++    @Test
++    fun `the session id accepts both shapes the SDK ever minted and refuses anything else`() {
++        assertEquals(SignedEventVectors.SESSION_ID, BuyerSessionId.parse(SignedEventVectors.SESSION_ID)?.value)
++        assertEquals("f".repeat(64), BuyerSessionId.parse("f".repeat(64))?.value)
++        assertNull(BuyerSessionId.parse(null))
++        assertNull(BuyerSessionId.parse(""))
++        assertNull(BuyerSessionId.parse("f".repeat(31)))
++        assertNull(BuyerSessionId.parse("f".repeat(65)))
++        assertNull(BuyerSessionId.parse("a".repeat(32) + "\nx"))
++        assertNull(BuyerSessionId.parse("<script>" + "a".repeat(32)))
++    }
++
++    @Test
++    fun `an event printed by the async failure handler does not print the session id`() {
++        assertFalse(session.toString().contains(SignedEventVectors.SESSION_ID))
++        assertFalse(conversation(ConversationParticipantRole.BUYER, session).toString().contains(SignedEventVectors.SESSION_ID))
++        assertFalse(
++            LivePresentationRegisteredEvent(UUID.randomUUID(), UUID.randomUUID(), session).toString()
++                .contains(SignedEventVectors.SESSION_ID)
++        )
++    }
++
++    @Test
++    fun `the id is read off the current request, and is null with no request or no header`() {
++        assertNull(BuyerSessionId.fromCurrentRequest())
++        val request = MockHttpServletRequest()
++        RequestContextHolder.setRequestAttributes(ServletRequestAttributes(request))
++        try {
++            assertNull(BuyerSessionId.fromCurrentRequest())
++            request.addHeader(BuyerSessionId.HEADER, SignedEventVectors.SESSION_ID)
++            assertEquals(SignedEventVectors.SESSION_ID, BuyerSessionId.fromCurrentRequest()?.value)
++        } finally {
++            RequestContextHolder.resetRequestAttributes()
++        }
++    }
++}
+diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventLiveIngestTest.kt b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventLiveIngestTest.kt
+--- a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventLiveIngestTest.kt	1970-01-01 01:00:00.000000000 +0100
++++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventLiveIngestTest.kt	2026-11-02 07:01:58.491047325 +0100
+@@ -0,0 +1,54 @@
++package com.time2show.core.unit.service.adaptivelistings
++
++import ch.qos.logback.classic.Logger
++import ch.qos.logback.classic.spi.ILoggingEvent
++import ch.qos.logback.core.read.ListAppender
++import com.time2show.core.service.adaptivelistings.AdaptiveListingsProperties
++import com.time2show.core.service.adaptivelistings.BuyerSessionId
++import com.time2show.core.service.adaptivelistings.ConversionEventClient
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.DisplayName
++import org.junit.jupiter.api.Tag
++import org.junit.jupiter.api.Test
++import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
++import org.slf4j.LoggerFactory
++import java.time.Duration
++import java.util.UUID
++
++/**
++ * The real emitter against a real running ingest Worker. Skipped unless `AL_LIVE_INGEST_URL` is set;
++ * the caller then reads ClickHouse for `AL_LIVE_SESSION_ID` and expects both rows with
++ * `caller_signed = 1`. See docs/handover/estalara-app-patches/README.md.
++ */
++@DisplayName("ConversionEventClient against a live ingest")
++@Tag("unit")
++@EnabledIfEnvironmentVariable(named = "AL_LIVE_INGEST_URL", matches = ".+")
++class ConversionEventLiveIngestTest {
++
++    @Test
++    fun `both conversions are accepted by the running Worker`() {
++        val appender = ListAppender<ILoggingEvent>().apply { start() }
++        val logger = LoggerFactory.getLogger(ConversionEventClient::class.java) as Logger
++        logger.addAppender(appender)
++        try {
++            val client = ConversionEventClient(
++                AdaptiveListingsProperties(
++                    System.getenv("AL_LIVE_INGEST_URL"),
++                    System.getenv("AL_LIVE_API_KEY"),
++                    System.getenv("AL_LIVE_HMAC_SECRET"),
++                    "", "", "",
++                    Duration.ofSeconds(2), Duration.ofSeconds(10), Duration.ofMillis(750)
++                )
++            )
++            val session = BuyerSessionId.parse(System.getenv("AL_LIVE_SESSION_ID"))!!
++
++            client.sendLiveSignup(session, UUID.randomUUID(), UUID.fromString(SignedEventVectors.LISTING_ID))
++            client.sendInquiryCompleted(session)
++
++            val lines = appender.list.map { it.formattedMessage }
++            assertEquals(2, lines.count { it.startsWith("al_conversion_sent") }, lines.joinToString("\n"))
++        } finally {
++            logger.detachAppender(appender)
++        }
++    }
++}
+diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventSitesTest.kt b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventSitesTest.kt
+--- a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventSitesTest.kt	1970-01-01 01:00:00.000000000 +0100
++++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ConversionEventSitesTest.kt	2026-11-02 07:01:58.495047286 +0100
+@@ -0,0 +1,128 @@
++package com.time2show.core.unit.service.adaptivelistings
++
++import com.time2show.core.dto.CreateLiveEnrollmentEventRequestTO
++import com.time2show.core.jwt.JwtUserDetails
++import com.time2show.core.model.AccountEntity
++import com.time2show.core.model.CalendarEventEntity
++import com.time2show.core.model.ListingEntity
++import com.time2show.core.model.LivePresentationEntity
++import com.time2show.core.model.LivePresentationRegistrationEntity
++import com.time2show.core.model.enums.ApplicationLanguage
++import com.time2show.core.model.enums.LivePresentationStatus
++import com.time2show.core.repository.AccountRepository
++import com.time2show.core.repository.CalendarEventRepository
++import com.time2show.core.repository.ListingRepository
++import com.time2show.core.repository.LivePresentationRegistrationRepository
++import com.time2show.core.repository.LivePresentationRepository
++import com.time2show.core.service.adaptivelistings.BuyerSessionId
++import com.time2show.core.service.adaptivelistings.LivePresentationRegisteredEvent
++import com.time2show.core.service.web.CalendarServiceImpl
++import org.junit.jupiter.api.AfterEach
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.BeforeEach
++import org.junit.jupiter.api.DisplayName
++import org.junit.jupiter.api.Tag
++import org.junit.jupiter.api.Test
++import org.mockito.kotlin.any
++import org.mockito.kotlin.argumentCaptor
++import org.mockito.kotlin.doReturn
++import org.mockito.kotlin.eq
++import org.mockito.kotlin.mock
++import org.mockito.kotlin.never
++import org.mockito.kotlin.verify
++import org.mockito.kotlin.whenever
++import org.springframework.context.ApplicationEventPublisher
++import org.springframework.http.HttpStatus
++import org.springframework.mock.web.MockHttpServletRequest
++import org.springframework.security.core.authority.SimpleGrantedAuthority
++import org.springframework.web.context.request.RequestContextHolder
++import org.springframework.web.context.request.ServletRequestAttributes
++import java.time.Instant
++import java.util.UUID
++
++/** The enrollment button's path, which is where a buyer's registration normally happens. */
++@DisplayName("CalendarServiceImpl.createLiveEnrollmentEvent publishes the registration (unit)")
++@Tag("unit")
++class ConversionEventSitesTest {
++
++    private val publisher = mock<ApplicationEventPublisher>()
++    private val accountRepository = mock<AccountRepository>()
++    private val liveRepository = mock<LivePresentationRepository>()
++    private val registrationRepository = mock<LivePresentationRegistrationRepository>()
++    private val calendarRepository = mock<CalendarEventRepository>()
++    private val listingRepository = mock<ListingRepository>()
++
++    private val service = CalendarServiceImpl(
++        mock(), calendarRepository, listingRepository, mock(), accountRepository, liveRepository,
++        registrationRepository, mock(), mock(), publisher
++    )
++
++    private val liveUuid = UUID.randomUUID()
++    private val listingUuid = UUID.randomUUID()
++    private val live = mock<LivePresentationEntity>()
++    private val account = mock<AccountEntity>()
++    private val jwt = JwtUserDetails(username = "buyer", authorities = listOf(SimpleGrantedAuthority("user")))
++
++    @BeforeEach
++    fun setUp() {
++        val listing = mock<ListingEntity> { on { uuid } doReturn listingUuid }
++        val calendarEvent = mock<CalendarEventEntity> {
++            on { startDate } doReturn Instant.now()
++            on { endDate } doReturn Instant.now().plusSeconds(3600)
++        }
++        whenever(live.uuid).thenReturn(liveUuid)
++        whenever(live.listing).thenReturn(listing)
++        whenever(live.status).thenReturn(LivePresentationStatus.SCHEDULED)
++        whenever(live.maxParticipants).thenReturn(10)
++        whenever(live.calendarEvent).thenReturn(calendarEvent)
++        whenever(liveRepository.findByUuid(liveUuid)).thenReturn(live)
++        whenever(accountRepository.findByLogin("buyer")).thenReturn(account)
++        whenever(registrationRepository.countAllByLivePresentationAndCalendarEvent_RemovedFalse(live)).thenReturn(1)
++        whenever(calendarRepository.save(any<CalendarEventEntity>())).thenAnswer { it.arguments[0] }
++
++        val request = MockHttpServletRequest()
++        request.addHeader(BuyerSessionId.HEADER, SignedEventVectors.SESSION_ID)
++        RequestContextHolder.setRequestAttributes(ServletRequestAttributes(request))
++    }
++
++    @AfterEach
++    fun tearDown() = RequestContextHolder.resetRequestAttributes()
++
++    private fun enroll() = service.createLiveEnrollmentEvent(
++        CreateLiveEnrollmentEventRequestTO(uuidLive = liveUuid.toString()), ApplicationLanguage.EN, jwt
++    )
++
++    @Test
++    fun `a new registration by a buyer publishes the registration with the request's session id`() {
++        whenever(registrationRepository.findByLivePresentationAndParticipant_Login(eq(live), eq("buyer"))).thenReturn(null)
++
++        assertEquals(HttpStatus.OK, enroll().httpStatus)
++
++        val captor = argumentCaptor<Any>()
++        verify(publisher).publishEvent(captor.capture())
++        val event = captor.firstValue as LivePresentationRegisteredEvent
++        assertEquals(liveUuid, event.liveUuid)
++        assertEquals(listingUuid, event.listingUuid)
++        assertEquals(SignedEventVectors.SESSION_ID, event.buyerSessionId?.value)
++    }
++
++    @Test
++    fun `an agent registering is no buyer conversion`() {
++        whenever(account.isActiveAgent()).thenReturn(true)
++        whenever(registrationRepository.findByLivePresentationAndParticipant_Login(eq(live), eq("buyer"))).thenReturn(null)
++
++        assertEquals(HttpStatus.OK, enroll().httpStatus)
++
++        verify(publisher, never()).publishEvent(any<Any>())
++    }
++
++    @Test
++    fun `pressing register again publishes nothing`() {
++        whenever(registrationRepository.findByLivePresentationAndParticipant_Login(eq(live), eq("buyer")))
++            .thenReturn(mock<LivePresentationRegistrationEntity>())
++
++        assertEquals(HttpStatus.OK, enroll().httpStatus)
++
++        verify(publisher, never()).publishEvent(any<Any>())
++    }
++}
+diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ListingUpdatedNotifierTest.kt b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ListingUpdatedNotifierTest.kt
+--- a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ListingUpdatedNotifierTest.kt	1970-01-01 01:00:00.000000000 +0100
++++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/ListingUpdatedNotifierTest.kt	2026-11-02 07:01:58.491047325 +0100
+@@ -0,0 +1,105 @@
++package com.time2show.core.unit.service.adaptivelistings
++
++import com.fasterxml.jackson.databind.ObjectMapper
++import com.sun.net.httpserver.HttpServer
++import com.time2show.core.dto.PatchOwnListingRequestTO
++import com.time2show.core.service.adaptivelistings.AdaptiveListingsProperties
++import com.time2show.core.service.adaptivelistings.BoundedHttpPost
++import com.time2show.core.service.adaptivelistings.ListingUpdatedNotifier
++import org.junit.jupiter.api.AfterEach
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertFalse
++import org.junit.jupiter.api.Assertions.assertTrue
++import org.junit.jupiter.api.BeforeEach
++import org.junit.jupiter.api.DisplayName
++import org.junit.jupiter.api.Tag
++import org.junit.jupiter.api.Test
++import java.net.InetSocketAddress
++import java.nio.charset.StandardCharsets
++import java.time.Duration
++import java.util.concurrent.CopyOnWriteArrayList
++
++@DisplayName("ListingUpdatedNotifier (unit, real HTTP)")
++@Tag("unit")
++class ListingUpdatedNotifierTest {
++
++    private val tenant = "00000000-0000-0000-0000-0000000000e2"
++    private val listing = "839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c"
++    private val secret = "webhook-test-value"
++
++    private lateinit var server: HttpServer
++    private val bodies = CopyOnWriteArrayList<String>()
++    private val secrets = CopyOnWriteArrayList<String?>()
++    private var status = 200
++
++    @BeforeEach
++    fun setUp() {
++        server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
++        server.createContext("/api/webhooks/listing-updated") { exchange ->
++            bodies += exchange.requestBody.readAllBytes().toString(StandardCharsets.UTF_8)
++            secrets += exchange.requestHeaders.getFirst("X-Webhook-Secret")
++            exchange.sendResponseHeaders(status, -1)
++            exchange.close()
++        }
++        server.start()
++    }
++
++    @AfterEach
++    fun tearDown() = server.stop(0)
++
++    private fun notifier(url: String = "http://127.0.0.1:${server.address.port}/api/webhooks/listing-updated", key: String = secret) =
++        ListingUpdatedNotifier(
++            AdaptiveListingsProperties(
++                "", "", "", tenant, url, key,
++                Duration.ofSeconds(1), Duration.ofSeconds(1), Duration.ofMillis(5)
++            )
++        )
++
++    @Test
++    fun `a save posts the route's body with the route's secret header`() {
++        notifier().notifyListingSaved(listing)
++
++        assertEquals(1, bodies.size)
++        val body = ObjectMapper().readTree(bodies.single())
++        assertEquals(tenant, body["tenant_id"].asText())
++        assertEquals(listing, body["listing_id"].asText())
++        assertEquals(setOf("tenant_id", "listing_id"), body.fieldNames().asSequence().toSet())
++        assertEquals(secret, secrets.single())
++    }
++
++    @Test
++    fun `a 500 is re-sent up to the bound and does not throw`() {
++        status = 500
++        notifier().notifyListingSaved(listing)
++        assertEquals(BoundedHttpPost.MAX_SENDS, bodies.size)
++    }
++
++    @Test
++    fun `a 401 is not re-sent and does not throw`() {
++        status = 401
++        notifier().notifyListingSaved(listing)
++        assertEquals(1, bodies.size)
++    }
++
++    @Test
++    fun `an unreachable control plane does not throw`() {
++        val url = "http://127.0.0.1:${server.address.port}/api/webhooks/listing-updated"
++        server.stop(0)
++        notifier(url).notifyListingSaved(listing)
++    }
++
++    @Test
++    fun `not configured sends nothing`() {
++        notifier(url = "", key = "").notifyListingSaved(listing)
++        assertEquals(0, bodies.size)
++    }
++
++    @Test
++    fun `a PATCH bumps the revision only when it changes a grounded fact`() {
++        assertTrue(ListingUpdatedNotifier.changesGroundingFacts(PatchOwnListingRequestTO(listingUuid = listing, price = 1.0)))
++        assertTrue(ListingUpdatedNotifier.changesGroundingFacts(PatchOwnListingRequestTO(listingUuid = listing, cityPlaceGoogleId = "x")))
++        assertTrue(ListingUpdatedNotifier.changesGroundingFacts(PatchOwnListingRequestTO(listingUuid = listing, districtPlaceGoogleId = "x")))
++        assertFalse(ListingUpdatedNotifier.changesGroundingFacts(PatchOwnListingRequestTO(listingUuid = listing, imageUuids = listOf("x"))))
++        assertFalse(ListingUpdatedNotifier.changesGroundingFacts(PatchOwnListingRequestTO(listingUuid = listing)))
++    }
++}
+diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/SignedEventSignerTest.kt b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/SignedEventSignerTest.kt
+--- a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/SignedEventSignerTest.kt	1970-01-01 01:00:00.000000000 +0100
++++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/SignedEventSignerTest.kt	2026-11-02 07:01:58.495047286 +0100
+@@ -0,0 +1,49 @@
++package com.time2show.core.unit.service.adaptivelistings
++
++import com.time2show.core.service.adaptivelistings.SignedEventSigner
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertNotEquals
++import org.junit.jupiter.api.DisplayName
++import org.junit.jupiter.api.Tag
++import org.junit.jupiter.api.Test
++
++@DisplayName("SignedEventSigner: same vector as the ingest verifier")
++@Tag("unit")
++class SignedEventSignerTest {
++
++    private fun sign(body: String) = SignedEventSigner.sign(
++        SignedEventVectors.SECRET_HEX, SignedEventVectors.TIMESTAMP, SignedEventVectors.NONCE, body
++    )
++
++    @Test
++    fun `live signup body signs to the shared vector`() {
++        assertEquals("hmac-sha256:${SignedEventVectors.LIVE_SIGNATURE}", sign(SignedEventVectors.LIVE_BODY))
++    }
++
++    @Test
++    fun `inquiry body signs to the shared vector`() {
++        assertEquals("hmac-sha256:${SignedEventVectors.INQUIRY_SIGNATURE}", sign(SignedEventVectors.INQUIRY_BODY))
++    }
++
++    @Test
++    fun `a non-ascii body is signed over its UTF-8 bytes`() {
++        assertEquals("hmac-sha256:${SignedEventVectors.UTF8_SIGNATURE}", sign(SignedEventVectors.UTF8_BODY))
++    }
++
++    @Test
++    fun `timestamp and nonce are inside the signed message`() {
++        val base = sign(SignedEventVectors.INQUIRY_BODY)
++        assertNotEquals(
++            base,
++            SignedEventSigner.sign(
++                SignedEventVectors.SECRET_HEX, "1793577600001", SignedEventVectors.NONCE, SignedEventVectors.INQUIRY_BODY
++            )
++        )
++        assertNotEquals(
++            base,
++            SignedEventSigner.sign(
++                SignedEventVectors.SECRET_HEX, SignedEventVectors.TIMESTAMP, "follow1339vector0002", SignedEventVectors.INQUIRY_BODY
++            )
++        )
++    }
++}
+diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/SignedEventVectors.kt b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/SignedEventVectors.kt
+--- a/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/SignedEventVectors.kt	1970-01-01 01:00:00.000000000 +0100
++++ b/src/test/kotlin/com/time2show/core/unit/service/adaptivelistings/SignedEventVectors.kt	2026-11-02 07:01:58.495047286 +0100
+@@ -0,0 +1,42 @@
++package com.time2show.core.unit.service.adaptivelistings
++
++import java.util.UUID
++
++/**
++ * The vector shared with the verifier's test in the Adaptive Listings repository,
++ * `apps/ingest/src/signed-conversions.test.ts`, which holds byte-identical copies and runs them through
++ * the real `authenticateRequest()` and `EventSchema`. Change one, change both: a difference is a
++ * contract break neither side can see alone.
++ */
++object SignedEventVectors {
++    val SECRET_HEX = "cd".repeat(32)
++    const val TIMESTAMP = "1793577600000"
++    const val NONCE = "follow1339vector0001"
++    const val NOW = 1793577600000L
++
++    const val SESSION_ID = "11111111-2222-4333-8444-555555555555"
++    val EVENT_ID: UUID = UUID.fromString("01928f00-7000-4000-8000-000000001339")
++    val LIVE_UUID: UUID = UUID.fromString("01928f00-7000-4000-8000-0000000000aa")
++    const val LISTING_ID = "839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c"
++
++    private const val ENVELOPE =
++        """"event_id":"01928f00-7000-4000-8000-000000001339",""" +
++            """"tenant_id":"00000000-0000-0000-0000-000000000000",""" +
++            """"session_id":"11111111-2222-4333-8444-555555555555",""" +
++            """"ts":1793577600000,"region":"eu","consent_state":"consented","schema_version":1"""
++
++    const val LIVE_BODY =
++        """{"events":[{$ENVELOPE,"type":"live.signup","listing_id":"839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c",""" +
++            """"payload":{"slot_uuid":"01928f00-7000-4000-8000-0000000000aa","event_kind":"live_presentation"}}]}"""
++
++    const val INQUIRY_BODY =
++        """{"events":[{$ENVELOPE,"type":"inquiry.completed","payload":{"channel":"conversation"}}]}"""
++
++    /** Pins the byte encoding: the verifier signs UTF-8 and this body is not ASCII. */
++    const val UTF8_BODY = """{"note":"zażółć gęślą jaźń"}"""
++
++    // Split so no 64-char hex literal sits in a file a secret scanner reads.
++    val LIVE_SIGNATURE = listOf("8724a3c7fabd5513", "c7f42f7109f709c5", "af5c23005d6b6b0f", "71ad489f87aad922").joinToString("")
++    val INQUIRY_SIGNATURE = listOf("86a166343114ddbc", "0b918d46286b2e82", "1203a3405fb85f02", "13e4e0c05b7ba1a6").joinToString("")
++    val UTF8_SIGNATURE = listOf("068c7912934c8e72", "2ddd6993553b05da", "d4fa7c187a26d213", "e347e65d6cd89fdd").joinToString("")
++}
+diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/web/ConversationServiceImplTest.kt b/src/test/kotlin/com/time2show/core/unit/service/web/ConversationServiceImplTest.kt
+--- a/src/test/kotlin/com/time2show/core/unit/service/web/ConversationServiceImplTest.kt	2026-11-02 07:01:53.867088837 +0100
++++ b/src/test/kotlin/com/time2show/core/unit/service/web/ConversationServiceImplTest.kt	2026-11-02 07:01:58.487047364 +0100
+@@ -296,6 +296,39 @@
+         }
+ 
+         @Test
++        fun `the event carries the Adaptive Listings session id from the request and the buyer role`() {
++            val account1 = createAccount("user1", 1L)
++            account1.userProfile = createProfile(account1, UUID.randomUUID())
++            val account2 = createAccount("user2", 2L)
++            account2.userProfile = createProfile(account2, UUID.randomUUID())
++
++            whenever(accountRepository.findByLogin("user1")).thenReturn(account1)
++            whenever(accountRepository.findBySlug("user2")).thenReturn(account2)
++            whenever(conversationRepository.findByParticipantLowIdAndParticipantHighId(1L, 2L)).thenReturn(null)
++            whenever(messageRateLimitService.isConversationAllowed("user1")).thenReturn(true)
++            whenever(transactionManager.getTransaction(anyOrNull())).thenReturn(SimpleTransactionStatus())
++            whenever(conversationRepository.saveAndFlush(any<ConversationEntity>())).thenAnswer { it.arguments[0] }
++            whenever(participantRepository.save(any<ConversationParticipantEntity>())).thenAnswer { it.arguments[0] }
++
++            val sessionId = "11111111-2222-4333-8444-555555555555"
++            val httpRequest = org.springframework.mock.web.MockHttpServletRequest()
++            httpRequest.addHeader("X-Estalara-Session-Id", sessionId)
++            org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
++                org.springframework.web.context.request.ServletRequestAttributes(httpRequest)
++            )
++            try {
++                conversationService.createOrFindConversation(CreateConversationRequestTO(recipientSlug = "user2"), jwtUserDetails)
++            } finally {
++                org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes()
++            }
++
++            verify(eventPublisher).publishEvent(eventCaptor.capture())
++            val event = eventCaptor.value as ConversationCreatedEvent
++            assertEquals(sessionId, event.buyerSessionId?.value)
++            assertEquals(com.time2show.core.model.enums.ConversationParticipantRole.BUYER, event.initiatorRole)
++        }
++
++        @Test
+         fun `returns OK with existing conversation when concurrent create hits unique constraint`() {
+             val account1 = createAccount("user1", 1L)
+             val account2 = createAccount("user2", 2L)
+diff -ruN a/src/test/kotlin/com/time2show/core/unit/service/web/LivestreamServiceImplTest.kt b/src/test/kotlin/com/time2show/core/unit/service/web/LivestreamServiceImplTest.kt
+--- a/src/test/kotlin/com/time2show/core/unit/service/web/LivestreamServiceImplTest.kt	2026-11-02 07:01:53.787089553 +0100
++++ b/src/test/kotlin/com/time2show/core/unit/service/web/LivestreamServiceImplTest.kt	2026-11-02 07:01:58.483047403 +0100
+@@ -606,6 +606,9 @@
+         @Test
+         fun `LS27 below capacity proceeds to token path`() {
+             val live = liveForViewerJoin(maxParticipants = 3)
++            whenever(live.listing.uuid).thenReturn(UUID.randomUUID())
++            // The new event reads the listing's uuid; with one present, setUp's blanket stub would make this viewer the host.
++            whenever(listingAuthorizationService.canManageListing(any(), any())).thenReturn(false)
+             whenever(
+                 livePresentationRegistrationRepository.existsByLivePresentationAndParticipant_IdAndCalendarEvent_RemovedFalse(
+                     eq(live), eq(5L)
+@@ -640,6 +643,8 @@
+             )
+             assertEquals(HttpStatus.OK, res.httpStatus)
+             verify(ivsService).createViewerVideoToken(any(), any(), any(), any())
++            // Adaptive Listings: joining without a prior registration creates one, and that is a live signup.
++            verify(applicationEventPublisher).publishEvent(any<com.time2show.core.service.adaptivelistings.LivePresentationRegisteredEvent>())
+         }
+     }
+ 

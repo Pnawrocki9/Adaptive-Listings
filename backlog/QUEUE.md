@@ -206,7 +206,26 @@
 - **FOLLOW-1456** — status: BACKLOG # P2 counsel. Same review, section 12: DPIA §1 claims Art. 3(1)
   while the host policy says Art. 3(2); `deriveLeadId` is unkeyed; the host's optional-analytics box
   is pre-ticked. Wiring `adaptation_decisions.lead_id` (FOLLOW-170) returns to compliance first, it
-  would link every session to an account. Next free: FOLLOW-1457, RETRO-381, ESC-092.
+  would link every session to an account.
+- **FOLLOW-1457** — status: DONE # #1138 `0c46e483`, 2026-11-02. Lift funnel alias.
+- **FOLLOW-1458** — status: DONE # #1138. Reader fixes the arm per session, counts sessions in both.
+- **FOLLOW-1459** — status: DONE # #1138. Slot copy rules; resolves FOLLOW-1453.
+- **FOLLOW-1460** — status: DONE # #1138. Local staff token secret.
+- **FOLLOW-1461** — status: BACKLOG # P2 sdk + compliance, CEO ruling at K5.
+  `CONSENT_TEXT_TIMEOUT_MS` is 3000 ms. Past it the SDK shows no banner, sends nothing and logs
+  nothing (ADR-0021 §D4), so a slow network silently loses the buyer. Measured once at 8175 ms on a
+  cold box. Consider a longer budget: fail-closed still holds. Needs an ADR-0021 change.
+- **FOLLOW-1462** — status: BACKLOG # P2 host + sdk. The host re-renders around its silent SSO
+  answer (about 60 s on this box): a click then can be lost, a login started then is lost, and the
+  seller's copy returns until the next decision, since a repair during a newer request stops as
+  `stale`.
+- **FOLLOW-1463** — status: BACKLOG # P2 core-master. A refused `PATCH` is still saved (around
+  `ListingServiceImpl.kt` 1285-1305). Slow ingest can duplicate signed events. Locally,
+  `POST /auth/register` answers 500 and `setup-keycloak.sh` makes no agent role.
+- **FOLLOW-1464** — status: BACKLOG # P3 control-plane, sdk, docs. Staff JWT path does not check
+  `exp`. `pilot/inquiry-starts` and `analytics/summary` take the arm per row. The opt-out toggle is
+  unbounded when `/adapt` stalls. The plan's `insufficient` class does not exist. README and harness
+  `late_config` comments are stale. Next free: FOLLOW-1465, RETRO-381, ESC-092.
 - **FOLLOW-1429** — status: DONE # PR #1129, README §5.69. Was: P2 product. Blind audit of
   2026-11-01: 32 firm language errors on PL and ES pages, in 21 of 56 texts, many of them translated
   persona phrases ("matematyka wyjścia", "ogon najmu", "zaprojektowany pod więcej weekendów"), plus
@@ -367,15 +386,19 @@
 - **FOLLOW-1338** — status: DONE # #1043 `691e3f40`, 2026-10-19. Phase 3 M5 (lift report D-J
   breakdown, daily snapshot cron + `H001` handover SQL, CSV export). K3 GREEN; K5 re-checks the
   report.
-- **FOLLOW-1339** — status: BACKLOG # Phase 5 X1 (signed `live.signup` and `inquiry.completed`). K5.
-- **FOLLOW-1340** — status: BACKLOG # Phase 5 X2 (`listing-updated` webhook). K5.
-- **FOLLOW-1341** — status: BACKLOG # Phase 5 X3 (`cta`/`feature` slot hooks). K5.
-- **FOLLOW-1342** — status: BACKLOG # Phase 5 X4 (`data-debug` from env). K5.
+- **FOLLOW-1339** — status: DONE # #1139 `2614cb46`, 2026-11-03, localhost only (ESC-091 OPEN).
+  Phase 5 X1 (signed `live.signup` and `inquiry.completed`). Series 291-293. K5.
+- **FOLLOW-1340** — status: DONE # #1139 `2614cb46`, 2026-11-03. Phase 5 X2 (`listing-updated`
+  webhook). K5.
+- **FOLLOW-1341** — status: DONE # #1137 `875286e6`, 2026-11-02. Phase 5 X3 (`cta`/`feature` slot
+  hooks), as patches. K5.
+- **FOLLOW-1342** — status: DONE # #1137 `875286e6`, 2026-11-02. Phase 5 X4 (`data-debug` from env),
+  as a patch. K5.
 - **FOLLOW-1343** — status: DONE # #1021 `ca39406d`, 2026-10-18 (N2 v0) + #1045 `3952ac29`,
   2026-10-19 (page tests for every remaining `/admin` page = N2 full). Instrument N2 (nav
   reachability + Playwright admin-smoke). K3 full = the authenticated rows (decision in M3).
-- **FOLLOW-1344** — status: IN_PROGRESS # K4b run GREEN_K4B, docs/checkpoints/K4b.md; conversions
-  and --arms remain for K5. # Instrument N3 (`real-app-acceptance.mjs`). K4b first use, K5 full.
+- **FOLLOW-1344** — status: IN_PROGRESS # K5 instruments GREEN, #1140 to merge,
+  docs/checkpoints/K5.md. # Instrument N3 (`real-app-acceptance.mjs`). K4b first use, K5 full.
 - **FOLLOW-1345** — status: IN_PROGRESS # Ledgers K0 #1018, K1 #1022, K2a #1031, K2b #1034, K2c
   (this PR, `k2c-green`). Harness AC(1b), AC(9) at K4a/K4b.
 - **FOLLOW-1346** — status: BACKLOG # Phase 7 H1/H2 final proof and handover v1. K7.

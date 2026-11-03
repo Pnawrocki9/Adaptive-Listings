@@ -3976,6 +3976,19 @@ replay `miss` at the first attempt.
 At `a28ffa36`, code identical to #1133 (`93cfa9bb`): GREEN 277, 279, 281; 278 and 280 drew holdout.
 AC(9) PASS in all five. Control I1 of K4b.
 
+### 5.73 — 2026-11-02 (Phase 5: #1138 and X1) — **three `run=GREEN` with `total=9` on each PR's code**
+
+| Runs    | Code              | Result                                                    |
+| ------- | ----------------- | --------------------------------------------------------- |
+| 282-284 | `74d63299`        | `green=9 total=9 run=GREEN`, `[FRESH]`                    |
+| 285-286 | `1256fe91`, #1138 | `run=UNMEASURED`, neutral under the CEO's 2026-09-22 rule |
+| 287-289 | `1256fe91`, #1138 | `green=9 total=9 run=GREEN`, `[FRESH]`                    |
+| 290     | `41b6ff8a`, #1139 | `green=4 unmeasured=5 run=UNMEASURED`, neutral            |
+| 291-293 | `41b6ff8a`, #1139 | `green=9 total=9 run=GREEN`, `[FRESH]`                    |
+
+#1137 (patches and docs only) and #1140 (N3 only) changed no product code and owed no series. N3 and
+`--arms 40` are in `docs/checkpoints/K5.md`.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

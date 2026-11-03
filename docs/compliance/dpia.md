@@ -1,6 +1,6 @@
 # Data Protection Impact Assessment (DPIA)
 
-**Document ID:** ESTALARA-DPIA-001 **Version:** 2.28 **Date:** 2026-11-02 **Authors:** Time2Show,
+**Document ID:** ESTALARA-DPIA-001 **Version:** 2.29 **Date:** 2026-11-03 **Authors:** Time2Show,
 Inc. — Compliance Engineering **DPO Review Status:** External DPO appointment in progress
 (DPO-as-a-Service provider). Placeholder contact: compliance@estalara.com **Next Mandatory Review
 Date:** 2027-05-15 (annual) or upon any material change to processing described herein (see
@@ -772,9 +772,10 @@ purpose (c), within the single tenant (no cross-tenant aggregation is involved);
 FOLLOW-1339; localhost only, production not enabled)_ measuring whether personalization changes the
 probability that a session registers for a live presentation or contacts an agent, comparing the
 adapted arm against the holdout (ESC-085 D-J), per session, with no cross-session linkage in
-storage, its lawful basis not determined (ESC-091 C-1 open; L-8, L-9); and no other purpose (an
-Engagement Score purpose previously listed here was never implemented and was removed in v2.22,
-FOLLOW-1268).
+storage, its lawful basis **consent only**, for the conversions and for the holdout assignment
+alike, never legitimate interest (ESC-091 C-1, ruled 2026-11-03; amended v2.29; sufficiency of the
+served sentence is counsel's L-8, L-9, L-13); and no other purpose (an Engagement Score purpose
+previously listed here was never implemented and was removed in v2.22, FOLLOW-1268).
 
 **Returning-buyer continuity (added v2.27, FOLLOW-1316, ESC-090).** With `BUYER_PROFILE_ENABLED` on,
 which today means localhost only, objective (b) extends to a later visit of the same browser: a
@@ -871,8 +872,8 @@ The following measures implement data minimization as required by GDPR Article 5
   on six calls only, never from a shared interceptor (`web-master` `estalaraConversionHeaders`); not
   stored by the host backend's code; no account field on the event. The event carries `ts` and
   `ingest_received_at` to the millisecond and, for `live.signup`, the live's uuid and `listing_id`.
-  No lift reader uses the uuid; dropping it is condition H-6 of the record and coarsening the times
-  is ESC-091 C-3, open. Neither is done.
+  No lift reader uses the uuid; dropping it is condition H-6 of the record. Coarsening the times is
+  deferred by ESC-091 C-3 until the gap is measured (H-12); amended v2.29. Neither is done.
 - **No directly identifying fields in event schema:** The Estalara ingest Zod schema enforces a PII
   blocklist. Fields containing email, name, phone, or national identification patterns are rejected
   at the Edge Ingest layer. The schema is validated in CI.
@@ -1204,6 +1205,14 @@ request (§8, ESC-091 C-4).
 **Open:** ESC-091 C-1 to C-5; counsel L-7 to L-14. **Likelihood, severity and residual risk: not
 rated;** the rating waits for those answers and the DPO.
 
+_Amended v2.29 (ESC-091 ruled by the CEO 2026-11-03)._ C-1: consent only, for the conversions and
+the holdout; the served consent text names both from `text_version` `2026-11-03.1`. C-2: the header
+stays. C-3: deferred until H-12. C-5: no header without optional analytics. **C-4 stays open,** so
+the account-holder route of "Controls that do not exist" is still undecided. Two controls are added
+to that list by the rulings themselves: no re-prompt of earlier grants until the SDK's minimum text
+version is raised (record H-3), and no server-side check that a holdout or lift row came from a
+consented session (record H-13). The rating still waits for counsel and the DPO.
+
 ---
 
 ## 5. Mitigations and Residual Risk Summary
@@ -1252,6 +1261,13 @@ explicit consent has been collected by the tenant via CMP or Estalara Consent He
 6(1)(b) — Contract Performance — for tenant account and billing data processing. Article 6(1)(c) —
 Legal Obligation — for consent record retention, audit logging, and DSR processing.
 
+_Amended v2.29 (ESC-091 C-1, CEO 2026-11-03)._ "Behavioral analytics" above does not include the
+holdout or conversion measurement (§3.1(d)). Assigning a session to an arm, logging it in
+`adaptation_decisions.holdout_group`, and measuring conversions against it rest on Article 6(1)(a)
+consent only, in every mode, as the returning-buyer profile does (ESC-090 item 1). Today the SDK
+enforces this by calling `/api/adapt` only after the banner's grant; the server does not check it
+(record H-13).
+
 **ePrivacy:** Article 5(3) of Directive 2002/58/EC requires prior consent for storing information
 in, or accessing information stored in, terminal equipment unless it is strictly necessary for a
 service explicitly requested by the subscriber or user. The storage step in this product is the
@@ -1266,7 +1282,9 @@ component.
 **The host's read (added v2.28, FOLLOW-1339; localhost only).** The host's own code reading
 `__estalara_session__` for conversion measurement is a further read for a further purpose. This
 document does not conclude that the banner's consent covers it or that any exemption is available
-(L-8, L-9; ESC-091 C-1 and C-2 open).
+(L-8, L-9; ESC-091 C-1 and C-2 open). _Amended v2.29:_ C-1 made consent the only basis and C-2 kept
+the header; whether the banner's consent, as served from `text_version` `2026-11-03.1`, covers this
+read stays with counsel (L-8, L-9).
 
 **DPO appointment:** An external DPO (DPO-as-a-Service provider) is being appointed. The DPO will be
 registered with the UODO before scaling beyond the current pilot cohort. The CEO is structurally
@@ -1764,6 +1782,7 @@ to the stable presence of the CEO who directs business operations from Poland).
 | 2.26    | 2026-10-20 | Backend Engineering    | **FOLLOW-1364 (ESC-086 condition C6) — §2.5 `quiz_completions`, `quiz_runs` row: "Period TBD — UNENFORCED" becomes "13 months — enforced".** CEO ruling 2026-10-20; the daily `/api/cron/quiz-retention` job deletes rows older than 13 months from both tables. The Activity 17 summary sentence is aligned. ROPA v2.21.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | 2.27    | 2026-11-02 | Compliance Engineering | **FOLLOW-1316 (ESC-085 D-E, ESC-090) — new processing, behind a flag: the returning-buyer profile. True of the code on localhost; production is NOT enabled, pending counsel L-1 to L-6, DPO sign-off and the Upstash region.** §13.2 rewritten: the identifier now rests on consent, the legitimate-interest conclusion is withdrawn and kept as a marked record, and withdrawal is stated as it behaves, gaps included. §13.5 re-read: its sufficiency conclusion does not extend to the 90-day profile (L-6). §2.2, §2.2.1, §2.3, §2.4, §2.5, §2.6, §3.1, §3.3, §3.5, Risks A, B, E, §5 (new row F), §7 items 2, 5, 6 and §8 updated. Signed record: `docs/compliance/FOLLOW-1316-signed-review.md`. The banner sentence is byte-identical. **The GPC claims of §6.3 and §7 item 2 are not touched beyond one true sentence; FOLLOW-1438 owns the rest.** DPO gate: PENDING.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | 2.28    | 2026-11-02 | Compliance Engineering | **FOLLOW-1339 (ESC-091 OPEN) — new processing, localhost only: the conversion header and signed conversions.** True of the code on localhost; **production is NOT enabled.** Nothing here decides ESC-091 C-1 to C-5: the lawful basis is recorded as not determined; the header is what localhost runs, pending C-2; times stay at millisecond precision, pending C-3; the account route for a DSR is open, C-4; no header when optional analytics are refused or unanswered is applied on localhost pending C-5. §1 correction, §2.2.1 item 4, §2.3 row, §2.4 step 13, §2.5 row, §3.1(d), §3.2, §3.3, §3.5, Risk A paragraph, new Risk G, §5 row, §6.1, §8, §10. Record: `docs/compliance/FOLLOW-1339-session-header-review.md`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 2.29    | 2026-11-03 | Compliance Engineering | **FOLLOW-1339, ESC-091 ruled by the CEO (C-4 open).** §3.1(d): basis consent only, conversions and holdout alike (C-1). §6.1 lawful basis: "behavioral analytics" excludes the holdout and conversion measurement. §3.3: coarsening deferred (C-3). Risk G and §6.1's host-read paragraph: rulings recorded, C-4 open, two missing controls (re-prompt H-3, server-side consent check H-13). §13.2: corrected the claim that `MIN_PROFILE_TEXT_VERSION` equals the served `text_version`, which the bump to `2026-11-03.1` made false.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ---
 
@@ -2081,7 +2100,10 @@ inferred. It changes **only after counsel** (ESC-086(b), L-1). The draft for cou
 `docs/compliance/FOLLOW-1316-design-review.md` section 9 and does not ship.
 `MIN_PROFILE_TEXT_VERSION` today equals the served `text_version` (`2026-08-24.1`), so **it must be
 raised with the new text**, or production would treat a grant of the old sentence as covering the
-profile.
+profile. _Corrected v2.29:_ the served `text_version` is now `2026-11-03.1`, bumped for the
+conversion sentence of ESC-091 C-1 (the `text` field only; `disclosure13_2` is unchanged), while
+`MIN_PROFILE_TEXT_VERSION` is still `2026-08-24.1`. So the two no longer match, a grant of
+`2026-08-24.1` is not re-asked, and raising the minimum is owed (FOLLOW-1339 record, H-3).
 
 **Withdrawal, as it behaves.** A control labelled "Withdraw consent" (`data-estalara-withdraw`;
 "Wycofaj zgodę", "Retirar el consentimiento") sits in the Personalization toggle's box. One click:

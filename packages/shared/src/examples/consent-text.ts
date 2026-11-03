@@ -18,10 +18,10 @@ import type { ConsentTextDocument } from '../schemas/consent-text.js';
 
 export const CONSENT_TEXT_EXAMPLE: ConsentTextDocument = {
   schema_version: 1,
-  text_version: '2026-08-24.1',
+  text_version: '2026-11-03.1',
   locales: {
     en: {
-      text: 'We personalize this page based on your browsing behavior.',
+      text: 'We personalize this page based on your browsing behavior. Your consent also covers measuring whether the personalized page leads you to register for a live presentation or contact an agent, compared with a group of visitors who see the standard page.',
       disclosure13_1: renderDisclosure13_1('en'),
       disclosure13_2:
         'To remember your preferences across visits, we store a pseudonymous identifier in your browser for up to 90 days. This identifier is refreshed every 90 days and is deleted if you withdraw consent.',
@@ -32,7 +32,7 @@ export const CONSENT_TEXT_EXAMPLE: ConsentTextDocument = {
       decline: 'Decline',
     },
     pl: {
-      text: 'Personalizujemy tę stronę na podstawie Twojego zachowania.',
+      text: 'Personalizujemy tę stronę na podstawie Twojego zachowania. Twoja zgoda obejmuje też pomiar, czy spersonalizowana strona skłania Cię do zapisu na prezentację na żywo lub kontaktu z agentem, w porównaniu z grupą odwiedzających, którzy widzą standardową stronę.',
       disclosure13_1: renderDisclosure13_1('pl'),
       disclosure13_2:
         'Aby zapamiętać Twoje preferencje pomiędzy wizytami, przechowujemy pseudonimowy identyfikator w Twojej przeglądarce przez maksymalnie 90 dni. Identyfikator ten jest odświeżany co 90 dni i usuwany w przypadku wycofania zgody.',
@@ -43,7 +43,7 @@ export const CONSENT_TEXT_EXAMPLE: ConsentTextDocument = {
       decline: 'Odrzuć',
     },
     es: {
-      text: 'Personalizamos esta página según tu comportamiento de navegación.',
+      text: 'Personalizamos esta página según tu comportamiento de navegación. Tu consentimiento también cubre medir si la página personalizada te lleva a inscribirte en una presentación en directo o a contactar con un agente, en comparación con un grupo de visitantes que ven la página estándar.',
       disclosure13_1: renderDisclosure13_1('es'),
       disclosure13_2:
         'Para recordar tus preferencias entre visitas, almacenamos un identificador seudónimo en tu navegador durante un máximo de 90 días. Este identificador se renueva cada 90 días y se elimina si retiras tu consentimiento.',

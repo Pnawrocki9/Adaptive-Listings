@@ -62,7 +62,7 @@ const CONSENT_TEXT_VERSION_KEY = 'estalara_consent_text_version';
  * Raising it stops sending and re-prompts every grant recorded below it, which is how counsel's text
  * change reaches existing consents. Compared as a string: `text_version` is `YYYY-MM-DD.n`.
  */
-const MIN_PROFILE_TEXT_VERSION = '2026-08-24.1';
+const MIN_PROFILE_TEXT_VERSION = '2026-11-03.1';
 
 /**
  * The accepted consent text version, or null when none was recorded: storage unavailable, or a

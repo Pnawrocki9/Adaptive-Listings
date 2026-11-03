@@ -15,6 +15,9 @@ FOLLOW-815, FOLLOW-916, Rule N, `docs/compliance/dpia.md` §2.2 / §6.1 / §13.1
 
 ---
 
+> **Amendment 2026-11-03 (CEO ruling, FOLLOW-1461):** budget 10000 ms (was 3000 ms); a measured 8175
+> ms response lost a session; fail-closed unchanged.
+
 ## Context
 
 ESC-051: the SDK bundle budget is exhausted (measured at HEAD: 42,994 bytes gzip against a
@@ -139,7 +142,7 @@ only_; granted/denied paths are byte-unchanged):
 2. getConsentState()
    ├─ 'denied'   → halt, erase, return null                                 [unchanged; no text fetch]
    ├─ 'granted'  → proceed to step 3                                        [unchanged; no text fetch, no banner]
-   └─ 'pending'  → fetchConsentText()   — identifier-free static GET, 3000 ms budget
+   └─ 'pending'  → fetchConsentText()   — identifier-free static GET, 10000 ms budget
         ├─ 200 + Zod-valid  → renderConsentBanner(fetched text) → await visitor decision
         └─ error / timeout / invalid → FAIL CLOSED (§D4)
 3. fetchQuizConfig()            — AFTER consent, per ADR-0011               [unchanged]
@@ -176,7 +179,7 @@ SDK selects using the existing level-2/3/4 chain (snippet `data-language` → `n
 
 ### D4 — Failure mode: fail-closed, no degraded fallback text
 
-On network error, non-2xx, timeout (3000 ms), or Zod validation failure of the fetched document:
+On network error, non-2xx, timeout (10000 ms), or Zod validation failure of the fetched document:
 
 - **no banner renders, and the SDK halts for this page view** — destroy the shadow host, dispatch
   zero events, write zero storage keys, return `null`;

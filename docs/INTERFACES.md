@@ -497,7 +497,7 @@ PR.
 
 **Ordering and failure (§D2/§D4).** Fetched on the `pending` consent path ONLY — a returning visitor
 pays no extra request — and AWAITED before the banner renders, so no event, storage write or
-tenant-identified request can precede the visitor's decision. On error, non-2xx, 3000 ms timeout or
+tenant-identified request can precede the visitor's decision. On error, non-2xx, 10000 ms timeout or
 validation failure the SDK FAILS CLOSED: no banner, nothing processed, consent stays `pending` and
 the next page load retries. **No fallback text ships in the bundle** — a trimmed fallback would
 recreate the ESC-051 defect, and consent obtained on an incomplete disclosure is not "informed"

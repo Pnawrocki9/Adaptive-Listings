@@ -589,12 +589,14 @@ done
 
 ### 5.1 N3: `scripts/dev/real-app-acceptance.mjs` on the real app [FOLLOW-1344]
 
-Replaces the manual quiz walk (plan instrument N3, first use K4b, full form K5). One buyer on
-`~/Projects/Estalara-gitlab-2026-08-17`, deciding through the real control plane, with real clicks.
-It starts nothing and stops nothing. The bring-up is `ADAPTIVE_LISTINGS_LOCAL.md` in that tree:
-`SKIP_BUILD=1 scripts/dev/localhost-up.sh`, stop the two fixture servers, `.al-local/al-real-up.sh`.
-Run that under `timeout`: it hung 14 h once (K2c finding 5), and `pgrep -f` matches the driver
-shell, so kill on an exact cmdline + cwd match only.
+Replaces the manual quiz walk (plan instrument N3, first use K4b, full form K5). Seed first:
+`node scripts/dev/seed-real-app-k5.mjs` (one LIVE, one buyer, the agent's role grant, one amenity;
+local containers and Keycloak only, password in the git-ignored `.localhost-up/n3-buyer.json`). One
+buyer on `~/Projects/Estalara-gitlab-2026-08-17`, deciding through the real control plane, with real
+clicks. It starts nothing and stops nothing. The bring-up is `ADAPTIVE_LISTINGS_LOCAL.md` in that
+tree: `SKIP_BUILD=1 scripts/dev/localhost-up.sh`, stop the two fixture servers,
+`.al-local/al-real-up.sh`. Run that under `timeout`: it hung 14 h once (K2c finding 5), and
+`pgrep -f` matches the driver shell, so kill on an exact cmdline + cwd match only.
 
 **Preconditions.** The control plane on `:3000` is a fresh process from the checkout N3 runs from
 (`localhost-up.sh` leaves an old one running, and the freshness check reads this checkout only). The
@@ -607,14 +609,31 @@ SESSION_JSON=<path>/n3.json timeout 1800 node scripts/dev/real-app-acceptance.mj
 
 Env: `LISTING_URL` (the Palm Coast listing on `:5173`), `DECISION_ORIGIN` (`:3000`), `INGEST_ORIGIN`
 (`:8787`), `ESTALARA_BACKEND_URL` (`:8081`), `ESTALARA_ROOT`, `HEADLESS`, `N3_DWELL_MS`,
-`N3_DESCRIPTION_BUDGET_MS`, `N3_DEADLINE_MS` (25 min watchdog). The last line reads
-`RESULT: verdict=…`.
+`N3_DESCRIPTION_BUDGET_MS`, `N3_DEADLINE_MS` (50 min watchdog), `ADMIN_API_SECRET` (the rollup;
+REQUIRED for `lift_reader_one_conversion`, absent it that hop is RED and says so),
+`SUPABASE_JWT_SECRET` (signs a staff token for the lift route; the plane must hold the same one),
+`N3_BUILD_ROOT` (a checkout holding the served build, when running from a worktree with
+`packages/sdk/node_modules` linked in). The last line reads `RESULT: verdict=…`. A full run takes
+about 17 min and makes real LLM calls.
 
-| Exit | Meaning                                                                                   |
-| ---- | ----------------------------------------------------------------------------------------- |
-| 0    | `GREEN`, or `GREEN_K4B`: all green but the hops `excused=[…]` names                       |
-| 1    | `RED`, or `UNMEASURED` (three holdout draws: re-run). A hop nobody recorded counts as RED |
-| 2    | Usage. `--arms N` is K5 and not implemented: nothing ran                                  |
+Two more modes, each with its own hop list:
+
+- `--arms N`: N adapted and N holdout sessions, one of each in turn, same clicks in both, with an
+  arm-blind conversion plan (`conversionPlan()`). Needs `HOLDOUT_ASSIGNMENT_SECRET` in the process
+  (Doppler `dev`, the plane's value): it draws ids the server will place in each arm, because at a
+  10 % holdout N sessions would otherwise take 10 N browser sessions. The server still decides; a
+  session it places elsewhere is RED. `arms_sample` stays `UNMEASURED:small_n` under 30 per arm. The
+  reader reads the whole 7-day window: `poolIsRun` in the evidence says whether its number is the
+  run's. If false, quote `runScoped`, or clear the local ClickHouse tables first.
+- `--durable-webhook`: a probe `LISTING_UPDATED_WEBHOOK` job the plane refuses (a 400, over-long id)
+  must end in `RETRY_WAIT` with an error kept. Waits for the 15 min safety poll, deletes the probe.
+  It does not cover an unreachable target: that URL is env on the backend, a dedicated run.
+
+| Exit | Meaning                                                                       |
+| ---- | ----------------------------------------------------------------------------- |
+| 0    | `GREEN`: every hop of the mode green                                          |
+| 1    | `RED`, or `UNMEASURED` (read the reason). A hop nobody recorded counts as RED |
+| 2    | Usage: nothing ran                                                            |
 
 **Checked before a browser starts (no spend).** A failure stops the run RED.
 
@@ -628,28 +647,35 @@ Env: `LISTING_URL` (the Palm Coast listing on `:5173`), `DECISION_ORIGIN` (`:300
 
 **Hops, and how each fails.**
 
-| Hop                       | Green needs                                                                                                                     | Red when                                                                  |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `repo_identity`           | AL SHA on a clean tree; Estalara tree hash (no git there: sha-256 over `web-master/src` and `core-master/src`, `.env` excluded) | dirty or unreadable AL tree; Estalara tree unreadable                     |
-| `substrate`               | the list above                                                                                                                  | any item                                                                  |
-| `sdk_loaded`              | loader present, bundle 200, `window.Estalara`, ≥ 3 hooks, decision and ingest URLs on the stack                                 | `.env` still aimed at `:9100`; SDK flag off; bundle host down             |
-| `consent_click`           | real click on `[data-estalara-consent="accept"]`, `granted` stored                                                              | no banner; click refused                                                  |
-| `ingest_ack`              | at least one 2xx from `/v1/events`                                                                                              | origin refused; preflight slower than 60 s                                |
-| `quiz_yield_hunter`       | card opens, walk on the served tree, result screen `yield_hunter`, confirmed, fold persisted                                    | no card, a label not found, another leaf, any driver throw                |
-| `adapt_llm_tweaked`       | first `/api/adapt` past the fold: 200, `llm_tweaked`, `yield_hunter`, over the gate, a directive                                | a fallback (read `fallback_reason`), `llm_full`, no request past the fold |
-| `headline_dom_changed`    | slot changed, into text a response served                                                                                       | unchanged, or changed into text nobody served (a host re-render)          |
-| `description_answered`    | a 200 with a known source                                                                                                       | endpoint broken, or the SDK never asked                                   |
-| `description_ai_cached`   | `ai_cached` with text reached the page, on the first call or after a cold miss                                                  | `ai_cached_never_arrived` (180 s, reported apart from a broken endpoint)  |
-| `description_dom_changed` | slot changed, into served text                                                                                                  | as the headline                                                           |
-| `no_debug_attribute`      | no `[data-debug="true"]` in the document                                                                                        | **today, always** (below)                                                 |
-| `restored_first_adapt`    | new context, same xid, nothing driven: first call `restored`, `llm_tweaked`, same archetype                                     | `miss` on three draws, no xid on the first call, not adapted              |
-| `inquiry_signed_rollup`   | not implemented; `UNMEASURED:phase5` while the app has no emitter                                                               | an emitter appeared and N3 does not measure it yet; source unreadable     |
+| Hop                          | Green needs                                                                                                                                                                                            | Red when                                                                                           |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `repo_identity`              | AL SHA on a clean tree; Estalara tree hash (no git there: sha-256 over `web-master/src` and `core-master/src`, `.env` excluded)                                                                        | dirty or unreadable AL tree; Estalara tree unreadable                                              |
+| `substrate`                  | the list above                                                                                                                                                                                         | any item                                                                                           |
+| `sdk_loaded`                 | loader present, bundle 200, `window.Estalara`, ≥ 3 hooks, decision and ingest URLs on the stack                                                                                                        | `.env` still aimed at `:9100`; SDK flag off; bundle host down                                      |
+| `consent_click`              | real click on `[data-estalara-consent="accept"]`, `granted` stored                                                                                                                                     | no banner; click refused                                                                           |
+| `ingest_ack`                 | at least one 2xx from `/v1/events`                                                                                                                                                                     | origin refused; preflight slower than 60 s                                                         |
+| `quiz_yield_hunter`          | card opens, walk on the served tree, result screen `yield_hunter`, confirmed, fold persisted                                                                                                           | no card, a label not found, another leaf, any driver throw                                         |
+| `adapt_llm_tweaked`          | first `/api/adapt` past the fold: 200, `llm_tweaked`, `yield_hunter`, over the gate, a directive                                                                                                       | a fallback (read `fallback_reason`), `llm_full`, no request past the fold                          |
+| `headline_dom_changed`       | slot changed, into text a response served                                                                                                                                                              | unchanged, or changed into text nobody served (a host re-render)                                   |
+| `description_answered`       | a 200 with a known source                                                                                                                                                                              | endpoint broken, or the SDK never asked                                                            |
+| `description_ai_cached`      | `ai_cached` with text reached the page, on the first call or after a cold miss                                                                                                                         | `ai_cached_never_arrived` (180 s, reported apart from a broken endpoint)                           |
+| `description_dom_changed`    | slot changed, into served text                                                                                                                                                                         | as the headline                                                                                    |
+| `no_debug_attribute`         | no `[data-debug="true"]` in the document                                                                                                                                                               | **today, always** (below)                                                                          |
+| `restored_first_adapt`       | new context, same xid, nothing driven: first call `restored`, `llm_tweaked`, same archetype                                                                                                            | `miss` on three draws, no xid on the first call, not adapted                                       |
+| `host_cookie_click`          | real click on the host's banner; `localStorage.cookieConsent` is `{necessary:true,optional:true}`                                                                                                      | not clicked; analytics refused                                                                     |
+| `cta_slot`, `feature_slot`   | marker on the page, visible; the SDK wrote text a response served. Read after the login reload                                                                                                         | no marker; other text. `UNMEASURED:no_directive` or `:sdk_skipped` when not written                |
+| `cta_still_works`            | adapted label; logged out the click opens the login prompt, logged in `POST /conversation` 2xx and the thread opens                                                                                    | any of those fails                                                                                 |
+| `conversion_header`          | `X-Estalara-Session-Id` equal to the SDK session on the register and contact calls, on no other request                                                                                                | missing, other value, other request, call refused                                                  |
+| `conversion_backend_sent`    | `al_conversion_sent` moved by exactly 1 per type in `backend.log`, no `al_conversion_failed`                                                                                                           | a count over the run: only one buyer may use the stack                                             |
+| `conversion_rows_signed`     | both rows under the session, `caller_signed=1`, at or after the first decision                                                                                                                         | missing, unsigned, pre-exposure                                                                    |
+| `lift_reader_one_conversion` | across the run: adapted conversions +1, `live_signups` +1, `agent_contacts` +1, holdout +0; `signed_events` from the reader and from the plane's rollup                                                | any other movement. Reads the route, or its functions in process (`scripts/dev/n3-lift-reader.ts`) |
+| `lift_route_http`            | the route answers 200 to a local staff token                                                                                                                                                           | `UNMEASURED:no_staff_jwt` while the plane has no `SUPABASE_JWT_SECRET`                             |
+| `negative_*` (5)             | pending, denied, analytics refused, withdrawn same tab, withdrawn second tab: a NEW register and contact call each, 2xx, no header anywhere, no conversion row, two more `al_conversion_skipped` lines | a call that did not happen proves nothing and is RED                                               |
+| `backend_log_no_session_id`  | 0 lines of `backend.log` hold any session id of the run                                                                                                                                                | a hit                                                                                              |
+| `listing_save_revision`      | the agent's `PATCH /listing` 2xx, its job `SUCCEEDED`, `listing_revisions.revision` up                                                                                                                 | runs last: the next description is a cold miss                                                     |
 
-**Red today, by measurement.** `web-master/src/routes/+layout.svelte:61` is
-`s.setAttribute('data-debug', 'true')`, hard-coded, so `no_debug_attribute` is RED and the run exits
-1 until X4. It is not excused: it is measured and failing. Note the K5 check
-`grep -r 'data-debug="true"'` reads 0 on this source, because the attribute is set from script: only
-this hop sees it.
+"Analytics unanswered" has no hop: the host's modal covers the page, so no click can be made under
+it. The helper's unit test holds that case.
 
 **What reads differently from the plan's text.** The SDK has no 30 s timer since FOLLOW-1015: the
 card opens on the served config, so `N3_DWELL_MS` is the buyer's reading time, and the walk starts
@@ -658,11 +684,6 @@ past it. "Investment, Rental income, Steady yield" are the old tree's labels: th
 cold miss spends: each poll that misses starts one more generation (no dedupe in `after()`), so the
 poll is sparse, at most 4 GETs. Session 2 seeds the three keys AC(9) seeds, not the whole
 `storageState`. The raw xid and the API key stay out of the artefact.
-
-**Not measurable before Phase 5.** `inquiry.completed`, `conversion_source='signed_events'`,
-`data_source`, `ctaLift` on the real app: `core-master` and `web-master` hold no emitter (X1), and a
-browser event is excluded from the lift. On K5, the agent contact path also needs a logged-in buyer
-(`requestLiveTour` opens the login popup when anonymous), so N3 will need an account.
 
 ## 6. Hop results as observed, and how each could have failed
 

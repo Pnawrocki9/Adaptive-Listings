@@ -1737,10 +1737,20 @@ async function driveConversions(page, seen, obs, buyer) {
   const c = obs.conversions;
   try {
     const cta = () => page.locator('[data-estalara-slot="cta"]:visible').first();
-    c.ctaTextClicked = await cta().textContent({ timeout: 5000 });
-    await cta().click({ timeout: 5000 });
     const popupLogin = page.getByRole('button', { name: 'Log in', exact: true });
-    await popupLogin.waitFor({ state: 'visible', timeout: 15000 });
+    await pollUntil(() => seen.silentSsoDone, ADAPT_MS, 500);
+    // The host re-renders around its SSO answer and a click in that moment is lost, so the buyer clicks
+    // again. The count is evidence; a button that never opens the prompt stays RED.
+    for (c.ctaClicksToLogin = 1; ; c.ctaClicksToLogin += 1) {
+      c.ctaTextClicked = await cta().textContent({ timeout: 5000 });
+      await cta().click({ timeout: 5000 });
+      const opened = await popupLogin.waitFor({ state: 'visible', timeout: 15000 }).then(
+        () => true,
+        () => false,
+      );
+      if (opened) break;
+      if (c.ctaClicksToLogin >= 3) throw new Error('no login prompt after 3 clicks');
+    }
     c.anonymousOpensLogin = true;
     await finishKeycloakLogin(page, popupLogin, buyer, seen);
     c.tabSessionId = await tabSession(page);
@@ -1790,6 +1800,7 @@ function emptyObs(attempt) {
       ctaTextClicked: null,
       ctaTextAfterLogin: null,
       anonymousOpensLogin: false,
+      ctaClicksToLogin: 0,
       messagesUrl: false,
       tabSessionId: null,
       error: null,
@@ -2452,6 +2463,7 @@ async function runFull(browser, served, gate, h, state) {
           squash(c.ctaTextClicked) !== '' &&
           squash(c.ctaTextClicked) !== squash(obs.slots.before?.cta?.text),
         anonymousOpensLogin: c.anonymousOpensLogin,
+        ctaClicksToLogin: c.ctaClicksToLogin,
         conversationStatus: contactCall?.status ?? null,
         messagesUrl: c.messagesUrl,
         text: c.ctaTextClicked,

@@ -13,11 +13,12 @@ localhost, pending the ruling.
 **Amended 2026-11-03, after the CEO ruled ESC-091** ("OK, rób zgodnie z twoimi zaleceniami. Zgadzam
 się z nimi."). (a) to (c) are confirmed as built. **C-1:** consent only, for conversion measurement
 and the holdout. **C-2:** keep the header; the receipt is the fallback. **C-3:** deferred until the
-gap is measured (H-12). **C-5:** no header, as applied. **C-4 stays open:** no recommendation was
-made, so nothing was ruled. Sections 1, 7, 10 and 11 are updated for these rulings; sections 2 to 6
-and 8 stay as written on 2026-11-02, so their "open" and "pending C-n" wording is history. One
-consequence of C-1 overrides section 8's order: the served consent text changed **before** counsel
-answered L-8, on the CEO's acceptance of a banner bump, and counsel may still change it.
+gap is measured (H-12). **C-5:** no header, as applied. **C-4:** as built (CEO, later on 2026-11-03:
+legal documents are accepted as they are and reviewed once the product works). Sections 1, 7, 10 and
+11 are updated for these rulings; sections 2 to 6 and 8 stay as written on 2026-11-02, so their
+"open" and "pending C-n" wording is history. One consequence of C-1 overrides section 8's order: the
+served consent text changed **before** counsel answered L-8, on the CEO's acceptance of a banner
+bump, and counsel may still change it.
 
 Each answer separates **Established** (a document or the code says it, with the reference),
 **Engineering read** (my reasoning on those facts) and **Counsel** (not mine to decide).
@@ -42,8 +43,8 @@ comparison group in all three locales; the header stays (C-2); no header without
 banner only below `MIN_PROFILE_TEXT_VERSION`, still `2026-08-24.1`
 (`packages/sdk/src/core/session.ts`), and never re-asks a grant with no recorded version
 (`isConsentTextStale`); the header helper ignores the version altogether; and "consent only" is
-enforced by the SDK's gate, not by the server (H-13). C-4 is open. Items 2 and 3 below stand; item 1
-is answered in purpose and text, not yet in effect for earlier grants.
+enforced by the SDK's gate, not by the server (H-13). C-4 is closed as built. Items 2 and 3 below
+stand; item 1 is answered in purpose and text, not yet in effect for earlier grants.
 
 As first written on 2026-11-02: three things need more than code, and one correction to the brief
 changes the analysis:

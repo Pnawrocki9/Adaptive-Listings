@@ -21,12 +21,13 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
-## RESOLVED — ESC-091: signed conversions from the Estalara backend: event payloads, emission sites, the session-id header and the basis for measuring them; C-4 still open [FOLLOW-1339]
+## RESOLVED — ESC-091: signed conversions from the Estalara backend: event payloads, emission sites, the session-id header and the basis for measuring them [FOLLOW-1339]
 
 **Filed by:** backend-engineer and compliance-engineer via PM **Date:** 2026-11-02 **Resolved:**
-2026-11-03, CEO accepted the PM's recommendations, C-4 excepted. **Affects:** FOLLOW-1339,
-FOLLOW-1340, FOLLOW-1308, `packages/shared` event schemas, `POST /v1/events`, `core-master`,
-`web-master`, DPIA, ROPA, Privacy Notice. **Type:** public contract + compliance posture.
+2026-11-03, CEO accepted the PM's recommendations; C-4 closed the same day as built. **Affects:**
+FOLLOW-1339, FOLLOW-1340, FOLLOW-1308, `packages/shared` event schemas, `POST /v1/events`,
+`core-master`, `web-master`, DPIA, ROPA, Privacy Notice. **Type:** public contract + compliance
+posture.
 
 **Description.** Plan Phase 5 X1 needs the buyer's session id on the host backend. Record:
 `docs/compliance/FOLLOW-1339-session-header-review.md` (localhost PASS WITH CONDITIONS, production
@@ -70,17 +71,16 @@ to confirm):
 record go to the CTO (FOLLOW-1454). Counsel's questions are in section 7 of the record.
 
 **Resolution.** On 2026-11-03 the CEO wrote: "OK, rób zgodnie z twoimi zaleceniami. Zgadzam się z
-nimi." ("OK, do as you recommend. I agree with them.") The PM had recommended nothing on C-4, so C-4
-is not ruled.
+nimi." ("OK, do as you recommend. I agree with them.") The PM had recommended nothing on C-4; it was
+ruled separately (last item).
 
 - **(a), (b), (c): confirmed as built.** `live.signup` at both writers; `inquiry.completed` when the
   buyer opens a thread; only a new buyer-agent pair converts.
 - **C-1: consent only.** Conversion measurement and the holdout rest on consent, never on legitimate
   interest, matching ESC-090 item 1. The accepted cost is a change to the served consent text and a
   re-prompt. Applied in `consent-text.json` (`text_version` `2026-11-03.1`, all three locales) and
-  in DPIA v2.29, ROPA v2.24, LIA v2.3 and Notice v1.17. **The re-prompt has not happened yet:** the
-  SDK re-asks a grant only below `MIN_PROFILE_TEXT_VERSION` (`packages/sdk/src/core/session.ts`),
-  still `2026-08-24.1`, so raising it is an SDK change owed (record section 10, H-3).
+  in DPIA v2.29, ROPA v2.24, LIA v2.3 and Notice v1.17. `MIN_PROFILE_TEXT_VERSION`
+  (`packages/sdk/src/core/session.ts`) is raised to `2026-11-03.1`, so older grants are re-asked.
 - **C-2: keep the `X-Estalara-Session-Id` header.** The signed receipt (record section 6) is the
   fallback if counsel rejects the host's read under L-9.
 - **C-3: deferred.** Coarsening `ts` and `ingest_received_at` is decided once the gap between host
@@ -88,9 +88,16 @@ is not ruled.
 - **C-5: no header** when the buyer refused optional analytics but accepted personalization, as
   already applied on localhost (`web/lib/estalaraConversionHeaders.ts`).
 
-**Still open: C-4,** a logged-in buyer's erasure (an account-to-session lookup, or an answer under
-Art. 11). No recommendation was made and no ruling given; it waits for counsel's L-10 and then the
-CEO. Production stays gated by H-1 to H-13 of the record (FOLLOW-1454) and counsel's L-7 to L-14.
+- **C-4: as built.** Later on 2026-11-03 the CEO wrote: "Dokumenty prawne akceptujemy takie jakie
+  są. Development produktu nie jest miejscem na głęboką analizę prawną. Dokumenty będziemy sprawdzać
+  jak już będziemy mieli działający produkt." ("We accept the legal documents as they are. Product
+  development is not the place for deep legal analysis. We will check the documents once we have a
+  working product.") No account-to-session lookup is built; a logged-in buyer's erasure is answered
+  as the documents describe it today.
+
+The legal review of every compliance document, counsel's questions (L-1 to L-14 of the record) and
+conditions H-1 to H-13 (FOLLOW-1454) move to one review once the product works, before production.
+Development does not wait on them.
 
 ---
 

@@ -198,7 +198,7 @@
   the CEO walk.
 - **FOLLOW-1454** — status: BACKLOG # P1 before go-live, depends_on FOLLOW-1308. Production
   conditions H-1 to H-12 of `docs/compliance/FOLLOW-1339-session-header-review.md`, including the
-  FOLLOW-1308 erase test with a `caller_signed = 1` row; ESC-091 C-1 to C-5.
+  FOLLOW-1308 erase test with a `caller_signed = 1` row; ESC-091 ruled 2026-11-03 (#1143), C-4 open.
 - **FOLLOW-1455** — status: BACKLOG # P1 before go-live, compliance. Notice §1 "does not read … any
   account credentials" is false today, `boot.ts:160` reads `kc_token` and parses `sub`. Production
   serves no SDK per ESC-081/082 (not re-checked), so no buyer reads it yet; correct it before any
@@ -225,7 +225,18 @@
 - **FOLLOW-1464** — status: BACKLOG # P3 control-plane, sdk, docs. Staff JWT path does not check
   `exp`. `pilot/inquiry-starts` and `analytics/summary` take the arm per row. The opt-out toggle is
   unbounded when `/adapt` stalls. The plan's `insufficient` class does not exist. README and harness
-  `late_config` comments are stale. Next free: FOLLOW-1465, RETRO-381, ESC-092.
+  `late_config` comments are stale.
+- **FOLLOW-1465** — status: BACKLOG # P1 before go-live, depends_on FOLLOW-1308. ESC-091 C-1 says
+  consent only, but the server does not enforce it: `assignHoldout` skips only `opted_out`,
+  `unknown` and `none`, and only under `consent_mode_enabled`, which the SDK never sends. The lift
+  readers do not filter on consent. Record H-13 of
+  `docs/compliance/FOLLOW-1339-session-header-review.md`.
+- **FOLLOW-1466** — status: BACKLOG # P2 sdk + compliance. A grant with no recorded text version is
+  never asked again, so it never reaches the C-1 text (record H-3 (ii)). Needs SDK bytes; 7 B
+  headroom after #1142. The `web-master` header helper does not check the version (H-3 (iii)).
+- **FOLLOW-1467** — status: BACKLOG # P3 compliance. Notice §4 lists `estalara_variant:{sessionId}`
+  written via `SESSION_VARIANT_KEY_PREFIX`; neither appears in non-test SDK source. Next free:
+  FOLLOW-1468, RETRO-381, ESC-092.
 - **FOLLOW-1429** — status: DONE # PR #1129, README §5.69. Was: P2 product. Blind audit of
   2026-11-01: 32 firm language errors on PL and ES pages, in 21 of 56 texts, many of them translated
   persona phrases ("matematyka wyjścia", "ogon najmu", "zaprojektowany pod więcej weekendów"), plus
@@ -386,8 +397,9 @@
 - **FOLLOW-1338** — status: DONE # #1043 `691e3f40`, 2026-10-19. Phase 3 M5 (lift report D-J
   breakdown, daily snapshot cron + `H001` handover SQL, CSV export). K3 GREEN; K5 re-checks the
   report.
-- **FOLLOW-1339** — status: DONE # #1139 `2614cb46`, 2026-11-03, localhost only (ESC-091 OPEN).
-  Phase 5 X1 (signed `live.signup` and `inquiry.completed`). Series 291-293. K5.
+- **FOLLOW-1339** — status: DONE # #1139 `2614cb46`, 2026-11-03, localhost only (ESC-091 ruled
+  2026-11-03 in #1143, C-4 open). Phase 5 X1 (signed `live.signup` and `inquiry.completed`). Series
+  291-293. K5.
 - **FOLLOW-1340** — status: DONE # #1139 `2614cb46`, 2026-11-03. Phase 5 X2 (`listing-updated`
   webhook). K5.
 - **FOLLOW-1341** — status: DONE # #1137 `875286e6`, 2026-11-02. Phase 5 X3 (`cta`/`feature` slot

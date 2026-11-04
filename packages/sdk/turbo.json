@@ -1,0 +1,11 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      // FOLLOW-1469: read by tsup.config.ts. `env` (not passThroughEnv) puts it in the cache key,
+      // so a localhost build is never replayed as the production bundle, or the reverse.
+      "env": ["ESTALARA_LOCAL_CONSENT_TEXT_URL"]
+    }
+  }
+}

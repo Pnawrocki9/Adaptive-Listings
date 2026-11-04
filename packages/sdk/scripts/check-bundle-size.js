@@ -33,6 +33,32 @@ console.log(
     `headroom ${headroomBytes.toLocaleString('en-US')} B`,
 );
 
+// FOLLOW-1469 — a shippable bundle reads the consent text from production. A dist built with
+// ESTALARA_LOCAL_CONSENT_TEXT_URL (scripts/dev/localhost-up.sh only) carries a local host and must
+// never pass this gate. In the default build the fetch argument is the minified identifier of
+// `@estalara/shared`'s CONSENT_TEXT_URL, a template chain (`https://${"admin.estalara.com"}` +
+// `/consent-text.json`); the local build inlines a string literal at the call site instead. So:
+// the production parts must be present, no fetch may take a consent-text string literal, and the
+// default bundle contains no `localhost` / `127.0.0.1` at all, so their absence is exact.
+const text = bundle.toString('utf8');
+const consentProblems = [];
+if (!text.includes('"admin.estalara.com"')) consentProblems.push('no admin.estalara.com host');
+if (!/\$\{\w+\}\/consent-text\.json`/.test(text)) consentProblems.push('no consent-text template');
+if (/fetch\(\s*["'`][^"'`]*consent-text\.json/.test(text)) {
+  consentProblems.push('fetch() of a consent-text string literal');
+}
+for (const local of ['localhost', '127.0.0.1']) {
+  if (text.includes(local)) consentProblems.push(`contains '${local}'`);
+}
+if (consentProblems.length > 0) {
+  console.error(
+    `Consent-text URL gate FAILED (${consentProblems.join('; ')}). This is not the production ` +
+      `bundle - rebuild with ESTALARA_LOCAL_CONSENT_TEXT_URL unset (FOLLOW-1469).`,
+  );
+  process.exit(1);
+}
+console.log('Consent-text URL OK: production host, no local host (FOLLOW-1469)');
+
 if (gzipped.length > MAX_BYTES) {
   console.error(`Bundle too large: ${sizeKB}KB > ${maxKB}KB limit`);
   process.exit(1);

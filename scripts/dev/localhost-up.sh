@@ -178,13 +178,21 @@ step "2/11 build @estalara/shared @estalara/db @estalara/auth @estalara/sdk (tur
 if [ "${SKIP_BUILD:-0}" = "1" ]; then
   log "SKIP_BUILD=1 - not building"
 else
-  pnpm exec turbo run build --concurrency=1 \
-    --filter=@estalara/shared --filter=@estalara/db --filter=@estalara/auth --filter=@estalara/sdk ||
+  # FOLLOW-1469: the local SDK reads the consent text from the local control plane (:3000), never
+  # production. Build-time only (tsup define, allow-listed); in the sdk build's turbo cache key.
+  ESTALARA_LOCAL_CONSENT_TEXT_URL='http://localhost:3000/consent-text.json' \
+    pnpm exec turbo run build --concurrency=1 \
+      --filter=@estalara/shared --filter=@estalara/db --filter=@estalara/auth --filter=@estalara/sdk ||
     die "package build failed"
 fi
 for f in packages/db/dist packages/auth/dist packages/shared/dist packages/sdk/dist/estalara-sdk.iife.js; do
   [ -e "$f" ] || die "expected build output missing in THIS checkout: $f"
 done
+# FOLLOW-1469: a production-URL dist (e.g. SKIP_BUILD=1 over a `pnpm build`) would read the consent
+# text from admin.estalara.com, whose text_version the local MIN_PROFILE_TEXT_VERSION may refuse.
+grep -q 'localhost:3000/consent-text.json' packages/sdk/dist/estalara-sdk.iife.js ||
+  die "packages/sdk/dist/estalara-sdk.iife.js reads the consent text from PRODUCTION, not :3000.
+Fix: re-run without SKIP_BUILD=1 (step 2 builds it with ESTALARA_LOCAL_CONSENT_TEXT_URL)."
 log "dist present in this checkout for db, auth, shared, sdk"
 # FOLLOW-1246: stamp each dist with the git tree hash of the src/ it was built from; the harness
 # preflight compares it with HEAD by content (a merge moves commit times, not bytes). Turbo may

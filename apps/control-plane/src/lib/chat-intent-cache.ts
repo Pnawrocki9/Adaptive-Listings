@@ -19,7 +19,7 @@
  * @module apps/control-plane/src/lib/chat-intent-cache
  */
 
-import { upstashCheckedPipeline } from '@/lib/upstash-checked-pipeline';
+import { upstashCheckedPipeline } from './upstash-checked-pipeline';
 
 // ─── TypeScript mirror of ChatIntentDetectedPayload (FOLLOW-087 / schemas.py) ─
 

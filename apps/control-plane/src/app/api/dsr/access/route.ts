@@ -17,7 +17,7 @@
  *      every read below succeeded and nothing was truncated (`export_complete: true`); until then
  *      the same credentials retry or resume with `resume_cursor` until `expires_at`.
  *   2. Query consent_records (`session_embeddings` is no longer read: it never had a writer and
- *      handover migration H003 drops it, FOLLOW-1308).
+ *      handover migration H004 drops it, FOLLOW-1308).
  *   3. Query conversion_labels on BOTH identifier namespaces (FOLLOW-246, Art. 15 completeness):
  *      - Pass A: lead_id = session_id (SDK feedback-ping labels)
  *      - Pass B: lead_id = durable_lead_id (CRM deep-outcome labels), when non-null/non-empty/!=

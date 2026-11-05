@@ -16,7 +16,7 @@
  *      profile. Marking it used is also the erasure-ledger entry the ingest retry consumer reads
  *      (FOLLOW-1308): from that commit on, a queued retry of this session's rows is dropped.
  *      (`session_embeddings` is no longer read or erased: it never had a writer, and handover
- *      migration H003 drops it, FOLLOW-1308.)
+ *      migration H004 drops it, FOLLOW-1308.)
  *      - DELETE FROM consent_records WHERE session_id AND tenant_id (FOLLOW-1108)
  *        GUARD: ne(session_id, '') — an empty key must never match rows wholesale.
  *      - DELETE FROM conversion_labels WHERE lead_id = session_id AND tenant_id (FOLLOW-172)

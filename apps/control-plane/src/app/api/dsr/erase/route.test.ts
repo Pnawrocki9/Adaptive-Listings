@@ -32,7 +32,7 @@
  *      guard — blank lead_id would erase ALL system labels for the tenant).
  *   FOLLOW-193 successor (FOLLOW-1268 dropped engagement_scores):
  *   9. quiz_completions and intent_sessions are deleted inside ONE Postgres transaction, and
- *      session_embeddings is no longer touched (FOLLOW-1308: no writer ever existed; H003 drops it).
+ *      session_embeddings is no longer touched (FOLLOW-1308: no writer ever existed; H004 drops it).
  *  10. No delete targets a table @estalara/db no longer exports.
  *   FOLLOW-238 (AC1/AC2/AC4 — scope-fix):
  *  11. Subject has NO CRM rows on the tenant → must NOT emit crm_tenant_unverifiable

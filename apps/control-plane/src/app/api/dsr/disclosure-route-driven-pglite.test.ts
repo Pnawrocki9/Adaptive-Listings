@@ -102,7 +102,7 @@ vi.mock('@sentry/nextjs', () => ({
 //   - consent_records (read target)
 //   - conversion_labels (Pass A + Pass B reads)
 //
-// session_embeddings is deliberately ABSENT (FOLLOW-1308: it never had a writer; handover H003
+// session_embeddings is deliberately ABSENT (FOLLOW-1308: it never had a writer; handover H004
 // drops it): a route that still read it would fail here with `relation ... does not exist`.
 
 const FIXTURE_DDL = /* sql */ `

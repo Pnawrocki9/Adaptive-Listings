@@ -118,7 +118,7 @@ vi.mock('@/lib/demo-override-store', async (importOriginal) => ({
 // All tables touched by the erase route:
 //   - tenants, dsr_verifications (OTP lookup)
 //   - consent_records (erase target). engagement_scores (dropped by FOLLOW-1268) and
-//     session_embeddings (dropped by handover H003, FOLLOW-1308) are deliberately ABSENT: a
+//     session_embeddings (dropped by handover H004, FOLLOW-1308) are deliberately ABSENT: a
 //     route that still touched either would fail here with `relation ... does not exist`.
 //   - conversion_labels (Pass A + Pass B)
 //   - dsr_clickhouse_mutations (inserted when ClickHouse URL is unset = no-op rows)

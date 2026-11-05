@@ -1,4 +1,4 @@
--- Handover migration: H003_drop_session_embeddings
+-- Handover migration: H004_drop_session_embeddings
 -- FOLLOW-1308 (plan Phase 6 S2; absorbs FOLLOW-1279, the FOLLOW-1268 residue): drop the
 -- `session_embeddings` table.
 --

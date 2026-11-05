@@ -7,7 +7,7 @@
  *
  * FOLLOW-1308: the xid (header `x-estalara-xid` or POST body, never the query string) and the
  * spend-after-read rule (`export_complete`, `resume_cursor`) are the access route's; see
- * `../_capability.ts`. `session_embeddings` is no longer read (no writer; H003 drops it).
+ * `../_capability.ts`. `session_embeddings` is no longer read (no writer; H004 drops it).
  *
  * Differences from GET /api/dsr/access:
  *   - Response headers include Content-Disposition (attachment) and Content-Type: application/json.

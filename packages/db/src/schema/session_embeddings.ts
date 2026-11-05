@@ -4,8 +4,8 @@
  * FOLLOW-1308 (2026-11-05): `/api/dsr/initiate` proves ownership from ClickHouse by `session_id`
  * instead, and the DSR access / portability / erase routes no longer read or delete this table.
  * Nothing in `apps/` imports `sessionEmbeddings`. The DROP is the handover migration
- * `docs/handover/migrations/H003_drop_session_embeddings.sql` (`docs/handover/CTO_HANDOVER.md` §4).
- * NEVER delete this file before H003 is applied: drizzle would emit a production DROP on the next
+ * `docs/handover/migrations/H004_drop_session_embeddings.sql` (`docs/handover/CTO_HANDOVER.md` §4).
+ * NEVER delete this file before H004 is applied: drizzle would emit a production DROP on the next
  * generated migration, which `db-migrate.yml` applies on push to `main`.
  *
  * session_embeddings — per-session behavioral embedding + archetype match.

@@ -18,16 +18,21 @@
  * empty `original_description` (the v1.8 prompt has a thin-original exception); it
  * only drops messages where the key is entirely absent.
  *
- * SSRF note: the base URL comes from our own trusted `ESTALARA_BACKEND_URL` env,
- * and `listingId` is URL-encoded into a query-string value (it cannot alter the
- * host), so this is not a user-controlled-host fetch. No SSRF guard on this fetch today (the
- * unused `lib/ssrf.ts` was removed by FOLLOW-1328); FOLLOW-1309 (plan Phase 6 S3) adds
- * private-IP / redirect-to-private / DNS-rebind protection here.
+ * SSRF (FOLLOW-1309): the base URL comes from our own `ESTALARA_BACKEND_URL` env and
+ * `listingId` is URL-encoded into a query-string value (it cannot alter the host). On top of that
+ * the request goes through {@link pinnedFetch}: a non-public resolved address (private, link-local
+ * incl. cloud metadata, CGNAT, IPv4-mapped, ULA, ...) is refused, the checked address is the one
+ * connected to (no DNS rebinding), and no redirect is followed. The localhost substrate
+ * (`http://localhost:8081`) needs `ESTALARA_ALLOW_LOOPBACK_BACKEND=1` and is refused on Vercel
+ * whatever the flag says. A refusal is captured to Sentry (`kind: outbound_refused`) and fails
+ * open like every other exit here.
  *
  * @module apps/control-plane/src/lib/listing-details
  */
 
 import * as Sentry from '@sentry/nextjs';
+
+import { OutboundTargetRefusedError, pinnedFetch } from './pinned-fetch';
 
 /** Matches a canonical UUID (same shape as the mock harness `_UUID_RE`). */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -57,7 +62,8 @@ const PLACEHOLDER_FACTS_TIMEOUT_MS = 800;
  * `/api/adapt` and — since FOLLOW-1314 — `/api/adapt/description`) and
  * {@link fetchListingPlaceholderFacts} (FOLLOW-1140 token resolution). Fail-open:
  * returns `null` on missing env, redirect (frontend/auth-gate misconfiguration),
- * non-2xx, timeout, or malformed JSON — callers decide their own empty default.
+ * non-2xx, timeout, malformed JSON, or an outbound-guard refusal (FOLLOW-1309) — callers decide
+ * their own empty default.
  *
  * @param listingId - The tenant's listing identifier (UUID or slug).
  * @param locale    - Locale ('en' | 'pl' | 'es'); upper-cased for the backend
@@ -82,7 +88,8 @@ async function fetchListingJson(
   }, timeoutMs);
 
   try {
-    const res = await fetch(url, { signal: controller.signal, redirect: 'manual' });
+    // Redirects are never followed (pinnedFetch has a zero-hop bound); a 3xx lands below.
+    const res = await pinnedFetch(url, { signal: controller.signal });
     // A redirect (3xx) means ESTALARA_BACKEND_URL points at a frontend proxy, not the
     // raw backend — the request hit an auth gate. Fail loud so misconfiguration is
     // visible in Sentry / Vercel logs rather than silently producing ungrounded copy.
@@ -122,6 +129,17 @@ async function fetchListingJson(
     }
     return null;
   } catch (err: unknown) {
+    if (err instanceof OutboundTargetRefusedError) {
+      // FOLLOW-1309: the guard refused the backend's address before any connection. Either
+      // ESTALARA_BACKEND_URL names a non-public target or its DNS answers one — a misconfiguration
+      // or an attack, and both must be visible, not just an empty grounding context.
+      console.error('[listing-details] outbound target refused:', err.reason, err.host);
+      Sentry.captureException(err, {
+        tags: { area: 'listing-details', kind: 'outbound_refused' },
+        extra: { reason: err.reason, host: err.host },
+      });
+      return null;
+    }
     // Fail-open: the fetch is best-effort. Callers substitute their own empty default.
     console.error('[listing-details] fetch failed:', err instanceof Error ? err.message : err);
     return null;

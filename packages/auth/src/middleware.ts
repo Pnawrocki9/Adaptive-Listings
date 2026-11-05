@@ -14,6 +14,15 @@
  * the token is rejected (fail-secure). No external JWT library is used —
  * verification is performed via the Web Crypto API (`crypto.subtle`).
  *
+ * FOLLOW-1307 (Codex F-09): a validly signed token is accepted only when it is also a
+ * live Supabase Auth user access token — header `alg` exactly `HS256`, a numeric `exp`
+ * in the future, `nbf` (if present) not in the future, `iss` equal to
+ * `<NEXT_PUBLIC_SUPABASE_URL>/auth/v1` and `aud` equal to (or containing)
+ * `authenticated`. Those are the values Supabase Auth (GoTrue) emits for a signed-in
+ * user (https://supabase.com/docs/guides/auth/jwt-fields); the project's anon and
+ * service-role API keys, signed with the same secret, carry `iss: "supabase"` and no
+ * `aud`, so they fail here regardless of their other claims.
+ *
  * @module @estalara/auth/middleware
  */
 
@@ -77,17 +86,54 @@ function base64urlToUint8Array(input: string): Uint8Array {
 
 // ─── JWT verification ──────────────────────────────────────────────────────
 
+/** The only JWT algorithm this verifier accepts (Supabase's legacy shared-secret signing). */
+const SUPPORTED_ALG = 'HS256';
+
+/** `aud` of a Supabase Auth access token for a signed-in user. */
+const SUPABASE_USER_AUDIENCE = 'authenticated';
+
 /**
- * Verify the HMAC-SHA-256 signature on a JWT and return the decoded payload.
+ * The issuer Supabase Auth (GoTrue) writes into its access tokens: the project URL plus
+ * `/auth/v1`. Derived from `NEXT_PUBLIC_SUPABASE_URL` — the same project the SSR session
+ * path (`@supabase/ssr` `getUser()`) validates against. `null` when the URL is unset: no
+ * issuer can be verified, so every token is refused (fail closed).
+ */
+function expectedIssuer(): string | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  if (!url) return null;
+  return `${url.replace(/\/+$/, '')}/auth/v1`;
+}
+
+/**
+ * Check the registered claims of an already signature-verified payload (RFC 7519 §4.1):
+ * `exp` required and numeric, expired AT `exp`; `nbf` optional, numeric, not in the
+ * future; `iss` the Supabase Auth issuer; `aud` the signed-in-user audience. No leeway.
+ */
+function hasValidRegisteredClaims(payload: Record<string, unknown>): boolean {
+  const nowSecs = Math.floor(Date.now() / 1000);
+  const { exp, nbf, iss, aud } = payload;
+  if (typeof exp !== 'number' || !Number.isFinite(exp) || nowSecs >= exp) return false;
+  if (nbf !== undefined && (typeof nbf !== 'number' || !Number.isFinite(nbf) || nowSecs < nbf)) {
+    return false;
+  }
+  const issuer = expectedIssuer();
+  if (issuer === null || iss !== issuer) return false;
+  const audiences: unknown[] = Array.isArray(aud) ? aud : [aud];
+  return audiences.includes(SUPABASE_USER_AUDIENCE);
+}
+
+/**
+ * Verify a JWT and return its decoded payload.
  *
  * Returns `null` (fail-secure) when:
  *  - `SUPABASE_JWT_SECRET` is not set
  *  - The token does not have exactly three dot-separated parts
- *  - The signature does not match
+ *  - The header is not JSON or its `alg` is not exactly `HS256` (FOLLOW-1307)
+ *  - The HMAC-SHA-256 signature does not match
+ *  - `exp` is missing, non-numeric or reached; `nbf` is non-numeric or in the future;
+ *    `iss` is not the Supabase Auth issuer; `aud` is not `authenticated` (FOLLOW-1307 —
+ *    see {@link hasValidRegisteredClaims})
  *  - Anything throws (e.g. malformed base64, JSON parse failure)
- *
- * Does NOT check `exp` / `nbf` — expiry enforcement is the caller's
- * responsibility.
  */
 async function verifyAndDecodeJwtPayload(token: string): Promise<Record<string, unknown> | null> {
   const secret = process.env.SUPABASE_JWT_SECRET;
@@ -99,6 +145,16 @@ async function verifyAndDecodeJwtPayload(token: string): Promise<Record<string, 
   const [header, payload, sig] = parts as [string, string, string];
 
   try {
+    // The header is attacker-controlled: pin the algorithm instead of trusting it.
+    const decodedHeader = JSON.parse(base64urlToString(header)) as unknown;
+    if (
+      typeof decodedHeader !== 'object' ||
+      decodedHeader === null ||
+      (decodedHeader as Record<string, unknown>).alg !== SUPPORTED_ALG
+    ) {
+      return null;
+    }
+
     const keyBytes = new TextEncoder().encode(secret);
     const key = await crypto.subtle.importKey(
       'raw',
@@ -112,11 +168,14 @@ async function verifyAndDecodeJwtPayload(token: string): Promise<Record<string, 
     const signingInputBytes = new TextEncoder().encode(signingInput);
     const sigBytes = base64urlToUint8Array(sig) as Uint8Array<ArrayBuffer>;
 
+    // crypto.subtle.verify compares the MAC in constant time.
     const valid = await crypto.subtle.verify('HMAC', key, sigBytes, signingInputBytes);
     if (!valid) return null;
 
-    const decoded = base64urlToString(payload);
-    return JSON.parse(decoded) as Record<string, unknown>;
+    const decoded = JSON.parse(base64urlToString(payload)) as unknown;
+    if (typeof decoded !== 'object' || decoded === null || Array.isArray(decoded)) return null;
+    const claims = decoded as Record<string, unknown>;
+    return hasValidRegisteredClaims(claims) ? claims : null;
   } catch {
     return null;
   }
@@ -127,10 +186,12 @@ async function verifyAndDecodeJwtPayload(token: string): Promise<Record<string, 
 /**
  * Extract and verify JWT claims from the request.
  *
- * The JWT signature is verified with HMAC-SHA-256 against `SUPABASE_JWT_SECRET`.
- * Returns `null` if no valid token is found, the signature is invalid, or
- * the claims cannot be parsed — including a validly signed token that is not
- * Estalara staff (the only claim shape since FOLLOW-1335).
+ * The JWT signature is verified with HMAC-SHA-256 against `SUPABASE_JWT_SECRET`, and its
+ * algorithm, expiry, not-before, issuer and audience are checked (FOLLOW-1307).
+ * Returns `null` if no valid token is found, the signature is invalid, the token is
+ * expired / not yet valid / from another issuer or audience, or the claims cannot be
+ * parsed — including a validly signed token that is not Estalara staff (the only claim
+ * shape since FOLLOW-1335).
  */
 export async function getAuthClaims(req: Request): Promise<AuthClaims | null> {
   const token = extractRawToken(req);

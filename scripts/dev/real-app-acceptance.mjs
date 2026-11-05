@@ -590,7 +590,12 @@ export function describeRollupRead(r) {
  * The `/admin` reader over HTTP. The route takes a staff JWT only; with no secret to sign one the
  * running plane will accept, the route is not measured, whatever the functions behind it did.
  *
- * @param {{secretPresent: boolean, status: number|null, source: string|null}} f
+ * FOLLOW-1307: the plane accepts a staff JWT only with the Supabase Auth issuer
+ * (`<NEXT_PUBLIC_SUPABASE_URL>/auth/v1`) and audience; without the URL here no token it accepts
+ * can be signed, so that is not measured either (never a RED for a token it was bound to refuse).
+ *
+ * @param {{secretPresent: boolean, issuerPresent?: boolean, status: number|null,
+ *   source: string|null}} f
  */
 export function gradeLiftRoute(f) {
   if (!f.secretPresent) {
@@ -599,6 +604,15 @@ export function gradeLiftRoute(f) {
       'no_staff_jwt',
       'no SUPABASE_JWT_SECRET here, and the plane must hold the same one: the route refuses every ' +
         'locally-minted staff token (K3 gap). The numbers came from its functions, in process.',
+      f,
+    );
+  }
+  if (f.issuerPresent === false) {
+    return unmeasuredHop(
+      'lift_route_http',
+      'no_staff_jwt',
+      "no NEXT_PUBLIC_SUPABASE_URL here (the plane's value, Doppler dev): a staff token needs " +
+        'iss=<url>/auth/v1 since FOLLOW-1307. The numbers came from its functions, in process.',
       f,
     );
   }
@@ -1409,12 +1423,19 @@ const skippedTotal = (counts) =>
  * The lift numbers: the route when a staff JWT can be signed, else its functions in a child process.
  *
  * @returns {Promise<{reader: string, body: any, route: {secretPresent: boolean,
- *   status: number|null, source: string|null}, error: string|null}>}
+ *   issuerPresent: boolean, status: number|null, source: string|null}, error: string|null}>}
  */
 async function readLift() {
   const secret = process.env.SUPABASE_JWT_SECRET ?? '';
-  const route = { secretPresent: secret !== '', status: null, source: null };
-  if (secret !== '') {
+  // FOLLOW-1307: the plane checks iss/aud against the Supabase Auth shape for its project.
+  const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim().replace(/\/+$/, '');
+  const route = {
+    secretPresent: secret !== '',
+    issuerPresent: supabaseUrl !== '',
+    status: null,
+    source: null,
+  };
+  if (secret !== '' && supabaseUrl !== '') {
     const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
     const now = Math.floor(Date.now() / 1000);
     const signing = `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({
@@ -1422,6 +1443,9 @@ async function readLift() {
       email: 'n3@localhost.example',
       estalara_staff: true,
       estalara_role: 'estalara:readonly',
+      iss: `${supabaseUrl}/auth/v1`,
+      aud: 'authenticated',
+      role: 'authenticated',
       iat: now,
       exp: now + 300,
     })}`;

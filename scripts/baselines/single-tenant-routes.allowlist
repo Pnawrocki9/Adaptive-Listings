@@ -90,7 +90,6 @@ apps/control-plane/src/app/api/tenants/[id]/bandit/weights/[archetype]/route.ts
 apps/control-plane/src/app/api/tenants/[id]/lia/[recordId]/route.ts
 apps/control-plane/src/app/api/tenants/[id]/lia/route.ts
 apps/control-plane/src/app/api/tenants/[id]/route.ts
-apps/control-plane/src/app/api/tenants/route.ts
 apps/control-plane/src/app/api/v1/consent/platform-registration/route.ts
 apps/control-plane/src/app/api/webhooks/listing-updated/route.ts
 apps/control-plane/src/app/auth/callback/route.ts

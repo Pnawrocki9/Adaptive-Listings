@@ -52,7 +52,8 @@ export class DemoJwtInvalidError extends Error {
  *   1. Token has the expected three-part base64url structure.
  *   2. Header declares `alg: HS256`.
  *   3. HMAC-SHA-256 signature is valid (constant-time via `crypto.subtle.verify`).
- *   4. `exp` claim is in the future (replay / expiry defence).
+ *   4. `exp` claim is present, numeric and in the future (replay / expiry defence), and
+ *      `nbf`, when present, is numeric and reached (FOLLOW-1307).
  *
  * @param token - The raw JWT string (without the "Bearer " prefix).
  * @returns Verified claims extracted from the JWT payload.
@@ -121,10 +122,21 @@ export async function verifyDemoJwt(token: string): Promise<DemoJwtClaims> {
     throw new DemoJwtInvalidError('payload is not valid base64url JSON');
   }
 
-  if (typeof payload.exp === 'number') {
-    const nowSecs = Math.floor(Date.now() / 1000);
-    if (payload.exp < nowSecs) {
-      throw new DemoJwtInvalidError('token has expired');
+  // FOLLOW-1307: `exp` is REQUIRED (a token without one never expired) and the token is
+  // expired AT `exp` (RFC 7519 §4.1.4); `nbf`, when present, must be numeric and reached.
+  const nowSecs = Math.floor(Date.now() / 1000);
+  if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) {
+    throw new DemoJwtInvalidError('exp claim is missing or not a number');
+  }
+  if (nowSecs >= payload.exp) {
+    throw new DemoJwtInvalidError('token has expired');
+  }
+  if (payload.nbf !== undefined) {
+    if (typeof payload.nbf !== 'number' || !Number.isFinite(payload.nbf)) {
+      throw new DemoJwtInvalidError('nbf claim is not a number');
+    }
+    if (nowSecs < payload.nbf) {
+      throw new DemoJwtInvalidError('token is not valid yet (nbf)');
     }
   }
 

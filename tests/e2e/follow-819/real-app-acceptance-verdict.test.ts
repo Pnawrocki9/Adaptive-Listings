@@ -592,6 +592,13 @@ describe('gradeLiftRoute', () => {
     expect(n3.gradeLiftRoute({ ...ok, status: 401 }).status).toBe('RED');
     expect(n3.gradeLiftRoute({ ...ok, source: 'disabled' }).status).toBe('RED');
   });
+
+  it('FOLLOW-1307: a secret but no Supabase URL (no issuer to sign) is not measured, never red', () => {
+    const f = { secretPresent: true, issuerPresent: false, status: null, source: null };
+    const graded = n3.gradeLiftRoute(f);
+    expect(graded.status).toBe('UNMEASURED:no_staff_jwt');
+    expect(JSON.stringify(graded)).toContain('NEXT_PUBLIC_SUPABASE_URL');
+  });
 });
 
 describe('gradeNegativeControl: green needs a call that would have converted', () => {

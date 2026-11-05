@@ -44,7 +44,9 @@ this package gains no dependency. `N2_REPORT_DIR` moves the JSON report and fail
   `SUPABASE_JWT_SECRET`. Doppler `dev` has none; since FOLLOW-1460 `localhost-up.sh` generates a
   local one into `.localhost-up/local-staff-jwt-secret` and passes it to the control plane. The
   readonly/ops rows run only when this process has the same value
-  (`SUPABASE_JWT_SECRET="$(cat .localhost-up/local-staff-jwt-secret)"`); otherwise they are skipped.
+  (`SUPABASE_JWT_SECRET="$(cat .localhost-up/local-staff-jwt-secret)"`) and the plane's
+  `NEXT_PUBLIC_SUPABASE_URL` (Doppler `dev`; since FOLLOW-1307 the token's `iss` must be
+  `<url>/auth/v1` and its `aud` `authenticated`); otherwise they are skipped.
 
 ## What K3 adds (FOLLOW-1336 and the full N2)
 

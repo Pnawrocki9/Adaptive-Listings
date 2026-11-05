@@ -28,12 +28,13 @@
  *   - The PUT body carries only the new model value; all authorization comes from
  *     the verified staff auth above, never from the request body.
  *
- * Replay defence — PARTIAL:
+ * Replay defence — token lifetime:
  *   - The SSR session path validates the token with Supabase (`getUser()`, expiry included).
- *     The Bearer / legacy-cookie JWT path does NOT check `exp` today (`getAuthClaims` verifies
- *     the HMAC signature only), so an expired staff token is still accepted there until
- *     FOLLOW-1307 (plan Phase 6 S1) adds the check. Replaying a live token re-sets the same
- *     model (idempotent state-wise) and appends one more attributed audit row.
+ *     The Bearer / legacy-cookie JWT path (`getAuthClaims`) rejects a token whose `exp` is
+ *     missing or reached, whose `nbf` is in the future, whose header `alg` is not HS256, or
+ *     whose `iss`/`aud` is not the Supabase Auth user token's (FOLLOW-1307). Replaying a live
+ *     token re-sets the same model (idempotent state-wise) and appends one more attributed
+ *     audit row.
  *
  * Audit (ADR-0018 §3/§3a, FOLLOW-1321): the `app_config` upsert and one
  * `staff_audit_log` row (`generation_model.update`) commit in ONE `db.transaction()`.

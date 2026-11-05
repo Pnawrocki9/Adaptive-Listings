@@ -5,8 +5,8 @@
  * While the flag is off (the default — unset, empty or anything but the exact string `'true'`):
  *   - `POST`/`GET /api/adapt` never draw an arm: every decision is served and logged with
  *     `variant = 'control'` (the `adaptation_decisions.variant` column keeps being written);
- *   - `getBanditArms` (`lib/bandit-query.ts`) and `seedBanditWeightsForTenant`
- *     (`lib/bandit-seed.ts`) are not called by any route;
+ *   - `getBanditArms` (`lib/bandit-query.ts`) is not called by any route
+ *     (`lib/bandit-seed.ts` was removed with `POST /api/tenants` by FOLLOW-1307);
  *   - `/api/ab/weights`, `/api/tenants/[id]/bandit/weights/[archetype]` and
  *     `/api/adapt/feedback` answer {@link banditDisabledResponse} before doing anything else;
  *   - the analytics dashboards hide the arms panel.

@@ -15,6 +15,8 @@ const SRC = join(__dirname, '..');
 const ALLOWED: Record<string, readonly string[]> = {
   'buyer-profile-store': [
     'app/api/adapt/route.ts',
+    // FOLLOW-1308 (R32): DSR access/portability read the profile named by an xid header or body.
+    'app/api/dsr/_capability.ts',
     'app/api/dsr/erase/route.ts',
     'lib/buyer-profile-route.ts',
   ],

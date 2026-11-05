@@ -1,4 +1,13 @@
 /**
+ * DEPRECATION NOTE (not tagged `@deprecated` — the tag is a lint error at every importer, and this
+ * file is still re-exported from the package index): NO WRITER ever existed, and NO READER since
+ * FOLLOW-1308 (2026-11-05): `/api/dsr/initiate` proves ownership from ClickHouse by `session_id`
+ * instead, and the DSR access / portability / erase routes no longer read or delete this table.
+ * Nothing in `apps/` imports `sessionEmbeddings`. The DROP is the handover migration
+ * `docs/handover/migrations/H003_drop_session_embeddings.sql` (`docs/handover/CTO_HANDOVER.md` §4).
+ * NEVER delete this file before H003 is applied: drizzle would emit a production DROP on the next
+ * generated migration, which `db-migrate.yml` applies on push to `main`.
+ *
  * session_embeddings — per-session behavioral embedding + archetype match.
  *
  * Each row stores the embedding vector computed for one anonymous session,

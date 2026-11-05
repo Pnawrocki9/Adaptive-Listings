@@ -1,6 +1,6 @@
 # Data Protection Impact Assessment (DPIA)
 
-**Document ID:** ESTALARA-DPIA-001 **Version:** 2.29 **Date:** 2026-11-03 **Authors:** Time2Show,
+**Document ID:** ESTALARA-DPIA-001 **Version:** 2.30 **Date:** 2026-11-05 **Authors:** Time2Show,
 Inc. — Compliance Engineering **DPO Review Status:** External DPO appointment in progress
 (DPO-as-a-Service provider). Placeholder contact: compliance@estalara.com **Next Mandatory Review
 Date:** 2027-05-15 (annual) or upon any material change to processing described herein (see
@@ -342,8 +342,8 @@ switching providers, adding self-hosted inference, removing zero-retention claus
 | Data Type                                                                                                       | Store                                                                              | Retention                                                                                                                                                                                                                                                                                                                 | Basis                                                                                  |
 | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | Behavioral event payload (scroll, click, view)                                                                  | Redpanda (transient)                                                               | Session scope; purged after Intent Engine consumption                                                                                                                                                                                                                                                                     | Processing necessity                                                                   |
-| Session identifier (`session_id`, random UUID v4 — §2.2.1)                                                      | Browser `sessionStorage`; ClickHouse `events`; Postgres `session_embeddings`       | Browser: tab lifetime (cleared by the browser on tab close). ClickHouse `events`: 13 months, enforced (`0001_create_events.sql:46`). Postgres `session_embeddings`: 90 days declared — **UNENFORCED (FOLLOW-1113)**, the nightly TTL cron this row assumed does not exist in `apps/control-plane/vercel.json`             | Processing necessity; ePrivacy 5(3)(b) — the exemption argument is open, see §4 Risk E |
-| Session embedding vector (1024-dim)                                                                             | Postgres: `session_embeddings`                                                     | 90 days from last active event — **UNENFORCED (FOLLOW-1113)**: no TTL cron exists; rows are removed today only by the DSR erasure cascade                                                                                                                                                                                 | LI — intent matching                                                                   |
+| Session identifier (`session_id`, random UUID v4 — §2.2.1)                                                      | Browser `sessionStorage`; ClickHouse `events`; Postgres `session_embeddings`       | Browser: tab lifetime (cleared by the browser on tab close). ClickHouse `events`: 13 months, enforced (`0001_create_events.sql:46`). Postgres `session_embeddings`: never written (no producer ever existed); dropped by handover SQL H003 (FOLLOW-1308)                                                                  | Processing necessity; ePrivacy 5(3)(b) — the exemption argument is open, see §4 Risk E |
+| Session embedding vector (1024-dim)                                                                             | Postgres: `session_embeddings`                                                     | None held: the table never had a writer and is dropped by handover SQL H003 (FOLLOW-1308)                                                                                                                                                                                                                                 | LI — intent matching                                                                   |
 | Archetype match and adaptation decisions                                                                        | ClickHouse: `adaptation_decisions`                                                 | 13 months (AI Act audit trail per Master Design H.2) — **UNENFORCED (FOLLOW-1110)**: the table has no TTL in production, so retention is currently indefinite (over-retention)                                                                                                                                            | Legal obligation + LI                                                                  |
 | LLM call records                                                                                                | ClickHouse: `llm_calls`                                                            | 13 months — **UNENFORCED (FOLLOW-1111)**: the table has no TTL in production                                                                                                                                                                                                                                              | Audit, model improvement                                                               |
 | Consent records                                                                                                 | Postgres: `consent_records`                                                        | 3 years from consent event                                                                                                                                                                                                                                                                                                | Legal obligation (Art. 6.1.c)                                                          |
@@ -1555,47 +1555,51 @@ requests):**
 2. The tenant verifies the requester's identity (Time2Show does not perform identity verification;
    it relies on the tenant's verification).
 3. The tenant submits a DSR request to the Estalara DSR endpoint — **`POST /api/dsr/initiate`**
-   (`apps/control-plane/src/app/api/dsr/initiate/route.ts`, Bearer JWT, tenant-scoped agency user;
-   403 when the caller is not a tenant user) — with the verified requester proof, the DSR type, and
-   the requester's details. The route validates a body of `{ session_id, email, dsr_type }` plus an
-   optional `lead_id`. **`session_id` is the subject key** — `initiate` confirms it belongs to the
-   calling tenant by looking it up in `session_embeddings`, and every downstream
-   access/erase/portability query is keyed on it. `email` is used to deliver the verification OTP
-   and is retained only as a SHA-256 hash in the ClickHouse `dsr_audit_log`
-   (`apps/control-plane/src/app/api/dsr/_clickhouse.ts`); it is **not** a lookup key. The optional
-   `lead_id` reaches CRM-written `conversion_labels` rows whose identifier namespace differs from
-   `session_id`. _Corrected v2.20 / FOLLOW-1107: this step previously offered "session_id,
-   fingerprint_hash, or hashed email" as interchangeable requester identifiers. `fingerprint_hash`
-   appears nowhere in the codebase (`grep -rn "fingerprint_hash" apps packages` → no match), and an
-   email hash is an audit field rather than something a requester can be looked up by — offering a
-   tenant an intake identifier that resolves nothing is the same defect class this revision exists
-   to remove._ **[CORRECTED 2026-08-07 — FOLLOW-710 AC-6 / FOLLOW-815, Rule AH.** This step named
-   `POST /api/v1/dsr/request` from this document's creation until that date. **No such route has
-   ever existed in the repo** (`find apps -ipath "*v1/dsr*"` returns nothing) — so the documented
-   intake procedure named a phantom endpoint, and three consecutive retros (RETRO-228 §4a LG-2 among
-   them) re-derived the same finding. The real route is and always was
-   `POST /api/dsr/initiate`.**]**
+   (`apps/control-plane/src/app/api/dsr/initiate/route.ts`; since FOLLOW-1308 the caller is
+   identified Estalara staff of rank `estalara:ops` or higher acting on the Estalara tenant, and
+   each initiation writes a `staff_audit_log` row `dsr.initiate`) — with the verified requester
+   proof, the DSR type, and the requester's details. The route validates a body of
+   `{ session_id, email, dsr_type }` plus an optional `lead_id`. **`session_id` is the subject key**
+   — `initiate` confirms that Estalara holds data under it (ClickHouse by `session_id`, then the
+   tenant's `consent_records` / `intent_sessions`; 404 when none, 503 when ClickHouse cannot be
+   read). Before FOLLOW-1308 it looked the session up in `session_embeddings`, a table nothing
+   wrote, so every initiation answered 404. The check proves that data exists, not that the
+   requester is the data subject: that is step 2. Every downstream access/erase/portability query is
+   keyed on it. `email` is used to deliver the verification OTP and is retained only as a SHA-256
+   hash in the ClickHouse `dsr_audit_log` (`apps/control-plane/src/app/api/dsr/_clickhouse.ts`); it
+   is **not** a lookup key. The optional `lead_id` reaches CRM-written `conversion_labels` rows
+   whose identifier namespace differs from `session_id`. _Corrected v2.20 / FOLLOW-1107: this step
+   previously offered "session_id, fingerprint_hash, or hashed email" as interchangeable requester
+   identifiers. `fingerprint_hash` appears nowhere in the codebase
+   (`grep -rn "fingerprint_hash" apps packages` → no match), and an email hash is an audit field
+   rather than something a requester can be looked up by — offering a tenant an intake identifier
+   that resolves nothing is the same defect class this revision exists to remove._ **[CORRECTED
+   2026-08-07 — FOLLOW-710 AC-6 / FOLLOW-815, Rule AH.** This step named `POST /api/v1/dsr/request`
+   from this document's creation until that date. **No such route has ever existed in the repo**
+   (`find apps -ipath "*v1/dsr*"` returns nothing) — so the documented intake procedure named a
+   phantom endpoint, and three consecutive retros (RETRO-228 §4a LG-2 among them) re-derived the
+   same finding. The real route is and always was `POST /api/dsr/initiate`.**]**
 4. The Estalara DSR worker resolves the identifier to all session records (via `session_id` lookup
-   in `session_embeddings`, `consent_records`, `adaptation_decisions`, `llm_calls`, and `dsr_tokens`
-   tables).
+   in the stores step 5 and step 6 list; `session_embeddings` left the set with FOLLOW-1308 and is
+   dropped by handover SQL H003).
 5. For **Access** and **Portability**: the worker compiles a structured export (JSON) of all
    session-level records associated with the identifier and delivers via the tenant's verified
    channel (one-time download link, OTP-protected). The Postgres tables read at
-   `GET /api/dsr/access` and `GET /api/dsr/portability` are: `session_embeddings`,
-   `consent_records`, `conversion_labels` (both `lead_id` namespaces — FOLLOW-246), and, as of
-   FOLLOW-558, `quiz_completions` and `intent_sessions` — tables that were already part of the
-   Erasure cascade in step 6 below (via FOLLOW-455) but were previously omitted from the
-   Access/Portability disclosure (Art. 15/20 completeness gap, audit finding A3-F-06) — and, as of
-   FOLLOW-1358 (v2.24/v2.25), `quiz_runs`, disclosed and erased on the same
-   `(tenant_id, session_id)` key (see the note at the end of step 6; a parity test of its own,
-   `quiz-runs-route-driven-pglite.test.ts`, because the table comes from handover SQL H002). A
-   parity test (`apps/control-plane/src/app/api/dsr/disclosure-route-driven-pglite.test.ts`,
-   "FOLLOW-558 PARITY" describe block) asserts the Access/Portability table set matches the Erasure
-   table set so a future new store cannot silently drift the two apart again. In addition, as of
-   FOLLOW-574 (CEO ruling ESC-037, 2026-07-17), the same two endpoints disclose the **actual rows**
-   of every ClickHouse PII table in the canonical erase inventory `DSR_CLICKHOUSE_TABLES` —
-   `events`, `adaptation_decisions`, `llm_calls`, and `intent_events`. Art. 15(3) requires "a copy
-   of the personal data", so the `events` behavioural log is exported as full rows (superseding the
+   `GET /api/dsr/access` and `GET /api/dsr/portability` are: `consent_records`, `conversion_labels`
+   (both `lead_id` namespaces — FOLLOW-246), and, as of FOLLOW-558, `quiz_completions` and
+   `intent_sessions` — tables that were already part of the Erasure cascade in step 6 below (via
+   FOLLOW-455) but were previously omitted from the Access/Portability disclosure (Art. 15/20
+   completeness gap, audit finding A3-F-06) — and, as of FOLLOW-1358 (v2.24/v2.25), `quiz_runs`,
+   disclosed and erased on the same `(tenant_id, session_id)` key (see the note at the end of step
+   6; a parity test of its own, `quiz-runs-route-driven-pglite.test.ts`, because the table comes
+   from handover SQL H002). A parity test
+   (`apps/control-plane/src/app/api/dsr/disclosure-route-driven-pglite.test.ts`, "FOLLOW-558 PARITY"
+   describe block) asserts the Access/Portability table set matches the Erasure table set so a
+   future new store cannot silently drift the two apart again. In addition, as of FOLLOW-574 (CEO
+   ruling ESC-037, 2026-07-17), the same two endpoints disclose the **actual rows** of every
+   ClickHouse PII table in the canonical erase inventory `DSR_CLICKHOUSE_TABLES` — `events`,
+   `adaptation_decisions`, `llm_calls`, and `intent_events`. Art. 15(3) requires "a copy of the
+   personal data", so the `events` behavioural log is exported as full rows (superseding the
    FOLLOW-455 aggregate `count`); because a session's `events` can be high-volume, the export is
    volume-safe — keyset-paginated with an in-memory row cap and a continuation cursor, never one
    unbounded response. The disclosure SET is **derived from `DSR_CLICKHOUSE_TABLES`** (the same
@@ -1607,28 +1611,43 @@ requests):**
    authoritative key (the prior `intent_session_id` erase filter was a latent Art. 17 no-op — it
    matched zero real rows — and is now resolved). When ClickHouse is unconfigured or the query
    fails, the response marks `clickhouse.available = false` with a note — never a fabricated or
-   silently-empty disclosure (Rule K.2). _(Boundary note: FOLLOW-575 owns the separate
-   reconciliation of §8 step 6's erasure enumeration and the parity-test-claim wording; it should
-   rebase onto DPIA v2.10.)_
-6. For **Erasure**: the worker executes a cascade deletion across all in-region stores: Postgres
-   (`session_embeddings`, `consent_records`, `answers`) synchronously inside a single transaction,
-   ClickHouse (`events`, `adaptation_decisions`, `llm_calls`, `intent_events`) asynchronously via
-   `ALTER TABLE ... DELETE WHERE session_id IN (...)` mutations whose status is tracked in the
-   Postgres operational table `dsr_clickhouse_mutations` and polled every 5 minutes by the Vercel
-   Cron handler `/api/dsr/mutation-poll`, Upstash Redis (fire-and-forget SCAN + DEL of
-   `session:{session_id}:*`), Modal (any cached embeddings). The archetype contribution log is
-   updated to exclude the session from any future global archetype training (Mode B sessions only).
-   Mutation retries: up to 3 attempts with exponential backoff (1 min / 5 min / 30 min); permanent
-   failures fire Sentry alerts tagged `dsr_erase_clickhouse_mutation_failed`. See Master Design
-   §H.1.1 for the data inventory and detailed flow. _(FOLLOW-1358, v2.24: the quiz tables. The
-   Postgres erase transaction also deletes `quiz_completions` and `intent_sessions` (FOLLOW-455)
-   and, as of FOLLOW-1358 / ESC-086, `quiz_runs` — one row per quiz shown, written by
-   `POST /api/quiz/run`, created by the handover SQL `docs/handover/migrations/H002_quiz_runs.sql`.
-   `quiz_runs` is erased on the same (tenant_id, session_id) key inside a SAVEPOINT, and step 5's
-   access and portability endpoints disclose it on the same key (`lib/quiz-runs.ts`; route-driven
-   test `api/dsr/quiz-runs-route-driven-pglite.test.ts` in `apps/control-plane/src/app`). In a
-   database where H002 has not been applied the table is treated as holding no rows — SQLSTATE 42P01
-   is tolerated for this table only; the erase response reports the outcome as `quiz_runs_erasure`
+   silently-empty disclosure (Rule K.2). **FOLLOW-1308 (Codex F-34, F-35, design review R32):** (i)
+   the `events` rows exported here include `events.payload`, which for `chat.message.sent` carries
+   the buyer's chat text (email and phone scrubbed, at most 4000 characters, §3.1): the export
+   therefore DOES contain buyer free text, and the access/portability output is a copy of it; (ii)
+   the OTP is spent only once the export is complete — a ClickHouse failure, a failed profile read
+   or an `events` export truncated at its cap leaves it valid until `expires_at`, and the response's
+   `resume_cursor` fetches the next page; (iii) a buyer's cross-visit id (xid) may be named by the
+   `x-estalara-xid` header or a POST body, never the URL, and adds the returning-buyer profile
+   stored under it; there is no xid-to-session mapping. _(Boundary note: FOLLOW-575 owns the
+   separate reconciliation of §8 step 6's erasure enumeration and the parity-test-claim wording; it
+   should rebase onto DPIA v2.10.)_
+6. For **Erasure**: the worker executes a cascade deletion across all in-region stores: Upstash
+   Redis FIRST (FOLLOW-1308: SCAN + DEL of `session:{session_id}:*` and the chat-intent shadow key,
+   awaited and checked; erased only once absence is confirmed; a store failure answers 503 with
+   nothing else done and the OTP still valid — never "completed"), then Postgres (`consent_records`,
+   `conversion_labels`, `quiz_completions`, `quiz_runs`, `intent_sessions`) synchronously inside a
+   single transaction, then ClickHouse (`events`, `adaptation_decisions`, `llm_calls`,
+   `intent_events`) asynchronously via
+   `ALTER TABLE ... DELETE WHERE tenant_id = ... AND session_id IN (...)` mutations (tenant-scoped
+   since FOLLOW-1308) whose status is tracked in the Postgres operational table
+   `dsr_clickhouse_mutations` and polled every 5 minutes by the Vercel Cron handler
+   `/api/dsr/mutation-poll`; the poller accepts a mutation as done only when no row of the subject
+   is left, and reissues it otherwise. A queued ingest retry of the session's rows is dropped by the
+   retry consumer once the erase has committed (the erasure ledger is the spent `dsr_verifications`
+   erase row; FOLLOW-1308). Modal (any cached embeddings). The archetype contribution log is updated
+   to exclude the session from any future global archetype training (Mode B sessions only). Mutation
+   retries: up to 3 attempts with exponential backoff (1 min / 5 min / 30 min); permanent failures
+   fire Sentry alerts tagged `dsr_erase_clickhouse_mutation_failed`. See Master Design §H.1.1 for
+   the data inventory and detailed flow. _(FOLLOW-1358, v2.24: the quiz tables. The Postgres erase
+   transaction also deletes `quiz_completions` and `intent_sessions` (FOLLOW-455) and, as of
+   FOLLOW-1358 / ESC-086, `quiz_runs` — one row per quiz shown, written by `POST /api/quiz/run`,
+   created by the handover SQL `docs/handover/migrations/H002_quiz_runs.sql`. `quiz_runs` is erased
+   on the same (tenant_id, session_id) key inside a SAVEPOINT, and step 5's access and portability
+   endpoints disclose it on the same key (`lib/quiz-runs.ts`; route-driven test
+   `api/dsr/quiz-runs-route-driven-pglite.test.ts` in `apps/control-plane/src/app`). In a database
+   where H002 has not been applied the table is treated as holding no rows — SQLSTATE 42P01 is
+   tolerated for this table only; the erase response reports the outcome as `quiz_runs_erasure`
    (rows deleted, or `table_missing`). Data held: `session_id` (the random per-tab session UUID v4,
    Activity 2, ESC-070), a random run UUID, answer indexes, closed-list archetype and trait ids,
    timings rounded to 100 ms and capped; no IP, no user agent, no free text; written only when the
@@ -1783,6 +1802,7 @@ to the stable presence of the CEO who directs business operations from Poland).
 | 2.27    | 2026-11-02 | Compliance Engineering | **FOLLOW-1316 (ESC-085 D-E, ESC-090) — new processing, behind a flag: the returning-buyer profile. True of the code on localhost; production is NOT enabled, pending counsel L-1 to L-6, DPO sign-off and the Upstash region.** §13.2 rewritten: the identifier now rests on consent, the legitimate-interest conclusion is withdrawn and kept as a marked record, and withdrawal is stated as it behaves, gaps included. §13.5 re-read: its sufficiency conclusion does not extend to the 90-day profile (L-6). §2.2, §2.2.1, §2.3, §2.4, §2.5, §2.6, §3.1, §3.3, §3.5, Risks A, B, E, §5 (new row F), §7 items 2, 5, 6 and §8 updated. Signed record: `docs/compliance/FOLLOW-1316-signed-review.md`. The banner sentence is byte-identical. **The GPC claims of §6.3 and §7 item 2 are not touched beyond one true sentence; FOLLOW-1438 owns the rest.** DPO gate: PENDING.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | 2.28    | 2026-11-02 | Compliance Engineering | **FOLLOW-1339 (ESC-091 OPEN) — new processing, localhost only: the conversion header and signed conversions.** True of the code on localhost; **production is NOT enabled.** Nothing here decides ESC-091 C-1 to C-5: the lawful basis is recorded as not determined; the header is what localhost runs, pending C-2; times stay at millisecond precision, pending C-3; the account route for a DSR is open, C-4; no header when optional analytics are refused or unanswered is applied on localhost pending C-5. §1 correction, §2.2.1 item 4, §2.3 row, §2.4 step 13, §2.5 row, §3.1(d), §3.2, §3.3, §3.5, Risk A paragraph, new Risk G, §5 row, §6.1, §8, §10. Record: `docs/compliance/FOLLOW-1339-session-header-review.md`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | 2.29    | 2026-11-03 | Compliance Engineering | **FOLLOW-1339, ESC-091 ruled by the CEO (C-4 open).** §3.1(d): basis consent only, conversions and holdout alike (C-1). §6.1 lawful basis: "behavioral analytics" excludes the holdout and conversion measurement. §3.3: coarsening deferred (C-3). Risk G and §6.1's host-read paragraph: rulings recorded, C-4 open, two missing controls (re-prompt H-3, server-side consent check H-13). §13.2: corrected the claim that `MIN_PROFILE_TEXT_VERSION` equals the served `text_version`, which the bump to `2026-11-03.1` made false.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 2.30    | 2026-11-05 | Backend Engineering    | **FOLLOW-1308 — the DSR chain (Codex F-13/14/19/34/35, R-01/R-02; absorbs FOLLOW-1279). No new processing.** §8 step 3: the initiator is ops+ staff, audited, and the ownership proof is ClickHouse by `session_id` (then `consent_records` / `intent_sessions`), replacing the never-written `session_embeddings`. Step 5: the export contains buyer chat text from `events.payload` (F-34, stated, not re-assessed: no legal analysis during development, CEO 2026-11-03); the OTP is spent only on a complete export, which resumes from a cursor; the xid by header or POST only. Step 6: Redis first, checked and confirmed; ClickHouse mutations tenant-scoped and accepted only with no residue; ingest retries of an erased session dropped. §2.5 and §13.3: `session_embeddings` marked never-written and dropped by H003.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 ---
 
@@ -2410,17 +2430,20 @@ independent stores and each has its own erasure path:
      sessionStorage on tab close, providing a second independent clearing mechanism independent of
      any SDK code path.
 
-2. **Server archetype (`session_embeddings` table, Postgres per-region):** Erased via the DSR
-   erasure cascade (FOLLOW-039, implemented in `apps/control-plane/src/dsr/`). On receipt of an
-   erasure DSR, the cascade executes a synchronous Postgres `DELETE WHERE session_id = $1` on
-   `session_embeddings` (and `consent_records`, `answers`) inside a single transaction, followed by
-   asynchronous ClickHouse mutations on `adaptation_decisions`, `llm_calls`, `intent_events`. The
-   cascade is described in DPIA §8 and documented in Master Design §H.1.1. _Corrected v2.20 /
-   FOLLOW-1107: this passage previously added that "the 13-month ClickHouse retention TTL enforces a
-   bounded maximum lifetime without DSR action". That is true only of `events`;
-   `adaptation_decisions`, `llm_calls`, and `intent_events` carry no TTL at all (FOLLOW-1110 / 1111
-   / 1112). For those tables the DSR cascade is currently the **only** deletion mechanism, which is
-   the opposite of the reassurance the sentence offered._
+2. **Server archetype (`session_embeddings` table, Postgres per-region):** _FOLLOW-1308 (v2.30):
+   this table never held a row (no writer ever existed) and is no longer read or erased; handover
+   SQL H003 drops it. The server-side archetype state lives in `intent_sessions` and the ClickHouse
+   tables of §8 step 6. The text below is historical._ Erased via the DSR erasure cascade
+   (FOLLOW-039, implemented in `apps/control-plane/src/dsr/`). On receipt of an erasure DSR, the
+   cascade executes a synchronous Postgres `DELETE WHERE session_id = $1` on `session_embeddings`
+   (and `consent_records`, `answers`) inside a single transaction, followed by asynchronous
+   ClickHouse mutations on `adaptation_decisions`, `llm_calls`, `intent_events`. The cascade is
+   described in DPIA §8 and documented in Master Design §H.1.1. _Corrected v2.20 / FOLLOW-1107: this
+   passage previously added that "the 13-month ClickHouse retention TTL enforces a bounded maximum
+   lifetime without DSR action". That is true only of `events`; `adaptation_decisions`, `llm_calls`,
+   and `intent_events` carry no TTL at all (FOLLOW-1110 / 1111 / 1112). For those tables the DSR
+   cascade is currently the **only** deletion mechanism, which is the opposite of the reassurance
+   the sentence offered._
 
 These two erasure paths are independent: the client cache is erased synchronously in the visitor's
 browser on every consent denial/withdrawal event; the server archetype record is erased in response

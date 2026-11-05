@@ -1,8 +1,13 @@
 /**
- * GET /api/dsr/portability?request_id=<uuid>&token=<OTP>
+ * GET /api/dsr/portability?request_id=<uuid>&token=<OTP>[&cursor=<resume_cursor>]
+ * POST /api/dsr/portability  { request_id, token, xid?, cursor? }   (FOLLOW-1308)
  *
  * Returns the same data as the access endpoint but as a downloadable JSON file.
  * No JWT required — the (request_id, OTP) pair is the authorisation mechanism.
+ *
+ * FOLLOW-1308: the xid (header `x-estalara-xid` or POST body, never the query string) and the
+ * spend-after-read rule (`export_complete`, `resume_cursor`) are the access route's; see
+ * `../_capability.ts`. `session_embeddings` is no longer read (no writer; H003 drops it).
  *
  * Differences from GET /api/dsr/access:
  *   - Response headers include Content-Disposition (attachment) and Content-Type: application/json.
@@ -41,15 +46,13 @@ import { afterResponse } from '@/lib/after-response';
 import { eq, and, ne } from 'drizzle-orm';
 import {
   createAdminClient,
-  sessionEmbeddings,
   consentRecords,
   conversionLabels,
   quizCompletions,
   intentSessions,
 } from '@estalara/db';
-import { verifyAndConsumeOtp, dsrVerifyFailureResponse } from '@/lib/dsr-verify';
-import { getClickHouseDisclosure, readClickHouseConfig } from '@/lib/clickhouse-dsr';
-import type { ClickHouseDisclosure } from '@/lib/clickhouse-dsr';
+import { verifyOtpWithoutConsuming, dsrVerifyFailureResponse } from '@/lib/dsr-verify';
+import { readDisclosureStores, readDsrCapabilityRequest, settleDisclosure } from '../_capability';
 import { readQuizRunsForSession } from '@/lib/quiz-runs';
 import { DSR_AUDIT_ACTIONS, writeDsrAuditLog } from '../_clickhouse';
 
@@ -58,30 +61,37 @@ import { DSR_AUDIT_ACTIONS, writeDsrAuditLog } from '../_clickhouse';
 /**
  * GET /api/dsr/portability?request_id=<uuid>&token=<6-digit-OTP>
  *
- * @returns 200 downloadable JSON file on success.
- * @returns 400 when request_id or token param is missing.
+ * @returns 200 downloadable JSON file on success (`export_complete` says whether the OTP was spent).
+ * @returns 400 when request_id or token is missing, or an xid is in the query string.
  * @returns 401 when OTP is expired, already used, or incorrect.
  * @returns 404 when request_id is not found or is a different capability.
  * @returns 429 when the request has been locked out after too many wrong guesses.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const token = req.nextUrl.searchParams.get('token');
-  const requestId = req.nextUrl.searchParams.get('request_id');
-  if (!token || !requestId) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: "Query params 'request_id' and 'token' are required",
-        },
-      },
-      { status: 400 },
-    );
-  }
+  return handlePortability(req);
+}
+
+/**
+ * POST /api/dsr/portability — body `{ request_id, token, xid?, cursor? }` (FOLLOW-1308, R32): the
+ * form for a caller naming the buyer's xid without a custom header. Same answers as GET.
+ */
+export async function POST(req: NextRequest): Promise<NextResponse> {
+  return handlePortability(req);
+}
+
+async function handlePortability(req: NextRequest): Promise<NextResponse> {
+  const credentials = await readDsrCapabilityRequest(req);
+  if (!credentials.ok) return credentials.response;
+  const { requestId, token, xid, cursor } = credentials.value;
 
   const db = createAdminClient();
 
-  const verification = await verifyAndConsumeOtp(db, { requestId, token, dsrType: 'portability' });
+  // FOLLOW-1308 (F-35): verified here, spent only once the disclosure below is complete.
+  const verification = await verifyOtpWithoutConsuming(db, {
+    requestId,
+    token,
+    dsrType: 'portability',
+  });
   if (!verification.ok) {
     const { status, code, message } = dsrVerifyFailureResponse(verification.reason);
     return NextResponse.json({ error: { code, message } }, { status });
@@ -90,17 +100,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const now = new Date();
 
   // ── Query session data ─────────────────────────────────────────────────────
-  const [session] = await db
-    .select()
-    .from(sessionEmbeddings)
-    .where(
-      and(
-        eq(sessionEmbeddings.sessionId, record.sessionId),
-        eq(sessionEmbeddings.tenantId, record.tenantId),
-      ),
-    )
-    .limit(1);
-
   const consents = await db
     .select({
       consentType: consentRecords.consentType,
@@ -285,53 +284,49 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // ── Audit log (fire-and-forget) ────────────────────────────────────────────
+  // ── ClickHouse full-row disclosure (FOLLOW-574 / CEO ruling ESC-037) ──────
+  // Every ClickHouse PII table in DSR_CLICKHOUSE_TABLES as ACTUAL ROWS (the derived set, so a new
+  // erase-set table cannot drift out of disclosure). `events` is volume-safe and, since FOLLOW-1308,
+  // resumable from `cursor`. Unconfigured ClickHouse (dev/CI) or a failed query reads as
+  // `available: false` with a note, never a fabricated or silently-empty disclosure (Rule K.2).
+  // FOLLOW-1308 (R32): with an xid, the returning-buyer profile stored under it.
+  const reads = await readDisclosureStores(record, xid, cursor, 'dsr/portability');
+  const { clickhouse } = reads;
+
+  // ── Spend the OTP only on a complete disclosure (FOLLOW-1308, F-35) ────────
+  const settled = await settleDisclosure(db, record, reads.complete);
+  if (settled === 'already_used') {
+    const { status, code, message } = dsrVerifyFailureResponse('already_used');
+    return NextResponse.json({ error: { code, message } }, { status });
+  }
+
+  // ── Audit log (fire-and-forget), for a completed disclosure only ───────────
   // FOLLOW-431 / ESC-033: registered via after() so the async write and its
   // fail-loud Sentry capture complete after the response before instance suspension.
-  afterResponse(() =>
-    writeDsrAuditLog({
-      tenant_id: record.tenantId,
-      session_id: record.sessionId,
-      dsr_type: 'portability',
-      action: DSR_AUDIT_ACTIONS.completed,
-      email: record.email,
-      requested_at: record.createdAt,
-      completed_at: now,
-    }),
-  );
-
-  // ── ClickHouse full-row disclosure (FOLLOW-574 / CEO ruling ESC-037) ──────
-  // Art. 20 requires the exported machine-readable data to be "a copy of the
-  // personal data", not an aggregate: every ClickHouse PII table in
-  // DSR_CLICKHOUSE_TABLES is exported as ACTUAL ROWS (the derived set — kept in
-  // parity with GET /api/dsr/access). `events` is volume-safe (keyset
-  // pagination + cap + continuation cursor). When ClickHouse is unconfigured
-  // (dev/CI) or the query fails, `available` is `false` with a note — never a
-  // fabricated or silently-empty export (Rule K.2).
-  let clickhouse: ClickHouseDisclosure = {
-    available: false,
-    note: 'clickhouse_not_configured',
-    tables: [],
-  };
-  const chConfig = readClickHouseConfig();
-  if (chConfig) {
-    try {
-      clickhouse = await getClickHouseDisclosure(chConfig, record.tenantId, record.sessionId);
-    } catch (err: unknown) {
-      console.error(
-        '[dsr/portability] ClickHouse disclosure query failed:',
-        err instanceof Error ? err.message : err,
-      );
-      clickhouse = { available: false, note: 'clickhouse_query_failed', tables: [] };
-    }
+  if (settled === 'consumed') {
+    afterResponse(() =>
+      writeDsrAuditLog({
+        tenant_id: record.tenantId,
+        session_id: record.sessionId,
+        dsr_type: 'portability',
+        action: DSR_AUDIT_ACTIONS.completed,
+        email: record.email,
+        requested_at: record.createdAt,
+        completed_at: now,
+      }),
+    );
   }
 
   const exportData = {
     session_id: record.sessionId,
     tenant_id: record.tenantId,
     exported_at: now.toISOString(),
+    // FOLLOW-1308 (F-35): false while the OTP stays valid for a retry or the next page.
+    export_complete: settled === 'consumed',
+    resume_cursor: reads.resumeCursor,
     clickhouse,
-    matched_archetype: session?.finalArchetype ?? session?.matchedArchetype ?? null,
+    // FOLLOW-1308 (R32): `not_requested` without an xid; `failed` keeps the export incomplete.
+    buyer_profile: reads.buyerProfile,
     consent_records: consents.map((c) => ({
       consent_type: c.consentType,
       granted: c.granted,

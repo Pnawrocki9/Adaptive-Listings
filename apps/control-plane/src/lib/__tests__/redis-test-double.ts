@@ -200,10 +200,26 @@ function fakeDouble(): RedisTestDouble {
       case 'GET':
         result = live(key)?.value ?? null;
         break;
-      case 'DEL':
-        result = live(key) ? 1 : 0;
-        store.delete(key);
+      case 'DEL': {
+        // Multi-key, as Redis: the DSR erase deletes a SCAN page in one command (FOLLOW-1308).
+        let removed = 0;
+        for (const k of args) {
+          if (live(k)) removed += 1;
+          store.delete(k);
+        }
+        result = removed;
         break;
+      }
+      case 'SCAN': {
+        // One page holds every match and the cursor ends at '0'; only `*` globs are supported.
+        const at = args.findIndex((a) => a.toUpperCase() === 'MATCH');
+        const glob = at === -1 ? '*' : (args[at + 1] ?? '*');
+        const re = new RegExp(
+          `^${glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`,
+        );
+        result = ['0', [...store.keys()].filter((k) => live(k) && re.test(k))];
+        break;
+      }
       case 'EXISTS':
         result = live(key) ? 1 : 0;
         break;

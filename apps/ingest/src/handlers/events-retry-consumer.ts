@@ -30,6 +30,12 @@
  * version-1 message whose every row is unencodable (a ts ClickHouse cannot hold) is acked and
  * reported, since no retry can succeed.
  *
+ * FOLLOW-1308 (retry vs erasure): before any replay, the message's sessions are checked against
+ * the DSR erasure ledger (`../erasure-ledger.ts`). Rows of an erased session are dropped (acked),
+ * never re-inserted; a message whose every row is erased is acked whole. A ledger that cannot be
+ * read retries the message, inserting nothing. The DLQ is not consumed by code (ADR-0017): a
+ * message replayed out of it re-enters this queue and passes the same check.
+ *
  * @module apps/ingest/src/handlers/events-retry-consumer
  */
 
@@ -44,6 +50,7 @@ import {
   IntentSnapshotRetryMessageSchema,
   SIDE_WRITE_RETRY_SCHEMA_VERSION,
 } from '../events-retry-queue.js';
+import { readErasedSessions } from '../erasure-ledger.js';
 import { logger } from '../observability/logger.js';
 import { insertIntentEventToClickHouse, upsertIntentSessionToSupabase } from './intent-snapshot.js';
 
@@ -70,6 +77,22 @@ async function replaySideWrite(message: Message, env: Env): Promise<void> {
     return;
   }
   const { sink, snapshot, tenant_id, batch_id } = parsed.data;
+
+  // FOLLOW-1308: never re-create the derived state of an erased session.
+  const ledger = await readErasedSessions(env, tenant_id, [snapshot.session_id]);
+  if (!ledger.ok) {
+    retryOnLedgerFailure(message, tenant_id, batch_id, ledger.reason);
+    return;
+  }
+  if (ledger.erased.has(snapshot.session_id)) {
+    logger.info(
+      { tenant_id, batch_id, sink, message_id: message.id, dropped_records: 1 },
+      'events_retry_erased_session_dropped',
+    );
+    message.ack();
+    return;
+  }
+
   const event = {
     session_id: snapshot.session_id,
     tenant_id: snapshot.tenant_id,
@@ -107,6 +130,24 @@ async function replaySideWrite(message: Message, env: Env): Promise<void> {
   message.retry();
 }
 
+/** The erasure ledger could not be read: insert nothing, let the queue's budget retry it. */
+function retryOnLedgerFailure(
+  message: Message,
+  tenantId: string,
+  batchId: string,
+  reason: string,
+): void {
+  logger.error(
+    { tenant_id: tenantId, batch_id: batchId, message_id: message.id, reason },
+    'events_retry_erasure_ledger_unavailable',
+  );
+  Sentry.captureException(new Error('events_retry_erasure_ledger_unavailable'), {
+    tags: { area: 'events', sink: 'erasure_ledger', kind: 'ledger_unavailable' },
+    extra: { tenant_id: tenantId, batch_id: batchId, message_id: message.id, reason },
+  });
+  message.retry();
+}
+
 /**
  * `queue()` handler exported from `index.ts`'s Worker default export
  * (`export default { fetch, queue }`).
@@ -128,13 +169,10 @@ export async function handleEventsRetryQueue(batch: MessageBatch, env: Env): Pro
       continue;
     }
 
-    // FOLLOW-1308 HOOK (retry vs erasure) — NOT implemented here, by design. A message can sit
-    // in this queue (and its DLQ) after a DSR erasure of the session it carries; replaying it
-    // would re-insert erased rows (`events`, `intent_events`) or re-create the erased
-    // `intent_sessions` head. FOLLOW-1308 owns the DSR chain and must, at THIS point, drop (ack)
-    // every message whose `tenant_id` + session ids are in the erasure ledger, and erase the
-    // DLQ the same way. Until it lands, an erasure issued while a retry is in flight is not
-    // durable against that retry. [FOLLOW-1310]
+    // FOLLOW-1308 (retry vs erasure; the hook FOLLOW-1310 left here): a message can sit in this
+    // queue, or in its DLQ and be replayed into it, after a DSR erasure of the session it
+    // carries. Both branches below check the erasure ledger before they write, and drop (ack)
+    // every row whose `tenant_id` + session is in it.
 
     if (envelope.data.schema_version === SIDE_WRITE_RETRY_SCHEMA_VERSION) {
       await replaySideWrite(message, env);
@@ -182,7 +220,36 @@ export async function handleEventsRetryQueue(batch: MessageBatch, env: Env): Pro
       continue;
     }
 
-    const { records, tenant_id, batch_id, attempt } = parsed.data;
+    const { tenant_id, batch_id, attempt } = parsed.data;
+
+    // FOLLOW-1308: drop the rows of every erased session before the re-insert.
+    const sessionOf = (r: Record<string, unknown>): string | null =>
+      typeof r.session_id === 'string' ? r.session_id : null;
+    const ledger = await readErasedSessions(
+      env,
+      tenant_id,
+      parsed.data.records.map(sessionOf).filter((s): s is string => s !== null),
+    );
+    if (!ledger.ok) {
+      retryOnLedgerFailure(message, tenant_id, batch_id, ledger.reason);
+      continue;
+    }
+    const records = parsed.data.records.filter((r) => {
+      const sessionId = sessionOf(r);
+      return sessionId === null || !ledger.erased.has(sessionId);
+    });
+    const dropped = parsed.data.records.length - records.length;
+    if (dropped > 0) {
+      logger.info(
+        { tenant_id, batch_id, message_id: message.id, dropped_records: dropped },
+        'events_retry_erased_session_dropped',
+      );
+    }
+    if (records.length === 0) {
+      message.ack();
+      continue;
+    }
+
     const result = await pushToClickHouse(records, env);
 
     if (result.ok) {

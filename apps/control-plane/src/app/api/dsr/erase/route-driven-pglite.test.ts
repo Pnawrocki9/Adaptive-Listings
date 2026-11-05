@@ -26,7 +26,8 @@
  *   - CLICKHOUSE_URL unset → readClickHouseConfig() returns null →
  *     issueClickHouseEraseMutations() inserts 'done' no-op rows (built-in route
  *     behaviour, no mock needed). dsr_clickhouse_mutations table is in the fixture.
- *   - UPSTASH_REDIS_URL unset → deleteSessionFromRedis() is a structural no-op.
+ *   - UPSTASH_REDIS_URL unset → the session Redis erase reports `not_configured` (FOLLOW-1308);
+ *     the FOLLOW-1316 block below runs it against the Redis test double.
  *
  * ACs covered:
  *   AC2 (FOLLOW-250): the actual erase handler runs Pass A + Pass B deletes
@@ -116,9 +117,9 @@ vi.mock('@/lib/demo-override-store', async (importOriginal) => ({
 //
 // All tables touched by the erase route:
 //   - tenants, dsr_verifications (OTP lookup)
-//   - session_embeddings, consent_records (erase targets). engagement_scores is
-//     deliberately ABSENT (dropped by FOLLOW-1268): a route that still touched it
-//     would fail here with `relation "engagement_scores" does not exist`.
+//   - consent_records (erase target). engagement_scores (dropped by FOLLOW-1268) and
+//     session_embeddings (dropped by handover H003, FOLLOW-1308) are deliberately ABSENT: a
+//     route that still touched either would fail here with `relation ... does not exist`.
 //   - conversion_labels (Pass A + Pass B)
 //   - dsr_clickhouse_mutations (inserted when ClickHouse URL is unset = no-op rows)
 //
@@ -196,19 +197,6 @@ const FIXTURE_DDL = /* sql */ `
     created_at          timestamptz NOT NULL DEFAULT now()
   );
 
-  CREATE TABLE IF NOT EXISTS session_embeddings (
-    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id         uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    session_id        text NOT NULL,
-    final_archetype   text,
-    matched_archetype text,
-    similarity_score  numeric(6,5),
-    signal_count      integer NOT NULL DEFAULT 0,
-    quiz_archetype    text,
-    embedding         text,
-    created_at        timestamptz NOT NULL DEFAULT now(),
-    updated_at        timestamptz NOT NULL DEFAULT now()
-  );
 
   CREATE TABLE IF NOT EXISTS consent_records (
     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -320,7 +308,6 @@ beforeEach(async () => {
   await pg.exec('DELETE FROM quiz_completions');
   await pg.exec('DELETE FROM intent_sessions');
   await pg.exec('DELETE FROM consent_records');
-  await pg.exec('DELETE FROM session_embeddings');
   await pg.exec('DELETE FROM dsr_verifications');
 });
 
@@ -932,6 +919,84 @@ describe('FOLLOW-1316: POST /api/dsr/erase with an xid', () => {
     expect(await redis.raw(['EXISTS', key()])).toBe(0);
     expect(await usedAt(verificationId)).not.toBeNull();
     expect(await consentRows()).toBe(0);
+  });
+
+  // ── FOLLOW-1308 (Codex R-01): the session's Redis keys, checked and confirmed ──
+  // A function: TENANT_ID is assigned in beforeAll.
+  const sessionKeys = (): string[] => [
+    'session:dsr-session:intent',
+    'session:dsr-session:adapt',
+    `shadow:${TENANT_ID}:dsr-session:chat_intent`,
+  ];
+  const seedSessionKeys = async (): Promise<void> => {
+    for (const k of sessionKeys()) await redis.raw(['SET', k, '1']);
+  };
+
+  it('R-01: erases session:{id}:* and the chat-intent shadow key, absence confirmed, before answering', async () => {
+    await seedSessionKeys();
+    await redis.raw(['SET', 'session:other-session:intent', '1']);
+
+    const res = await eraseWith({});
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Record<string, unknown>).redis_erasure).toBe('erased');
+    for (const k of sessionKeys()) expect(await redis.raw(['EXISTS', k])).toBe(0);
+    expect(await redis.raw(['EXISTS', 'session:other-session:intent'])).toBe(1);
+    await redis.cleanup(['session:other-session:intent']);
+  });
+
+  it.each(['SCAN', 'DEL', 'EXISTS'])(
+    'R-01: a %s error is an explicit 503, never completed; the OTP stays unspent and the retry confirms absence',
+    async (command) => {
+      if (redis.real) return;
+      await seedSessionKeys();
+      await insertConsent({
+        tenantId: TENANT_ID,
+        sessionId: 'dsr-session',
+        consentType: 'profiling',
+      });
+      const { otp, verificationId } = await seedDsrVerification({ sessionId: 'dsr-session' });
+      const request = { request_id: verificationId, token: otp };
+      redis.failCommand(command);
+
+      const failed = await post(request);
+
+      expect(failed.status).toBe(503);
+      const body = (await failed.json()) as Record<string, unknown>;
+      expect((body.error as { code: string }).code).toBe('redis_erase_failed');
+      expect(body.redis_erasure).toBe('failed');
+      expect(body.deleted_at).toBeUndefined();
+      expect(await usedAt(verificationId)).toBeNull();
+      expect(await consentRows()).toBe(1);
+      await vi.waitFor(() => {
+        expect(vi.mocked(writeDsrAuditLog)).toHaveBeenCalled();
+      });
+      const actions = vi.mocked(writeDsrAuditLog).mock.calls.map((c) => c[0].action);
+      expect(actions).not.toContain('completed');
+
+      redis.failCommand(null);
+      const retry = await post(request);
+
+      expect(retry.status).toBe(200);
+      expect(((await retry.json()) as Record<string, unknown>).redis_erasure).toBe('erased');
+      for (const k of sessionKeys()) expect(await redis.raw(['EXISTS', k])).toBe(0);
+      expect(await usedAt(verificationId)).not.toBeNull();
+    },
+  );
+
+  it('R-01: an HTTP 403 from the store (a read-only token) is a 503, never completed', async () => {
+    if (redis.real) return;
+    await seedSessionKeys();
+    const { otp, verificationId } = await seedDsrVerification({ sessionId: 'dsr-session' });
+    redis.failHttp(403);
+
+    const res = await post({ request_id: verificationId, token: otp });
+
+    redis.failHttp(null);
+    expect(res.status).toBe(503);
+    expect(((await res.json()) as Record<string, unknown>).redis_erasure).toBe('failed');
+    expect(await usedAt(verificationId)).toBeNull();
+    expect(await redis.raw(['EXISTS', sessionKeys()[0] ?? ''])).toBe(1);
   });
 
   it('a Postgres failure leaves the OTP unspent and no profile, and the same OTP then succeeds', async () => {

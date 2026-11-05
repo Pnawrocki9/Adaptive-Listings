@@ -3779,7 +3779,8 @@ const AC9_XID_STORAGE_KEY = '__estalara_xid__';
 const AC9_TEXT_VERSION_STORAGE_KEY = 'estalara_consent_text_version';
 const AC9_DSR_NOTE =
   'The DSR control ran on a SEEDED dsr_verifications row with a throwaway session: ' +
-  'POST /api/dsr/initiate refuses every caller today (design review B5, R33).';
+  'POST /api/dsr/initiate needs an ops staff caller and e-mails the OTP through Resend, ' +
+  'which the harness cannot read (FOLLOW-1308; design review B5, R33).';
 /** The tables NC-8 reads. A run must have rows in the first two, or "0 hits" says nothing. */
 const AC9_NC8_REQUIRED_TABLES = Object.freeze(['events', 'adaptation_decisions']);
 const AC9_NC8_TABLES = Object.freeze([...AC9_NC8_REQUIRED_TABLES, 'llm_calls', 'intent_events']);
@@ -4125,7 +4126,13 @@ function ac9ControlCUnmet(c, leaf, unmet, privacy) {
   }
   const replay = c.replay ?? {};
   if (replay.status !== 200) unmet.push(`c:replayStatus=${String(replay.status ?? replay.error)}`);
-  if (replay.profileRestore === 'restored' || replay.archetype === leaf) {
+  // FOLLOW-1308: after the erase the replay must carry NO adaptation, not merely another archetype
+  // (the same rule controls (b) and (d) apply).
+  if (
+    replay.profileRestore === 'restored' ||
+    replay.archetype === leaf ||
+    (replay.directives ?? 0) > 0
+  ) {
     privacy.push('privacy:c:restoredAfterDsr');
   } else if (replay.status === 200) {
     ac9ReplayReadUnmet(replay, 'c', unmet);

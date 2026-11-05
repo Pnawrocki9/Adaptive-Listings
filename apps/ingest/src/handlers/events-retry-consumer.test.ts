@@ -194,3 +194,162 @@ describe('handleEventsRetryQueue — batch with multiple messages', () => {
     }
   }, 20_000);
 });
+
+// ─── FOLLOW-1308: retry vs erasure ────────────────────────────────────────────
+
+describe('FOLLOW-1308: a retry never re-inserts the rows of an erased session', () => {
+  const ERASED = 'e'.repeat(40);
+  const KEPT = 'k'.repeat(40);
+  const ledgerEnv = {
+    ...env,
+    SUPABASE_URL: 'https://pg.example.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'srk',
+  };
+
+  function row(sessionId: string, eventId: string): Record<string, unknown> {
+    return { ...(validMessageBody.records[0] ?? {}), session_id: sessionId, event_id: eventId };
+  }
+
+  /** Stub fetch: the ledger answers `ledger`; every other call is recorded as a store write. */
+  function stubStores(ledger: () => Response): {
+    ledgerUrls: string[];
+    writes: { url: string; body: string }[];
+    restore: () => void;
+  } {
+    const original = globalThis.fetch;
+    const ledgerUrls: string[] = [];
+    const writes: { url: string; body: string }[] = [];
+    globalThis.fetch = (input: string | URL | Request, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url.includes('/rest/v1/dsr_verifications')) {
+        ledgerUrls.push(url);
+        return Promise.resolve(ledger());
+      }
+      writes.push({ url, body: typeof init?.body === 'string' ? init.body : '' });
+      return Promise.resolve(new Response('', { status: 200 }));
+    };
+    return {
+      ledgerUrls,
+      writes,
+      restore: () => {
+        globalThis.fetch = original;
+      },
+    };
+  }
+  const erasedLedger = () =>
+    new Response(JSON.stringify([{ session_id: ERASED }]), { status: 200 });
+
+  it('an erase racing an earlier accepted retry: the queued rows are dropped, not re-inserted', async () => {
+    // The batch was accepted and queued for retry BEFORE the erase; the erase then committed
+    // (dsr_verifications.used_at set). The consumer runs after it.
+    const stores = stubStores(erasedLedger);
+    try {
+      const body = { ...validMessageBody, records: [row(ERASED, 'e1'), row(ERASED, 'e2')] };
+      const { message, ack, retry } = makeMessage(body);
+      await handleEventsRetryQueue(makeBatch([message]) as never, ledgerEnv as never);
+      expect(ack).toHaveBeenCalledTimes(1);
+      expect(retry).not.toHaveBeenCalled();
+      expect(stores.writes).toEqual([]);
+    } finally {
+      stores.restore();
+    }
+  });
+
+  it('reads the ledger by tenant, erase type, used_at set, and the message sessions', async () => {
+    const stores = stubStores(() => new Response('[]', { status: 200 }));
+    try {
+      const { message } = makeMessage({
+        ...validMessageBody,
+        records: [row(ERASED, 'e1'), row(KEPT, 'k1')],
+      });
+      await handleEventsRetryQueue(makeBatch([message]) as never, ledgerEnv as never);
+      expect(stores.ledgerUrls).toHaveLength(1);
+      const url = decodeURIComponent(stores.ledgerUrls[0] ?? '');
+      expect(url).toContain(`tenant_id=eq.${validMessageBody.tenant_id}`);
+      expect(url).toContain('dsr_type=eq.erase');
+      expect(url).toContain('used_at=not.is.null');
+      expect(url).toContain(`session_id=in.("${ERASED}","${KEPT}")`);
+    } finally {
+      stores.restore();
+    }
+  });
+
+  it('a message mixing an erased and a live session re-inserts only the live rows', async () => {
+    const stores = stubStores(erasedLedger);
+    try {
+      const body = { ...validMessageBody, records: [row(ERASED, 'e1'), row(KEPT, 'k1')] };
+      const { message, ack } = makeMessage(body);
+      await handleEventsRetryQueue(makeBatch([message]) as never, ledgerEnv as never);
+      expect(ack).toHaveBeenCalledTimes(1);
+      const inserted = stores.writes.map((w) => w.body).join('\n');
+      expect(inserted).toContain(KEPT);
+      expect(inserted).not.toContain(ERASED);
+    } finally {
+      stores.restore();
+    }
+  });
+
+  it('a ledger that cannot be read retries the message and inserts nothing', async () => {
+    const stores = stubStores(() => new Response('down', { status: 503 }));
+    try {
+      const { message, ack, retry } = makeMessage(validMessageBody);
+      await handleEventsRetryQueue(makeBatch([message]) as never, ledgerEnv as never);
+      expect(retry).toHaveBeenCalledTimes(1);
+      expect(ack).not.toHaveBeenCalled();
+      expect(stores.writes).toEqual([]);
+    } finally {
+      stores.restore();
+    }
+  });
+
+  it('in production an unconfigured ledger fails closed (retry, no insert)', async () => {
+    const stores = stubStores(() => new Response('[]', { status: 200 }));
+    try {
+      const { message, ack, retry } = makeMessage(validMessageBody);
+      await handleEventsRetryQueue(
+        makeBatch([message]) as never,
+        { ...env, ENVIRONMENT: 'production' } as never,
+      );
+      expect(retry).toHaveBeenCalledTimes(1);
+      expect(ack).not.toHaveBeenCalled();
+      expect(stores.writes).toEqual([]);
+    } finally {
+      stores.restore();
+    }
+  });
+
+  it('a side-write (intent snapshot) of an erased session is dropped before its sink', async () => {
+    const stores = stubStores(erasedLedger);
+    try {
+      const { message, ack, retry } = makeMessage({
+        schema_version: 2,
+        kind: 'intent_snapshot',
+        sink: 'supabase',
+        batch_id: validMessageBody.batch_id,
+        tenant_id: validMessageBody.tenant_id,
+        first_failed_at: validMessageBody.first_failed_at,
+        attempt: 0,
+        snapshot: {
+          session_id: ERASED,
+          tenant_id: validMessageBody.tenant_id,
+          ts: 1748538900000,
+          payload: {
+            archetype: 'family_buyer',
+            confidence: 0.6,
+            signal_count: 5,
+            probabilities: { family_buyer: 0.6, neutral: 0.4 },
+            quiz_completed: false,
+            quiz_leaf: null,
+            chat_turns: 0,
+          },
+        },
+      });
+      await handleEventsRetryQueue(makeBatch([message]) as never, ledgerEnv as never);
+      expect(ack).toHaveBeenCalledTimes(1);
+      expect(retry).not.toHaveBeenCalled();
+      expect(stores.writes).toEqual([]);
+    } finally {
+      stores.restore();
+    }
+  });
+});

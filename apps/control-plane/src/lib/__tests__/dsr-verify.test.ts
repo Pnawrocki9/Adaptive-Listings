@@ -40,11 +40,32 @@ import { PGlite } from '@electric-sql/pglite';
 import { drizzle as drizzlePglite } from 'drizzle-orm/pglite';
 import type { createAdminClient } from '@estalara/db';
 
-import { MAX_OTP_ATTEMPTS, verifyAndConsumeOtp } from '../dsr-verify.js';
+import {
+  MAX_OTP_ATTEMPTS,
+  consumeVerifiedOtp,
+  verifyOtpWithoutConsuming,
+  type DsrVerifyResult,
+} from '../dsr-verify.js';
 
 // The fns under test are typed against the production admin client; the pglite
 // engine is structurally compatible at runtime, so we cast the test db to it.
 type TestDb = ReturnType<typeof createAdminClient>;
+
+/**
+ * Verify then spend, the way every DSR route composes the two production functions (FOLLOW-1308
+ * removed the combined export, whose last callers were access and portability).
+ */
+async function verifyAndConsumeOtp(
+  testDb: TestDb,
+  args: Parameters<typeof verifyOtpWithoutConsuming>[1],
+): Promise<DsrVerifyResult> {
+  const verified = await verifyOtpWithoutConsuming(testDb, args);
+  if (!verified.ok) return verified;
+  if (!(await consumeVerifiedOtp(testDb, args.requestId))) {
+    return { ok: false, reason: 'already_used' };
+  }
+  return verified;
+}
 
 const FIXTURE_DDL = /* sql */ `
   CREATE TABLE IF NOT EXISTS tenants (
@@ -296,5 +317,75 @@ describe('AC5 (FOLLOW-455): expiry and pre-used semantics unchanged', () => {
     const result = await verifyAndConsumeOtp(db, { requestId, token: otp, dsrType: 'erase' });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('already_used');
+  });
+});
+
+// ─── FOLLOW-1308 (Codex R-02): the cap holds under concurrency ──────────────
+//
+// PGlite runs one query at a time in arrival order, so `Promise.all` interleaves the calls exactly
+// as the race does: every SELECT runs before any UPDATE. Before FOLLOW-1308 each wrong guess read
+// `attempt_count = 0` and then incremented unguarded, so eight parallel wrong guesses left
+// `attempt_count = 8` against a cap of 5, and a correct guess in the same burst still succeeded.
+
+describe('FOLLOW-1308 (R-02): atomic attempt cap under parallel guesses', () => {
+  const PARALLEL = 8;
+
+  it(`${String(PARALLEL)} parallel wrong codes never take attempt_count past the cap`, async () => {
+    const { requestId } = await seedVerification();
+
+    const results = await Promise.all(
+      Array.from({ length: PARALLEL }, (_, i) =>
+        verifyAndConsumeOtp(db, {
+          requestId,
+          token: String(900000 + i),
+          dsrType: 'erase',
+        }),
+      ),
+    );
+
+    const row = await pg.query<{ attempt_count: number }>(
+      'SELECT attempt_count FROM dsr_verifications WHERE id = $1',
+      [requestId],
+    );
+    expect(row.rows[0]?.attempt_count).toBe(MAX_OTP_ATTEMPTS);
+    const reasons = results.map((r) => (r.ok ? 'ok' : r.reason));
+    expect(reasons.filter((r) => r === 'invalid_code')).toHaveLength(MAX_OTP_ATTEMPTS);
+    expect(reasons.filter((r) => r === 'locked')).toHaveLength(PARALLEL - MAX_OTP_ATTEMPTS);
+  });
+
+  it('a correct code behind a burst of wrong codes is refused once the cap is reached', async () => {
+    const { requestId, otp } = await seedVerification();
+
+    const wrong = Array.from({ length: PARALLEL }, (_, i) =>
+      verifyAndConsumeOtp(db, { requestId, token: String(800000 + i), dsrType: 'erase' }),
+    );
+    const correct = verifyAndConsumeOtp(db, { requestId, token: otp, dsrType: 'erase' });
+    const [last] = await Promise.all([correct, ...wrong]);
+
+    expect(last.ok).toBe(false);
+    if (!last.ok) expect(last.reason).toBe('locked');
+    const row = await pg.query<{ used_at: string | null }>(
+      'SELECT used_at FROM dsr_verifications WHERE id = $1',
+      [requestId],
+    );
+    expect(row.rows[0]?.used_at).toBeNull();
+  });
+
+  it('two uses of one correct code on the erase path (verify, then consume) give one success', async () => {
+    const { requestId, otp } = await seedVerification();
+
+    const use = async (): Promise<boolean> => {
+      const v = await verifyOtpWithoutConsuming(db, { requestId, token: otp, dsrType: 'erase' });
+      return v.ok && (await consumeVerifiedOtp(db, requestId));
+    };
+    const outcomes = await Promise.all([use(), use()]);
+
+    expect(outcomes.filter(Boolean)).toHaveLength(1);
+  });
+
+  it('the resolving step re-checks the cap: a locked request cannot be consumed', async () => {
+    const { requestId } = await seedVerification({ attemptCount: MAX_OTP_ATTEMPTS });
+
+    expect(await consumeVerifiedOtp(db, requestId)).toBe(false);
   });
 });

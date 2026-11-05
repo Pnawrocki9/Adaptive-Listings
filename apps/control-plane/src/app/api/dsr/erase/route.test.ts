@@ -31,8 +31,8 @@
  *   8. Empty session_id MUST NOT trigger a conversion_labels delete (FOLLOW-180/LG-2
  *      guard — blank lead_id would erase ALL system labels for the tenant).
  *   FOLLOW-193 successor (FOLLOW-1268 dropped engagement_scores):
- *   9. session_embeddings, quiz_completions and intent_sessions are deleted
- *      inside ONE Postgres transaction.
+ *   9. quiz_completions and intent_sessions are deleted inside ONE Postgres transaction, and
+ *      session_embeddings is no longer touched (FOLLOW-1308: no writer ever existed; H003 drops it).
  *  10. No delete targets a table @estalara/db no longer exports.
  *   FOLLOW-238 (AC1/AC2/AC4 — scope-fix):
  *  11. Subject has NO CRM rows on the tenant → must NOT emit crm_tenant_unverifiable
@@ -109,7 +109,6 @@ vi.mock('@estalara/db', () => ({
     dsrType: 'dsr_type',
     usedAt: 'used_at',
   },
-  sessionEmbeddings: { sessionId: 'session_id', tenantId: 'tenant_id' },
   // FOLLOW-1108: tenantId present — the erase DELETE is tenant-scoped.
   consentRecords: { sessionId: 'session_id', tenantId: 'tenant_id' },
   conversionLabels: {
@@ -443,7 +442,11 @@ describe('POST /api/dsr/erase — ClickHouse hard-delete', () => {
     const intentEventsCall = alterCalls.find((c) => c.sql.includes('ALTER TABLE intent_events'));
     expect(intentEventsCall).toBeDefined();
     // FOLLOW-581: filters on the String session_id column, NOT intent_session_id.
-    expect(intentEventsCall?.sql).toContain('WHERE session_id IN');
+    // FOLLOW-1308 (Codex F-13): tenant-scoped, the tenant bound as a parameter.
+    expect(intentEventsCall?.sql).toContain(
+      'WHERE tenant_id = {dsr_tenant_id:String} AND session_id IN',
+    );
+    expect(intentEventsCall?.url.searchParams.get('param_dsr_tenant_id')).toBe('tenant-uuid-001');
     expect(intentEventsCall?.sql).not.toContain('intent_session_id');
     // FOLLOW-462: the id VALUE is bound as a ClickHouse param, not embedded
     // in the SQL text — assert the placeholder shape and the param value
@@ -682,14 +685,11 @@ describe('POST /api/dsr/erase — FOLLOW-184 Pass B: durable CRM lead_id erasure
 // residual reference in the route would pass `undefined` to tx.delete().
 
 describe('POST /api/dsr/erase -- Postgres erasure cascade atomicity (FOLLOW-1268)', () => {
-  it('deletes session_embeddings, quiz_completions and intent_sessions inside ONE transaction', async () => {
+  it('deletes quiz_completions and intent_sessions inside ONE transaction, never session_embeddings', async () => {
     vi.stubEnv('CLICKHOUSE_URL', '');
 
-    const {
-      sessionEmbeddings: mockSessionEmbeddings,
-      quizCompletions: mockQuizCompletions,
-      intentSessions: mockIntentSessions,
-    } = await import('@estalara/db');
+    const { quizCompletions: mockQuizCompletions, intentSessions: mockIntentSessions } =
+      await import('@estalara/db');
 
     const tablesDeletedInsideTx: string[] = [];
     const unknownDeleteTargets: unknown[] = [];
@@ -700,8 +700,7 @@ describe('POST /api/dsr/erase -- Postgres erasure cascade atomicity (FOLLOW-1268
         txCallCount++;
         const txMock = {
           delete: vi.fn((table: unknown) => {
-            if (table === mockSessionEmbeddings) tablesDeletedInsideTx.push('session_embeddings');
-            else if (table === mockQuizCompletions) tablesDeletedInsideTx.push('quiz_completions');
+            if (table === mockQuizCompletions) tablesDeletedInsideTx.push('quiz_completions');
             else if (table === mockIntentSessions) tablesDeletedInsideTx.push('intent_sessions');
             else if (table === undefined || table === null) unknownDeleteTargets.push(table);
             return buildChain([]);
@@ -718,11 +717,10 @@ describe('POST /api/dsr/erase -- Postgres erasure cascade atomicity (FOLLOW-1268
 
     // All surviving session-scoped targets are deleted inside the SAME transaction call.
     expect(txCallCount).toBe(1);
-    expect(tablesDeletedInsideTx).toContain('session_embeddings');
     expect(tablesDeletedInsideTx).toContain('quiz_completions');
     expect(tablesDeletedInsideTx).toContain('intent_sessions');
-    // No delete aimed at a table the @estalara/db mock does not export (e.g. the
-    // dropped engagement_scores).
+    // No delete aimed at a table the @estalara/db mock does not export (the dropped
+    // engagement_scores, FOLLOW-1268, and session_embeddings, FOLLOW-1308).
     expect(unknownDeleteTargets).toHaveLength(0);
 
     // DSR request completes -- the response must contain a deleted_at timestamp.

@@ -4,18 +4,27 @@
  * Initiates a Data Subject Rights (DSR) request by generating a 6-digit OTP,
  * storing its hash in dsr_verifications, and emailing the OTP to the data subject.
  *
- * Auth: Bearer JWT of a tenant-scoped user. FOLLOW-1335 removed the agency (tenant-user)
- * claims from `@estalara/auth`: every verified JWT is now Estalara STAFF, whose `tenant_id`
- * is null, so every caller is refused (401 / 403) — the route fails closed. Who initiates a
- * DSR in the single-tenant product (staff acting on the Estalara tenant, attributable) is
- * FOLLOW-1279's ownership redesign, together with the `session_embeddings` gate below.
+ * Auth (FOLLOW-1308, absorbs FOLLOW-1279): identified Estalara staff of rank `estalara:ops` or
+ * higher (SSR session or staff JWT), acting on the Estalara tenant, the only tenant (ESC-085).
+ * The headless ADMIN_API_SECRET is refused (403) because the initiation must be attributable: one
+ * `staff_audit_log` row (`dsr.initiate`) commits with the `dsr_verifications` row. Readonly staff
+ * is 403. Before FOLLOW-1308 the route demanded a tenant-user JWT, which no verifier has issued
+ * since FOLLOW-1335, so every caller was refused.
  *
  * Flow:
- *   1. Validate JWT — extract tenant_id.
- *   2. Validate body: session_id, email, dsr_type.
- *   3. Confirm session_id belongs to this tenant (query session_embeddings).
- *   4. Generate OTP, hash it, insert into dsr_verifications (15-min TTL).
- *   5. Send OTP email via Resend.
+ *   1. Resolve the staff caller (`resolveTenantAccess`, explicit Estalara tenant).
+ *   2. Validate body: session_id, email, dsr_type (+ optional lead_id).
+ *   3. Ownership proof (FOLLOW-1308): we hold data under this session id. ClickHouse first, by
+ *      `session_id` alone across `DSR_CLICKHOUSE_TABLES` (never by `tenant_id`: the SDK reports it
+ *      as all zeros); then the tenant's Postgres `consent_records` / `intent_sessions` (a session
+ *      that refused consent has no events but has a consent row). None → 404. A ClickHouse error
+ *      → 503, never 404. This replaces the `session_embeddings` lookup: nothing ever wrote that
+ *      table, so every initiation answered 404. What it does NOT prove is that the requester is
+ *      that data subject: that is the identity check the staff member performs before calling
+ *      (DPIA §8 step 2).
+ *   4. Rate limit, then generate the OTP, hash it, insert into dsr_verifications (15-min TTL)
+ *      in one transaction with the staff audit row.
+ *   5. Send OTP email via Resend; an error-shaped Resend result is a failure (FOLLOW-1308, F-19).
  *   6. Return 202 { request_id, expires_at }.
  *
  * Writes a fire-and-forget audit record to ClickHouse dsr_audit_log after
@@ -29,12 +38,20 @@ import type { NextRequest } from 'next/server';
 import { afterResponse } from '@/lib/after-response';
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
-import { getAuthClaims } from '@estalara/auth';
-import { createAdminClient, sessionEmbeddings, dsrVerifications } from '@estalara/db';
+import {
+  createAdminClient,
+  consentRecords,
+  dsrVerifications,
+  intentSessions,
+  staffAuditLog,
+} from '@estalara/db';
 import { generateOtp, hashOtp } from '@/lib/dsr-otp';
 import { checkInitiateRateLimit } from '@/lib/dsr-rate-limit';
 import { sendEmail, brandSenderFrom } from '@/lib/email/resend';
-import { ESTALARA_BRAND_IDENTITY } from '@/lib/estalara-tenant';
+import { ESTALARA_BRAND_IDENTITY, ESTALARA_TENANT_ID } from '@/lib/estalara-tenant';
+import { AccessError, resolveTenantAccess, type TenantAccess } from '@/lib/session-auth';
+import { requestIp } from '@/lib/answers-access';
+import { readClickHouseConfig, sessionHasClickHouseRows } from '@/lib/clickhouse-dsr';
 import { DSR_AUDIT_ACTIONS, writeDsrAuditLog } from '../_clickhouse';
 
 // ─── Request schema ────────────────────────────────────────────────────────────
@@ -51,8 +68,8 @@ const InitiateBodySchema = z.object({
    * DIFFERENT namespace from the Estalara session_id — so a DSR erase keyed only on
    * session_id would leave CRM-written conversion_labels rows behind (Art. 17 gap).
    *
-   * To close the gap: when the tenant admin initiates a DSR for a data subject who has
-   * a CRM record, they SHOULD supply this field using the same token the CRM webhook
+   * To close the gap: when the initiator acts for a data subject who has a CRM record, they
+   * SHOULD supply this field using the same token the CRM webhook
    * used as `lead_id`. The erase route will then delete conversion_labels on BOTH:
    *   (a) lead_id = session_id   — SDK feedback-ping labels
    *   (b) lead_id = durable_lead_id — CRM deep-outcome labels
@@ -64,49 +81,86 @@ const InitiateBodySchema = z.object({
   lead_id: z.string().min(1).max(256).optional(),
 });
 
+// ─── Ownership proof (FOLLOW-1308) ─────────────────────────────────────────────
+
+/**
+ * Does any store hold data for this session? ClickHouse by `session_id` only, then the tenant's
+ * Postgres rows.
+ *
+ * @throws when ClickHouse is configured and rejects the query (the caller answers 503).
+ */
+async function sessionIsKnown(
+  db: ReturnType<typeof createAdminClient>,
+  tenantId: string,
+  sessionId: string,
+): Promise<boolean> {
+  const cfg = readClickHouseConfig();
+  if (cfg && (await sessionHasClickHouseRows(cfg, sessionId))) return true;
+
+  const consent = await db
+    .select({ sessionId: consentRecords.sessionId })
+    .from(consentRecords)
+    .where(and(eq(consentRecords.sessionId, sessionId), eq(consentRecords.tenantId, tenantId)))
+    .limit(1);
+  if (consent.length > 0) return true;
+
+  const intent = await db
+    .select({ sessionId: intentSessions.sessionId })
+    .from(intentSessions)
+    .where(and(eq(intentSessions.sessionId, sessionId), eq(intentSessions.tenantId, tenantId)))
+    .limit(1);
+  return intent.length > 0;
+}
+
 // ─── POST handler ──────────────────────────────────────────────────────────────
 
 /**
  * POST /api/dsr/initiate
  *
- * Body: `{ session_id: string, email: string, dsr_type: 'access'|'erase'|'portability' }`
+ * Body: `{ session_id: string, email: string, dsr_type: 'access'|'erase'|'portability', lead_id? }`
  *
  * @returns 202 `{ request_id: string, expires_at: string }` on success.
  * @returns 400 on invalid body.
- * @returns 401 when Authorization header is absent or JWT is invalid.
- * @returns 403 when the authenticated user is not a tenant user.
- * @returns 404 when session_id is not found for this tenant.
- * @returns 500 on unexpected errors.
+ * @returns 401 when there is no staff session or JWT.
+ * @returns 403 for readonly staff and for the unattributable ADMIN_API_SECRET.
+ * @returns 404 when no store holds data for session_id.
+ * @returns 429 when (tenant, email) exceeded the initiation rate limit.
+ * @returns 503 `OWNERSHIP_CHECK_UNAVAILABLE` when ClickHouse could not be read.
+ * @returns 500 when Resend did not accept the OTP e-mail, or on unexpected errors.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const requestId = crypto.randomUUID();
 
-  // ── Auth gate ──────────────────────────────────────────────────────────────
-  const claims = await getAuthClaims(req);
-  if (!claims) {
+  // ── Auth gate (FOLLOW-1308): identified ops+ staff on the Estalara tenant ───
+  let access: TenantAccess;
+  try {
+    access = await resolveTenantAccess(req, {
+      allowStaffOverride: true,
+      tenantId: ESTALARA_TENANT_ID,
+    });
+  } catch (err) {
+    if (!(err instanceof AccessError)) throw err;
+    const code =
+      err.status === 401 ? 'AUTH_REQUIRED' : err.status === 403 ? 'FORBIDDEN' : 'ACCESS_ERROR';
+    return NextResponse.json(
+      { error: { code, message: err.message, request_id: requestId } },
+      { status: err.status },
+    );
+  }
+  if (!access.canWrite) {
     return NextResponse.json(
       {
         error: {
-          code: 'AUTH_REQUIRED',
-          message: 'Authorization: Bearer <jwt> header is required',
+          code: 'FORBIDDEN',
+          message: 'Initiating a DSR requires estalara:ops or higher',
           request_id: requestId,
         },
-      },
-      { status: 401 },
-    );
-  }
-  // A DSR is initiated FOR a tenant, so the caller must carry one. Staff claims never do
-  // (`tenant_id: null`) and no other verified claim shape exists since FOLLOW-1335, so this
-  // refuses every caller until FOLLOW-1279 defines the initiator (fail closed, never a guess).
-  const tenantId = claims.tenant_id;
-  if (typeof tenantId !== 'string') {
-    return NextResponse.json(
-      {
-        error: { code: 'FORBIDDEN', message: 'Tenant user access required', request_id: requestId },
       },
       { status: 403 },
     );
   }
+  const tenantId = access.tenantId;
+  const staffUserId = access.staff.sub;
 
   // ── Parse + validate body ──────────────────────────────────────────────────
   let body: unknown;
@@ -142,22 +196,32 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const { session_id, email, dsr_type, lead_id: durableLeadId } = parsed.data;
 
-  // ── Confirm session belongs to this tenant ─────────────────────────────────
+  // ── Ownership proof (FOLLOW-1308): we hold data under this session id ──────
   const db = createAdminClient();
-  const sessions = await db
-    .select({ sessionId: sessionEmbeddings.sessionId })
-    .from(sessionEmbeddings)
-    .where(
-      and(eq(sessionEmbeddings.sessionId, session_id), eq(sessionEmbeddings.tenantId, tenantId)),
-    )
-    .limit(1);
+  let known: boolean;
+  try {
+    known = await sessionIsKnown(db, tenantId, session_id);
+  } catch {
+    // A code only: a store error message can quote the query and its parameters.
+    console.error('[dsr/initiate] ownership check failed: ownership_check_unavailable');
+    return NextResponse.json(
+      {
+        error: {
+          code: 'OWNERSHIP_CHECK_UNAVAILABLE',
+          message: 'The session could not be looked up. Retry later.',
+          request_id: requestId,
+        },
+      },
+      { status: 503 },
+    );
+  }
 
-  if (sessions.length === 0) {
+  if (!known) {
     return NextResponse.json(
       {
         error: {
           code: 'NOT_FOUND',
-          message: 'Session not found for this tenant',
+          message: 'No data is held for this session',
           request_id: requestId,
         },
       },
@@ -190,25 +254,41 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // ── Generate OTP, hash, insert record ──────────────────────────────────────
+  // ── Generate OTP, hash, insert record + staff audit row (one transaction) ──
   const otp = generateOtp();
   const otpHash = hashOtp(otp);
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
-  const [inserted] = await db
-    .insert(dsrVerifications)
-    .values({
-      tenantId,
-      sessionId: session_id,
-      email,
-      dsrType: dsr_type,
-      otpHash,
-      expiresAt,
-      // FOLLOW-184: store the CRM lead_id if supplied — used by /api/dsr/erase to
-      // delete CRM-written conversion_labels rows (lead_id != session_id namespace).
-      ...(durableLeadId !== undefined ? { durableLeadId } : {}),
-    })
-    .returning({ id: dsrVerifications.id, expiresAt: dsrVerifications.expiresAt });
+  // The audit payload names the request and its type, not the subject (no session id, no e-mail).
+  const inserted = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(dsrVerifications)
+      .values({
+        tenantId,
+        sessionId: session_id,
+        email,
+        dsrType: dsr_type,
+        otpHash,
+        expiresAt,
+        // FOLLOW-184: store the CRM lead_id if supplied — used by /api/dsr/erase to
+        // delete CRM-written conversion_labels rows (lead_id != session_id namespace).
+        ...(durableLeadId !== undefined ? { durableLeadId } : {}),
+      })
+      .returning({ id: dsrVerifications.id, expiresAt: dsrVerifications.expiresAt });
+    await tx.insert(staffAuditLog).values({
+      adminUserId: staffUserId,
+      action: 'dsr.initiate',
+      targetTenantId: tenantId,
+      payload: {
+        request_id: row?.id ?? null,
+        dsr_type,
+        lead_id_supplied: durableLeadId !== undefined,
+      },
+      ipAddress: requestIp(req),
+      userAgent: req.headers.get('user-agent'),
+    });
+    return row;
+  });
 
   // ── Brand display identity (FOLLOW-654 leg 3 → FOLLOW-1332) ────────────────
   // The sender name and body name Estalara, the only tenant (ESC-085). Before FOLLOW-1332 this

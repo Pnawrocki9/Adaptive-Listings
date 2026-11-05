@@ -50,6 +50,7 @@ import { createAdminClient, dsrClickhouseMutations } from '@estalara/db';
 import type { DsrClickhouseMutation } from '@estalara/db';
 import {
   computeNextRetryAt,
+  countSessionRows,
   issueEraseMutation,
   MAX_MUTATION_RETRIES,
   pollMutationStatus,
@@ -169,6 +170,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           const result = await issueEraseMutation(cfg, {
             table: row.tableName,
             column: 'session_id',
+            tenantId: row.tenantId,
             sessionIds: [row.sessionId],
           });
           await db
@@ -231,7 +233,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       }
 
       const isDone = status.is_done === 1 || status.is_done === '1';
-      const failedReason = status.latest_failed_reason;
+      let failedReason = status.latest_failed_reason;
+
+      // FOLLOW-1308: a done mutation is not yet an erasure. A row inserted after the mutation was
+      // created (an ingest retry already past its erasure-ledger check when the erase committed)
+      // survives it, so done is accepted only when no row of the subject is left; otherwise the
+      // row takes the failed path below and the mutation is reissued.
+      if (isDone && !failedReason) {
+        const left = await countSessionRows(cfg, row.tableName, row.tenantId, row.sessionId);
+        if (left > 0) failedReason = `residual_rows_after_mutation: ${String(left)}`;
+      }
 
       if (isDone && !failedReason) {
         await db

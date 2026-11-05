@@ -90,12 +90,6 @@ const FIXTURE_DDL = /* sql */ `
     attempt_count   integer NOT NULL DEFAULT 0,
     created_at      timestamptz NOT NULL DEFAULT now()
   );
-  CREATE TABLE session_embeddings (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL, session_id text NOT NULL,
-    final_archetype text, matched_archetype text, similarity_score numeric(6,5),
-    signal_count integer NOT NULL DEFAULT 0, quiz_archetype text, embedding text,
-    created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
-  );
   CREATE TABLE consent_records (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL, session_id text NOT NULL,
     consent_type text NOT NULL, granted boolean NOT NULL DEFAULT false, tos_version text NOT NULL,

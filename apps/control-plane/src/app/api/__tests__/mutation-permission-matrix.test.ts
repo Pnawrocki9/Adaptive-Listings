@@ -222,6 +222,8 @@ const MATRIX: Record<string, Entry> = {
   'api/admin/tenants/quiz-state PUT': { kind: 'staff', min: 'ops' },
   'api/config PATCH': { kind: 'staff', min: 'ops' },
   'api/demo/override PUT': { kind: 'staff', min: 'ops' },
+  // FOLLOW-1308 (absorbs FOLLOW-1279): identified ops+ staff on the Estalara tenant, audited.
+  'api/dsr/initiate POST': { kind: 'staff', min: 'ops' },
   'api/quiz/config POST': { kind: 'staff', min: 'ops' },
   'api/tenants/[id] PATCH': { kind: 'staff', min: 'ops' },
   'api/tenants/[id]/answers POST': { kind: 'staff', min: 'ops' },
@@ -235,11 +237,10 @@ const MATRIX: Record<string, Entry> = {
   'api/adapt POST': { kind: 'machine', credential: 'tenant API key (resolveApiKey)' },
   'api/adapt/feedback POST': { kind: 'machine', credential: 'tenant API key + HMAC signature' },
   'api/crm/outcome POST': { kind: 'machine', credential: 'CRM HMAC signature' },
+  // FOLLOW-1308 (R32): the xid-carrying POST forms of the two disclosure routes.
+  'api/dsr/access POST': { kind: 'machine', credential: 'DSR verification token' },
   'api/dsr/erase POST': { kind: 'machine', credential: 'DSR verification token' },
-  'api/dsr/initiate POST': {
-    kind: 'machine',
-    credential: 'none today: refuses every caller until FOLLOW-1308 defines the initiator',
-  },
+  'api/dsr/portability POST': { kind: 'machine', credential: 'DSR verification token' },
   'api/internal/listings/embed-seed POST': {
     kind: 'machine',
     credential: 'INTERNAL_API_SECRET',

@@ -187,6 +187,12 @@ const REGISTER: Signal[] = [
       'A re-queued intent.snapshot side-write still failed; Cloudflare retries it, then the DLQ (FOLLOW-1310).',
     consumer: null,
   },
+  {
+    name: 'events_retry_erasure_ledger_unavailable',
+    meaning:
+      'The retry consumer could not read the DSR erasure ledger, so it inserted nothing and retried the message; persistent, it walks the message to the DLQ (FOLLOW-1308).',
+    consumer: null,
+  },
 ];
 
 /** Every `.ts` under the Worker source, excluding tests. */

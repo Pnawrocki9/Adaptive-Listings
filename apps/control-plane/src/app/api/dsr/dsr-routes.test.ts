@@ -3,16 +3,15 @@
  *
  * All external dependencies are mocked:
  *   - @estalara/db  — createAdminClient, table symbols
- *   - @estalara/auth — getAuthClaims
+ *   - @/lib/session-auth — resolveTenantAccess (FOLLOW-1308: the staff initiator)
  *   - @/lib/dsr-otp — generateOtp, hashOtp
  *   - @/lib/email/resend — sendEmail
  *   - ./_clickhouse — writeDsrAuditLog
  *
  * Coverage:
- *   - POST /api/dsr/initiate with valid JWT + valid session → 202, email sent
- *   - POST /api/dsr/initiate with invalid session_id → 404
- *   - POST /api/dsr/initiate with missing auth → 401
- *   - POST /api/dsr/initiate with non-tenant JWT → 403
+ *   - POST /api/dsr/initiate as ops staff + a known session → 202, email sent, staff audit row
+ *   - POST /api/dsr/initiate with an unknown session_id → 404; ClickHouse down → 503
+ *   - POST /api/dsr/initiate with no staff caller → 401; readonly / ADMIN_API_SECRET → 403
  *   - POST /api/dsr/initiate with invalid body → 400
  *   - GET  /api/dsr/access with valid OTP → 200 with correct shape
  *   - GET  /api/dsr/access with expired OTP → 401 { error.code: 'token_expired' }
@@ -56,7 +55,7 @@ const {
   mockTransaction,
   mockSendEmail,
   mockWriteDsrAuditLog,
-  mockGetAuthClaims,
+  mockResolveTenantAccess,
   mockHashOtp,
   mockVerifyAndConsumeOtp,
   mockCheckInitiateRateLimit,
@@ -68,7 +67,7 @@ const {
   mockTransaction: vi.fn(),
   mockSendEmail: vi.fn(),
   mockWriteDsrAuditLog: vi.fn().mockResolvedValue(undefined),
-  mockGetAuthClaims: vi.fn(),
+  mockResolveTenantAccess: vi.fn(),
   mockHashOtp: vi.fn().mockImplementation((otp: string) => `hash_of_${otp}`),
   // FOLLOW-455: request-scoped OTP verification is extracted into its own
   // module so route tests don't need to fabricate the full select/update
@@ -87,6 +86,8 @@ vi.mock('@estalara/db', () => ({
     delete: mockDelete,
     transaction: mockTransaction,
   })),
+  // FOLLOW-1308: /api/dsr/initiate writes its staff audit row in the verification transaction.
+  staffAuditLog: { id: 'id' },
   dsrVerifications: {
     id: 'id',
     otpHash: 'otp_hash',
@@ -98,7 +99,6 @@ vi.mock('@estalara/db', () => ({
     email: 'email',
     createdAt: 'created_at',
   },
-  sessionEmbeddings: { sessionId: 'session_id', tenantId: 'tenant_id' },
   consentRecords: {
     sessionId: 'session_id',
     // FOLLOW-1108: tenantId present — every consent_records read/delete in the
@@ -145,8 +145,11 @@ vi.mock('@estalara/db', () => ({
   ne: vi.fn((col: unknown, val: unknown) => ({ col, val, _op: 'ne' })),
 }));
 
-vi.mock('@estalara/auth', () => ({
-  getAuthClaims: mockGetAuthClaims,
+// FOLLOW-1308: /api/dsr/initiate resolves its staff caller through `resolveTenantAccess`; the real
+// `AccessError` is kept so the route's status mapping is exercised.
+vi.mock('@/lib/session-auth', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  resolveTenantAccess: mockResolveTenantAccess,
 }));
 
 // FOLLOW-1332: /api/dsr/initiate no longer captures to Sentry (the FOLLOW-659 external-brand
@@ -274,21 +277,7 @@ function buildChain(rows: unknown[]) {
 
 // ─── Shared fixtures ──────────────────────────────────────────────────────────
 
-/**
- * A claim set that carries a tenant. Since FOLLOW-1335 no verifier issues one (every verified
- * JWT is Estalara staff, `tenant_id: null`), so `/api/dsr/initiate` refuses every real caller
- * until FOLLOW-1279 defines the single-tenant initiator. The post-auth path stays pinned with
- * this shape so that redesign starts from tested code.
- */
-const TENANT_CLAIMS = {
-  sub: 'user-001',
-  email: 'admin@agency.com',
-  tenant_id: 'tenant-uuid-001',
-  estalara_staff: false,
-  mfa_verified: true,
-};
-
-/** The only claim shape @estalara/auth verifies since FOLLOW-1335. */
+/** A verified ops staff caller (the only claim shape @estalara/auth verifies since FOLLOW-1335). */
 const STAFF_CLAIMS = {
   sub: 'staff-001',
   email: 'ops@estalara.com',
@@ -330,83 +319,138 @@ function makeLabelRow(leadId: string, predictionId = 'pred-001') {
 }
 
 // ─── POST /api/dsr/initiate ───────────────────────────────────────────────────
+//
+// FOLLOW-1308 (absorbs FOLLOW-1279): the initiator is identified ops+ staff on the Estalara tenant
+// (`resolveTenantAccess`, mocked here; its own rules are pinned in session-auth tests and the
+// mutation-permission matrix), and the ownership proof is "some store holds this session".
 
 describe('POST /api/dsr/initiate', () => {
+  const STAFF_ACCESS = {
+    via: 'staff',
+    tenantId: 'tenant-uuid-001',
+    staff: STAFF_CLAIMS,
+    role: 'estalara:ops',
+    canWrite: true,
+    isSuperadmin: false,
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
     mockSendEmail.mockResolvedValue(undefined);
     mockWriteDsrAuditLog.mockResolvedValue(undefined);
-    mockGetAuthClaims.mockResolvedValue(TENANT_CLAIMS);
+    mockResolveTenantAccess.mockResolvedValue(STAFF_ACCESS);
     mockCheckInitiateRateLimit.mockResolvedValue({ allowed: true, count: 0 });
+    mockTransaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) =>
+      fn({ insert: mockInsert }),
+    );
   });
 
-  it('returns 401 when Authorization header is missing', async () => {
-    mockGetAuthClaims.mockResolvedValueOnce(null);
-
+  const initiate = async (body: unknown): Promise<Response> => {
     const { POST } = await import('./initiate/route.js');
-    const req = makeRequest('POST', '/api/dsr/initiate', {
-      body: { session_id: 'sess-001', email: 'b@example.com', dsr_type: 'access' },
-    });
-    const res = await POST(req);
+    return POST(makeRequest('POST', '/api/dsr/initiate', { body }));
+  };
+  const validBody = {
+    session_id: 'sess-valid-001',
+    email: 'buyer@example.com',
+    dsr_type: 'access',
+  };
+
+  it('returns 401 when there is no staff caller', async () => {
+    const { AccessError } = await import('@/lib/session-auth');
+    mockResolveTenantAccess.mockRejectedValueOnce(new AccessError(401, 'Unauthorized'));
+
+    const res = await initiate(validBody);
 
     expect(res.status).toBe(401);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('AUTH_REQUIRED');
+    expect(mockSelect).not.toHaveBeenCalled();
   });
 
-  it('returns 403 for a verified staff JWT — it carries no tenant (fails closed, FOLLOW-1335/1279)', async () => {
-    mockGetAuthClaims.mockResolvedValueOnce(STAFF_CLAIMS);
+  it('returns 403 for the unattributable ADMIN_API_SECRET (resolveTenantAccess refuses it)', async () => {
+    const { AccessError } = await import('@/lib/session-auth');
+    mockResolveTenantAccess.mockRejectedValueOnce(new AccessError(403, 'not attributable'));
 
-    const { POST } = await import('./initiate/route.js');
-    const req = makeRequest('POST', '/api/dsr/initiate', {
-      body: { session_id: 'sess-001', email: 'b@example.com', dsr_type: 'access' },
-      headers: { Authorization: 'Bearer staff_token' },
-    });
-    const res = await POST(req);
+    const res = await initiate(validBody);
 
     expect(res.status).toBe(403);
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 for readonly staff, before any read or write', async () => {
+    mockResolveTenantAccess.mockResolvedValueOnce({
+      ...STAFF_ACCESS,
+      role: 'estalara:readonly',
+      canWrite: false,
+    });
+
+    const res = await initiate(validBody);
+
+    expect(res.status).toBe(403);
+    expect(mockSelect).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it('resolves the caller against the Estalara tenant, explicitly', async () => {
+    mockSelect.mockReturnValueOnce(buildChain([{ sessionId: 'sess-valid-001' }]));
+    mockInsert.mockReturnValue(buildChain([{ id: 'dsr-uuid-001', expiresAt: new Date() }]));
+    const { ESTALARA_TENANT_ID } = await import('@/lib/estalara-tenant');
+
+    await initiate(validBody);
+
+    expect(mockResolveTenantAccess).toHaveBeenCalledWith(expect.anything(), {
+      allowStaffOverride: true,
+      tenantId: ESTALARA_TENANT_ID,
+    });
   });
 
   it('returns 400 when body is invalid', async () => {
-    const { POST } = await import('./initiate/route.js');
-    const req = makeRequest('POST', '/api/dsr/initiate', {
-      body: { session_id: '', email: 'not-an-email', dsr_type: 'invalid' },
-      headers: { Authorization: 'Bearer jwt_token' },
-    });
-    const res = await POST(req);
+    const res = await initiate({ session_id: '', email: 'not-an-email', dsr_type: 'invalid' });
 
     expect(res.status).toBe(400);
   });
 
-  it('returns 404 when session_id is not found for this tenant', async () => {
+  it('returns 404 when no store holds the session (no ClickHouse, no Postgres row)', async () => {
     mockSelect.mockReturnValue(buildChain([]));
 
-    const { POST } = await import('./initiate/route.js');
-    const req = makeRequest('POST', '/api/dsr/initiate', {
-      body: { session_id: 'nonexistent-sess', email: 'b@example.com', dsr_type: 'access' },
-      headers: { Authorization: 'Bearer jwt_token' },
-    });
-    const res = await POST(req);
+    const res = await initiate({ ...validBody, session_id: 'nonexistent-sess' });
 
     expect(res.status).toBe(404);
+    expect(mockInsert).not.toHaveBeenCalled();
   });
 
-  it('returns 202 with request_id and expires_at when everything is valid', async () => {
+  it('returns 202 with request_id and expires_at, and writes the staff audit row in the same transaction', async () => {
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-    mockSelect.mockReturnValueOnce(buildChain([{ sessionId: 'sess-valid-001' }])); // session lookup
-    mockInsert.mockReturnValue(buildChain([{ id: 'dsr-uuid-001', expiresAt }]));
-
-    const { POST } = await import('./initiate/route.js');
-    const req = makeRequest('POST', '/api/dsr/initiate', {
-      body: { session_id: 'sess-valid-001', email: 'buyer@example.com', dsr_type: 'access' },
-      headers: { Authorization: 'Bearer jwt_token' },
+    mockSelect.mockReturnValueOnce(buildChain([{ sessionId: 'sess-valid-001' }])); // consent_records
+    const inserted: unknown[] = [];
+    mockInsert.mockImplementation(() => {
+      const chain = buildChain([{ id: 'dsr-uuid-001', expiresAt }]);
+      chain.values = (...args: unknown[]) => {
+        inserted.push(args[0]);
+        return chain;
+      };
+      return chain;
     });
-    const res = await POST(req);
+
+    const res = await initiate(validBody);
 
     expect(res.status).toBe(202);
     const body = (await res.json()) as { request_id: string; expires_at: string };
-    expect(body).toHaveProperty('request_id');
+    expect(body.request_id).toBe('dsr-uuid-001');
     expect(body).toHaveProperty('expires_at');
+    expect(mockTransaction).toHaveBeenCalledOnce();
+    expect(inserted).toHaveLength(2);
+    expect(inserted[1]).toMatchObject({
+      adminUserId: 'staff-001',
+      action: 'dsr.initiate',
+      targetTenantId: 'tenant-uuid-001',
+      payload: { request_id: 'dsr-uuid-001', dsr_type: 'access', lead_id_supplied: false },
+    });
+    // The audit payload names the request, never the subject.
+    expect(JSON.stringify(inserted[1])).not.toContain('buyer@example.com');
+    expect(JSON.stringify(inserted[1])).not.toContain('sess-valid-001');
     expect(mockSendEmail).toHaveBeenCalledOnce();
     expect(mockSendEmail).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -416,22 +460,52 @@ describe('POST /api/dsr/initiate', () => {
     );
   });
 
+  // ─── FOLLOW-1308: the ownership proof reads ClickHouse by session_id only ──────
+
+  it('accepts a session ClickHouse holds, keyed on session_id with no tenant predicate', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', 'https://ch.example.test:8443');
+    const chSql: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: unknown, init?: RequestInit) => {
+        chSql.push(typeof init?.body === 'string' ? init.body : '');
+        return Promise.resolve(new Response(JSON.stringify({ data: [{ one: 1 }] })));
+      }),
+    );
+    mockInsert.mockReturnValue(buildChain([{ id: 'dsr-uuid-ch', expiresAt: new Date() }]));
+
+    const res = await initiate(validBody);
+
+    expect(res.status).toBe(202);
+    expect(chSql).toHaveLength(1);
+    expect(chSql[0]).toContain('FROM events WHERE session_id = {session_id:String}');
+    expect(chSql[0]).not.toContain('tenant_id');
+    expect(mockSelect).not.toHaveBeenCalled(); // no Postgres fallback needed
+  });
+
+  it('a ClickHouse failure is 503, never a 404, and nothing is written', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', 'https://ch.example.test:8443');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('down', { status: 500 })));
+
+    const res = await initiate(validBody);
+
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('OWNERSHIP_CHECK_UNAVAILABLE');
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
   // ─── FOLLOW-1332: the OTP e-mail names Estalara, the only tenant ─────────────
   // Pins the first-party e-mail byte-identical to what the per-brand resolver (FOLLOW-654 leg 3)
-  // produced for the Estalara tenant (no `brand_config.brand_name` → Estalara fallback), and that
-  // the ownership check still runs: the session lookup is the ONLY select the route issues now.
+  // produced for the Estalara tenant, and that the ownership check runs before it.
 
   it('sends the OTP e-mail as Estalara, after the session-ownership check, with no brand lookup', async () => {
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-    mockSelect.mockReturnValueOnce(buildChain([{ sessionId: 'sess-valid-001' }])); // session lookup
+    mockSelect.mockReturnValueOnce(buildChain([{ sessionId: 'sess-valid-001' }])); // consent_records
     mockInsert.mockReturnValue(buildChain([{ id: 'dsr-uuid-003', expiresAt }]));
 
-    const { POST } = await import('./initiate/route.js');
-    const req = makeRequest('POST', '/api/dsr/initiate', {
-      body: { session_id: 'sess-valid-001', email: 'buyer@example.com', dsr_type: 'access' },
-      headers: { Authorization: 'Bearer jwt_token' },
-    });
-    const res = await POST(req);
+    const res = await initiate(validBody);
 
     expect(res.status).toBe(202);
     expect(mockSelect).toHaveBeenCalledTimes(1);
@@ -457,18 +531,29 @@ describe('POST /api/dsr/initiate', () => {
     expect(mockCaptureMessage).not.toHaveBeenCalled();
   });
 
+  // FOLLOW-1308 (Codex F-19): an e-mail Resend did not accept is not reported as sent.
+  it('returns 500 EMAIL_SEND_FAILED when the send fails, and audits no initiation', async () => {
+    mockSelect.mockReturnValueOnce(buildChain([{ sessionId: 'sess-valid-001' }]));
+    mockInsert.mockReturnValue(buildChain([{ id: 'dsr-uuid-004', expiresAt: new Date() }]));
+    mockSendEmail.mockRejectedValueOnce(new Error('Resend rejected the send: invalid_api_key'));
+
+    const res = await initiate(validBody);
+
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('EMAIL_SEND_FAILED');
+    expect(mockWriteDsrAuditLog).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'initiated' }),
+    );
+  });
+
   // ─── FOLLOW-455 / audit F-20: anti email-bomb rate limiting ────────────────
 
   it('returns 429 and does NOT send an email when the rate limit is exceeded', async () => {
     mockSelect.mockReturnValueOnce(buildChain([{ sessionId: 'sess-valid-001' }]));
     mockCheckInitiateRateLimit.mockResolvedValueOnce({ allowed: false, count: 5 });
 
-    const { POST } = await import('./initiate/route.js');
-    const req = makeRequest('POST', '/api/dsr/initiate', {
-      body: { session_id: 'sess-valid-001', email: 'bombed@example.com', dsr_type: 'access' },
-      headers: { Authorization: 'Bearer jwt_token' },
-    });
-    const res = await POST(req);
+    const res = await initiate({ ...validBody, email: 'bombed@example.com' });
 
     expect(res.status).toBe(429);
     const body = (await res.json()) as { error: { code: string } };
@@ -567,14 +652,6 @@ describe('GET /api/dsr/access', () => {
     const validRecord = makeValidRecord('access');
     mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
 
-    const sessionRow = {
-      sessionId: 'sess-abc123',
-      tenantId: 'tenant-uuid-001',
-      matchedArchetype: 'yield_hunter',
-      finalArchetype: null,
-      createdAt: new Date('2026-04-01T10:00:00Z'),
-      updatedAt: new Date('2026-04-02T10:00:00Z'),
-    };
     const consentRow = {
       consentType: 'behavioral_tracking',
       granted: true,
@@ -583,10 +660,9 @@ describe('GET /api/dsr/access', () => {
     };
 
     // Call order (OTP verification handled by mocked verifyAndConsumeOtp,
-    // NOT via mockSelect): sessionEmbeddings → consentRecords →
+    // NOT via mockSelect): consentRecords →
     // conversion_labels Pass A → (no Pass B: durableLeadId null)
     mockSelect
-      .mockReturnValueOnce(buildChain([sessionRow])) // 1st: session
       .mockReturnValueOnce(buildChain([consentRow])) // 2nd: consents
       .mockReturnValueOnce(buildChain([])); // 3rd: conversion_labels Pass A (empty)
     // Pass B skipped: durableLeadId is null.
@@ -602,7 +678,9 @@ describe('GET /api/dsr/access', () => {
       session_id: string;
       tenant_id: string;
       clickhouse: { available: boolean; note?: string; tables: unknown[] };
-      matched_archetype: string | null;
+      export_complete: boolean;
+      resume_cursor: string | null;
+      buyer_profile: { result: string };
       consent_records: unknown[];
       conversion_labels: unknown[];
     };
@@ -616,7 +694,12 @@ describe('GET /api/dsr/access', () => {
     expect(body.clickhouse.available).toBe(false);
     expect(body.clickhouse.note).toBe('clickhouse_not_configured');
     expect(Array.isArray(body.clickhouse.tables)).toBe(true);
-    expect(body).toHaveProperty('matched_archetype');
+    // FOLLOW-1308: `session_embeddings` (the old matched_archetype source) is no longer read, and
+    // a complete disclosure spends the OTP and says so.
+    expect(body).not.toHaveProperty('matched_archetype');
+    expect(body.export_complete).toBe(true);
+    expect(body.resume_cursor).toBeNull();
+    expect(body.buyer_profile).toEqual({ result: 'not_requested' });
     expect(body).toHaveProperty('consent_records');
     expect(Array.isArray(body.consent_records)).toBe(true);
     // FOLLOW-246: conversion_labels must be present in response.
@@ -717,17 +800,7 @@ describe('GET /api/dsr/portability', () => {
     const validRecord = makeValidRecord('portability');
     mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
 
-    const sessionRow = {
-      sessionId: 'sess-abc123',
-      tenantId: 'tenant-uuid-001',
-      matchedArchetype: 'yield_hunter',
-      finalArchetype: null,
-      createdAt: new Date('2026-04-01T10:00:00Z'),
-      updatedAt: new Date('2026-04-02T10:00:00Z'),
-    };
-
     mockSelect
-      .mockReturnValueOnce(buildChain([sessionRow])) // session
       .mockReturnValueOnce(buildChain([])) // consents (empty)
       .mockReturnValueOnce(buildChain([])); // conversion_labels Pass A (empty; no Pass B: durableLeadId null)
 
@@ -769,10 +842,9 @@ describe('FOLLOW-246: GET /api/dsr/access — conversion_labels on both namespac
     mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
 
     // Call order (OTP verification handled by mocked verifyAndConsumeOtp):
-    // session → consents → quiz_completions → intent_session
+    // consents → quiz_completions → intent_session
     // (FOLLOW-558) → labels Pass A (SDK rows) → (no Pass B)
     mockSelect
-      .mockReturnValueOnce(buildChain([])) // session (absent — that's fine)
       .mockReturnValueOnce(buildChain([])) // consents (empty)
       .mockReturnValueOnce(buildChain([])) // quiz_completions (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // intent_session (FOLLOW-558, empty)
@@ -796,10 +868,9 @@ describe('FOLLOW-246: GET /api/dsr/access — conversion_labels on both namespac
     const crmLabel = makeLabelRow(CRM_LEAD_ID, 'pred-crm-001');
     mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
 
-    // Call order: session → consents → quiz_completions →
+    // Call order: consents → quiz_completions →
     // intent_session (FOLLOW-558) → Pass A (empty, no sdk labels) → Pass B (CRM labels)
     mockSelect
-      .mockReturnValueOnce(buildChain([])) // session (absent)
       .mockReturnValueOnce(buildChain([])) // consents (empty)
       .mockReturnValueOnce(buildChain([])) // quiz_completions (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // intent_session (FOLLOW-558, empty)
@@ -826,7 +897,6 @@ describe('FOLLOW-246: GET /api/dsr/access — conversion_labels on both namespac
     mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
 
     mockSelect
-      .mockReturnValueOnce(buildChain([])) // session
       .mockReturnValueOnce(buildChain([])) // consents
       .mockReturnValueOnce(buildChain([])) // quiz_completions (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // intent_session (FOLLOW-558, empty)
@@ -854,7 +924,6 @@ describe('FOLLOW-246: GET /api/dsr/access — conversion_labels on both namespac
     mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
 
     mockSelect
-      .mockReturnValueOnce(buildChain([])) // session
       .mockReturnValueOnce(buildChain([])) // consents
       .mockReturnValueOnce(buildChain([])) // quiz_completions (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // intent_session (FOLLOW-558, empty)
@@ -871,9 +940,10 @@ describe('FOLLOW-246: GET /api/dsr/access — conversion_labels on both namespac
     const body = (await res.json()) as { conversion_labels: unknown[] };
     // No labels but no error — graceful skip.
     expect(body.conversion_labels).toHaveLength(0);
-    // Pass B (6th select call) must NOT have been made. OTP verification is
-    // now handled by the mocked verifyAndConsumeOtp, not mockSelect.
-    expect(mockSelect).toHaveBeenCalledTimes(5);
+    // Pass B (5th select call) must NOT have been made. OTP verification is
+    // now handled by the mocked verifyAndConsumeOtp, not mockSelect (and since FOLLOW-1308 there
+    // is no session_embeddings select).
+    expect(mockSelect).toHaveBeenCalledTimes(4);
   });
 });
 
@@ -890,7 +960,6 @@ describe('FOLLOW-246: GET /api/dsr/portability — conversion_labels on both nam
     mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
 
     mockSelect
-      .mockReturnValueOnce(buildChain([])) // session
       .mockReturnValueOnce(buildChain([])) // consents
       .mockReturnValueOnce(buildChain([])) // quiz_completions (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // intent_session (FOLLOW-558, empty)
@@ -918,7 +987,6 @@ describe('FOLLOW-246: GET /api/dsr/portability — conversion_labels on both nam
     mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
 
     mockSelect
-      .mockReturnValueOnce(buildChain([])) // session
       .mockReturnValueOnce(buildChain([])) // consents
       .mockReturnValueOnce(buildChain([])) // quiz_completions (FOLLOW-558, empty)
       .mockReturnValueOnce(buildChain([])) // intent_session (FOLLOW-558, empty)
@@ -958,7 +1026,17 @@ describe('FOLLOW-431: writeDsrAuditLog registered via after() in DSR initiate ro
     });
     mockWriteDsrAuditLog.mockResolvedValue(undefined);
     mockSendEmail.mockResolvedValue(undefined);
-    mockGetAuthClaims.mockResolvedValue(TENANT_CLAIMS);
+    mockResolveTenantAccess.mockResolvedValue({
+      via: 'staff',
+      tenantId: 'tenant-uuid-001',
+      staff: STAFF_CLAIMS,
+      role: 'estalara:ops',
+      canWrite: true,
+      isSuperadmin: false,
+    });
+    mockTransaction.mockImplementation((fn: (tx: unknown) => Promise<unknown>) =>
+      fn({ insert: mockInsert }),
+    );
   });
 
   it('FOLLOW-431: POST /api/dsr/initiate registers writeDsrAuditLog via after()', async () => {
@@ -982,14 +1060,13 @@ describe('FOLLOW-431: writeDsrAuditLog registered via after() in DSR initiate ro
   });
 });
 
-// ─── FOLLOW-433: after() registration for deleteSessionFromRedis in DSR erase ─
+// ─── FOLLOW-433 → FOLLOW-1308: the Redis session erase is awaited, not after() ─
 //
-// AC: POST /api/dsr/erase must register deleteSessionFromRedis via after()
-// so the Redis session DEL (RODO Art. 17 active erasure) completes after the
-// response is sent on Vercel — not silently dropped on instance suspension
-// (ESC-033 / FOLLOW-433).
+// FOLLOW-433 moved the Redis DEL into after() so it was not dropped on instance suspension.
+// FOLLOW-1308 (Codex R-01) goes further: the erase is awaited and checked BEFORE the OTP is spent,
+// so its outcome is in the response (`redis_erasure`). after() still carries the audit write.
 
-describe('FOLLOW-433: deleteSessionFromRedis registered via after() in DSR erase route', () => {
+describe('FOLLOW-1308 (was FOLLOW-433): the Redis erase is awaited; after() carries the audit', () => {
   let mockAfter: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -1003,7 +1080,7 @@ describe('FOLLOW-433: deleteSessionFromRedis registered via after() in DSR erase
     });
   });
 
-  it('FOLLOW-433: POST /api/dsr/erase registers deleteSessionFromRedis via after()', async () => {
+  it('POST /api/dsr/erase reports redis_erasure in the response and registers the audit via after()', async () => {
     const validRecord = makeValidRecord('erase');
     mockVerifyAndConsumeOtp.mockResolvedValueOnce({ ok: true, record: validRecord });
     mockSelect.mockReturnValueOnce(buildChain([])); // idempotency check (no prior CH mutations)
@@ -1021,8 +1098,8 @@ describe('FOLLOW-433: deleteSessionFromRedis registered via after() in DSR erase
     const res = await POST(req);
 
     expect(res.status).toBe(200);
-    // after() must have been called at least once — both the Redis DEL and the
-    // audit log are registered via afterResponse().
+    // No UPSTASH_REDIS_URL in this file: nothing is held, and the response says so.
+    expect(((await res.json()) as { redis_erasure: string }).redis_erasure).toBe('not_configured');
     expect(mockAfter).toHaveBeenCalled();
   });
 });

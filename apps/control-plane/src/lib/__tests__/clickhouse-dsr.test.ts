@@ -3,7 +3,7 @@
  *
  * Coverage:
  *   - buildEraseMutationSql:
- *       * generates ALTER TABLE DELETE WHERE session_id IN (...) with
+ *       * generates ALTER TABLE DELETE WHERE tenant_id = {dsr_tenant_id:String} AND session_id IN (...) with
  *         `{dsr_id_N:String}` placeholders (FOLLOW-462 parameter binding —
  *         session id VALUES never appear in the SQL text)
  *       * binds session IDs containing a trailing backslash, an embedded
@@ -57,13 +57,23 @@ import {
 
 // ─── buildEraseMutationSql ────────────────────────────────────────────────────
 
+const TEST_TENANT_ID = '00000000-0000-0000-0000-0000000000e2';
+
 describe('buildEraseMutationSql', () => {
   it('generates ALTER TABLE DELETE WHERE with a param placeholder for a single session_id', () => {
-    const { sql, params } = buildEraseMutationSql('events', 'session_id', ['abc123'], 'marker001');
-    expect(sql).toContain('ALTER TABLE events DELETE WHERE session_id IN');
+    const { sql, params } = buildEraseMutationSql(
+      'events',
+      'session_id',
+      ['abc123'],
+      'marker001',
+      TEST_TENANT_ID,
+    );
+    expect(sql).toContain(
+      'ALTER TABLE events DELETE WHERE tenant_id = {dsr_tenant_id:String} AND session_id IN',
+    );
     expect(sql).toContain('{dsr_id_0:String}');
     expect(sql).not.toContain('abc123'); // the value must never appear in the SQL text
-    expect(params).toEqual({ dsr_id_0: 'abc123' });
+    expect(params).toEqual({ dsr_tenant_id: TEST_TENANT_ID, dsr_id_0: 'abc123' });
     expect(sql).toContain('/* DSR:marker001 */');
   });
 
@@ -73,9 +83,15 @@ describe('buildEraseMutationSql', () => {
       'session_id',
       ['s1', 's2', 's3'],
       'm',
+      TEST_TENANT_ID,
     );
     expect(sql).toContain('IN ({dsr_id_0:String}, {dsr_id_1:String}, {dsr_id_2:String})');
-    expect(params).toEqual({ dsr_id_0: 's1', dsr_id_1: 's2', dsr_id_2: 's3' });
+    expect(params).toEqual({
+      dsr_tenant_id: TEST_TENANT_ID,
+      dsr_id_0: 's1',
+      dsr_id_1: 's2',
+      dsr_id_2: 's3',
+    });
   });
 
   // ─── FOLLOW-462: backslash-safe parameter binding ──────────────────────────
@@ -95,11 +111,12 @@ describe('buildEraseMutationSql', () => {
       'session_id',
       [trailingBackslashId],
       'marker',
+      TEST_TENANT_ID,
     );
     // The SQL text is well-formed regardless of the id's content: it only
     // ever contains the placeholder, never the raw value.
     expect(sql).toBe(
-      'ALTER TABLE events DELETE WHERE session_id IN ({dsr_id_0:String}) /* DSR:marker */',
+      'ALTER TABLE events DELETE WHERE tenant_id = {dsr_tenant_id:String} AND session_id IN ({dsr_id_0:String}) /* DSR:marker */',
     );
     // The bound param, once decoded by ClickHouse's "Escaped" param format,
     // reconstructs the exact original value — the backslash is doubled so it
@@ -109,7 +126,13 @@ describe('buildEraseMutationSql', () => {
 
   it('never embeds a session id containing an embedded single quote in the SQL text', () => {
     const quoteId = "it's-a-session";
-    const { sql, params } = buildEraseMutationSql('events', 'session_id', [quoteId], 'marker');
+    const { sql, params } = buildEraseMutationSql(
+      'events',
+      'session_id',
+      [quoteId],
+      'marker',
+      TEST_TENANT_ID,
+    );
     expect(sql).not.toContain("'");
     expect(sql).toContain('{dsr_id_0:String}');
     // Quotes are plain data in the param-value "Escaped" format (not a
@@ -119,40 +142,66 @@ describe('buildEraseMutationSql', () => {
 
   it('never embeds a session id containing an embedded backslash in the SQL text', () => {
     const backslashId = 'sess\\with\\backslashes';
-    const { sql, params } = buildEraseMutationSql('events', 'session_id', [backslashId], 'marker');
+    const { sql, params } = buildEraseMutationSql(
+      'events',
+      'session_id',
+      [backslashId],
+      'marker',
+      TEST_TENANT_ID,
+    );
     expect(sql).not.toContain('\\');
     expect(params.dsr_id_0).toBe('sess\\\\with\\\\backslashes');
   });
 
   it('throws on empty session ID list', () => {
-    expect(() => buildEraseMutationSql('events', 'session_id', [], 'marker')).toThrow(
-      'sessionIds must be non-empty',
-    );
+    expect(() =>
+      buildEraseMutationSql('events', 'session_id', [], 'marker', TEST_TENANT_ID),
+    ).toThrow('sessionIds must be non-empty');
   });
 
   it('rejects invalid table name (SQL injection guard)', () => {
     expect(() =>
-      buildEraseMutationSql('events; DROP TABLE x', 'session_id', ['s'], 'marker'),
+      buildEraseMutationSql('events; DROP TABLE x', 'session_id', ['s'], 'marker', TEST_TENANT_ID),
     ).toThrow('invalid table name');
   });
 
   it('rejects invalid column name', () => {
-    expect(() => buildEraseMutationSql('events', 'session_id; DROP', ['s'], 'marker')).toThrow(
-      'invalid column name',
-    );
+    expect(() =>
+      buildEraseMutationSql('events', 'session_id; DROP', ['s'], 'marker', TEST_TENANT_ID),
+    ).toThrow('invalid column name');
   });
 
   it('rejects invalid marker token', () => {
     expect(() =>
-      buildEraseMutationSql('events', 'session_id', ['s'], 'marker with spaces'),
+      buildEraseMutationSql('events', 'session_id', ['s'], 'marker with spaces', TEST_TENANT_ID),
     ).toThrow('marker token must be alphanumeric');
+  });
+
+  // FOLLOW-1308 (Codex F-13): the mutation is tenant-scoped, the tenant bound like the session ids.
+  it('carries tenant_id as a bound parameter, never in the SQL text', () => {
+    const { sql, params } = buildEraseMutationSql(
+      'events',
+      'session_id',
+      ['s'],
+      'm',
+      TEST_TENANT_ID,
+    );
+    expect(sql).toContain('WHERE tenant_id = {dsr_tenant_id:String} AND session_id IN');
+    expect(sql).not.toContain(TEST_TENANT_ID);
+    expect(params.dsr_tenant_id).toBe(TEST_TENANT_ID);
+  });
+
+  it('throws on an empty tenant id (an unscoped erase is never built)', () => {
+    expect(() => buildEraseMutationSql('events', 'session_id', ['s'], 'm', '')).toThrow(
+      'tenantId must be non-empty',
+    );
   });
 
   it('builds SQL for each canonical DSR table', () => {
     for (const { table, column } of DSR_CLICKHOUSE_TABLES) {
-      const { sql } = buildEraseMutationSql(table, column, ['sess-001'], 'abc123');
+      const { sql } = buildEraseMutationSql(table, column, ['sess-001'], 'abc123', TEST_TENANT_ID);
       expect(sql).toContain(`ALTER TABLE ${table}`);
-      expect(sql).toContain(`WHERE ${column} IN`);
+      expect(sql).toContain(`WHERE tenant_id = {dsr_tenant_id:String} AND ${column} IN`);
     }
   });
 });
@@ -263,8 +312,11 @@ describe('DSR_CLICKHOUSE_TABLES', () => {
       intentEntry!.column,
       ['sdk-fingerprint-abc'],
       'marker581',
+      TEST_TENANT_ID,
     );
-    expect(sql).toContain('ALTER TABLE intent_events DELETE WHERE session_id IN');
+    expect(sql).toContain(
+      'ALTER TABLE intent_events DELETE WHERE tenant_id = {dsr_tenant_id:String} AND session_id IN',
+    );
     expect(sql).not.toContain('intent_session_id');
     // The subject's SDK session_id is bound as the delete filter value.
     expect(params.dsr_id_0).toBe('sdk-fingerprint-abc');

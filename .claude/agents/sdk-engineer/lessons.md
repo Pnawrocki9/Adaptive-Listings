@@ -917,3 +917,18 @@ four phase imports in `index.ts` moved it to −71 B. Names on context objects w
 **A guardrail I'd add:** Before moving SDK code, grep `tests/` and `scripts/` for `readFile` of the
 file you are moving — a source-shape pin is a consumer. And measure the IIFE gzip after each cut
 with a bare esbuild call (same flags as tsup) so import order can be searched, not guessed.
+
+## 2026-11-04 / FOLLOW-1469 — local consent-text URL as a build-time constant
+
+**What I built:** `ESTALARA_LOCAL_CONSENT_TEXT_URL` (allow-listed, `tsup.config.ts`) inlines the
+local control-plane URL at the one `fetch(CONSENT_TEXT_URL,` call site via an esbuild plugin that
+exists only when the var is set; `packages/sdk/turbo.json` `env` keys the cache; `build:check`
+rejects a local dist; `localhost-up.sh` sets it and refuses a prod-URL dist.
+
+**What was uncertain:** the obvious `define` + `__X__ || PROD_URL` costs 8 B gzip (esbuild folds
+`false||x` but keeps a `var a=b` alias), and main had 7 B headroom. The plugin keeps the default
+IIFE byte-identical (`cmp`). Turbo strict env mode strips an undeclared var silently, so the `env`
+entry is what makes it reach tsup at all.
+
+**A guardrail I'd add:** For any build-variant switch, `cmp` the default dist against a pre-change
+build before measuring size; "behaviour unchanged" is cheapest to prove as "bytes unchanged".

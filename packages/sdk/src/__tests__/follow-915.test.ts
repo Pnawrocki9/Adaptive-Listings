@@ -60,7 +60,7 @@ let calls: { url: string; init?: RequestInit }[] = [];
 
 /**
  * @param consentText - what the consent-text endpoint returns. Two string sentinels stand in for
- *   transport failures: `'reject'` is a network error, `'never'` a hang the 3000 ms budget must
+ *   transport failures: `'reject'` is a network error, `'never'` a hang the 10000 ms budget must
  *   abort. `{ status }` yields a non-2xx. Anything else is served as the document body.
  */
 function mockFetch(consentText: unknown): void {
@@ -203,15 +203,54 @@ describe('AC(2) / §D4 — every failure mode fails CLOSED, with no fallback tex
     await expectFailedClosed();
   });
 
-  it('a hang, aborted at the 3000 ms budget', async () => {
+  it('a hang, aborted at the 10000 ms budget', async () => {
     vi.useFakeTimers();
     mockFetch('never');
     const pending = _initForTest();
-    await vi.advanceTimersByTimeAsync(3001);
+    await vi.advanceTimersByTimeAsync(10001);
     const result = await pending;
     expect(result).toBeNull();
     expect(bannerInDom()).toBe(false);
     expect(localStorage.getItem(CONSENT_KEY)).toBeNull();
+  });
+
+  it('a hang is still pending just under the budget (no early abort at the old 3000 ms)', async () => {
+    vi.useFakeTimers();
+    mockFetch('never');
+    let settled = false;
+    const pending = _initForTest().then((r) => {
+      settled = true;
+      return r;
+    });
+    await vi.advanceTimersByTimeAsync(9999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(2);
+    expect(await pending).toBeNull();
+  });
+});
+
+describe('FOLLOW-1461 — a slow answer inside the 10000 ms budget still renders the banner', () => {
+  it('renders the banner for a response delivered at 8175 ms', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string) => {
+        calls.push({ url });
+        if (url !== CONSENT_TEXT_URL) {
+          return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
+        }
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            resolve({ ok: true, status: 200, json: () => Promise.resolve(CONSENT_TEXT_DOC) });
+          }, 8175);
+        });
+      }),
+    );
+    void _initForTest();
+    await vi.advanceTimersByTimeAsync(8200);
+    await vi.waitFor(() => {
+      expect(bannerInDom()).toBe(true);
+    });
   });
 });
 

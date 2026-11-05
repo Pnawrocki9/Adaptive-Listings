@@ -515,6 +515,18 @@ off it throws `[demo_mode_off]` before the browser launches. The FOLLOW-1205 fix
 cannot see this state (the tenant key authenticates either way), which is why it is a separate
 probe. A manual §3.4 start must add `DEMO_MODE=1` to its `env` list.
 
+**The local SDK reads the consent text from the local control plane (FOLLOW-1469).** Step 2 builds
+the SDK with `ESTALARA_LOCAL_CONSENT_TEXT_URL=http://localhost:3000/consent-text.json`, a build-time
+constant (`packages/sdk/tsup.config.ts`, ADR-0021 amendment 2026-11-04): the bundle then fetches
+`apps/control-plane/public/consent-text.json` from `:3000`, so a new `text_version` (and the SDK's
+`MIN_PROFILE_TEXT_VERSION`) is testable before it is deployed, and the fetch no longer crosses the
+internet. Only that value and `http://127.0.0.1:3000/consent-text.json` are accepted; anything else
+fails the build. Without the variable the SDK fetches `admin.estalara.com` as before. The variable
+is in the sdk build's turbo cache key, so a cached production build is never reused here. After step
+2 the script stops if `packages/sdk/dist/estalara-sdk.iife.js` does not carry the local URL (e.g.
+`SKIP_BUILD=1` over a plain `pnpm build`). A manual §3.3 build must set the same variable. A local
+dist fails `pnpm --filter=@estalara/sdk build:check` by design: it is not shippable.
+
 **A graded series (FOLLOW-820 condition 1 / 1b) copies the artefact after EVERY run.** The harness
 overwrites `tests/e2e/follow-819/last-run.json` each time, so after each run, before the next:
 

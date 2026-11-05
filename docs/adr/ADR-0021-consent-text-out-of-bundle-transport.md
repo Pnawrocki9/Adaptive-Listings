@@ -15,6 +15,9 @@ FOLLOW-815, FOLLOW-916, Rule N, `docs/compliance/dpia.md` §2.2 / §6.1 / §13.1
 
 ---
 
+> **Amendment 2026-11-03 (CEO ruling, FOLLOW-1461):** budget 10000 ms (was 3000 ms); a measured 8175
+> ms response lost a session; fail-closed unchanged.
+
 ## Context
 
 ESC-051: the SDK bundle budget is exhausted (measured at HEAD: 42,994 bytes gzip against a
@@ -139,7 +142,7 @@ only_; granted/denied paths are byte-unchanged):
 2. getConsentState()
    ├─ 'denied'   → halt, erase, return null                                 [unchanged; no text fetch]
    ├─ 'granted'  → proceed to step 3                                        [unchanged; no text fetch, no banner]
-   └─ 'pending'  → fetchConsentText()   — identifier-free static GET, 3000 ms budget
+   └─ 'pending'  → fetchConsentText()   — identifier-free static GET, 10000 ms budget
         ├─ 200 + Zod-valid  → renderConsentBanner(fetched text) → await visitor decision
         └─ error / timeout / invalid → FAIL CLOSED (§D4)
 3. fetchQuizConfig()            — AFTER consent, per ADR-0011               [unchanged]
@@ -176,7 +179,7 @@ SDK selects using the existing level-2/3/4 chain (snippet `data-language` → `n
 
 ### D4 — Failure mode: fail-closed, no degraded fallback text
 
-On network error, non-2xx, timeout (3000 ms), or Zod validation failure of the fetched document:
+On network error, non-2xx, timeout (10000 ms), or Zod validation failure of the fetched document:
 
 - **no banner renders, and the SDK halts for this page view** — destroy the shadow host, dispatch
   zero events, write zero storage keys, return `null`;
@@ -330,6 +333,25 @@ No new client-storage key. The text is cached by HTTP semantics only (no localSt
 copy in v1) — so `scripts/check-privacy-notice-keys.sh` is unaffected and FOLLOW-915 AC(4) is
 satisfied structurally. If a storage-layer cache is ever added, it needs a new `*_STORAGE_KEY`, a
 Privacy Notice §4 row, and an amendment here.
+
+### Amendment 2026-11-04 — localhost build constant (FOLLOW-1469)
+
+On localhost the SDK read the consent text from production (`admin.estalara.com`), so a local text
+change (a new `text_version`) could not be tested without deploying it, against the localhost-first
+ruling. A build made by `scripts/dev/localhost-up.sh` now fetches the local control plane instead.
+The mechanism is a **build-time** constant: the env var `ESTALARA_LOCAL_CONSENT_TEXT_URL`, read by
+`packages/sdk/tsup.config.ts`, accepts only `http://localhost:3000/consent-text.json` or
+`http://127.0.0.1:3000/consent-text.json` (any other value fails the build), and an esbuild plugin
+then inlines that literal at the single `fetch(CONSENT_TEXT_URL,` call site. Nothing else in the §D3
+request shape changes: GET, `credentials: 'omit'`, no headers, no query string, no runtime
+interpolation, and no page, data attribute or global can set the URL. Unset — CI, `pnpm build`, the
+bundle served to tenants — no plugin runs and the IIFE is byte-identical to the pre-amendment build.
+This is not the parameterization the D3 paragraph above reserves for a new ADR: within one build the
+URL is still byte-identical for every tenant and visitor, and a local build never ships. Guards:
+`pnpm --filter=@estalara/sdk build:check` (CI) fails a dist that carries a local host or a
+string-literal consent fetch; the variable is in the sdk build's turbo cache key
+(`packages/sdk/turbo.json` `env`), so a cached local build is never replayed as the production
+bundle; and `localhost-up.sh` stops if its SDK dist does not carry the local URL.
 
 ---
 

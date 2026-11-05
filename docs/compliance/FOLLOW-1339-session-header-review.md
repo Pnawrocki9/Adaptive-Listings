@@ -10,6 +10,16 @@ day:** the edits of section 8 were applied at the coordinator's request, with th
 there, and ESC-091 was filed. C-1 to C-5 remain open; only C-5's recommendation is applied on
 localhost, pending the ruling.
 
+**Amended 2026-11-03, after the CEO ruled ESC-091** ("OK, rób zgodnie z twoimi zaleceniami. Zgadzam
+się z nimi."). (a) to (c) are confirmed as built. **C-1:** consent only, for conversion measurement
+and the holdout. **C-2:** keep the header; the receipt is the fallback. **C-3:** deferred until the
+gap is measured (H-12). **C-5:** no header, as applied. **C-4:** as built (CEO, later on 2026-11-03:
+legal documents are accepted as they are and reviewed once the product works). Sections 1, 7, 10 and
+11 are updated for these rulings; sections 2 to 6 and 8 stay as written on 2026-11-02, so their
+"open" and "pending C-n" wording is history. One consequence of C-1 overrides section 8's order: the
+served consent text changed **before** counsel answered L-8, on the CEO's acceptance of a banner
+bump, and counsel may still change it.
+
 Each answer separates **Established** (a document or the code says it, with the reference),
 **Engineering read** (my reasoning on those facts) and **Counsel** (not mine to decide).
 
@@ -25,8 +35,19 @@ read only at three publish sites, it is not stored, and it is not logged by anyt
 `core-master`. On localhost the front end sends it only when the host's optional-analytics choice is
 explicitly `optional: true`, pending ESC-091 C-5.
 
-**Production: NOT PASSED (section 10).** Three things need more than code, and one correction to the
-brief changes the analysis:
+**Production: NOT PASSED (section 10).** Still true after the ESC-091 rulings of 2026-11-03. What
+the rulings changed: the basis is now consent only (C-1); the served consent text (`text_version`
+`2026-11-03.1`, `apps/control-plane/public/consent-text.json`) names conversion measurement and the
+comparison group in all three locales; the header stays (C-2); no header without optional analytics
+(C-5). What they did not change: **no existing grant is re-asked yet,** because the SDK re-shows the
+banner only below `MIN_PROFILE_TEXT_VERSION`, still `2026-08-24.1`
+(`packages/sdk/src/core/session.ts`), and never re-asks a grant with no recorded version
+(`isConsentTextStale`); the header helper ignores the version altogether; and "consent only" is
+enforced by the SDK's gate, not by the server (H-13). C-4 is closed as built. Items 2 and 3 below
+stand; item 1 is answered in purpose and text, not yet in effect for earlier grants.
+
+As first written on 2026-11-02: three things need more than code, and one correction to the brief
+changes the analysis:
 
 1. **The processing has no recorded purpose and no consent text.** DPIA §3.1 says "no other
    purpose", and no sentence served to a buyer mentions measuring conversions.
@@ -354,18 +375,20 @@ counsel rejects the host's read under L-9.
 ## 7. Questions for counsel
 
 Same packet as L-1 to L-7 (FOLLOW-1316 design review section 9). No proposed answer here is a legal
-opinion.
+opinion. **Updated 2026-11-03 for the ESC-091 rulings:** L-8 and L-13 now ask about the sentence
+actually served, since C-1 put it in the banner; L-9 asks about consent as the chosen basis; L-10
+also feeds C-4, which stays open.
 
-| #    | Question                                                                                                                                                                                                                                                                                                           |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| L-8  | Is section 8's sentence sufficient for conversion measurement, in the banner or the notice? Do earlier grants need renewal? Separate choice from personalization?                                                                                                                                                  |
-| L-9  | Art. 5(3): does the host's read of `__estalara_session__` need consent for this purpose? Is any exemption open? Is reading `estalara_consent` itself in scope?                                                                                                                                                     |
-| L-10 | Recital 26, Art. 4(5), Art. 11: are these rows pseudonymised in the Art. 4(5) sense when one company holds both stores? Can it rely on Art. 11 while able to re-link? Does C-413/23 P change anything?                                                                                                             |
-| L-11 | Who is controller? ROPA says tenant and processor; the host policy says Time2Show determines purposes and means. Also: DPIA §1 claims an EU establishment (Art. 3(1), UODO lead), while `policy.md:18` says "established outside the European Union" under Art. 3(2) with a representative. They cannot both stand |
-| L-12 | L-3 extended: do `quiz_runs` traits, once re-linkable to an account, reveal Art. 9 data, and does that change their 13-month retention?                                                                                                                                                                            |
-| L-13 | Must the holdout be disclosed? Is measuring a buyer who accepted personalization and was withheld it covered by that acceptance?                                                                                                                                                                                   |
-| L-14 | L-4 extended: does withdrawal require erasing conversion rows already sent? Must an emailed withdrawal stop this flow?                                                                                                                                                                                             |
-| L-7  | Extended: UAE PDPL and CCPA treatment of this flow; GPC as a stop                                                                                                                                                                                                                                                  |
+| #    | Question                                                                                                                                                                                                                                                                                                                                        |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| L-8  | The basis is consent (C-1). Is the sentence served since `text_version` `2026-11-03.1` (the second sentence of `text`, EN, PL, ES) sufficient consent to conversion measurement? May it share one Accept with personalization, or must it be a separate choice? Must grants of `2026-08-24.1`, and grants with no recorded version, be renewed? |
+| L-9  | Art. 5(3): consent is the chosen basis (C-1). Does the banner's consent cover the host's own read of `__estalara_session__` for this purpose, and is reading `estalara_consent` itself in scope? A "no" brings in the receipt of section 6, the C-2 fallback                                                                                    |
+| L-10 | Recital 26, Art. 4(5), Art. 11: are these rows pseudonymised in the Art. 4(5) sense when one company holds both stores? Can it rely on Art. 11 while able to re-link? Does C-413/23 P change anything? The answer feeds C-4, which the CEO has not ruled                                                                                        |
+| L-11 | Who is controller? ROPA says tenant and processor; the host policy says Time2Show determines purposes and means. Also: DPIA §1 claims an EU establishment (Art. 3(1), UODO lead), while `policy.md:18` says "established outside the European Union" under Art. 3(2) with a representative. They cannot both stand                              |
+| L-12 | L-3 extended: do `quiz_runs` traits, once re-linkable to an account, reveal Art. 9 data, and does that change their 13-month retention?                                                                                                                                                                                                         |
+| L-13 | The served text now discloses the comparison group (C-1). Is that enough? Is consent freely given and specific when one Accept covers both personalization and the chance of being withheld it and measured anyway?                                                                                                                             |
+| L-14 | L-4 extended: does withdrawal require erasing conversion rows already sent? Must an emailed withdrawal stop this flow?                                                                                                                                                                                                                          |
+| L-7  | Extended: UAE PDPL and CCPA treatment of this flow; GPC as a stop                                                                                                                                                                                                                                                                               |
 
 ## 8. Edits owed, with proposed wording
 
@@ -538,18 +561,24 @@ must not be widened without returning here.
 
 ## 10. Conditions for production (CTO handover)
 
-All must be true. **None is today.** Owners in brackets.
+All must be true. **None is today.** Owners in brackets. Updated 2026-11-03 for the ESC-091 rulings:
+H-3, H-6, H-8, H-10 and H-12 change, and H-13 is new.
 
 1. **H-1 — Off until the rest hold.** All six `AL_*` variables stay unset, and the helper is not
    deployed or is behind a flag defaulting to no header: with `AL_*` unset the backend discards the
    id, but the host's read has still happened. Verified at the handover, not assumed. [CTO]
 2. **H-2 — Counsel has answered L-8 to L-14 and L-7 as extended,** with L-1 to L-6 still owed under
    FOLLOW-1316. [Counsel, Compliance]
-3. **H-3 — Text and version.** Measurement text as counsel settles it, on the canonical sign-off
-   path. The helper requires a recorded `estalara_consent_text_version` at or above a minimum raised
-   in the same change, since `granted` alone survives a stale grant. The accepted version travels on
-   the event as an additive field, through ESC, or the record states why not. [Compliance, SDK,
-   Backend]
+3. **H-3 — Text and version.** _Part done 2026-11-03 (C-1):_ the measurement sentence is served at
+   `text_version` `2026-11-03.1`, in all three locales, ahead of counsel; L-8 may change it. **Still
+   owed:** (i) the SDK re-asks older grants: `MIN_PROFILE_TEXT_VERSION` in
+   `packages/sdk/src/core/session.ts` raised to `2026-11-03.1`, or a separate conversion minimum.
+   Until then no grant is re-asked, although the re-prompt is the cost C-1 accepted; (ii) a grant
+   with no recorded version is not treated as covering measurement, since the SDK never re-asks it;
+   (iii) the helper requires a recorded `estalara_consent_text_version` at or above that minimum,
+   since `granted` alone survives a stale grant and a re-shown banner keeps `granted` until
+   answered; (iv) the accepted version travels on the event as an additive field, through ESC, or
+   the record states why not. [Compliance, SDK, Backend]
 4. **H-4 — Published policies.** The host's policy and cookie policy state this processing, meeting
    `policy.md:306` "before the processing begins". [CTO, Counsel]
 5. **H-5 — Withdrawal works.** FOLLOW-1316 P-2 holds: a control that renders **with
@@ -558,32 +587,47 @@ All must be true. **None is today.** Owners in brackets.
    Backend, Compliance]
 6. **H-6 — Minimised.** `slot_uuid` is not sent: no lift reader uses it (`lift/route-helpers.ts`,
    `rollup/data.ts`, `lift-csv.ts`, `lift-snapshots.ts` have no match). The same grep finds no
-   `listing_id` there; keep it only if a named reader needs it. C-3 decides coarsening of `ts` and
-   `ingest_received_at`. [Backend, CEO]
+   `listing_id` there; keep it only if a named reader needs it. Coarsening `ts` and
+   `ingest_received_at` is deferred by C-3 until H-12 has measured the gap; then the CEO decides.
+   [Backend, CEO]
 7. **H-7 — A no-join rule that exists.** A written rule that host records and these rows are not
    joined except for a DSR under a documented procedure; separate credentials for the two stores,
    checked rather than assumed; a named owner. The DPIA may state these only once they are real.
    [CTO, Compliance]
 8. **H-8 — DSR.** FOLLOW-1308 is done, its erase test includes a `caller_signed = 1` row and its
-   tenant filter catches both key classes; the route for an account holder follows C-4. [Backend,
-   Compliance]
+   tenant filter catches both key classes; the route for an account holder follows C-4, which is
+   **not ruled** and waits for L-10. [Backend, Compliance, CEO]
 9. **H-9 — Nothing else captures the header.** Edge, proxy, load balancer and APM confirmed not to
    log it. PostHog header capture confirmed off in project settings and pinned in `posthog.init`. A
    search of a production log sample for the id value returns 0. [CTO]
 10. **H-10 — GPC and analytics refusal.** The helper honours `navigator.globalPrivacyControl`, or
-    FOLLOW-1438 corrects the claim. `cookieConsent.optional` per the C-5 ruling; applied on
-    localhost pending it. [Frontend, Compliance]
+    FOLLOW-1438 corrects the claim. _C-5 ruled 2026-11-03:_ no header unless
+    `cookieConsent.optional` is `true`, as built on localhost; the production patch must carry that
+    check. [Frontend, Compliance]
 11. **H-11 — Sign-off.** The DPO signs §2.2.1 item 4, §3.1(d), Risks A and G. ROPA Activity 19's
     controller field is filled from L-11. [DPO]
 12. **H-12 — Measured.** The real-app gap between host time and `ts` is measured and recorded, so
-    the DPIA states a number. [QA]
+    the DPIA states a number. It is also C-3's trigger. [QA]
+13. **H-13 — Consent only, enforced where the data lands (new 2026-11-03, C-1).** Today "consent
+    only" holds because the SDK calls `/api/adapt` only after `granted` (`resolveConsent`,
+    `packages/sdk/src/core/consent-flow.ts`) and the helper sends the header only under `granted`.
+    The server takes the caller's word: `assignHoldout` skips only `opted_out`, `unknown` and
+    `none`, and only when `consent_mode_enabled` is true (`packages/shared/src/ab-holdout.ts`),
+    which the SDK never sends. So a caller sending `legitimate-interest` or `unknown` is assigned an
+    arm and logged, and the lift readers do not filter on consent (`lift/route-helpers.ts`). Either
+    `/api/adapt` assigns the holdout only to `consented`, or the record states why the SDK gate
+    suffices. Implementation FOLLOW owed, with a before-go-live `depends_on`. [Backend, Compliance]
 
 ## 11. Points on which the CEO must rule
 
-**Filed as ESC-091, OPEN.** **Not ruled by ESC-084 or ESC-085 D-J,** which settled who emits and
-what counts. None of these is needed for localhost; all are before production. C-5's recommendation
-is applied on localhost pending its ruling, and the others are not applied in either direction: the
-header exists because localhost needs an emitter, not because C-2 is decided.
+**Ruled 2026-11-03 (ESC-091 RESOLVED), C-4 excepted.** C-1: consent only. C-2: keep the header. C-3:
+deferred until H-12. C-5: no header. C-4: open, with no recommendation and no ruling. The table is
+kept as the recommendations the CEO accepted.
+
+As filed on 2026-11-02: **Filed as ESC-091, OPEN.** **Not ruled by ESC-084 or ESC-085 D-J,** which
+settled who emits and what counts. None of these is needed for localhost; all are before production.
+C-5's recommendation is applied on localhost pending its ruling, and the others are not applied in
+either direction: the header exists because localhost needs an emitter, not because C-2 is decided.
 
 | #   | Decision                                                                                                       | Recommendation                                                                                                                                                                                              | Cost                                                                     |
 | --- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
@@ -624,5 +668,6 @@ summaries and vendor or law-firm pages, not the primary text.
 in the PR. **Protected-class scan:** no new buyer-facing copy in this PR; the draft sentences name
 no protected class or proxy.
 
-NEXT: the PM stages these paths, gets `web-master-x1-conversion-header.patch` regenerated (M-2),
-takes M-4 and the architect's §D.8 edit, and the CEO rules ESC-091.
+NEXT: the SDK owner raises the consent-text minimum to `2026-11-03.1` (H-3 (i)); the PM files the
+H-13 implementation FOLLOW with a before-go-live `depends_on`; counsel answers L-8 to L-14; C-4
+returns to the CEO after L-10.

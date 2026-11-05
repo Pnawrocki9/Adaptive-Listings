@@ -232,3 +232,15 @@ being written to Redis without any disclosure review. The schema contract should
   feature that promises deletion on withdrawal first greps for the control that triggers the
   withdrawal, not only the erase function behind it; and a negative control must be paired with a
   positive on the same key in the same run, or an empty store passes it.
+
+- **2026-11-03 / FOLLOW-1339, ESC-091 rulings** · Recorded the rulings; C-1 (consent only for
+  conversions and the holdout) applied in DPIA v2.29, ROPA v2.24, LIA v2.3, Notice v1.17; served
+  consent `text` gained a measurement sentence in EN/PL/ES, `text_version` `2026-11-03.1`. **Drift
+  risk:** the brief said the bump makes existing grants be asked again. It does not: the SDK re-asks
+  only below `MIN_PROFILE_TEXT_VERSION` (still `2026-08-24.1`) and never re-asks a grant with no
+  recorded version; and DPIA §13.2 said that minimum "equals the served `text_version`", which the
+  bump made false. "Consent only" for the holdout is enforced by the SDK gate alone: `assignHoldout`
+  assigns `legitimate-interest` callers. **Guardrail I'd add:** a `text_version` bump must grep
+  `MIN_PROFILE_TEXT_VERSION` and every sentence quoting the served version, and say whether anyone
+  is actually re-prompted; a basis ruling is checked against what the server enforces, not only what
+  the browser does.

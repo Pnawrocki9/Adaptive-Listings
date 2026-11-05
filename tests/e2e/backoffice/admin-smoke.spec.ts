@@ -65,6 +65,9 @@ const TENANT_ID =
   '00000000-0000-0000-0000-0000000000e2';
 const ADMIN_API_SECRET = process.env.ADMIN_API_SECRET;
 const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
+// FOLLOW-1307: the plane accepts a staff JWT only with the Supabase Auth issuer of ITS project
+// (`<NEXT_PUBLIC_SUPABASE_URL>/auth/v1`, Doppler dev) and `aud: authenticated`.
+const SUPABASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim().replace(/\/+$/, '');
 
 /** Next dev overlay / default error page markers. `error.tsx` lands with FOLLOW-1336 (M3). */
 const ERROR_MARKERS = [
@@ -105,6 +108,9 @@ function mintStaffJwt(key: string, role: 'estalara:readonly' | 'estalara:ops'): 
     estalara_role: role,
     tenant_id: null,
     mfa_verified: false,
+    iss: `${SUPABASE_URL}/auth/v1`,
+    aud: 'authenticated',
+    role: 'authenticated',
     iat: now,
     exp: now + 300,
   });
@@ -213,6 +219,10 @@ test.describe('N2 backoffice smoke — FOLLOW-1321 rank matrix on the live API',
     test.skip(
       !SUPABASE_JWT_SECRET,
       'SUPABASE_JWT_SECRET is unset here: export the value from .localhost-up/local-staff-jwt-secret (FOLLOW-1460)',
+    );
+    test.skip(
+      !SUPABASE_URL,
+      "NEXT_PUBLIC_SUPABASE_URL is unset here: export the plane's value (Doppler dev) — the token's iss (FOLLOW-1307)",
     );
     const jwt = (role: 'estalara:readonly' | 'estalara:ops') =>
       bearer(mintStaffJwt(SUPABASE_JWT_SECRET ?? '', role));

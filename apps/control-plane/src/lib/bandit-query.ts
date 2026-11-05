@@ -28,8 +28,10 @@ import type { BanditArm } from '@estalara/shared';
  * starts unbiased — every variant has equal probability until evidence
  * (conversions / non-conversions) shifts the posterior.
  *
- * Exported so `bandit-seed.ts` derives its seed list from this single
+ * Exported so `variant-index.ts` derives its index from this single
  * source of truth (Rule K.1 / Rule S — no divergent duplicate list).
+ * (`bandit-seed.ts`, the tenant-creation seed, was removed with
+ * `POST /api/tenants` by FOLLOW-1307; arms are seeded lazily below.)
  */
 export const SEED_VARIANTS = ['control', 'v1', 'v2'] as const;
 

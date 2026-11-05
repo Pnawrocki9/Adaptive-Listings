@@ -5,7 +5,8 @@
 > history only and is no longer an operating procedure. Specifically gone: the `/admin/tenants`
 > fleet list (it now redirects to the Estalara tenant hub, `/admin/tenants/<id>`) and the
 > `GET /api/admin/diagnostics/first-party-tenant` route that the diagnostic snippets in this
-> document call.
+> document call. `POST /api/tenants` (Step 1, tenant creation with `x-admin-secret`) was removed by
+> FOLLOW-1307: `ADMIN_API_SECRET` is a read-only credential and there is no second tenant to create.
 
 **Audience:** Piotr (CEO) — the sole operator of `admin.estalara.com`. **Status:** authored
 2026-07-25, **reconciled the same day (FOLLOW-657 Leg 2)** against four PRs that merged after the

@@ -72,6 +72,8 @@ REMOVED_PATHS=(
   ".github/workflows/demo-integration.yml"
   "tests/e2e/sprint-9-5-demo.spec.ts"
   "apps/control-plane/scripts/project-allowed-origins.mts"
+  # FOLLOW-1307: tenant creation by the headless x-admin-secret (one tenant, ESC-085)
+  "$CP/app/api/tenants/route.ts"
 )
 
 # name|extended-regex ; scanned in non-test .ts/.tsx under apps/*/src packages/*/src

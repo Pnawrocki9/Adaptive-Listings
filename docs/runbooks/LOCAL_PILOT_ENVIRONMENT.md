@@ -612,6 +612,8 @@ Env: `LISTING_URL` (the Palm Coast listing on `:5173`), `DECISION_ORIGIN` (`:300
 `N3_DESCRIPTION_BUDGET_MS`, `N3_DEADLINE_MS` (50 min watchdog), `ADMIN_API_SECRET` (the rollup;
 REQUIRED for `lift_reader_one_conversion`, absent it that hop is RED and says so),
 `SUPABASE_JWT_SECRET` (signs a staff token for the lift route; the plane must hold the same one),
+`NEXT_PUBLIC_SUPABASE_URL` (the plane's value from Doppler `dev`; the token's `iss` is
+`<url>/auth/v1` since FOLLOW-1307, absent it the lift route hop is `UNMEASURED:no_staff_jwt`),
 `N3_BUILD_ROOT` (a checkout holding the served build, when running from a worktree with
 `packages/sdk/node_modules` linked in). The last line reads `RESULT: verdict=…`. A full run takes
 about 17 min and makes real LLM calls.

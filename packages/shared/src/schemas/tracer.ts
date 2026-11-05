@@ -59,7 +59,19 @@ export const IntentSessionRowSchema = z.object({
   chat_turns: z.number().int(),
 });
 
-export type IntentSessionRow = z.infer<typeof IntentSessionRowSchema>;
+/**
+ * A tracer session row as the admin routes return it.
+ *
+ * `weights` — the full archetype weight distribution from the `intent_state` envelope
+ * (FOLLOW-1310, Codex F-07; parsed by `readIntentStateEnvelope`), `null` when absent or
+ * unreadable — is declared on the TYPE, not on `IntentSessionRowSchema`, on purpose: this module
+ * is bundled into the SDK (`IntentConfigResponseSchema`), esbuild cannot drop an unused top-level
+ * `z.object(...)` call, and the extra Zod field measured +10 B gzip against a 7 B headroom. No
+ * runtime code parses these row schemas (grep `IntentSessionRowSchema` → this file only).
+ */
+export type IntentSessionRow = z.infer<typeof IntentSessionRowSchema> & {
+  weights?: Record<string, number> | null;
+};
 
 // ─── Response for AC1: GET /api/admin/tracer/sessions ────────────────────────
 

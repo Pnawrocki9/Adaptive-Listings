@@ -158,12 +158,14 @@ sufficient:
 3. There is no automated prod deploy for this Worker (FOLLOW-938), so the newest signals may not be
    running at all.
 
-| signal                            | fires when                                                                                  | consumer           |
-| --------------------------------- | ------------------------------------------------------------------------------------------- | ------------------ |
-| `origin_gate_rejected`            | a browser `Origin` not on the constant list (FOLLOW-1333) was refused                       | **none**           |
-| `unsigned_server_caller_rejected` | a request with no browser `Origin` and no valid signature was refused (FOLLOW-1201 forgery) | **none** (ESC-079) |
-| `consent_gate_rejected`           | a profiling-class event was dropped because `consent_state` grants no lawful basis          | **none**           |
-| `schema_rejected`                 | a batch carried events failing `EventSchema`; `has_consent_event` marks the compliance case | **none**           |
+| signal                            | fires when                                                                                                   | consumer           |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------ |
+| `origin_gate_rejected`            | a browser `Origin` not on the constant list (FOLLOW-1333) was refused                                        | **none**           |
+| `unsigned_server_caller_rejected` | a request with no browser `Origin` and no valid signature was refused (FOLLOW-1201 forgery)                  | **none** (ESC-079) |
+| `consent_gate_rejected`           | a profiling-class event was dropped because `consent_state` grants no lawful basis                           | **none**           |
+| `schema_rejected`                 | a batch carried events failing `EventSchema`; `has_consent_event` marks the compliance case                  | **none**           |
+| `insufficient_scope_rejected`     | an api key without `write:events` (or legacy browser `read:events`) was refused (FOLLOW-1310)                | **none**           |
+| `event_bounds_rejected`           | events were refused as `ts_out_of_range` or `event_too_large`; the rest of the batch persisted (FOLLOW-1310) | **none**           |
 
 Raised as `captureException(new Error('name'))` — **all eight were already shipping and none was
 visible to the register** until FOLLOW-944 widened its detector:
@@ -178,6 +180,9 @@ visible to the register** until FOLLOW-944 widened its detector:
 | `events_retry_message_malformed`          | a queued retry message could not be parsed — the batch it carried is dropped        | **none** |
 | `events_retry_unknown_schema_version`     | a retry message carried an unknown schema version — producer/consumer deploy skew   | **none** |
 | `events_retry_reinsert_failed`            | the retry consumer could not re-insert a batch — this is the END of the retry path  | **none** |
+| `events_retry_record_oversize`            | a retry message would exceed the queue bound and was NOT sent (FOLLOW-1310)         | **none** |
+| `events_retry_rows_unencodable`           | a queued batch held only rows ClickHouse cannot store; dropped, not re-driven       | **none** |
+| `intent_snapshot_retry_failed`            | a re-queued snapshot side-write still failed; Cloudflare retries, then the DLQ      | **none** |
 
 **"Consumer: none" is a recorded decision, not an oversight** — that is FOLLOW-937 AC(2). Naming it
 here is what keeps the next reader from mistaking a producer for observability.

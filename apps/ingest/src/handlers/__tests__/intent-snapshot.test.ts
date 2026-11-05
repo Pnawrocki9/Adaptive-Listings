@@ -135,7 +135,9 @@ describe('handleIntentSnapshot', () => {
 
     await handleIntentSnapshot(event, ENV_FULL, fetchImpl);
 
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    // 1 ClickHouse INSERT + 3 PostgREST statements (insert-or-ignore, head PATCH, start PATCH —
+    // the monotonic head of FOLLOW-1310).
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
 
     const chCall = calls().find((c) => c.url.includes('intent_events'));
     const pgCall = calls().find((c) => c.url.includes('intent_sessions'));
@@ -163,10 +165,12 @@ describe('handleIntentSnapshot', () => {
     expect(pgBody.signal_count).toBe(10);
     expect(pgBody.quiz_completed).toBe(false);
     expect(pgBody.chat_turns).toBe(3);
-    // intent_state holds probabilities
-    expect(pgBody.intent_state).toBe(
-      JSON.stringify({ family_buyer: 0.74, yield_hunter: 0.12, neutral: 0.14 }),
-    );
+    // FOLLOW-1310 (Codex F-07): intent_state is the shared envelope OBJECT, not a JSON string.
+    expect(pgBody.intent_state).toEqual({
+      weights: { family_buyer: 0.74, yield_hunter: 0.12, neutral: 0.14 },
+      topArchetype: 'family_buyer',
+      confidence: 0.74,
+    });
   });
 
   // -----------------------------------------------------------------------
@@ -227,7 +231,10 @@ describe('handleIntentSnapshot', () => {
     }) as unknown as typeof fetch;
 
     // handleIntentSnapshot should not throw even when CH fails
-    await expect(handleIntentSnapshot(makeEvent(), ENV_FULL, pgFetch)).resolves.toBeUndefined();
+    // FOLLOW-1310: it reports the failed sink so the caller can re-queue it.
+    await expect(handleIntentSnapshot(makeEvent(), ENV_FULL, pgFetch)).resolves.toEqual({
+      failedSinks: ['clickhouse'],
+    });
 
     // Supabase was called
     const calls = (pgFetch as unknown as Mock).mock.calls as [RequestInfo | URL][];
@@ -447,7 +454,9 @@ describe('TG-1: PostgREST UPSERT URL contract (CB-1 fix)', () => {
     // Prefer header must NOT include on_conflict
     expect(preferHeader).not.toContain('on_conflict');
     // Prefer header must include resolution and return
-    expect(preferHeader).toContain('resolution=merge-duplicates');
+    // FOLLOW-1310 (Codex F-16): insert-or-IGNORE — an existing row (and its started_at) is never
+    // overwritten by the insert; the head moves only through the filtered PATCH.
+    expect(preferHeader).toContain('resolution=ignore-duplicates');
     expect(preferHeader).toContain('return=minimal');
   });
 
@@ -456,8 +465,13 @@ describe('TG-1: PostgREST UPSERT URL contract (CB-1 fix)', () => {
     // When on_conflict is in Prefer header only, PostgREST ignores it → 409 INSERT conflict.
     // We assert the URL carries the param, ensuring PostgREST routes to UPDATE.
     let callCount = 0;
-    const fetchImpl = vi.fn((input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+    const fetchImpl = vi.fn((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      // Only the INSERT carries the conflict target; the FOLLOW-1310 head/start PATCHes filter
+      // on the row instead and are answered 204 here.
+      if (url.includes('intent_sessions') && init?.method === 'PATCH') {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
       if (url.includes('intent_sessions')) {
         callCount++;
         const urlObj = new URL(url);

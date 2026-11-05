@@ -66,6 +66,7 @@ export type AuthFailure =
   | { reason: 'signature_mismatch' }
   | { reason: 'stale_timestamp' }
   | { reason: 'replayed_nonce' }
+  | { reason: 'invalid_key_record' }
   | { reason: 'kv_error'; cause: unknown };
 
 export type AuthResult = ({ ok: true } & AuthenticatedTenant) | ({ ok: false } & AuthFailure);
@@ -128,12 +129,16 @@ export async function authenticateRequest(
   }
   if (!raw) return { ok: false, reason: 'unknown_key' };
 
-  let record: ApiKeyRecord;
+  let parsedRecord: unknown;
   try {
-    record = JSON.parse(raw) as ApiKeyRecord;
+    parsedRecord = JSON.parse(raw);
   } catch (cause) {
     return { ok: false, reason: 'kv_error', cause };
   }
+  // FOLLOW-1310 (Codex F-31): the record is validated, not cast. A record without a tenant or a
+  // string-array `scopes` cannot be authorised against the scope contract below.
+  if (!isApiKeyRecord(parsedRecord)) return { ok: false, reason: 'invalid_key_record' };
+  const record = parsedRecord;
 
   let signed = false;
   if (signatureHeader) {
@@ -180,6 +185,53 @@ export async function authenticateRequest(
     scopes: record.scopes,
     signed,
   };
+}
+
+function isApiKeyRecord(value: unknown): value is ApiKeyRecord {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.tenant_id === 'string' &&
+    v.tenant_id.length > 0 &&
+    Array.isArray(v.scopes) &&
+    v.scopes.every((s) => typeof s === 'string') &&
+    // A hand-written `null` secret reads as "no secret" (signing then fails as before).
+    (v.hmac_secret === undefined || v.hmac_secret === null || typeof v.hmac_secret === 'string')
+  );
+}
+
+/**
+ * The ingest scope contract — FOLLOW-1310, Codex F-31. Until then `scopes` was returned by
+ * `authenticateRequest` and read by nothing, so a record with `scopes: []` authorised writes.
+ *
+ * - `write:events` admits every caller. It is what current issuance grants
+ *   (`apps/control-plane/scripts/issue-tenant-api-key.mts` `DEFAULT_SCOPES`: public
+ *   `[read:events, write:events]`, server `[write:events]`) and what every localhost / CI / e2e KV
+ *   seed carries (`scripts/dev/localhost-up.sh` `pilot-key` + `pilot-server-key`,
+ *   `.github/workflows/e2e-smoke.yml`, `tests/e2e/follow-819`).
+ * - `read:events` ALONE admits a BROWSER (unsigned, Origin-gated) caller only — a compatibility
+ *   projection, not a rename: the retired activation route issued SDK keys with
+ *   `scopes: ['read:events']` (FOLLOW-1328 removed it; `git show a47018ce^`), and a KV record
+ *   copied from one of those keys must keep ingesting until it is re-issued. Admissions through it
+ *   are tagged `legacy_scope` so they can be counted before the projection is dropped.
+ * - Anything else (empty, unrelated scopes, or a SIGNED server caller without `write:events`) is
+ *   refused with 403 `insufficient_scope` before any side effect.
+ */
+const INGEST_WRITE_SCOPE = 'write:events';
+/** Legacy SDK-key scope admitted for browser callers only — see `decideIngestScope`. */
+const LEGACY_BROWSER_INGEST_SCOPE = 'read:events';
+
+type IngestScopeDecision =
+  | { allowed: true; legacy: boolean }
+  | { allowed: false; required: typeof INGEST_WRITE_SCOPE };
+
+/** Apply the ingest scope contract to an authenticated caller. */
+export function decideIngestScope(scopes: readonly string[], signed: boolean): IngestScopeDecision {
+  if (scopes.includes(INGEST_WRITE_SCOPE)) return { allowed: true, legacy: false };
+  if (!signed && scopes.includes(LEGACY_BROWSER_INGEST_SCOPE)) {
+    return { allowed: true, legacy: true };
+  }
+  return { allowed: false, required: INGEST_WRITE_SCOPE };
 }
 
 /**

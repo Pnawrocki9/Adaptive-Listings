@@ -26,6 +26,7 @@ import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { createAdminClient, intentSessions } from '@estalara/db';
+import { readIntentStateEnvelope } from '@estalara/shared';
 import type { TracerSessionReplayResponse, IntentSessionRow } from '@estalara/shared';
 
 import { verifyTracerAdminAuth } from '@/lib/tracer-auth';
@@ -126,16 +127,15 @@ export async function GET(
       // rows.length guard above guarantees rows[0] exists.
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const r = rows[0]!;
-      const state = r.intentState as {
-        topArchetype?: string;
-        confidence?: number;
-      } | null;
+      // One envelope contract with the ingest writer (FOLLOW-1310, Codex F-07).
+      const state = readIntentStateEnvelope(r.intentState);
       sessionRow = {
         session_id: r.sessionId,
         tenant_id: r.tenantId,
         signal_count: r.signalCount,
-        top_archetype: state?.topArchetype ?? null,
-        confidence: state?.confidence ?? null,
+        top_archetype: state.topArchetype,
+        confidence: state.confidence,
+        weights: state.weights,
         last_event_at: r.lastEventAt.toISOString(),
         quiz_completed: r.quizCompleted,
         chat_turns: r.chatTurns,

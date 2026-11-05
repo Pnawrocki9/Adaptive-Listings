@@ -66,6 +66,7 @@ import {
   fetchIntentEventsForSession,
 } from '@/lib/clickhouse-tracer';
 import { GET } from './route';
+import { buildIntentStateEnvelope } from '@estalara/shared';
 import type { TracerSessionDetailResponse } from '@estalara/shared';
 
 const mockGetAuthClaims = vi.mocked(getAuthClaims);
@@ -311,6 +312,43 @@ describe('GET /api/admin/tracer/sessions/[id] — live path (DB configured)', ()
     expect(body.session.top_archetype).toBe('family_buyer');
     expect(body.session.confidence).toBe(0.88);
     expect(body.session.quiz_completed).toBe(true);
+  });
+
+  it('FOLLOW-1310: reads the envelope the ingest writer stores, with its real weights', async () => {
+    const written: unknown = JSON.parse(
+      JSON.stringify(
+        buildIntentStateEnvelope({
+          archetype: 'family_buyer',
+          confidence: 0.81,
+          probabilities: { family_buyer: 0.81, neutral: 0.19 },
+        }),
+      ),
+    );
+    mockLimit.mockResolvedValue([{ ...MOCK_SESSION_ROW, intentState: written }]);
+    mockResolveClickHouseTracerConfig.mockReturnValue(null);
+    const body = await parseBody<TracerSessionDetailResponse>(
+      await GET(makeRequest({ bearer: ADMIN_SECRET }), { params: makeParams() }),
+    );
+    expect(body.session).toMatchObject({
+      top_archetype: 'family_buyer',
+      confidence: 0.81,
+      weights: { family_buyer: 0.81, neutral: 0.19 },
+    });
+  });
+
+  it('FOLLOW-1310: a legacy double-serialised row yields its weights, never an invented archetype', async () => {
+    mockLimit.mockResolvedValue([
+      { ...MOCK_SESSION_ROW, intentState: JSON.stringify({ family_buyer: 0.6, neutral: 0.4 }) },
+    ]);
+    mockResolveClickHouseTracerConfig.mockReturnValue(null);
+    const body = await parseBody<TracerSessionDetailResponse>(
+      await GET(makeRequest({ bearer: ADMIN_SECRET }), { params: makeParams() }),
+    );
+    expect(body.session).toMatchObject({
+      top_archetype: null,
+      confidence: null,
+      weights: { family_buyer: 0.6, neutral: 0.4 },
+    });
   });
 
   it('returns null for top_archetype and confidence when intentState is null', async () => {

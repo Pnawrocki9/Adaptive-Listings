@@ -32,8 +32,9 @@
  *   - `event_payload` sent to ClickHouse is PII-scrubbed: contains only { signal_count,
  *     quiz_completed, quiz_leaf, chat_turns }. Never includes `probabilities` (archetype weight
  *     map) or any chat content.
- *   - `intent_sessions.intent_state` stores `probabilities` (the full weight distribution) as
- *     session state — this is not chat content and is not PII under the current DPIA scope.
+ *   - `intent_sessions.intent_state` stores the envelope `{ weights: probabilities, topArchetype,
+ *     confidence }` (FOLLOW-1310, `buildIntentStateEnvelope`) as session state — this is not chat
+ *     content and is not PII under the current DPIA scope.
  *
  * Auth: this handler runs inside the ingest Worker auth boundary (API key + optional HMAC
  * verified in events.ts before this handler is called). No additional auth needed here — the
@@ -45,9 +46,10 @@
 import * as Sentry from '@sentry/cloudflare';
 
 import type { IntentSnapshotPayload } from '@estalara/shared';
-import { INTENT_SNAPSHOT_EVENT_TYPE } from '@estalara/shared';
+import { INTENT_SNAPSHOT_EVENT_TYPE, buildIntentStateEnvelope } from '@estalara/shared';
 
 import { toClickHouseDateTime64 } from '../clickhouse-producer.js';
+import type { IntentSnapshotSink } from '../events-retry-queue.js';
 import { logger } from '../observability/logger.js';
 
 export type { IntentSnapshotPayload };
@@ -254,27 +256,34 @@ export async function insertIntentEventToClickHouse(
 }
 
 /**
- * UPSERT one row into Supabase `intent_sessions` via PostgREST.
+ * Write one snapshot into Supabase `intent_sessions` via PostgREST, as a MONOTONIC head.
+ * [FOLLOW-1310, Codex F-07 / F-16]
  *
- * Uses a PostgREST upsert with `?on_conflict=tenant_id,session_id` as a URL query
- * parameter (CB-1 fix, FOLLOW-286) and `Prefer: resolution=merge-duplicates,return=minimal`
- * as a header. The conflict target MUST be a URL param — PostgREST does NOT parse it from
- * the Prefer header.
+ * Until FOLLOW-1310 this was ONE `merge-duplicates` upsert whose body carried `started_at` and
+ * `last_event_at` = this snapshot's `ts`, so every snapshot rewrote the session's start time and a
+ * late or replayed snapshot moved the head BACKWARDS (Codex F-16); and `intent_state` was sent as
+ * `JSON.stringify(probabilities)`, so the JSONB column held a STRING that no reader could
+ * destructure (Codex F-07). Now three PostgREST statements, each atomic on its own row:
  *
- * On conflict the row is updated with the latest snapshot values. `started_at` is NOT
- * included in the update column set — PostgREST `merge-duplicates` updates all writable
- * columns, so we exclude `started_at` from the row body on re-upserts. Since the row body
- * always includes `started_at` on INSERT (first snapshot), and PostgREST only updates
- * columns present in the POST body, we could omit it. However, the simpler correct
- * approach is: we include `started_at` in the body (PostgREST sets it on INSERT), and
- * `merge-duplicates` will NOT overwrite `started_at` on conflict because the column is
- * in the body — see AC5 trade-off: for now we accept that started_at is overwritten on
- * re-upsert with the same value (same session_id → same original start time from the SDK).
- * This is semantically safe because the SDK ts on the first snapshot IS the session start.
+ *  1. INSERT-OR-IGNORE (`resolution=ignore-duplicates` on `tenant_id,session_id`) — creates the row
+ *     on the first snapshot with `started_at = last_event_at = ts`; an existing row is untouched,
+ *     so `started_at` is never overwritten.
+ *  2. Head PATCH filtered `last_event_at=lt.<ts>` — moves the mutable fields forward ONLY when this
+ *     snapshot is strictly newer. Postgres re-checks the predicate after taking the row lock, so
+ *     two concurrent snapshots cannot interleave into a backwards head.
+ *  3. Start PATCH filtered `started_at=gt.<ts>` — lowers `started_at` to this snapshot's `ts` when
+ *     an EARLIER snapshot arrives late (retry-queue replay). It only ever moves to a `ts` that was
+ *     actually observed; nothing is fabricated.
  *
- * signal_count is set from the SDK payload, which carries the cumulative count. This is
- * semantically correct: the SDK is the authoritative counter and the payload value IS the
- * running total on every snapshot.
+ * Every statement is idempotent, so a retry of the whole function (the side-write retry queue,
+ * `events-retry-queue.ts`) after a partial failure converges on the same row. No migration: the
+ * columns are the ones in `packages/db/migrations/0028_intent_sessions.sql`.
+ *
+ * `intent_state` is `buildIntentStateEnvelope(payload)` from `@estalara/shared`, sent as a JSON
+ * OBJECT; the control-plane readers parse it with the same module's `readIntentStateEnvelope`.
+ *
+ * `signal_count` is set from the SDK payload, which carries the cumulative count — the SDK is the
+ * authoritative counter and the payload value IS the running total on every snapshot.
  *
  * Fire-and-forget — does NOT throw.
  *
@@ -293,67 +302,91 @@ export async function upsertIntentSessionToSupabase(
     return { ok: true };
   }
 
-  // CB-1 fix (FOLLOW-286): on_conflict MUST be a URL query parameter, NOT in the Prefer header.
-  // PostgREST only reads the conflict target from the query string. When it was in the Prefer
-  // header, PostgREST ignored it and the 2nd+ snapshot hit the UNIQUE constraint → 409 silently
-  // discarded by Promise.allSettled, freezing the intent_sessions row at first-snapshot state.
-  const url = `${env.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/intent_sessions?on_conflict=tenant_id%2Csession_id`;
-  const startedAt = new Date(event.ts).toISOString();
-  const lastEventAt = new Date(event.ts).toISOString();
+  const base = `${env.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/intent_sessions`;
+  const at = new Date(event.ts).toISOString();
+  const rowFilter =
+    `tenant_id=eq.${encodeURIComponent(event.tenant_id)}` +
+    `&session_id=eq.${encodeURIComponent(event.session_id)}`;
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+    apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+  };
 
-  // intent_state stores the full probability distribution (not PII — no chat content).
-  const intentState = JSON.stringify(event.payload.probabilities);
-
-  const row = {
-    tenant_id: event.tenant_id,
-    session_id: event.session_id,
-    cross_session_id: event.cross_session_id ?? null,
-    started_at: startedAt,
-    last_event_at: lastEventAt,
+  // Mutable head fields. `cross_session_id` is only written when this snapshot carries one, so a
+  // snapshot without it never nulls an identity an earlier snapshot recorded.
+  const head = {
+    last_event_at: at,
     signal_count: event.payload.signal_count,
     quiz_completed: event.payload.quiz_completed,
     quiz_leaf: event.payload.quiz_leaf ?? null,
     chat_turns: event.payload.chat_turns,
-    intent_state: intentState,
+    intent_state: buildIntentStateEnvelope(event.payload),
+    ...(event.cross_session_id !== undefined ? { cross_session_id: event.cross_session_id } : {}),
   };
 
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
-      controller.abort();
-    }, 4000);
-    const response = await fetchImpl(url, {
+  const steps: { label: string; url: string; method: string; prefer: string; body: unknown }[] = [
+    {
+      // CB-1 fix (FOLLOW-286): on_conflict MUST be a URL query parameter, NOT in the Prefer
+      // header — PostgREST only reads the conflict target from the query string.
+      label: 'insert',
+      url: `${base}?on_conflict=tenant_id%2Csession_id`,
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-        // CB-1 fix: on_conflict is a URL query param (above), NOT here.
-        // Prefer header carries only resolution and return directives.
-        Prefer: 'resolution=merge-duplicates,return=minimal',
+      prefer: 'resolution=ignore-duplicates,return=minimal',
+      body: {
+        tenant_id: event.tenant_id,
+        session_id: event.session_id,
+        cross_session_id: event.cross_session_id ?? null,
+        started_at: at,
+        ...head,
       },
-      body: JSON.stringify(row),
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
+    },
+    {
+      label: 'head',
+      url: `${base}?${rowFilter}&last_event_at=lt.${encodeURIComponent(at)}`,
+      method: 'PATCH',
+      prefer: 'return=minimal',
+      body: head,
+    },
+    {
+      label: 'start',
+      url: `${base}?${rowFilter}&started_at=gt.${encodeURIComponent(at)}`,
+      method: 'PATCH',
+      prefer: 'return=minimal',
+      body: { started_at: at },
+    },
+  ];
 
-    if (response.ok || response.status === 201) {
-      return { ok: true };
-    }
-    let detail = '';
+  for (const step of steps) {
     try {
-      detail = (await response.text()).slice(0, 300);
-    } catch {
-      // body read failed; status alone is enough signal
+      const controller = new AbortController();
+      const timer = setTimeout(() => {
+        controller.abort();
+      }, 4000);
+      const response = await fetchImpl(step.url, {
+        method: step.method,
+        headers: { ...headers, Prefer: step.prefer },
+        body: JSON.stringify(step.body),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (response.ok) continue;
+      let detail = '';
+      try {
+        detail = (await response.text()).slice(0, 300);
+      } catch {
+        // body read failed; status alone is enough signal
+      }
+      const error = `supabase_intent_sessions_status_${String(response.status)}:${step.label}${detail ? `:${detail}` : ''}`;
+      logger.error({ session_id: event.session_id, error }, 'intent_snapshot_supabase_failed');
+      return { ok: false, error };
+    } catch (cause) {
+      const error = cause instanceof Error ? cause.message : 'fetch_failed';
+      logger.error({ session_id: event.session_id, error }, 'intent_snapshot_supabase_failed');
+      return { ok: false, error };
     }
-    const error = `supabase_intent_sessions_status_${String(response.status)}${detail ? `:${detail}` : ''}`;
-    logger.error({ session_id: event.session_id, error }, 'intent_snapshot_supabase_failed');
-    return { ok: false, error };
-  } catch (cause) {
-    const error = cause instanceof Error ? cause.message : 'fetch_failed';
-    logger.error({ session_id: event.session_id, error }, 'intent_snapshot_supabase_failed');
-    return { ok: false, error };
   }
+  return { ok: true };
 }
 
 /**
@@ -365,10 +398,8 @@ export async function upsertIntentSessionToSupabase(
  *      for FOLLOW-269 join. `intent_session_id` (ORDER BY key, now String after migration 0016)
  *      also carries the raw value. `event_type` is pinned to `INTENT_SNAPSHOT_EVENT_TYPE`.
  *      `confidence_before` is 0.0 (Float32 NOT NULL; no prior confidence on first snapshot).
- *   2. Supabase `intent_sessions` — UPSERT the mutable session-level summary row.
- *      Conflict target `(tenant_id, session_id)` is passed as a URL query parameter
- *      (`?on_conflict=tenant_id,session_id`) so PostgREST correctly routes to UPDATE
- *      instead of INSERT on 2nd+ snapshot per session.
+ *   2. Supabase `intent_sessions` — the monotonic head write (insert-or-ignore, then PATCHes
+ *      filtered on `last_event_at` / `started_at`; see `upsertIntentSessionToSupabase`).
  *
  * Both writes are fire-and-forget: ingest ACK is returned to the SDK regardless of
  * whether either write succeeds. Promise.allSettled rejections are surfaced via console.error
@@ -376,12 +407,16 @@ export async function upsertIntentSessionToSupabase(
  *
  * Callers MUST pass `ctx.waitUntil(handleIntentSnapshot(...))` in CF Workers so the
  * writes complete before the Worker process exits.
+ *
+ * Resolves with the sinks that did NOT land, so the caller can re-queue each one as a side-write
+ * retry message (`events-retry-queue.ts`) — before FOLLOW-1310 a failed side-write was observed
+ * and then lost (Codex F-15). Never rejects.
  */
 export async function handleIntentSnapshot(
   event: IntentSnapshotEvent,
   env: IntentSnapshotEnv,
   fetchImpl: typeof fetch = fetch,
-): Promise<void> {
+): Promise<{ failedSinks: IntentSnapshotSink[] }> {
   // Pass raw session_id (not a derived UUID) so FOLLOW-269 can join:
   //   intent_events.session_id = intent_sessions.session_id (+ tenant_id).
   const [chResult, pgResult] = await Promise.allSettled([
@@ -495,4 +530,9 @@ export async function handleIntentSnapshot(
       },
     );
   }
+
+  const failedSinks: IntentSnapshotSink[] = [];
+  if (chResult.status === 'rejected' || !chResult.value.ok) failedSinks.push('clickhouse');
+  if (pgResult.status === 'rejected' || !pgResult.value.ok) failedSinks.push('supabase');
+  return { failedSinks };
 }

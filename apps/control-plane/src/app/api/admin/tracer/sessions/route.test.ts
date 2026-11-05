@@ -60,6 +60,7 @@ vi.mock('@estalara/db', () => ({
 
 import { getAuthClaims, isStaffClaims } from '@estalara/auth';
 import { GET } from './route';
+import { buildIntentStateEnvelope } from '@estalara/shared';
 import type { TracerSessionsResponse } from '@estalara/shared';
 
 const mockGetAuthClaims = vi.mocked(getAuthClaims);
@@ -216,6 +217,46 @@ describe('GET /api/admin/tracer/sessions — live path (DB configured)', () => {
     expect(body.sessions[0]!.signal_count).toBe(5);
     expect(body.sessions[0]!.chat_turns).toBe(2);
     expect(body.sessions[0]!.quiz_completed).toBe(false);
+  });
+
+  it('FOLLOW-1310: reads the envelope the ingest writer stores (no nulls) and legacy string rows', async () => {
+    const written: unknown = JSON.parse(
+      JSON.stringify(
+        buildIntentStateEnvelope({
+          archetype: 'family_buyer',
+          confidence: 0.81,
+          probabilities: { family_buyer: 0.81, neutral: 0.19 },
+        }),
+      ),
+    );
+    const base = {
+      tenantId: TENANT_ID,
+      signalCount: 5,
+      lastEventAt: new Date(),
+      quizCompleted: false,
+      chatTurns: 0,
+    };
+    mockLimit.mockResolvedValue([
+      { ...base, sessionId: 'new-row', intentState: written },
+      {
+        ...base,
+        sessionId: 'legacy-row',
+        intentState: JSON.stringify({ family_buyer: 0.6, neutral: 0.4 }),
+      },
+    ]);
+    const body = await parseBody<TracerSessionsResponse>(
+      await GET(makeRequest({ bearer: ADMIN_SECRET })),
+    );
+    expect(body.sessions[0]).toMatchObject({
+      top_archetype: 'family_buyer',
+      confidence: 0.81,
+      weights: { family_buyer: 0.81, neutral: 0.19 },
+    });
+    expect(body.sessions[1]).toMatchObject({
+      top_archetype: null,
+      confidence: null,
+      weights: { family_buyer: 0.6, neutral: 0.4 },
+    });
   });
 
   it('FOLLOW-1322: ?tenant_id= adds a tenant predicate; malformed ids are ignored', async () => {

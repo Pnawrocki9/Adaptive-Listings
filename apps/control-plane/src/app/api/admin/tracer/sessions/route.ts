@@ -22,6 +22,7 @@ import * as Sentry from '@sentry/nextjs';
 import { and, eq, gt, desc } from 'drizzle-orm';
 
 import { createAdminClient, intentSessions } from '@estalara/db';
+import { readIntentStateEnvelope } from '@estalara/shared';
 import type { TracerSessionsResponse, IntentSessionRow } from '@estalara/shared';
 
 import { verifyTracerAdminAuth } from '@/lib/tracer-auth';
@@ -118,19 +119,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       .limit(200);
 
     const sessions: IntentSessionRow[] = rows.map((r) => {
-      // Extract top_archetype and confidence from the JSONB intent_state blob.
-      // Shape: { weights: Record<archetype, number>, topArchetype: string, confidence: number }
-      const state = r.intentState as {
-        topArchetype?: string;
-        confidence?: number;
-      } | null;
+      // The JSONB intent_state envelope, parsed by the SAME shared module the ingest writer
+      // builds it with (FOLLOW-1310, Codex F-07). Legacy string rows yield weights only.
+      const state = readIntentStateEnvelope(r.intentState);
 
       return {
         session_id: r.sessionId,
         tenant_id: r.tenantId,
         signal_count: r.signalCount,
-        top_archetype: state?.topArchetype ?? null,
-        confidence: state?.confidence ?? null,
+        top_archetype: state.topArchetype,
+        confidence: state.confidence,
+        weights: state.weights,
         last_event_at: r.lastEventAt.toISOString(),
         quiz_completed: r.quizCompleted,
         chat_turns: r.chatTurns,

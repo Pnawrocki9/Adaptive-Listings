@@ -51,6 +51,20 @@ import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+// FOLLOW-1309: the reader no longer calls the global `fetch`; it goes through the outbound guard.
+// The REAL guard runs for every test here (`vi.fn(actual)`); only the field-read probe below swaps
+// the transport for one call, exactly where it used to swap the global `fetch`.
+const { pinnedFetchSpy } = vi.hoisted(() => {
+  const holder: { current: unknown } = { current: null };
+  return { pinnedFetchSpy: holder };
+});
+vi.mock('@/lib/pinned-fetch', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  const spy = vi.fn(actual.pinnedFetch as (...args: unknown[]) => unknown);
+  pinnedFetchSpy.current = spy;
+  return { ...actual, pinnedFetch: spy };
+});
+
 import { fetchListingTextFields } from '@/lib/listing-details';
 import { hasListingFacts, withListingFacts } from '@/lib/listing-facts-context';
 
@@ -104,6 +118,7 @@ type CreateFixtureListingDetailsServer = (options: { fixturePath: string }) => S
 describe('FOLLOW-1225 red-first — the world as measured at 241e762b: no grounding source', () => {
   it('leaves the listing context ungrounded, which is exactly what route.ts turns into groundingMissing', async () => {
     vi.stubEnv('ESTALARA_BACKEND_URL', DEAD_ORIGIN);
+    vi.stubEnv('ESTALARA_ALLOW_LOOPBACK_BACKEND', '1'); // FOLLOW-1309: the loopback fixture
     const context = await withListingFacts({}, FIXTURE_LISTING_ID, LLM_BRANCH_SIMILARITY, 'en');
     vi.unstubAllEnvs();
 
@@ -175,6 +190,7 @@ describe('FOLLOW-1225 — the fixture listing-details server grounds the REAL re
 
   it('makes hasListingFacts() true through the REAL withListingFacts()', async () => {
     vi.stubEnv('ESTALARA_BACKEND_URL', origin);
+    vi.stubEnv('ESTALARA_ALLOW_LOOPBACK_BACKEND', '1'); // FOLLOW-1309: the loopback fixture
     const context = await withListingFacts({}, FIXTURE_LISTING_ID, LLM_BRANCH_SIMILARITY, 'en');
     vi.unstubAllEnvs();
 
@@ -191,6 +207,7 @@ describe('FOLLOW-1225 — the fixture listing-details server grounds the REAL re
 
   it('still does NOT fetch on the playbook-direct branch (similarity above the LLM ceiling)', async () => {
     vi.stubEnv('ESTALARA_BACKEND_URL', origin);
+    vi.stubEnv('ESTALARA_ALLOW_LOOPBACK_BACKEND', '1'); // FOLLOW-1309: the loopback fixture
     const context = await withListingFacts({}, FIXTURE_LISTING_ID, 0.99, 'en');
     vi.unstubAllEnvs();
     expect(hasListingFacts(context)).toBe(false);
@@ -285,6 +302,7 @@ describe('FOLLOW-1225 — the fixture listing-details server grounds the REAL re
       seen.push(req.url ?? '');
     });
     vi.stubEnv('ESTALARA_BACKEND_URL', origin);
+    vi.stubEnv('ESTALARA_ALLOW_LOOPBACK_BACKEND', '1'); // FOLLOW-1309: the loopback fixture
     await withListingFacts({}, FIXTURE_LISTING_ID, LLM_BRANCH_SIMILARITY, 'en');
     vi.unstubAllEnvs();
 
@@ -325,13 +343,12 @@ async function productionPromptFieldReads(): Promise<string[]> {
       },
     );
     vi.stubEnv('ESTALARA_BACKEND_URL', 'http://grounding-probe.invalid');
-    vi.stubGlobal('fetch', () =>
+    (pinnedFetchSpy.current as ReturnType<typeof vi.fn>).mockImplementationOnce(() =>
       Promise.resolve({ status: 200, ok: true, json: () => Promise.resolve(listing) }),
     );
     try {
       await fetchListingTextFields(FIXTURE_LISTING_ID, 'en');
     } finally {
-      vi.unstubAllGlobals();
       vi.unstubAllEnvs();
     }
   }
@@ -500,6 +517,7 @@ describe('FOLLOW-1249 — the fixture grounding source is PRODUCTION-SHAPED (CEO
 
   it('every served field reaches the REAL reader with a usable type, so each one lands in the prompt', async () => {
     vi.stubEnv('ESTALARA_BACKEND_URL', origin);
+    vi.stubEnv('ESTALARA_ALLOW_LOOPBACK_BACKEND', '1'); // FOLLOW-1309: the loopback fixture
     const fields = await fetchListingTextFields(FIXTURE_LISTING_ID, 'en');
     const context = await withListingFacts({}, FIXTURE_LISTING_ID, LLM_BRANCH_SIMILARITY, 'en');
     vi.unstubAllEnvs();

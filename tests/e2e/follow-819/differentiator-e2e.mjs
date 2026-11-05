@@ -1119,7 +1119,13 @@ export async function runAc1bClaimCheck({
           cwd: REPO_ROOT,
           timeout: 60000,
           maxBuffer: 16 * 1024 * 1024,
-          env: { ...process.env, ESTALARA_BACKEND_URL: groundingOrigin },
+          // FOLLOW-1309: the reader's outbound guard refuses loopback (the :8081 fixture) unless
+          // this flag is exactly "1"; it is ignored whenever VERCEL is set.
+          env: {
+            ...process.env,
+            ESTALARA_BACKEND_URL: groundingOrigin,
+            ESTALARA_ALLOW_LOOPBACK_BACKEND: '1',
+          },
         },
         (err, out) => (err ? reject(err) : resolve(out)),
       );

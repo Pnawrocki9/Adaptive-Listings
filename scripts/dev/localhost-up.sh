@@ -59,6 +59,9 @@ ADAPT_API_KEY='local-follow819-key'
 ADMIN_API_SECRET='local-follow819-admin-secret'
 OPS_TENANT_ID='00000000-0000-0000-0000-0000000000e2'
 ESTALARA_BACKEND_URL='http://localhost:8081'
+# FOLLOW-1309: the control plane's outbound guard (lib/pinned-fetch.ts) refuses loopback unless
+# ESTALARA_ALLOW_LOOPBACK_BACKEND=1 (exactly "1"); it is ignored whenever VERCEL is set. Passed to
+# the control plane in step 9, in both CP_MODE=dev and CP_MODE=prod.
 LISTING_ID='839ecbd1-4e7d-4fd9-bda7-37ceb27eaa1c'
 SRH_TOKEN='local-dev-token'
 INTERNAL_API_SECRET='local-dev-internal-secret'
@@ -514,6 +517,7 @@ start_bg control-plane-3000 3000 "$REPO_ROOT/apps/control-plane" \
   "DATABASE_URL_ADMIN=$DATABASE_URL_ADMIN" \
   "DATABASE_URL=$DATABASE_URL_ADMIN" \
   "ESTALARA_BACKEND_URL=$ESTALARA_BACKEND_URL" \
+  ESTALARA_ALLOW_LOOPBACK_BACKEND=1 \
   SCORING_PATH_COLUMN_ENABLED=true \
   CALLER_SIGNED_COLUMN_ENABLED=true \
   CLICKHOUSE_URL=http://localhost:8123 \

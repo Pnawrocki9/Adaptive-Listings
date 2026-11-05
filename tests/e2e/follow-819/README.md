@@ -756,6 +756,7 @@ doppler run -c dev -- env \
   OPS_TENANT_ID=00000000-0000-0000-0000-0000000000e2 \
   DATABASE_URL_ADMIN="$DATABASE_URL_ADMIN" \
   ESTALARA_BACKEND_URL=http://localhost:8081 \
+  ESTALARA_ALLOW_LOOPBACK_BACKEND=1 \
   SCORING_PATH_COLUMN_ENABLED=true \
   CALLER_SIGNED_COLUMN_ENABLED=true \
   CLICKHOUSE_URL=http://localhost:8123 \
@@ -767,6 +768,10 @@ doppler run -c dev -- env \
 Doppler `dev`, so without this line the process falls back to `http://localhost:8081` — correct by
 luck if §3.3b is running, but state it, because the whole point of §3.3b is that this variable is
 the one nobody had set. It must name the SAME origin the harness gets in §3.6.
+`ESTALARA_ALLOW_LOOPBACK_BACKEND=1` (FOLLOW-1309) is load-bearing with it: the listing-details
+reader's outbound guard (`lib/pinned-fetch.ts`) refuses a loopback backend without it
+(`[listing-details] outbound target refused: non_public_address localhost`), and ignores it whenever
+`VERCEL` is set.
 
 `ADAPT_API_KEY` and `ADMIN_API_SECRET` are **two different credentials** and the harness needs both:
 `ADAPT_API_KEY` is the ADR-0015 ops bypass for `/adapt` + `/adapt/feedback` (AC(4)), while the AC(5)

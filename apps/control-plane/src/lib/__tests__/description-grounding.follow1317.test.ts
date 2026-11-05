@@ -17,6 +17,14 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// FOLLOW-1309: the listing read goes through the outbound guard (`lib/pinned-fetch.ts`, covered by
+// `pinned-fetch.test.ts` and `listing-details.follow1309.test.ts`). This suite pins what the reader
+// does with a listing payload, so the payload still arrives through its global `fetch` stub.
+vi.mock('@/lib/pinned-fetch', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  pinnedFetch: (url: string, init: { signal?: AbortSignal }) => fetch(url, init),
+}));
+
 const { mockCreate, mockPublishPg, mockSetCached, mockAudit, mockLogLlmCall, mockGetDailySpend } =
   vi.hoisted(() => ({
     mockCreate: vi.fn(),

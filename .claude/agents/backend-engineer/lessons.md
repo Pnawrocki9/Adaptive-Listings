@@ -2807,3 +2807,17 @@ The premise was wrong here and would have produced a probe that cannot fail.
   agent's eslint — rerun in isolation before calling a failure. · Guardrail: _when a removal narrows
   a shared auth type, grep the tests for fixtures of the removed shape that feed NEGATIVE assertions
   (null / 401 / 403) — they keep passing for the new reason and silently stop testing the old one_.
+
+- **2026-11-05 / FOLLOW-1309** · SSRF guard built on the listing-details fetch
+  (`lib/pinned-fetch.ts`, node built-ins: `dns/promises` lookup all+verbatim, `net.BlockList`,
+  `http(s).request` with a `lookup` hook that hands the socket the checked answer). F-26/F-27/F-29
+  dropped: their routes and the empty-tenant page were deleted by R6/M1. · Risks weighed: `NODE_ENV`
+  cannot fence the loopback allowance — `CP_MODE=prod` localhost-up runs `next start` under
+  `NODE_ENV=production` against `:8081` — so the fence is flag + `!VERCEL` + loopback-named host,
+  and the allowance never widens past loopback; moving off the global `fetch` silently changed the
+  meaning of every suite that fed listing payloads through a `fetch` stub (one stayed GREEN on a
+  no-listing path, one field-read probe would have gone vacuous) — mocked `pinnedFetch` back to the
+  stub explicitly; `dns.lookup` ignores `AbortSignal`, so the 800 ms facts budget needed its own
+  race. · Guardrail: _when an outbound call moves off the global `fetch`, grep every
+  `stubGlobal('fetch'` suite that reaches it and check each one still exercises the path it names —
+  a green suite is not evidence it does_.

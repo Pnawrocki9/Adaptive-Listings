@@ -227,6 +227,10 @@
  * single reporter carries a failure code and nothing else (design review R16, R18). It is now
  * **112 in 72**. Its erase fix added a third site to `app/api/dsr/erase/route.ts` (2 -> 3, the
  * transaction rolling back). It is now **113 in 72**.
+ *
+ * FOLLOW-1309 (SSRF guard, plan Phase 6 S3) added a second site to `lib/listing-details.ts`
+ * (1 -> 2): the outbound guard refusing the backend's address (`kind: outbound_refused`). No new
+ * file. It is now **114 in 72**.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -240,7 +244,7 @@ const RUNBOOK = join(__dirname, '../../../docs/runbooks/observability.md');
 const DSN_ENV_VARS = ['SENTRY_DSN_CONTROL_PLANE', 'NEXT_PUBLIC_SENTRY_DSN_CONTROL_PLANE'] as const;
 
 /** Sum of every `sites` cell, restated so a hand-edit of one row cannot drift the headline. */
-const TOTAL_SITES = 113;
+const TOTAL_SITES = 114;
 
 interface CaptureSiteGroup {
   /** Path relative to `apps/control-plane/src`. */
@@ -575,10 +579,13 @@ const REGISTER: CaptureSiteGroup[] = [
   },
   {
     file: 'lib/listing-details.ts',
-    sites: 1,
+    sites: 2,
     meaning:
-      'The upstream listing-details fetch returned a non-OK status, so the LLM grounding context ' +
-      'is empty and generation will fall back with `listing_context_unavailable` (FOLLOW-1120).',
+      'The upstream listing-details fetch returned a non-OK status (`kind: upstream_non_ok`, ' +
+      'FOLLOW-1120), or the outbound guard refused the backend address before connecting ' +
+      '(`kind: outbound_refused`, FOLLOW-1309: a non-public resolved address, or loopback without ' +
+      'the localhost allowance). Either way the LLM grounding context is empty and generation ' +
+      'falls back with `listing_context_unavailable`.',
     consumer: NO_CHANNEL,
   },
   {

@@ -32,13 +32,13 @@ const meta = {
 
 describe('chunkRecordsForRetryQueue — empty-records guard', () => {
   it('returns [] for an empty records array', () => {
-    expect(chunkRecordsForRetryQueue([], meta)).toEqual([]);
+    expect(chunkRecordsForRetryQueue([], meta)).toEqual({ messages: [], oversize: [] });
   });
 });
 
 describe('chunkRecordsForRetryQueue — happy path', () => {
   it('packs small records into a single chunk carrying the message envelope', () => {
-    const chunks = chunkRecordsForRetryQueue([smallEvent, smallEvent], meta);
+    const chunks = chunkRecordsForRetryQueue([smallEvent, smallEvent], meta).messages;
     expect(chunks).toHaveLength(1);
     expect(chunks[0]).toMatchObject({
       schema_version: 1,
@@ -57,7 +57,7 @@ describe('chunkRecordsForRetryQueue — oversized batch forces multi-chunk .send
     // adding the second would cross it — the chunker must flush before appending it.
     const blobSize = 60_000;
     const records = [bigEvent(blobSize), bigEvent(blobSize), bigEvent(blobSize)];
-    const chunks = chunkRecordsForRetryQueue(records, meta);
+    const chunks = chunkRecordsForRetryQueue(records, meta).messages;
 
     expect(chunks.length).toBeGreaterThan(1);
     // Every chunk stays under the 128 KB Cloudflare Queues hard cap (with headroom).
@@ -72,7 +72,7 @@ describe('chunkRecordsForRetryQueue — oversized batch forces multi-chunk .send
 
   it('never exceeds MAX_RETRY_MESSAGE_BYTES per chunk for many small records', () => {
     const records = Array.from({ length: 500 }, () => smallEvent);
-    const chunks = chunkRecordsForRetryQueue(records, meta);
+    const chunks = chunkRecordsForRetryQueue(records, meta).messages;
     expect(chunks.length).toBeGreaterThan(0);
     const totalRecords = chunks.reduce((sum, c) => sum + c.records.length, 0);
     expect(totalRecords).toBe(500);
@@ -89,7 +89,7 @@ describe('chunkRecordsForRetryQueue — oversized batch forces multi-chunk .send
 
 describe('EventsRetryMessageSchema — malformed message from a hypothetical bad producer', () => {
   it('accepts a well-formed message', () => {
-    const chunks = chunkRecordsForRetryQueue([smallEvent], meta);
+    const chunks = chunkRecordsForRetryQueue([smallEvent], meta).messages;
     expect(EventsRetryMessageSchema.safeParse(chunks[0]).success).toBe(true);
   });
 

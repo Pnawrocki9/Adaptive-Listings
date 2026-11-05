@@ -20,6 +20,7 @@ import type { KVNamespace } from '@cloudflare/workers-types';
 import {
   idempotency,
   isValidIdempotencyKey,
+  replayIdempotentResponse,
   IDEMPOTENCY_KEY_MIN_LEN,
   IDEMPOTENCY_KEY_MAX_LEN,
 } from './idempotency.js';
@@ -79,9 +80,15 @@ interface TestEnv {
 function buildApp(_store: KvStore, handlerStatus = 200): Hono<TestEnv> {
   const app = new Hono<TestEnv>();
   app.use('/test', idempotency);
-  app.post('/test', (c) =>
-    c.json({ result: 'processed', ts: Date.now() }, handlerStatus as Parameters<typeof c.json>[1]),
-  );
+  // FOLLOW-1310: the route replays the cached response itself, after its own gates.
+  app.post('/test', async (c) => {
+    const replay = await replayIdempotentResponse(c, await c.req.text());
+    if (replay) return replay;
+    return c.json(
+      { result: 'processed', ts: Date.now() },
+      handlerStatus as Parameters<typeof c.json>[1],
+    );
+  });
   return app;
 }
 

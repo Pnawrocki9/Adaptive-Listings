@@ -7,6 +7,11 @@
  * body verbatim instead of re-processing the batch.  This lets the SDK retry
  * safely on network timeouts without causing duplicate events.
  *
+ * FOLLOW-1310 (Codex F-18): the cached response is replayed by the ROUTE, after its admission
+ * gates, through `replayIdempotentResponse` — never by this middleware ahead of auth. The entry is
+ * also bound to a SHA-256 of the request body, so a reused key with a different batch is refused
+ * (422 `idempotency_key_reused`) instead of being answered with an ACK for events never processed.
+ *
  * Key design decisions:
  * - Dedup granularity is per-batch (one KV write per request), NOT per
  *   individual `event_id`.  This keeps KV write costs predictable.  ClickHouse
@@ -29,7 +34,7 @@
  * @module apps/ingest/src/middleware/idempotency
  */
 
-import type { MiddlewareHandler } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
 
 import type { KVNamespace } from '@cloudflare/workers-types';
 
@@ -62,6 +67,8 @@ async function shortHash(input: string): Promise<string> {
 interface CachedEntry {
   status: number;
   body: unknown;
+  /** SHA-256 of the request body the entry answers (FOLLOW-1310). Absent on older entries. */
+  body_sha256?: string;
 }
 
 /** Minimum `Bindings` shape the middleware needs from the Worker `env`. */
@@ -124,17 +131,20 @@ export const idempotency: MiddlewareHandler<{ Bindings: IdempotencyBindings }> =
   const tenantPrefix = rawApiKey ? await shortHash(rawApiKey) : 'anon';
   const kvKey = `${KV_PREFIX}${tenantPrefix}:${key}`;
 
-  // Cache hit → return cached response.
+  // A cache hit is NOT answered here any more. [FOLLOW-1310, Codex F-18] This middleware runs
+  // before the route's admission gates (auth, signed-caller, scope, origin), so answering from
+  // the cache here served a revoked key or a foreign origin the old 200. The entry is handed to
+  // the route instead, which replays it via `replayIdempotentResponse` only AFTER those gates
+  // pass. A route that never calls the helper simply re-processes — fail-safe, never a bypass.
   const cached = await c.env.KV_IDEMPOTENCY.get<CachedEntry>(kvKey, 'json');
-  if (cached !== null) {
-    c.header('Idempotency-Replay', 'true');
-    return c.json(cached.body, cached.status as Parameters<typeof c.json>[1]);
-  }
+  const state: IdempotencyState = { cached, replayed: false, bodySha256: null };
+  c.set(STATE_KEY as never, state as never);
 
-  // Cache miss → process the request.
   await next();
 
-  // Cache only 2xx responses (errors are not cached so retries work).
+  // Cache only 2xx responses (errors are not cached so retries work), and never re-cache a
+  // replay or a request whose route refused it.
+  if (state.replayed) return;
   if (c.res.status >= 200 && c.res.status < 300) {
     let body: unknown;
     try {
@@ -143,10 +153,78 @@ export const idempotency: MiddlewareHandler<{ Bindings: IdempotencyBindings }> =
       // Non-JSON response or unreadable body — skip caching.
       return;
     }
-    const entry: CachedEntry = { status: c.res.status, body };
+    const entry: CachedEntry = {
+      status: c.res.status,
+      body,
+      ...(state.bodySha256 !== null ? { body_sha256: state.bodySha256 } : {}),
+    };
     await c.env.KV_IDEMPOTENCY.put(kvKey, JSON.stringify(entry), {
       expirationTtl: CACHE_TTL_SECONDS,
     });
   }
   return;
 };
+
+/** Context key under which the middleware hands its lookup to the route. */
+const STATE_KEY = 'idempotency';
+
+/** What the middleware hands the route for one keyed request. */
+interface IdempotencyState {
+  /** The cached entry for this (API key, Idempotency-Key), or `null` on a miss. */
+  cached: CachedEntry | null;
+  /** Set by `replayIdempotentResponse` when it answered from the cache. */
+  replayed: boolean;
+  /** SHA-256 of the request body, recorded by the route so the stored entry can bind to it. */
+  bodySha256: string | null;
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+/**
+ * Called by a route AFTER every admission gate has passed (FOLLOW-1310, Codex F-18). Returns the
+ * cached response to send, or `null` to process the request normally.
+ *
+ * - No `Idempotency-Key` on the request → `null`.
+ * - Cache miss → records the body hash (so the entry the middleware stores is bound to these
+ *   exact bytes) and returns `null`.
+ * - Cache hit, same body → the cached response with `Idempotency-Replay: true`. Nothing new is
+ *   written: a replay re-authorises, it never re-ingests.
+ * - Cache hit, DIFFERENT body → 422 `idempotency_key_reused`. Before FOLLOW-1310 the old ACK was
+ *   returned for a batch that was never processed, so the client believed new events landed.
+ *   An entry written before FOLLOW-1310 has no hash and replays as before (24 h TTL drains them).
+ */
+export async function replayIdempotentResponse(
+  c: Context,
+  rawBody: string,
+): Promise<Response | null> {
+  const state = c.get(STATE_KEY as never) as IdempotencyState | undefined;
+  if (!state) return null;
+  const bodySha256 = await sha256Hex(rawBody);
+  if (state.cached === null) {
+    state.bodySha256 = bodySha256;
+    return null;
+  }
+  state.replayed = true;
+  const cachedSha = state.cached.body_sha256;
+  if (cachedSha !== undefined && cachedSha !== bodySha256) {
+    return c.json(
+      {
+        error: {
+          code: 'idempotency_key_reused',
+          message:
+            'Idempotency-Key was already used for a different request body; send a new key ' +
+            'for a new batch',
+          request_id: (c.get('requestId' as never) as string | undefined) ?? crypto.randomUUID(),
+        },
+      },
+      422,
+    );
+  }
+  c.header('Idempotency-Replay', 'true');
+  return c.json(state.cached.body, state.cached.status as Parameters<typeof c.json>[1]);
+}

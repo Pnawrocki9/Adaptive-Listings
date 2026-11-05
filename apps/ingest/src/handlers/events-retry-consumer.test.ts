@@ -144,7 +144,8 @@ describe('handleEventsRetryQueue — unknown schema_version', () => {
     const captureSpy = vi.mocked(Sentry.captureException);
     captureSpy.mockClear();
     try {
-      const futureVersionBody = { ...validMessageBody, schema_version: 2 };
+      // 2 is the FOLLOW-1310 side-write shape; 3 is the first version this build does not know.
+      const futureVersionBody = { ...validMessageBody, schema_version: 3 };
       const { message, ack, retry } = makeMessage(futureVersionBody);
       await handleEventsRetryQueue(makeBatch([message]) as never, env as never);
 

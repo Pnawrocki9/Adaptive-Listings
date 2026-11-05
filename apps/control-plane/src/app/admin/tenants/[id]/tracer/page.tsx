@@ -52,14 +52,16 @@ interface LiveMonitorProps {
  * We render relative probabilities — normalised weights.
  */
 function extractWeights(sessionRow: IntentSessionRow): Record<string, number> {
-  // intentState is opaque from the API — access via unknown cast.
-  // The weights Record lives inside the API's intentState JSONB, but the
-  // TracerSessionsResponse only surfaces top_archetype + confidence.
-  // We build a minimal representation using confidence on the top archetype.
   const result: Record<string, number> = {};
   for (const key of ARCHETYPE_KEYS) {
     result[key] = 0;
   }
+  // FOLLOW-1310 (Codex F-07): the API now surfaces the envelope's real weight distribution.
+  if (sessionRow.weights) {
+    for (const [key, value] of Object.entries(sessionRow.weights)) result[key] = value;
+    return result;
+  }
+  // Older API response without weights: only the top archetype's confidence is known.
   if (sessionRow.top_archetype && sessionRow.confidence !== null) {
     result[sessionRow.top_archetype] = sessionRow.confidence;
   }

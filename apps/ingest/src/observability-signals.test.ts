@@ -110,6 +110,18 @@ const REGISTER: Signal[] = [
       'A batch carried events that failed EventSchema. `has_consent_event` marks the compliance-relevant case: a visitor decision was discarded.',
     consumer: null, // FOLLOW-937 — the ticket this register discharges.
   },
+  {
+    name: 'insufficient_scope_rejected',
+    meaning:
+      'An api key whose record grants neither `write:events` nor (browser only) the legacy `read:events` was refused — FOLLOW-1310 / Codex F-31.',
+    consumer: null,
+  },
+  {
+    name: 'event_bounds_rejected',
+    meaning:
+      'Events were refused as `ts_out_of_range` or `event_too_large` (FOLLOW-1310); the rest of the batch persisted.',
+    consumer: null,
+  },
 
   // ── Raised as `captureException(new Error('name'))`. Invisible to this gate until
   //    FOLLOW-944 widened the detector; all eight were already shipping. ──────────────
@@ -155,6 +167,24 @@ const REGISTER: Signal[] = [
   {
     name: 'events_retry_reinsert_failed',
     meaning: 'The retry consumer could not re-insert a batch; this is the END of the retry path.',
+    consumer: null,
+  },
+  {
+    name: 'events_retry_record_oversize',
+    meaning:
+      'A retry message would have exceeded the queue bound and was not sent — ACKed records cannot be re-driven (FOLLOW-1310).',
+    consumer: null,
+  },
+  {
+    name: 'events_retry_rows_unencodable',
+    meaning:
+      'A queued batch held only rows ClickHouse cannot store (pre-FOLLOW-1310 bad ts); dropped instead of walking into the DLQ.',
+    consumer: null,
+  },
+  {
+    name: 'intent_snapshot_retry_failed',
+    meaning:
+      'A re-queued intent.snapshot side-write still failed; Cloudflare retries it, then the DLQ (FOLLOW-1310).',
     consumer: null,
   },
 ];

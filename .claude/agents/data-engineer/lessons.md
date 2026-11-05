@@ -492,3 +492,17 @@ silenced.
   gated"; `dsr_clickhouse_mutations` is POSTGRES, so AC4's count runs there, not on ClickHouse. ·
   **Guardrail I'd add:** a new non-idempotent ClickHouse migration needs a negative control showing
   its second apply fails AND that `migrate.sh` skips it; "IF NOT EXISTS everywhere" is not a proof.
+- **2026-11-05 / FOLLOW-1310** · **Built:** per-event `ts_out_of_range` / `event_too_large`
+  rejection in ingest (rest of the batch persists); exact JSON-byte bound on every retry message
+  (128,000 B under the 131,072 B queue limit) with oversize reported, never sent;
+  `schema_version: 2` side-write retry messages for the `intent.snapshot` sinks (one sink per
+  message); idempotent replay moved after auth/scope/origin and bound to a body SHA-256; ingest
+  scope contract (`write:events`, legacy browser-only `read:events`); one `intent_state` envelope in
+  `@estalara/shared` used by the writer and all three tracer readers; monotonic PostgREST head
+  (insert-or-ignore + filtered PATCHes); PG-only repair SQL for legacy string rows. · **Risks
+  weighed:** a Zod field added to a shared module the SDK bundles cost +10 B against 7 B headroom
+  (moved to the type); the SDK archetype is not argmax(weights), so legacy rows get weights only;
+  prod KV scopes cannot be read from here, so `read:events` stays admitted for browsers; EventSchema
+  strips `cross_session_id`, so the head never writes one. · **Guardrail I'd add:** any edit to a
+  `packages/shared` module that the SDK imports runs `build:check` in the same session — "it is only
+  a schema" was 10 bytes.

@@ -23,13 +23,25 @@ import type { IntentSnapshotPayload } from '@estalara/shared';
 import { Hono } from 'hono';
 
 import type { Env } from '../types.js';
-import { SIGNATURE_MAX_SKEW_MS, authenticateRequest } from '../auth.js';
+import { SIGNATURE_MAX_SKEW_MS, authenticateRequest, decideIngestScope } from '../auth.js';
 import type { AuthDeps, AuthRequestInput } from '../auth.js';
 import { isOriginAllowed } from '../origin-gate.js';
 import { evaluateConsent } from '../consent-gate.js';
-import { pushToClickHouse } from '../clickhouse-producer.js';
+import {
+  CH_DATETIME64_MAX_MS,
+  CH_DATETIME64_MIN_MS,
+  isClickHouseEncodableTs,
+  pushToClickHouse,
+} from '../clickhouse-producer.js';
 import { getWaitUntil } from '../wait-until.js';
-import { chunkRecordsForRetryQueue } from '../events-retry-queue.js';
+import {
+  MAX_RETRY_MESSAGE_BYTES,
+  RETRY_QUEUE_SEND_OPTIONS,
+  buildIntentSnapshotRetryMessage,
+  chunkRecordsForRetryQueue,
+  singleRecordRetryBytes,
+} from '../events-retry-queue.js';
+import { replayIdempotentResponse } from '../middleware/idempotency.js';
 import { dispatchChatNlp } from './chat-nlp-dispatch.js';
 import { handleIntentSnapshot } from './intent-snapshot.js';
 import { logger } from '../observability/logger.js';
@@ -73,6 +85,67 @@ function errorBody(
  * no `ctx` — every non-FOLLOW-459 test in this app, and any environment without a real Worker
  * runtime). The try/catch below is required, not optional.
  */
+
+/**
+ * A retry message that would exceed the queue bound was NOT sent. [FOLLOW-1310, Codex F-15]
+ * Raised as its own signal: it means records that were ACKed cannot be re-driven.
+ */
+function reportOversizeRetry(tenantId: string, batchId: string, count: number): void {
+  logger.error(
+    { tenant_id: tenantId, batch_id: batchId, oversize_records: count },
+    'events_retry_record_oversize',
+  );
+  Sentry.captureException(new Error('events_retry_record_oversize'), {
+    tags: { area: 'events', sink: 'retry_queue', kind: 'oversize' },
+    extra: { tenant_id: tenantId, batch_id: batchId, oversize_records: count },
+  });
+}
+
+/**
+ * Re-queue each `intent.snapshot` side-write that did not land, one message per sink, so the
+ * retry consumer re-drives exactly the store that failed. [FOLLOW-1310, Codex F-15]
+ *
+ * Without a provisioned queue the failure stays what it was before — observed (by
+ * `handleIntentSnapshot`'s own Sentry/log signals) but not replayed — and says so in the log.
+ */
+async function requeueSnapshotSinks(
+  env: Env,
+  snapshot: Parameters<typeof buildIntentSnapshotRetryMessage>[0],
+  failedSinks: readonly ('clickhouse' | 'supabase')[],
+  meta: { tenant_id: string; batch_id: string; first_failed_at: number; attempt: number },
+): Promise<void> {
+  if (failedSinks.length === 0) return;
+  if (!env.EVENTS_RETRY_QUEUE) {
+    logger.warn(
+      { tenant_id: meta.tenant_id, batch_id: meta.batch_id, sinks: failedSinks },
+      'events_retry_queue_not_configured',
+    );
+    return;
+  }
+  for (const sink of failedSinks) {
+    const message = buildIntentSnapshotRetryMessage(snapshot, sink, {
+      ...meta,
+      first_failed_at: Date.now(),
+    });
+    if (message === null) {
+      reportOversizeRetry(meta.tenant_id, meta.batch_id, 1);
+      continue;
+    }
+    try {
+      await env.EVENTS_RETRY_QUEUE.send(message, RETRY_QUEUE_SEND_OPTIONS);
+    } catch (enqueueErr) {
+      const msg = enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr);
+      logger.error(
+        { tenant_id: meta.tenant_id, batch_id: meta.batch_id, sink, error: msg },
+        'events_retry_enqueue_failed',
+      );
+      Sentry.captureException(enqueueErr instanceof Error ? enqueueErr : new Error(msg), {
+        tags: { area: 'intent-snapshot', sink, kind: 'retry_enqueue_failed' },
+        extra: { tenant_id: meta.tenant_id, batch_id: meta.batch_id },
+      });
+    }
+  }
+}
 
 export const events = new Hono<{ Bindings: Env }>();
 
@@ -158,6 +231,27 @@ events.post('/', async (c) => {
       401,
     );
   }
+  // 1c. Scope gate [FOLLOW-1310, Codex F-31] — the contract is `decideIngestScope` in auth.ts.
+  // Runs before the origin gate, rate limit and every side effect; zero extra I/O.
+  const scope = decideIngestScope(auth.scopes, auth.signed);
+  if (!scope.allowed) {
+    span?.setAttributes({ 'estalara.tenant_id': tenantId, 'estalara.scope_denied': true });
+    logger.warn({ tenant_id: tenantId, signed: auth.signed }, 'insufficient_scope');
+    // Rule K.2: a policy-driven rejection stays observable.
+    Sentry.captureMessage('insufficient_scope_rejected', {
+      level: 'warning',
+      tags: { area: 'events', gate: 'scope' },
+      extra: { tenant_id: tenantId, signed: auth.signed },
+    });
+    return c.json(
+      errorBody(requestId, 'insufficient_scope', 'API key lacks the scope to write events', {
+        required: scope.required,
+      }),
+      403,
+    );
+  }
+  if (scope.legacy) span?.setAttribute('estalara.legacy_scope', true);
+
   // Make tenant_id available to any Hono middleware/handler downstream via context.
   c.set('tenantId' as never, tenantId);
   span?.setAttribute('estalara.tenant_id', tenantId);
@@ -185,6 +279,12 @@ events.post('/', async (c) => {
       403,
     );
   }
+
+  // 2c. Idempotent replay [FOLLOW-1310, Codex F-18] — only NOW, after auth, the signed-caller
+  // gate, the scope gate and the origin gate have all passed for THIS request. A replay writes
+  // nothing and does not consume rate limit (unchanged from before, when it short-circuited).
+  const replay = await replayIdempotentResponse(c, rawBody);
+  if (replay) return replay;
 
   // 3. Parse JSON
   let body: unknown;
@@ -265,6 +365,17 @@ events.post('/', async (c) => {
   /** Schema-rejected events, aggregated per batch — see the Sentry signal after the loop. */
   let schemaRejectedCount = 0;
   const schemaRejectedTypes = new Set<string>();
+  /** FOLLOW-1310 bounds rejections (`ts_out_of_range`, `event_too_large`), aggregated per batch. */
+  const boundsRejectedCodes = new Set<string>();
+  // The batch id and retry metadata exist BEFORE validation so the size gate measures the exact
+  // message a retry of this batch would send (`first_failed_at` keeps its 13-digit width).
+  const batchId = crypto.randomUUID();
+  const retryMeta = {
+    tenant_id: tenantId,
+    batch_id: batchId,
+    first_failed_at: Date.now(),
+    attempt: 0,
+  };
 
   for (let i = 0; i < eventsField.length; i++) {
     const incoming: unknown = eventsField[i];
@@ -278,6 +389,23 @@ events.post('/', async (c) => {
       schemaRejectedCount += 1;
       const rejectedType = (incoming as { type?: unknown } | null)?.type;
       if (typeof rejectedType === 'string') schemaRejectedTypes.add(rejectedType);
+      continue;
+    }
+
+    // FOLLOW-1310 (Codex F-06) — a `ts` the `DateTime64(3)` column cannot hold. The shared
+    // schema only asks for a positive integer, so before this gate one such event made the
+    // ClickHouse body builder throw and the whole ACKed batch was lost. Rejected alone, typed.
+    if (!isClickHouseEncodableTs(parsed.data.ts)) {
+      boundsRejectedCodes.add('ts_out_of_range');
+      rejected.push({
+        index: i,
+        errors: {
+          code: 'ts_out_of_range',
+          message: 'Event ts (epoch ms) is outside the storable range',
+          min_ts: CH_DATETIME64_MIN_MS,
+          max_ts: CH_DATETIME64_MAX_MS,
+        },
+      });
       continue;
     }
 
@@ -338,7 +466,7 @@ events.post('/', async (c) => {
       continue;
     }
 
-    validated.push({
+    const record: Record<string, unknown> = {
       ...parsed.data,
       tenant_id: tenantId,
       region,
@@ -347,6 +475,40 @@ events.post('/', async (c) => {
       // to `events.caller_signed` when the column flag is on (`clickhouse-producer.ts`); the lift
       // readers count a conversion only when it is true (ESC-084: excluded, never rejected here).
       caller_signed: auth.signed,
+    };
+
+    // FOLLOW-1310 (Codex F-15) — an event we ACK must be replayable: its one-record retry message
+    // has to fit a Cloudflare Queue message. Measured exactly on the record that would be queued.
+    if (singleRecordRetryBytes(record, retryMeta) > MAX_RETRY_MESSAGE_BYTES) {
+      boundsRejectedCodes.add('event_too_large');
+      rejected.push({
+        index: i,
+        errors: {
+          code: 'event_too_large',
+          message: 'Event is too large to be durably retried; it was not accepted',
+          limit_bytes: MAX_RETRY_MESSAGE_BYTES,
+        },
+      });
+      continue;
+    }
+
+    validated.push(record);
+  }
+
+  // Bounds rejections (FOLLOW-1310), reported once per batch like `schema_rejected` below.
+  if (boundsRejectedCodes.size > 0) {
+    logger.warn(
+      { tenant_id: tenantId, codes: [...boundsRejectedCodes].sort() },
+      'event_bounds_rejected',
+    );
+    Sentry.captureMessage('event_bounds_rejected', {
+      level: 'warning',
+      tags: { area: 'events', gate: 'bounds' },
+      extra: {
+        tenant_id: tenantId,
+        batch_size: eventsField.length,
+        codes: [...boundsRejectedCodes].sort(),
+      },
     });
   }
 
@@ -400,15 +562,17 @@ events.post('/', async (c) => {
           : typeof evt.session_id === 'number'
             ? String(evt.session_id)
             : '';
-      const writePromise = handleIntentSnapshot(
-        {
-          session_id: sessionIdStr,
-          ...(crossSessionId !== undefined ? { cross_session_id: crossSessionId } : {}),
-          tenant_id: tenantId,
-          ts: typeof evt.ts === 'number' ? evt.ts : Date.now(),
-          payload,
-        },
-        c.env,
+      const snapshotEvent = {
+        session_id: sessionIdStr,
+        ...(crossSessionId !== undefined ? { cross_session_id: crossSessionId } : {}),
+        tenant_id: tenantId,
+        ts: typeof evt.ts === 'number' ? evt.ts : Date.now(),
+        payload,
+      };
+      // FOLLOW-1310 (Codex F-15): a sink that did not land is re-queued as its own side-write
+      // message instead of being observed and lost. Still fully post-ACK.
+      const writePromise = handleIntentSnapshot(snapshotEvent, c.env).then(({ failedSinks }) =>
+        requeueSnapshotSinks(c.env, snapshotEvent, failedSinks, retryMeta),
       );
       if (waitUntil) {
         // FOLLOW-449 defensive backstop: `handleIntentSnapshot`'s own Promise.allSettled
@@ -529,7 +693,8 @@ events.post('/', async (c) => {
   //   longer than the ~3.1s in-process window no longer permanently drops events.
   //   Duplicate-row risk is a known, accepted consequence (no dedup key — ADR-0017 §4),
   //   not a new one introduced by this change.
-  const batchId = crypto.randomUUID();
+  //   FOLLOW-1310: every message is held to an EXACT byte bound (`events-retry-queue.ts`), and
+  //   the `intent.snapshot` side-writes above are re-queued too, one message per failed sink.
   if (validated.length > 0) {
     // FOLLOW-459: fire ClickHouse off the ACK critical path. `pushToClickHouse` never
     // throws (it always resolves with `{ ok: false, ... }` on terminal failure — see
@@ -601,18 +766,21 @@ events.post('/', async (c) => {
         // guard shape as `CLICKHOUSE_URL`) — an environment that hasn't provisioned the
         // queue yet skips the enqueue with a warn log rather than throwing.
         if (c.env.EVENTS_RETRY_QUEUE) {
-          const retryMessages = chunkRecordsForRetryQueue(validated, {
-            tenant_id: tenantId,
-            batch_id: batchId,
+          const { messages: retryMessages, oversize } = chunkRecordsForRetryQueue(validated, {
+            ...retryMeta,
             first_failed_at: Date.now(),
-            attempt: 0,
           });
+          if (oversize.length > 0) {
+            // Unreachable while the `event_too_large` gate above holds (it measures the same
+            // bytes); kept loud so a drift between the two cannot lose events silently.
+            reportOversizeRetry(tenantId, batchId, oversize.length);
+          }
           try {
             // Sequential, not `Promise.all` — ordering doesn't matter (the queue is
             // order-tolerant, ADR-0017), but a `.send()` failure must be attributable to its
             // own chunk rather than racing all sends and losing per-chunk error context.
             for (const retryMessage of retryMessages) {
-              await c.env.EVENTS_RETRY_QUEUE.send(retryMessage);
+              await c.env.EVENTS_RETRY_QUEUE.send(retryMessage, RETRY_QUEUE_SEND_OPTIONS);
             }
           } catch (enqueueErr) {
             const msg = enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr);

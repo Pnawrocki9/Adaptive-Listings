@@ -303,6 +303,45 @@ limits: **`docs/runbooks/CLICKHOUSE_DATETIME_INPUT_FORMAT.md`**.
 `upsertIntentSessionToSupabase` → `intent_sessions`) keep `.toISOString()`; `timestamptz` wants the
 trailing `Z`.
 
+### Storable `ts` range and per-event bounds (FOLLOW-1310)
+
+`events.ts` / `intent_events.event_at` are `DateTime64(3, 'UTC')`: the storable range is 1900-01-01
+→ 2299-12-31 23:59:59.999 UTC (`CH_DATETIME64_MIN_MS` / `CH_DATETIME64_MAX_MS` in
+`clickhouse-producer.ts`). The shared envelope schema only asks for a positive integer, so the
+ingest handler rejects an event outside that range **alone**, as `ts_out_of_range` in the response
+`errors[]`; the other events of the batch persist (Codex F-06: one such event used to make the body
+builder throw and lose the whole ACKed batch). An event whose one-record retry message would exceed
+the queue bound (`MAX_RETRY_MESSAGE_BYTES` = 128,000 B, exact JSON bytes, under Cloudflare's 131,072
+B limit) is rejected as `event_too_large`, so every ACKed event can be re-driven by the retry queue.
+No column or event name changed.
+
+---
+
+## Postgres `intent_sessions.intent_state` — the snapshot envelope (FOLLOW-1310)
+
+Postgres, not ClickHouse (schema owned by backend:
+`packages/db/migrations/0028_intent_sessions.sql`); recorded here because its writer is the ingest
+Worker.
+
+- **Bytes.** A JSONB **object**
+  `{ "weights": {archetype: number}, "topArchetype": string, "confidence": number }`, built by
+  `buildIntentStateEnvelope` (`packages/shared/src/intent-state-envelope.ts`) from the SDK
+  `intent.snapshot` payload (`probabilities`, `archetype`, `confidence`). Every reader
+  (`api/admin/tracer/sessions`, `sessions/[id]`, `history/[session_id]`) parses it with
+  `readIntentStateEnvelope` from the same module.
+- **Legacy rows** (written before FOLLOW-1310) hold a JSONB **string** of the bare probability map
+  (Codex F-07). The reader recovers `weights` and reports `topArchetype`/`confidence` as `null` —
+  never derived. Operator repair: `packages/db/scripts/repair-intent-state-follow1310.sql`
+  (idempotent, data-only).
+- **Head semantics.** Written as insert-or-ignore, then a head `PATCH` filtered
+  `last_event_at < ts`, then a start `PATCH` filtered `started_at > ts`: the head never moves
+  backwards and `started_at` is the earliest snapshot observed, never overwritten (Codex F-16).
+  Legacy `started_at` values are the ts of the last pre-fix snapshot (an upper bound); the only true
+  source is `min(intent_events.event_at)` for the session within ClickHouse's 90-day window.
+- **Replay.** A failed side-write (ClickHouse `intent_events` or this table) is re-queued on
+  `estalara-events-retry` as a `schema_version: 2`, `kind: 'intent_snapshot'` message, one sink per
+  message (`apps/ingest/src/events-retry-queue.ts`).
+
 ---
 
 ## Retention / TTL promises

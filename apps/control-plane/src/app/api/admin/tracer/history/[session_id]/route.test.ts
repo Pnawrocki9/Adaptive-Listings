@@ -70,6 +70,7 @@ import {
   fetchIntentEventsForSession,
 } from '@/lib/clickhouse-tracer';
 import { GET } from './route';
+import { buildIntentStateEnvelope } from '@estalara/shared';
 import type { TracerSessionReplayResponse } from '@estalara/shared';
 
 const mockGetAuthClaims = vi.mocked(getAuthClaims);
@@ -277,6 +278,42 @@ describe('GET /api/admin/tracer/history/[session_id] — live path (DB configure
     expect(body.data_source).toBe('clickhouse_unavailable');
     expect(body.session?.top_archetype).toBe('yield_hunter');
     expect(body.events).toHaveLength(0);
+  });
+
+  it('FOLLOW-1310: reads the envelope the ingest writer stores, and a legacy string row', async () => {
+    // The writer's exact value after a JSONB round trip (Codex F-07: one contract).
+    const written: unknown = JSON.parse(
+      JSON.stringify(
+        buildIntentStateEnvelope({
+          archetype: 'family_buyer',
+          confidence: 0.81,
+          probabilities: { family_buyer: 0.81, neutral: 0.19 },
+        }),
+      ),
+    );
+    mockResolveClickHouseTracerConfig.mockReturnValue(null);
+    mockLimit.mockResolvedValue([{ ...MOCK_SESSION_ROW, intentState: written }]);
+    let body = await parseBody<TracerSessionReplayResponse>(
+      await GET(makeRequest({ bearer: ADMIN_SECRET }), { params: makeParams() }),
+    );
+    expect(body.session).toMatchObject({
+      top_archetype: 'family_buyer',
+      confidence: 0.81,
+      weights: { family_buyer: 0.81, neutral: 0.19 },
+    });
+
+    // Pre-FOLLOW-1310 bytes: a JSONB string holding the bare probability map.
+    mockLimit.mockResolvedValue([
+      { ...MOCK_SESSION_ROW, intentState: JSON.stringify({ family_buyer: 0.6, neutral: 0.4 }) },
+    ]);
+    body = await parseBody<TracerSessionReplayResponse>(
+      await GET(makeRequest({ bearer: ADMIN_SECRET }), { params: makeParams() }),
+    );
+    expect(body.session).toMatchObject({
+      top_archetype: null,
+      confidence: null,
+      weights: { family_buyer: 0.6, neutral: 0.4 },
+    });
   });
 
   it('AC5.7: returns 200 data_source: live when Postgres and CH both succeed', async () => {

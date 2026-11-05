@@ -23,6 +23,7 @@ export * from './ab-holdout.js';
 export * from './bandit.js';
 export * from './embeddings.js';
 export * from './consent-retention.js';
+export * from './intent-state-envelope.js';
 export type {
   TenantSiteSchema,
   PageType,

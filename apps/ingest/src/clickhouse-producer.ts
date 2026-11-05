@@ -65,6 +65,13 @@ export interface CHPushSuccess {
    * treated as a failure, because absence of evidence is not evidence of zero. [FOLLOW-986]
    */
   writtenRows?: number;
+  /**
+   * Rows left out of the INSERT because they could not be encoded (e.g. a `ts` outside the
+   * `DateTime64(3)` range). Present only when > 0. Ingest rejects such events before they are
+   * ACKed (`ts_out_of_range`), so on the primary path this stays absent; it exists so a legacy
+   * retry message can never throw the whole batch away again. [FOLLOW-1310, Codex F-06]
+   */
+  skippedRows?: number;
 }
 
 export interface CHPushFailure {
@@ -168,6 +175,40 @@ export function toClickHouseDateTime64(epochMs: number): string {
 }
 
 /**
+ * Largest epoch-ms instant a ClickHouse `DateTime64(3, 'UTC')` column holds:
+ * 2299-12-31 23:59:59.999 UTC (the type's documented range is [1900-01-01, 2299-12-31]).
+ * [FOLLOW-1310, Codex F-06]
+ */
+export const CH_DATETIME64_MAX_MS = Date.UTC(2299, 11, 31, 23, 59, 59, 999);
+
+/**
+ * `CHPushFailure.error` prefix when EVERY row of a push was unencodable: nothing was sent, and a
+ * retry can never succeed, so the retry consumer drops it (logged) instead of re-driving it.
+ */
+export const CH_ROWS_UNENCODABLE_ERROR = 'clickhouse_rows_unencodable';
+
+/** Smallest instant the same column holds: 1900-01-01 00:00:00.000 UTC. */
+export const CH_DATETIME64_MIN_MS = Date.UTC(1900, 0, 1, 0, 0, 0, 0);
+
+/**
+ * True when `epochMs` is an integer instant both `toClickHouseDateTime64` can encode (JavaScript's
+ * `Date` stops at ±8.64e15 and throws `RangeError` beyond it) and `DateTime64(3)` can store.
+ *
+ * The shared envelope schema only asks for a positive integer, so before FOLLOW-1310 one event
+ * with `ts: 1e16` passed validation, made the body builder throw before the fetch, and took every
+ * other event of its ACKed batch with it (Codex F-06). `handlers/events.ts` now rejects such an
+ * event alone with `ts_out_of_range`; `pushToClickHouse` skips it as a backstop.
+ */
+export function isClickHouseEncodableTs(epochMs: unknown): epochMs is number {
+  return (
+    typeof epochMs === 'number' &&
+    Number.isInteger(epochMs) &&
+    epochMs >= CH_DATETIME64_MIN_MS &&
+    epochMs <= CH_DATETIME64_MAX_MS
+  );
+}
+
+/**
  * Map a validated, enriched event from the ingest handler into the column
  * shape ClickHouse's `events` table expects (see
  * `infra/clickhouse/migrations/0001_create_events.sql`).
@@ -252,9 +293,36 @@ export async function pushToClickHouse(
 
   // NDJSON body — one JSON object per line, no trailing newline.
   const callerSignedColumn = env.CALLER_SIGNED_COLUMN_ENABLED === 'true';
-  const body = records
-    .map((r) => JSON.stringify(toClickHouseRow(r, callerSignedColumn)))
-    .join('\n');
+  // Encode row by row: one row that cannot be encoded is left out and counted, never allowed to
+  // throw the batch away before the fetch (Codex F-06). [FOLLOW-1310]
+  const lines: string[] = [];
+  let skippedRows = 0;
+  for (const r of records) {
+    if (typeof r.ts === 'number' && !isClickHouseEncodableTs(r.ts)) {
+      skippedRows += 1;
+      continue;
+    }
+    try {
+      lines.push(JSON.stringify(toClickHouseRow(r, callerSignedColumn)));
+    } catch {
+      skippedRows += 1;
+    }
+  }
+  if (skippedRows > 0) {
+    logger.error(
+      { record_count: records.length, skipped_rows: skippedRows },
+      'clickhouse_rows_unencodable_skipped',
+    );
+  }
+  if (lines.length === 0) {
+    return {
+      ok: false,
+      attempts: 0,
+      error: `${CH_ROWS_UNENCODABLE_ERROR}:${String(skippedRows)}`,
+    };
+  }
+  const body = lines.join('\n');
+  const skipped = skippedRows > 0 ? { skippedRows } : {};
   const headers = buildHeaders(env);
 
   let lastStatus: number | undefined;
@@ -299,6 +367,7 @@ export async function pushToClickHouse(
           ok: true,
           attempts: attempt,
           ...(writtenRows === undefined ? {} : { writtenRows }),
+          ...skipped,
         };
       }
 

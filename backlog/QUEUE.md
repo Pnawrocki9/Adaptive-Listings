@@ -211,10 +211,9 @@
 - **FOLLOW-1458** — status: DONE # #1138. Reader fixes the arm per session, counts sessions in both.
 - **FOLLOW-1459** — status: DONE # #1138. Slot copy rules; resolves FOLLOW-1453.
 - **FOLLOW-1460** — status: DONE # #1138. Local staff token secret.
-- **FOLLOW-1461** — status: BACKLOG # P2 sdk + compliance, CEO ruling at K5.
-  `CONSENT_TEXT_TIMEOUT_MS` is 3000 ms. Past it the SDK shows no banner, sends nothing and logs
-  nothing (ADR-0021 §D4), so a slow network silently loses the buyer. Measured once at 8175 ms on a
-  cold box. Consider a longer budget: fail-closed still holds. Needs an ADR-0021 change.
+- **FOLLOW-1461** — status: DONE # #1142 `00e3902a`, 2026-11-05. `CONSENT_TEXT_TIMEOUT_MS` 3000 →
+  10000 ms, fail closed unchanged (ADR-0021 amended). Series: run 1 RED AC(9) b, runs 2-4 GREEN
+  `[FRESH]` (K5 ledger).
 - **FOLLOW-1462** — status: BACKLOG # P2 host + sdk. The host re-renders around its silent SSO
   answer (about 60 s on this box): a click then can be lost, a login started then is lost, and the
   seller's copy returns until the next decision, since a repair during a newer request stops as
@@ -235,8 +234,13 @@
   never asked again, so it never reaches the C-1 text (record H-3 (ii)). Needs SDK bytes; 7 B
   headroom after #1142. The `web-master` header helper does not check the version (H-3 (iii)).
 - **FOLLOW-1467** — status: BACKLOG # P3 compliance. Notice §4 lists `estalara_variant:{sessionId}`
-  written via `SESSION_VARIANT_KEY_PREFIX`; neither appears in non-test SDK source. Next free:
-  FOLLOW-1468, RETRO-381, ESC-092.
+  written via `SESSION_VARIANT_KEY_PREFIX`; neither appears in non-test SDK source.
+- **FOLLOW-1468** — not allocated (skipped).
+- **FOLLOW-1469** — status: DONE # #1144 `2da09f3d`, 2026-11-05. Localhost SDK build fetches the
+  consent text from `:3000` (`ESTALARA_LOCAL_CONSENT_TEXT_URL`, allow-listed; `build:check` refuses
+  a local URL in a shipped bundle). Found when #1143's series was RED on AC(9) 7/7: the SDK read
+  production's `2026-08-24.1`. Series 3× GREEN `[FRESH]`. CTO: deploy the control plane's consent
+  text before or with the SDK. Next free: FOLLOW-1470, RETRO-381, ESC-092.
 - **FOLLOW-1429** — status: DONE # PR #1129, README §5.69. Was: P2 product. Blind audit of
   2026-11-01: 32 firm language errors on PL and ES pages, in 21 of 56 texts, many of them translated
   persona phrases ("matematyka wyjścia", "ogon najmu", "zaprojektowany pod więcej weekendów"), plus
@@ -409,8 +413,9 @@
 - **FOLLOW-1343** — status: DONE # #1021 `ca39406d`, 2026-10-18 (N2 v0) + #1045 `3952ac29`,
   2026-10-19 (page tests for every remaining `/admin` page = N2 full). Instrument N2 (nav
   reachability + Playwright admin-smoke). K3 full = the authenticated rows (decision in M3).
-- **FOLLOW-1344** — status: IN_PROGRESS # K5 instruments GREEN, #1140 to merge,
-  docs/checkpoints/K5.md. # Instrument N3 (`real-app-acceptance.mjs`). K4b first use, K5 full.
+- **FOLLOW-1344** — status: DONE # #1140 `1ab4bc72`; K5 GREEN 2026-11-05 (tag `k5-green` `0c170c61`,
+  #1141): N3 29/29 at `5b30a527` on consent text `2026-11-03.1`, docs/checkpoints/K5.md. #
+  Instrument N3 (`real-app-acceptance.mjs`). K4b first use, K5 full.
 - **FOLLOW-1345** — status: IN_PROGRESS # Ledgers K0 #1018, K1 #1022, K2a #1031, K2b #1034, K2c
   (this PR, `k2c-green`). Harness AC(1b), AC(9) at K4a/K4b.
 - **FOLLOW-1346** — status: BACKLOG # Phase 7 H1/H2 final proof and handover v1. K7.
@@ -508,9 +513,11 @@
 - **FOLLOW-1302** — status: DONE # #978 `84535b94`, 2026-10-12. AC(8) = adapted response after
   message 2 (0.367 → 0.664, `llm_full`); red-first; 3× GREEN `[FRESH]` at `359db019`; row 1b
   "measured, not ruled on". Negative case 0.403 live vs 0.484 intake (same outcome, unexplained).
-- **FOLLOW-1307, 1308, 1309, 1310, 1311** — status: READY # P1, axis B; dispatch after the 820 path.
-  Plan 2026-10-17 (session 179): 1307..1310 = Phase 6 S1..S4 (gate K6, after R11 and M2); 1311 =
-  Phase 4 P6 (gate K4a); all re-scoped from post-GO to in-scope P1.
+- **FOLLOW-1307, 1310** — status: IN_PROGRESS # Phase 6 S1 (auth, backend Opus) and S4 (ingest, data
+  Opus) dispatched 2026-11-05 after `k5-green`, in parallel (disjoint files). FOLLOW-1464's
+  staff-JWT `exp` item is inside 1307.
+- **FOLLOW-1308, 1309** — status: READY # Phase 6 S2/S3, depend on FOLLOW-1307. **FOLLOW-1311** —
+  Phase 4 P6 (gate K4a). K6 STOP → revert to `k5-green`.
 - **FOLLOW-1279** — status: CLOSED # absorbed by FOLLOW-1308.
 - **FOLLOW-1251, 1302, 1303, 1291, 1294, 1297** — amended (see FOLLOW_UPS); statuses unchanged.
 

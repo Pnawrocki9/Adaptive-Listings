@@ -4006,6 +4006,22 @@ AC(9) PASS in all five. Control I1 of K4b.
 #1137 (patches and docs only) and #1140 (N3 only) changed no product code and owed no series. N3 and
 `--arms 40` are in `docs/checkpoints/K5.md`.
 
+### 5.74 — 2026-11-05/06 (Phase 6: #1146 to #1149) — **three consecutive `run=GREEN` with `total=9` on each PR's code**
+
+Runs are counted per series, in order. UNMEASURED is neutral under the CEO's 2026-09-22 rule.
+
+| PR, code          | Series, in order                                       | Ends with                        |
+| ----------------- | ------------------------------------------------------ | -------------------------------- |
+| #1146, `5d99d8c4` | RED AC(9) ×3, GREEN, UNMEASURED ×2, GREEN              | 2 GREEN, so a second series ran  |
+| #1146, `5d99d8c4` | GREEN, RED AC(9), GREEN, UNMEASURED, GREEN, GREEN      | 3 GREEN `[FRESH]` (runs 3, 5, 6) |
+| #1147, `5ffe5717` | RED AC(8) AC(9), GREEN ×3                              | 3 GREEN `[FRESH]`                |
+| #1148, `bf253d13` | RED AC(9), UNMEASURED, GREEN ×3                        | 3 GREEN `[FRESH]`                |
+| #1149, `65580349` | UNMEASURED, GREEN ×2, UNMEASURED, RED AC(10), GREEN ×2 | 2 GREEN, so a second series ran  |
+| #1149, `65580349` | GREEN ×2, UNMEASURED, GREEN                            | 3 GREEN `[FRESH]`                |
+
+The RED of #1149 was AC(10)(b), `locator.click` timeout 3000 ms on `.estalara-quiz-reject`. The
+AC(9) REDs were not analysed; FOLLOW-1471. N2 and N3 are in `docs/checkpoints/K6.md`.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

@@ -240,7 +240,8 @@
   consent text from `:3000` (`ESTALARA_LOCAL_CONSENT_TEXT_URL`, allow-listed; `build:check` refuses
   a local URL in a shipped bundle). Found when #1143's series was RED on AC(9) 7/7: the SDK read
   production's `2026-08-24.1`. Series 3× GREEN `[FRESH]`. CTO: deploy the control plane's consent
-  text before or with the SDK. Next free: FOLLOW-1470, RETRO-381, ESC-092.
+  text before or with the SDK. Next free: FOLLOW-1472, RETRO-381, ESC-092 (FOLLOW-1470/1471: K6,
+  below).
 - **FOLLOW-1429** — status: DONE # PR #1129, README §5.69. Was: P2 product. Blind audit of
   2026-11-01: 32 firm language errors on PL and ES pages, in 21 of 56 texts, many of them translated
   persona phrases ("matematyka wyjścia", "ogon najmu", "zaprojektowany pod więcej weekendów"), plus
@@ -513,11 +514,23 @@
 - **FOLLOW-1302** — status: DONE # #978 `84535b94`, 2026-10-12. AC(8) = adapted response after
   message 2 (0.367 → 0.664, `llm_full`); red-first; 3× GREEN `[FRESH]` at `359db019`; row 1b
   "measured, not ruled on". Negative case 0.403 live vs 0.484 intake (same outcome, unexplained).
-- **FOLLOW-1307, 1310** — status: IN_PROGRESS # Phase 6 S1 (auth, backend Opus) and S4 (ingest, data
-  Opus) dispatched 2026-11-05 after `k5-green`, in parallel (disjoint files). FOLLOW-1464's
-  staff-JWT `exp` item is inside 1307.
-- **FOLLOW-1308, 1309** — status: READY # Phase 6 S2/S3, depend on FOLLOW-1307. **FOLLOW-1311** —
-  Phase 4 P6 (gate K4a). K6 STOP → revert to `k5-green`.
+- **FOLLOW-1307** — status: DONE # #1146 `ad34a628`, 2026-11-05. Staff JWT claim checks, write
+  permission matrix, no tenant-create. Series README §5.74. CTO: `NEXT_PUBLIC_SUPABASE_URL` next to
+  `SUPABASE_JWT_SECRET`.
+- **FOLLOW-1310** — status: DONE # #1147 `80bd1fc0`, 2026-11-05. Bounded, recoverable ingest; one
+  snapshot envelope. Series README §5.74.
+- **FOLLOW-1309** — status: DONE # #1148 `1c1dafb5`, 2026-11-05. SSRF guard on the listing-details
+  fetch. Series README §5.74. CTO: never set `ESTALARA_ALLOW_LOOPBACK_BACKEND` in production.
+- **FOLLOW-1308** — status: DONE # #1149, 2026-11-06. DSR chain to PG, Redis and ClickHouse; erasure
+  ledger in the retry consumer. Series README §5.74. CTO: handover rows 22-23, H004. Unblocks
+  FOLLOW-1454 and FOLLOW-1465.
+- **FOLLOW-1470** — status: DONE # this PR. Checkpoint K6 ledger `docs/checkpoints/K6.md`: N2 13
+  passed with the staff-token rows, N3 GREEN 29/29 on the third run at `65580349`. Tag `k6-green` on
+  merge. Next: Phase 7 (H1-H4). **FOLLOW-1311** — Phase 4 P6 (gate K4a).
+- **FOLLOW-1471** — status: BACKLOG # P2 measurement. AC(9) went RED 6 times across the Phase 6
+  series (#1146 ×4, #1147, #1148) and each PR still reached 3 GREEN on unchanged code; AC(10)(b)
+  `locator.click` 3000 ms on `.estalara-quiz-reject` once on #1149. Find the cause of the AC(9)
+  REDs; raise the AC(10)(b) click timeout if it recurs. K6 ledger, findings.
 - **FOLLOW-1279** — status: CLOSED # absorbed by FOLLOW-1308.
 - **FOLLOW-1251, 1302, 1303, 1291, 1294, 1297** — amended (see FOLLOW_UPS); statuses unchanged.
 

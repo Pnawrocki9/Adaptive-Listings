@@ -159,6 +159,9 @@ async function probeAdaptOnce(attempt: number): Promise<{ res: Response; elapsed
         // prior attempt already drew holdout on.
         session_id: `canary-follow1022-${String(Date.now())}-${String(attempt)}`,
         page_type: 'listing_detail',
+        // FOLLOW-1465 (ESC-091 C-1): the route decides and logs only for `consented`, the value
+        // the SDK sends after a grant. Without it every probe gets the neutral consent-skip.
+        consent_state: 'consented',
         archetype_hint: 'yield_hunter',
         confidence: 0.8,
         // 0.6 < similarity <= 0.85 ⇒ the `llm_tweaked` band. Above 0.85 the tree serves the

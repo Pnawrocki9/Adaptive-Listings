@@ -21,6 +21,65 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## RESOLVED — ESC-092: wave 2 SDK consent controls (P-2, P-3, P-4) — public surface changes, and the byte budget they need [FOLLOW-1444 / FOLLOW-1445 / FOLLOW-1446 / FOLLOW-1455]
+
+**Filed by:** sdk-engineer **Date:** 2026-11-06 **Affects:** FOLLOW-1444, FOLLOW-1445, FOLLOW-1446,
+FOLLOW-1455, ESC-028/ESC-080 bundle ceiling, ADR-0021,
+`packages/sdk/src/core/{consent-flow,adapt, adapt-loop}.ts`,
+`packages/sdk/src/ui/profiling-toggle.ts`, `packages/shared/src/schemas/consent-text.ts`,
+`apps/control-plane/public/consent-text.json` **Type:** compliance
+
+**Description:** The four P1 "before go-live" SDK items of the FOLLOW-1316 signed review (P-2, P-3,
+P-4) and FOLLOW-1339 section 12 item 1 were prototyped and measured at `e059aaa1`. The IIFE is
+43,129 B against 43,136 B (7 B headroom). Measured costs: P-4 +203 B (full DOM restore +126,
+cross-tab stop +42, way back from `denied` +35); P-2 +124 B with the three sentences in
+`consent-text.json` (+543 B if in the bundle); P-3 +327 B. All three together: 43,783 B, 647 B over.
+A behaviour-neutral trim pays for all of it: importing zod as a namespace in `packages/shared` and
+`packages/sdk` (36 files) lets esbuild drop unused zod and saves 1,212 B. Typecheck is clean, and
+1,398 SDK and 1,223 shared tests pass. With it, the full set measures 42,570 B, 566 B under the
+current ceiling. The changes add public surface that CLAUDE.md requires escalating:
+
+1. A host-dispatched DOM event `estalara:consent:reopen` (only if the way back from `denied` is the
+   host-link option).
+2. Three optional fields in the consent-text document (`withdrawWhy`, `withdrawDone`,
+   `withdrawFail`). The SDK fetches the document on the granted path too (ADR-0021 §D2 amendment;
+   the §D3 request shape is unchanged).
+3. A "Download my data" control that calls the existing `/api/profile/portability`.
+4. Optionally, `/api/adapt` declines to decide or log when `consent_state` is `'none'` (defence in
+   depth for open tabs on old builds).
+
+**Required action:** CEO rules on:
+
+- (A) Budget. **A1 (recommended):** fund the zod-import trim PR first; the ceiling stays 43,136 B.
+  **A2:** raise ESC-028 by +768 B to 43,904 B (about 120 B headroom after the set) and skip the
+  trim. **A3:** cut scope (for example P-2 without a confirmation), which the signed review does not
+  allow.
+- (B) The way back from `denied`. **B-b (recommended):** host privacy-settings link dispatching
+  `estalara:consent:reopen`, +35 B. Alternatives: B-a none, document only (0 B); B-c the denial
+  expires after N months (est. +40–60 B, storage format change); B-d a persistent "turn on" chip on
+  denied pages (est. +150–250 B, renders DOM on the halted path).
+- (C) P-2 copy location. **C-b (recommended):** `consent-text.json`. C-a: in the bundle.
+- (D) Whether one "Download my data" control (portability format) satisfies both Art. 15 access and
+  Art. 20 export (counsel).
+- (E) FOLLOW-1455. **E-B (recommended):** keep the `kc_token` read and publish the v1.16 §1
+  sentence, 0 B. E-A: remove the read (−116 B), accepting that the xid lead binding and the per-lead
+  opt-out scope stop working for buyers who have not chatted (item 13 / L-5).
+- (F) Optional `/api/adapt` refusal for `consent_state: 'none'`.
+
+**Resolution:** CEO ruling 2026-11-06, in session with the PM:
+
+- (A) **A1.** The zod-namespace trim lands first as FOLLOW-1473; the ceiling stays 43,136 B.
+- (B) **B-d**, against the PM's recommendation of B-b: a persistent "turn on" chip on pages where
+  consent is `denied`, estimated +150–250 B, which fits the headroom after A1. The host event
+  `estalara:consent:reopen` (item 1) is approved as well, but is not required by B-d.
+- (C) **C-b.** The P-2 sentences live in `consent-text.json`; the button keeps its in-bundle label.
+- (D) One "Download my data" control, portability format, for access and export; counsel confirms at
+  the single legal review (CEO 2026-11-03: no deep legal analysis during development).
+- (E) **E-B.** Keep the `kc_token` read; publish the corrected notice §1 sentence; DPIA §1 line.
+- (F) **Yes.** `/api/adapt` declines to decide or log for `consent_state: 'none'`.
+
+Items 1 to 4 of the public surface are approved. Plan: `docs/PLAN-WAVE2-SDK-2026-11-06.md`.
+
 ## RESOLVED — ESC-091: signed conversions from the Estalara backend: event payloads, emission sites, the session-id header and the basis for measuring them [FOLLOW-1339]
 
 **Filed by:** backend-engineer and compliance-engineer via PM **Date:** 2026-11-02 **Resolved:**

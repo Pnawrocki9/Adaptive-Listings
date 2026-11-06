@@ -255,11 +255,17 @@ describe('FOLLOW-1461 — a slow answer inside the 10000 ms budget still renders
 });
 
 describe('§D2 — the granted and denied paths pay no extra request', () => {
-  it('skips the consent-text fetch entirely when consent is already granted', async () => {
+  // FOLLOW-1444 re-pin (ADR-0021 §D2 amendment 2026-11-06): the granted path fetches the text once,
+  // for the withdrawal control's sentences, with the same §D3 shape. No banner renders.
+  it('fetches the consent text once on the granted path, §D3 shape, and shows no banner', async () => {
     localStorage.setItem(CONSENT_KEY, 'granted');
     mockFetch(CONSENT_TEXT_DOC);
     await _initForTest();
-    expect(calls.map((c) => c.url)).not.toContain(CONSENT_TEXT_URL);
+    const textCalls = calls.filter((c) => c.url === CONSENT_TEXT_URL);
+    expect(textCalls).toHaveLength(1);
+    expect(textCalls[0]?.init).toMatchObject({ method: 'GET', credentials: 'omit', mode: 'cors' });
+    expect(textCalls[0]?.init?.headers).toBeUndefined();
+    expect(bannerInDom()).toBe(false);
   });
 
   it('skips the consent-text fetch entirely when consent is already denied', async () => {

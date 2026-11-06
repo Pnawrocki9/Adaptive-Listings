@@ -70,7 +70,7 @@ describe('ConsentTextDocumentSchema', () => {
   });
 
   it('rejects a locale entry missing a required copy field', () => {
-    const incomplete: Record<string, string> = { ...CONSENT_TEXT_EXAMPLE.locales.en! };
+    const incomplete: Record<string, string | undefined> = { ...CONSENT_TEXT_EXAMPLE.locales.en! };
     delete incomplete.accept;
     expect(
       ConsentTextDocumentSchema.safeParse({
@@ -78,6 +78,50 @@ describe('ConsentTextDocumentSchema', () => {
         locales: { ...CONSENT_TEXT_EXAMPLE.locales, en: incomplete },
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('the withdrawal sentences (FOLLOW-1444, ESC-092 C-b)', () => {
+  const WITHDRAW = ['withdrawWhy', 'withdrawDone', 'withdrawFail'] as const;
+
+  it('are optional: a locale without them still validates, so the banner never depends on them', () => {
+    const bare = Object.fromEntries(
+      Object.entries(CONSENT_TEXT_EXAMPLE.locales.en!).filter(
+        ([key]) => !(WITHDRAW as readonly string[]).includes(key),
+      ),
+    );
+    expect(Object.keys(bare)).not.toContain('withdrawWhy');
+    expect(
+      ConsentTextDocumentSchema.safeParse({
+        ...CONSENT_TEXT_EXAMPLE,
+        locales: { ...CONSENT_TEXT_EXAMPLE.locales, en: bare },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('are kept, not stripped, when present', () => {
+    const result = ConsentTextDocumentSchema.safeParse(CONSENT_TEXT_EXAMPLE);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      for (const key of WITHDRAW) expect(result.data.locales.en?.[key]).toBeTruthy();
+    }
+  });
+
+  it('reject an empty string', () => {
+    expect(
+      ConsentTextDocumentSchema.safeParse({
+        ...CONSENT_TEXT_EXAMPLE,
+        locales: {
+          ...CONSENT_TEXT_EXAMPLE.locales,
+          en: { ...CONSENT_TEXT_EXAMPLE.locales.en!, withdrawDone: '' },
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each(['en', 'pl', 'es'] as const)('the served %s locale carries all three', (locale) => {
+    const served = (SERVED as typeof CONSENT_TEXT_EXAMPLE).locales[locale];
+    for (const key of WITHDRAW) expect(served?.[key], key).toBeTruthy();
   });
 });
 

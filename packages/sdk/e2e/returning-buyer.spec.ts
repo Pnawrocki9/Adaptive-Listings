@@ -15,7 +15,12 @@ const CONSENT_TEXT_DOC = readFileSync(
   fileURLToPath(new URL('../../../apps/control-plane/public/consent-text.json', import.meta.url)),
   'utf8',
 );
-const SERVED_TEXT_VERSION = (JSON.parse(CONSENT_TEXT_DOC) as { text_version: string }).text_version;
+const SERVED_DOC = JSON.parse(CONSENT_TEXT_DOC) as {
+  text_version: string;
+  locales: Record<string, { withdrawWhy: string; withdrawDone: string; withdrawFail: string }>;
+};
+const SERVED_TEXT_VERSION = SERVED_DOC.text_version;
+const EN = SERVED_DOC.locales.en!;
 
 const PAGE_HTML = `<!doctype html><html><body>
 <div data-estalara-listing-id="listing-1">
@@ -32,6 +37,8 @@ interface Stub {
   language?: 'en' | 'pl' | 'es';
   /** Block the erase at the network (NC-9). */
   blockErase?: boolean;
+  /** Block the consent-text GET at the network (FOLLOW-1444 fallback). */
+  blockConsentText?: boolean;
 }
 
 interface Sent {
@@ -60,6 +67,10 @@ async function stub(page: Page, options: Stub): Promise<void> {
     if (url === PAGE_URL) {
       await route.fulfill({ status: 200, contentType: 'text/html', body: PAGE_HTML });
     } else if (url.endsWith('/consent-text.json')) {
+      if (options.blockConsentText) {
+        await route.abort('failed');
+        return;
+      }
       await route.fulfill({
         status: 200,
         headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
@@ -170,7 +181,7 @@ test.describe('FOLLOW-1316 in a real browser', () => {
     expectXidOnlyInAllowedBodies(sent, String(xid));
   });
 
-  test('NC-3: one click: denied, delete, id gone, tenant copy back, widget gone, next page silent', async ({
+  test('NC-3: one click: denied, delete, id gone, tenant copy back, result shown, next page silent', async ({
     page,
   }) => {
     await seedConsented(page);
@@ -186,7 +197,11 @@ test.describe('FOLLOW-1316 in a real browser', () => {
     const erase = sent.find((s) => s.url.endsWith('/profile/erase'));
     expect(JSON.parse(erase?.body ?? '{}')).toEqual({ tenant_id: TENANT_ID, xid });
     await expect(page.locator('[data-estalara-slot="headline"]')).toHaveText('Seller headline');
-    await expect(page.locator('[data-estalara-host]')).toHaveCount(0);
+    // FOLLOW-1444 re-pin: the widget's controls are gone; the host stays for the confirmation.
+    const toggle = shadow(page, '[data-estalara-profiling-toggle]');
+    await expect(toggle).toHaveText(EN.withdrawDone);
+    await expect(toggle).toHaveAttribute('role', 'status');
+    await expect(shadow(page, '[data-estalara-toggle-checkbox]')).toHaveCount(0);
     expect(await storage(page, 'estalara_consent_text_version')).toBeNull();
 
     sent.length = 0;
@@ -211,6 +226,8 @@ test.describe('FOLLOW-1316 in a real browser', () => {
     );
     await withdraw(blocked).click();
     await attempt;
+    // FOLLOW-1444: the buyer is told the delete failed and will be retried.
+    await expect(shadow(blocked, '[data-estalara-profiling-toggle]')).toHaveText(EN.withdrawFail);
     expect(await storage(blocked, 'estalara_consent')).toBe('denied');
     expect(await storedXid(blocked)).toBe(xid);
     await blocked.close();
@@ -255,7 +272,7 @@ test.describe('FOLLOW-1316 in a real browser', () => {
     expect(adaptBodies(sent)[0]?.xid).toBe(await storedXid(page));
   });
 
-  test('flag off: the id stays home, no control, and a denial erases it with no request', async ({
+  test('flag off: the id stays home, the control renders, and a denial erases it with no request', async ({
     page,
   }) => {
     await seedConsented(page);
@@ -264,7 +281,9 @@ test.describe('FOLLOW-1316 in a real browser', () => {
     await page.goto(PAGE_URL);
     await expect.poll(() => adaptBodies(sent).length).toBeGreaterThan(0);
     await expect(shadow(page, '[data-estalara-toggle-checkbox]')).toBeVisible();
-    await expect(withdraw(page)).toHaveCount(0);
+    // FOLLOW-1444 re-pin (P-2): the control renders with the flag off, with its sentence.
+    await expect(withdraw(page)).toBeVisible();
+    await expect(shadow(page, '[data-estalara-profiling-toggle]')).toContainText(EN.withdrawWhy);
     const xid = await storedXid(page);
     expect(xid).toBeDefined();
     for (const { url, body } of sent) expect(`${url} ${body}`).not.toContain(xid);
@@ -278,6 +297,22 @@ test.describe('FOLLOW-1316 in a real browser', () => {
     // The outgoing page may still flush its events; no request of any kind carries the id.
     expect(sent.filter((s) => s.url.includes('/mock-cp/'))).toEqual([]);
     for (const { url, body } of sent) expect(`${url} ${body}`).not.toContain(xid);
+  });
+
+  test('FOLLOW-1444: the consent text blocked on a granted page: label in the bundle, withdrawal works', async ({
+    page,
+  }) => {
+    await seedConsented(page);
+    await stub(page, { flag: true, blockConsentText: true });
+    await page.goto(PAGE_URL);
+    await expect(page.locator('[data-estalara-slot="headline"]')).toHaveText('Adapted headline');
+    await expect(withdraw(page)).toHaveText('Withdraw consent');
+    await withdraw(page).click();
+    await expect.poll(() => storage(page, '__estalara_xid__')).toBeNull();
+    expect(await storage(page, 'estalara_consent')).toBe('denied');
+    await expect(shadow(page, '[data-estalara-profiling-toggle]')).toHaveText(
+      'Personalization: disabled',
+    );
   });
 
   for (const [language, label] of [

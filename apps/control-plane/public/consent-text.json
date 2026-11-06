@@ -9,7 +9,10 @@
       "disclosurePlatform": "If you are a registered investor: your account sign-up consent also covers analysis of your chat messages to identify buying intent, transfer of your inferred buyer profile to the agency/agent, lead ranking by buying-intent strength, and agent-facing summaries of your chat questions. Your chat message text is stored for 13 months, with emails and phone numbers masked; the intent summary is kept for 24 hours.",
       "learnMore": "Learn more ↗",
       "accept": "Accept",
-      "decline": "Decline"
+      "decline": "Decline",
+      "withdrawWhy": "Withdrawing consent stops personalization and deletes any record kept for your next visits.",
+      "withdrawDone": "Consent withdrawn. Personalization is off and any record kept for your next visits is deleted.",
+      "withdrawFail": "Consent withdrawn and personalization is off, but the record could not be deleted now; we will try again on your next visit."
     },
     "pl": {
       "text": "Personalizujemy tę stronę na podstawie Twojego zachowania. Twoja zgoda obejmuje też pomiar, czy spersonalizowana strona skłania Cię do zapisu na prezentację na żywo lub kontaktu z agentem, w porównaniu z grupą odwiedzających, którzy widzą standardową stronę.",
@@ -18,7 +21,10 @@
       "disclosurePlatform": "Jeśli jesteś zarejestrowanym inwestorem: Twoja zgoda wyrażona przy rejestracji obejmuje również analizę wiadomości na czacie w celu identyfikacji intencji zakupowej, przekazanie wywnioskowanego profilu kupującego agencji/agentowi, ranking inwestorów według siły intencji zakupowej oraz podsumowania pytań z czatu widoczne dla pracowników agencji. Treść wiadomości z czatu jest przechowywana przez 13 miesięcy, z zamaskowanymi adresami e-mail i numerami telefonu; podsumowanie intencji przez 24 godziny.",
       "learnMore": "Dowiedz się więcej ↗",
       "accept": "Akceptuj",
-      "decline": "Odrzuć"
+      "decline": "Odrzuć",
+      "withdrawWhy": "Wycofanie zgody wyłącza personalizację i usuwa ewentualny zapis przechowywany na potrzeby Twoich kolejnych wizyt.",
+      "withdrawDone": "Zgoda wycofana. Personalizacja jest wyłączona, a ewentualny zapis na potrzeby kolejnych wizyt został usunięty.",
+      "withdrawFail": "Zgoda wycofana i personalizacja jest wyłączona, ale nie udało się teraz usunąć zapisu; spróbujemy ponownie podczas Twojej następnej wizyty."
     },
     "es": {
       "text": "Personalizamos esta página según tu comportamiento de navegación. Tu consentimiento también cubre medir si la página personalizada te lleva a inscribirte en una presentación en directo o a contactar con un agente, en comparación con un grupo de visitantes que ven la página estándar.",
@@ -27,7 +33,10 @@
       "disclosurePlatform": "Si eres un inversor registrado: tu consentimiento de registro también cubre el análisis de tus mensajes de chat para identificar la intención de compra, la transferencia de tu perfil de comprador inferido a la agencia/agente, la clasificación por intensidad de intención de compra y los resúmenes de tus preguntas de chat para el equipo de la agencia. El texto de tus mensajes de chat se almacena durante 13 meses, con correos y teléfonos enmascarados; el resumen de intención durante 24 horas.",
       "learnMore": "Más información ↗",
       "accept": "Aceptar",
-      "decline": "Rechazar"
+      "decline": "Rechazar",
+      "withdrawWhy": "Retirar el consentimiento desactiva la personalización y elimina cualquier registro guardado para tus próximas visitas.",
+      "withdrawDone": "Consentimiento retirado. La personalización está desactivada y se ha eliminado cualquier registro guardado para tus próximas visitas.",
+      "withdrawFail": "Consentimiento retirado y personalización desactivada, pero no se ha podido eliminar el registro ahora; lo intentaremos de nuevo en tu próxima visita."
     }
   }
 }

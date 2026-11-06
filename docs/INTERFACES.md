@@ -474,7 +474,11 @@ FOLLOW-913/898 against (RETRO-264 DG-1).
 
 - **Schema:** `ConsentTextDocumentSchema` / `ConsentTextLocaleSchema` in
   `packages/shared/src/schemas/consent-text.ts` (11 test cases). Locale-entry fields are derived
-  field-for-field from the `COPY` constant that shipped in the SDK before FOLLOW-915.
+  field-for-field from the `COPY` constant that shipped in the SDK before FOLLOW-915. **FOLLOW-1444
+  (ESC-092 C-b):** three optional locale fields for the withdrawal control, `withdrawWhy`,
+  `withdrawDone`, `withdrawFail`; a document without them still validates. The SDK now fetches the
+  document on the granted path too, with the same request shape (ADR-0021 amendment 2026-11-06); if
+  that fetch fails, the control keeps its in-bundle label and still withdraws.
 - **Wire example:** `packages/shared/src/examples/consent-text.ts`. The served artefact
   (`apps/control-plane/public/consent-text.json`) is validated against the schema AND asserted
   field-for-field equal to the example by `packages/shared/src/schemas/consent-text.test.ts`, so the

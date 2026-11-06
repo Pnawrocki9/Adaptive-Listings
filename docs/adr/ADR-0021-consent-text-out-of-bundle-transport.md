@@ -155,6 +155,9 @@ initiation is compliance-neutral), MUST be awaited before the banner renders, an
 entirely when consent is already `granted` or `denied` (the majority of page views — returning
 visitors pay zero extra requests).
 
+> **Amended 2026-11-06 (FOLLOW-1444), appended not rewritten:** the `granted` path now fetches the
+> document once, for the withdrawal control's sentences. See "Amendment 2026-11-06" below.
+
 **The invariant, stated as the test AC(1) must prove:** no event is pushed to the queue, no storage
 key is written, and no tenant-identified request is issued until the banner — rendered from
 successfully fetched and validated text — has received the visitor's decision. Latency cannot break
@@ -352,6 +355,42 @@ URL is still byte-identical for every tenant and visitor, and a local build neve
 string-literal consent fetch; the variable is in the sdk build's turbo cache key
 (`packages/sdk/turbo.json` `env`), so a cached local build is never replayed as the production
 bundle; and `localhost-up.sh` stops if its SDK dist does not carry the local URL.
+
+### Amendment 2026-11-06 — the granted path fetches the text too (FOLLOW-1444, ESC-092 C-b)
+
+The withdrawal control (FOLLOW-1316 signed review P-2) needs three sentences: what it does, the
+confirmation, and the message when the delete failed. The CEO ruled (ESC-092 C-b) that they live in
+this document, not in the bundle. They are three **optional** locale fields of
+`ConsentTextLocaleSchema`: `withdrawWhy`, `withdrawDone`, `withdrawFail`.
+
+**§D2 changes in one place.** The init sequence above says the `granted` path makes "no text fetch",
+and the paragraph under it says the fetch SHOULD be skipped when consent is `granted`. From this
+amendment, the `granted` path fetches the document **once, after the grant**, when the opt-out
+toggle mounts (`mountOptOutToggle()` in `packages/sdk/src/core/consent-flow.ts`). That is after the
+first decision, so it delays nothing. The `denied` path still makes no text fetch, and the `pending`
+path is unchanged. On a page where the buyer has just accepted the banner, this is a second GET of
+the same URL, which a browser normally answers from its HTTP cache (`max-age=300`).
+
+**§D3 is unchanged.** It is the same function, `fetchConsentText()`, and the same single
+`fetch(CONSENT_TEXT_URL, …)` call site: GET, `credentials: 'omit'`, `mode: 'cors'`, no headers, no
+query string, a URL identical for every tenant and visitor. `check-adr-0021-conditions.mjs` C2 and
+the FOLLOW-1469 local-build plugin both still see exactly one call site. Sent after a grant, the
+request carries no identifier, so it adds no processing the §D3 analysis does not already cover.
+
+**§D4 does not apply to this fetch, by design.** §D4 fails closed because a consent prompt must not
+run on incomplete text. Withdrawal is the opposite: it must work at least as well when the text is
+missing. If the granted-path fetch fails, nothing halts. The button keeps its in-bundle label
+("Withdraw consent", in the three locales), the click withdraws exactly as before, and the result
+shows the in-bundle state text ("Personalization: disabled") in place of the served sentence. The
+control renders at once and never waits for the fetch.
+
+**`text_version`.** The banner text is unchanged, and adding these fields does not raise
+`MIN_PROFILE_TEXT_VERSION`, so no buyer is asked again. See the FOLLOW-1444 PR for whether
+`text_version` itself is bumped.
+
+Tests: `packages/sdk/src/__tests__/follow-1444.test.ts` (request shape on the granted path, nothing
+new before a grant, fallback on a failed or hanging fetch), the re-pinned `follow-915.test.ts` §D2
+case, and `packages/sdk/e2e/returning-buyer.spec.ts`.
 
 ---
 

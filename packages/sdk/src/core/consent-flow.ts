@@ -33,12 +33,14 @@ import type { AdaptLoop } from './adapt-loop.js';
  * stored-denied branch, because the id is the only key to the profile (FOLLOW-1316, R25, R26). An id
  * that never left the browser, or has expired along with its profile, has nothing to delete, so it
  * is erased without a request: with the server flag off the xid never leaves, denial included.
+ * @returns whether nothing is left to delete: false only when a delete was needed and failed, which
+ *   the withdrawal control tells the buyer (FOLLOW-1444).
  */
-async function deleteThenEraseXid(config: SdkConfig): Promise<void> {
+async function deleteThenEraseXid(config: SdkConfig): Promise<boolean> {
   const xid = readStoredXid();
-  if (!xid?.sent || !isXidLive(xid) || (await postProfileErase(config, xid.id))) {
-    eraseCrossSessionId();
-  }
+  const done = !xid?.sent || !isXidLive(xid) || (await postProfileErase(config, xid.id));
+  if (done) eraseCrossSessionId();
+  return done;
 }
 
 /** Consent audit event — compliance audit trail, also on a denial or withdrawal. */
@@ -60,16 +62,24 @@ function eraseConsentedState(): void {
 /**
  * The withdrawal control's click (FOLLOW-1316, R25, R28): `denied` first, so sending stops; then the
  * delete, the DOM revert, the local erases and the halt. The audit event is the only other request.
+ * The halt keeps the toggle, which shows the result (FOLLOW-1444).
+ * @returns the delete's outcome, from {@link deleteThenEraseXid}.
  */
-async function withdrawConsent(ctx: BootContext, adapt: AdaptLoop): Promise<void> {
+async function withdrawConsent(ctx: BootContext, adapt: AdaptLoop): Promise<boolean> {
   setConsentState('denied');
   const erasing = deleteThenEraseXid(ctx.config);
   adapt.revert();
   eraseIntentState(ctx.session.sessionId);
   eraseConsentedState();
   ctx.queue.length = 0;
-  (window as Window & { __estalaraTeardown?: () => void }).__estalaraTeardown?.();
-  await Promise.all([erasing, dispatchEvents([deniedEvent(ctx.config)], ctx.config, ctx.session)]);
+  (window as Window & { __estalaraTeardown?: (keepUi?: boolean) => void }).__estalaraTeardown?.(
+    true,
+  );
+  const [done] = await Promise.all([
+    erasing,
+    dispatchEvents([deniedEvent(ctx.config)], ctx.config, ctx.session),
+  ]);
+  return done;
 }
 
 /**
@@ -88,15 +98,6 @@ function offerReopen(config: SdkConfig, host: ShadowHost, reinit: () => void): v
   };
   renderReopenChip(host.root, config.language, reopen);
   document.addEventListener('estalara:consent:reopen', reopen, { once: true });
-}
-
-/** Show the withdrawal control in the toggle [FOLLOW-1316, R24]. */
-export function offerWithdrawal(
-  ctx: BootContext,
-  adapt: AdaptLoop,
-  toggle: ProfilingToggleController,
-): void {
-  toggle.showWithdraw(() => void withdrawConsent(ctx, adapt));
 }
 
 /**
@@ -244,7 +245,12 @@ export function mountOptOutToggle(
       adapt.revert();
     },
   });
-  // With the flag on, or once this id left the browser: never strand a stored profile (FOLLOW-1316).
-  if (config.buyerProfileEnabled || readStoredXid()?.sent) offerWithdrawal(ctx, adapt, toggle);
+  // Wherever the toggle renders, the flag on, off or never set (FOLLOW-1316 R24, P-2) [FOLLOW-1444].
+  // Its sentences come from the banner's identifier-free consent-text GET, now on the granted path
+  // too (ADR-0021 amendment 2026-11-06); a failed fetch leaves the in-bundle label, never less.
+  toggle.showWithdraw(
+    () => withdrawConsent(ctx, adapt),
+    fetchConsentText(config.language).then((t) => t?.copy),
+  );
   return toggle;
 }

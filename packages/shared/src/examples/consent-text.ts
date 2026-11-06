@@ -30,6 +30,12 @@ export const CONSENT_TEXT_EXAMPLE: ConsentTextDocument = {
       learnMore: 'Learn more ↗',
       accept: 'Accept',
       decline: 'Decline',
+      withdrawWhy:
+        'Withdrawing consent stops personalization and deletes any record kept for your next visits.',
+      withdrawDone:
+        'Consent withdrawn. Personalization is off and any record kept for your next visits is deleted.',
+      withdrawFail:
+        'Consent withdrawn and personalization is off, but the record could not be deleted now; we will try again on your next visit.',
     },
     pl: {
       text: 'Personalizujemy tę stronę na podstawie Twojego zachowania. Twoja zgoda obejmuje też pomiar, czy spersonalizowana strona skłania Cię do zapisu na prezentację na żywo lub kontaktu z agentem, w porównaniu z grupą odwiedzających, którzy widzą standardową stronę.',
@@ -41,6 +47,12 @@ export const CONSENT_TEXT_EXAMPLE: ConsentTextDocument = {
       learnMore: 'Dowiedz się więcej ↗',
       accept: 'Akceptuj',
       decline: 'Odrzuć',
+      withdrawWhy:
+        'Wycofanie zgody wyłącza personalizację i usuwa ewentualny zapis przechowywany na potrzeby Twoich kolejnych wizyt.',
+      withdrawDone:
+        'Zgoda wycofana. Personalizacja jest wyłączona, a ewentualny zapis na potrzeby kolejnych wizyt został usunięty.',
+      withdrawFail:
+        'Zgoda wycofana i personalizacja jest wyłączona, ale nie udało się teraz usunąć zapisu; spróbujemy ponownie podczas Twojej następnej wizyty.',
     },
     es: {
       text: 'Personalizamos esta página según tu comportamiento de navegación. Tu consentimiento también cubre medir si la página personalizada te lleva a inscribirte en una presentación en directo o a contactar con un agente, en comparación con un grupo de visitantes que ven la página estándar.',
@@ -52,6 +64,12 @@ export const CONSENT_TEXT_EXAMPLE: ConsentTextDocument = {
       learnMore: 'Más información ↗',
       accept: 'Aceptar',
       decline: 'Rechazar',
+      withdrawWhy:
+        'Retirar el consentimiento desactiva la personalización y elimina cualquier registro guardado para tus próximas visitas.',
+      withdrawDone:
+        'Consentimiento retirado. La personalización está desactivada y se ha eliminado cualquier registro guardado para tus próximas visitas.',
+      withdrawFail:
+        'Consentimiento retirado y personalización desactivada, pero no se ha podido eliminar el registro ahora; lo intentaremos de nuevo en tu próxima visita.',
     },
   },
 };

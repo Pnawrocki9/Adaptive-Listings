@@ -6,7 +6,7 @@
  * @module @estalara/shared/schemas/events
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 import {
   PageViewEventSchema,

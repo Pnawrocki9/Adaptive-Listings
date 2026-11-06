@@ -23,7 +23,7 @@
  * @module @estalara/shared/schemas/conversion-label
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 /**
  * Canonical lead-outcome taxonomy (§T.4). Ordered shallow → deep:

@@ -6,7 +6,7 @@
  * @module @estalara/shared/schemas/events/device-context
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 import { EventEnvelopeBaseSchema } from '../event.js';
 import { DeviceClassSchema, ViewportSchema } from './page-lifecycle.js';

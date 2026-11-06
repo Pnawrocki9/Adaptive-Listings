@@ -20,7 +20,7 @@
  * @module @estalara/shared/traits
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 /**
  * The 7 canonical trait identifiers, in canonical order (the order `resolveQuizOutcome`

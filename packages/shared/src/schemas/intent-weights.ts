@@ -21,7 +21,7 @@
  * @module @estalara/shared/schemas/intent-weights
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 import { CANONICAL_ARCHETYPE_IDS } from '../archetypes.js';
 

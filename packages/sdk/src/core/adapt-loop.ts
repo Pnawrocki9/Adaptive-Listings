@@ -3,7 +3,7 @@
  * @module
  */
 
-import { fetchDirectives, applyDirectives, resetAdaptState } from './adapt.js';
+import { fetchDirectives, applyDirectives, resetAdaptState, restoreDom } from './adapt.js';
 import { annotateSlots } from './annotate-slots.js';
 import { bootTimings, mark } from './boot-timing.js';
 import { applyDescriptionAdaptation, teardownDescriptionObservers } from './adapt-description.js';
@@ -167,6 +167,8 @@ export function createAdaptLoop(
   function restoreOriginalSlots(listingId: string | null | undefined): void {
     teardownDescriptionObservers();
     resetAdaptState();
+    // Every other write (cta, feature, classes, order); the per-listing maps below win [FOLLOW-1446].
+    restoreDom();
     if (!listingId) return;
     const headline = originalHeadlineByListing.get(listingId);
     if (headline !== undefined) {

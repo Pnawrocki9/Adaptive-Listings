@@ -15,13 +15,14 @@ import {
   isConsentTextStale,
   peekStoredSessionId,
   setConsentTextVersion,
+  clearConsentDenial,
 } from './session.js';
 import { eraseCrossSessionId, getOrCreateCrossSessionId, isXidLive, readStoredXid } from './xid.js';
 import { postProfileErase } from './adapt.js';
 import type { ShadowHost } from '../ui/shadow-host.js';
 import { fetchConsentText } from './consent-text.js';
 import { renderConsentBanner } from '../ui/consent-banner.js';
-import { renderProfilingToggle } from '../ui/profiling-toggle.js';
+import { renderProfilingToggle, renderReopenChip } from '../ui/profiling-toggle.js';
 import type { ProfilingToggleController } from '../ui/profiling-toggle.js';
 import { setProfilingOptOut, eraseProfilingOptOut } from './profiling-opt-out.js';
 import type { BootContext } from './boot.js';
@@ -71,6 +72,24 @@ async function withdrawConsent(ctx: BootContext, adapt: AdaptLoop): Promise<void
   await Promise.all([erasing, dispatchEvents([deniedEvent(ctx.config)], ctx.config, ctx.session)]);
 }
 
+/**
+ * The way back from `denied` (ESC-092 B-d) [FOLLOW-1446]: the halted SDK keeps its host only for a
+ * "turn on" chip. The chip, or the host event `estalara:consent:reopen`, forgets the denial and runs
+ * `init()` again, so the buyer sees the first-visit banner. Nothing is read or sent before that; the
+ * banner's own consent-text GET is the first request, as on a first visit.
+ */
+function offerReopen(config: SdkConfig, host: ShadowHost, reinit: () => void): void {
+  const reopen = (): void => {
+    // Once: the host leaves on the first call, or went with the page (an SPA, a test) before it.
+    if (!host.container.isConnected) return;
+    host.destroy();
+    clearConsentDenial();
+    reinit();
+  };
+  renderReopenChip(host.root, config.language, reopen);
+  document.addEventListener('estalara:consent:reopen', reopen, { once: true });
+}
+
 /** Show the withdrawal control in the toggle [FOLLOW-1316, R24]. */
 export function offerWithdrawal(
   ctx: BootContext,
@@ -88,11 +107,13 @@ export function offerWithdrawal(
  * @param config - Snippet config (the server config is fetched only AFTER consent, ADR-0011).
  * @param earlyHost - The shadow host the banner renders in; destroyed on every halting path.
  * @param queue - The shared event queue (consent audit events).
+ * @param reinit - Runs `init()` again, for the way back from `denied` [FOLLOW-1446].
  */
 export async function resolveConsent(
   config: SdkConfig,
   earlyHost: ShadowHost | null,
   queue: CollectedEvent[],
+  reinit: () => void,
 ): Promise<boolean> {
   const consentState = getConsentState();
 
@@ -102,8 +123,8 @@ export async function resolveConsent(
     // in sessionStorage from a prior page load where consent was still granted).
     eraseIntentState(peekStoredSessionId());
     eraseConsentedState();
-    // The shadow host is destroyed to avoid leaving a DOM node.
-    earlyHost?.destroy();
+    // The host stays only for the "turn on" chip (ESC-092 B-d) [FOLLOW-1446].
+    if (earlyHost) offerReopen(config, earlyHost, reinit);
     // DPIA §13.2 / FOLLOW-139: the xid does not outlive a denied session. This is also the retry of
     // a delete that failed earlier, and the only request a halted SDK sends (R25, R26).
     await deleteThenEraseXid(config);
@@ -170,7 +191,8 @@ export async function resolveConsent(
           eraseIntentState(auditSession.sessionId);
           await dispatchEvents(batch, config, auditSession);
         }
-        earlyHost.destroy();
+        // The page is now `denied`: the same chip as a stored denial [FOLLOW-1446].
+        offerReopen(config, earlyHost, reinit);
         await erasing;
         return false;
       }

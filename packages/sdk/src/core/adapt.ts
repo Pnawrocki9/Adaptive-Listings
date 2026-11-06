@@ -435,6 +435,46 @@ export function setEventQueueRef(queue: CollectedEvent[]): void {
   _eventQueue = queue;
 }
 
+/** One undo entry: the seller's value, our last write, and how to read and put it back. */
+interface Undo {
+  o: unknown[];
+  w: unknown[];
+  r: () => unknown[];
+  s: (v: unknown[]) => void;
+}
+
+/** Seller originals by key (element, its classList, its children), first write wins [FOLLOW-1446]. */
+const _undo = new Map<object, Undo>();
+
+const same = (a: unknown[], b: unknown[]): boolean =>
+  a.length === b.length && a.every((x, i) => x === b[i]);
+
+/**
+ * Run `write`, logging what it overwrote. A key whose DOM no longer shows our last write was
+ * re-rendered by the seller, so its current value is the new original [FOLLOW-1446].
+ */
+function logged(
+  key: object,
+  r: () => unknown[],
+  s: (v: unknown[]) => void,
+  write: () => void,
+): void {
+  const now = r();
+  let e = _undo.get(key);
+  if (!e || !same(e.w, now)) _undo.set(key, (e = { o: now, w: now, r, s }));
+  write();
+  e.w = r();
+}
+
+/**
+ * Put every logged write back where the DOM still shows it, then forget the log. Callers tear the
+ * resilience observers down first, so nothing re-applies [FOLLOW-1446].
+ */
+export function restoreDom(): void {
+  for (const e of _undo.values()) if (same(e.r(), e.w)) e.s(e.o);
+  _undo.clear();
+}
+
 /** Clear idempotency state on a new session. */
 export function resetAdaptState(): void {
   appliedFingerprints.clear();
@@ -505,10 +545,23 @@ function applyTextDirective(directive: TextDirective, context?: ApplyContext): v
     // Unresolved token here: keep the tenant's copy [FOLLOW-1018].
     if (resolved === null) return;
 
+    const write = (): void => {
+      logged(
+        el,
+        () => [el.textContent],
+        (v) => {
+          el.textContent = v[0] as string;
+        },
+        () => {
+          el.textContent = resolved;
+        },
+      );
+    };
+
     if (!context) {
       // No ApplyContext (legacy / one-shot call site) — no archetypeId/confidence/isStale
       // available to arm resilience with. One-shot write, unchanged behavior.
-      el.textContent = resolved;
+      write();
       written += 1;
       return;
     }
@@ -534,9 +587,7 @@ function applyTextDirective(directive: TextDirective, context?: ApplyContext): v
         el,
         { childList: true, characterData: true, subtree: true },
         () => el.textContent === resolved,
-        () => {
-          el.textContent = resolved;
-        },
+        write,
         context.isStale,
         slotName,
         context.archetypeId,
@@ -585,9 +636,18 @@ function applyClassDirective(directive: ClassDirective, context?: ApplyContext):
 
   const elements = document.querySelectorAll<HTMLElement>(selector);
   const applyClasses = (el: HTMLElement): void => {
-    // remove first, then add — add wins if same class is in both
-    if (directive.remove.length > 0) el.classList.remove(...directive.remove);
-    if (directive.add.length > 0) el.classList.add(...directive.add);
+    logged(
+      el.classList,
+      () => [el.className],
+      (v) => {
+        el.className = v[0] as string;
+      },
+      () => {
+        // remove first, then add — add wins if same class is in both
+        if (directive.remove.length > 0) el.classList.remove(...directive.remove);
+        if (directive.add.length > 0) el.classList.add(...directive.add);
+      },
+    );
   };
 
   elements.forEach((el) => {
@@ -673,19 +733,29 @@ function applyReorderDirective(directive: ReorderDirective, context?: ApplyConte
 
   // `cards` is kept only for the empty-container check [FOLLOW-803].
 
-  // Re-query LIVE nodes and sort by listing id, never node identity [FOLLOW-792].
+  // Re-query LIVE nodes and sort by listing id, never node identity [FOLLOW-792]. The undo log
+  // keeps the seller's child order, keyed on the live `children` collection [FOLLOW-1446].
   const applyOrder = (): void => {
-    const liveSorted = sortByScore(
-      Array.from(container.querySelectorAll<HTMLElement>(directive.item_selector)),
+    logged(
+      container.children,
+      () => [...container.children],
+      (v) => {
+        container.append(...(v as Element[]));
+      },
+      () => {
+        const liveSorted = sortByScore(
+          Array.from(container.querySelectorAll<HTMLElement>(directive.item_selector)),
+        );
+        if (directive.pin_top_n !== undefined && directive.pin_top_n > 0) {
+          const topCards = liveSorted.slice(0, directive.pin_top_n);
+          const restCards = liveSorted.slice(directive.pin_top_n);
+          container.prepend(...topCards);
+          container.append(...restCards);
+        } else {
+          container.append(...liveSorted);
+        }
+      },
     );
-    if (directive.pin_top_n !== undefined && directive.pin_top_n > 0) {
-      const topCards = liveSorted.slice(0, directive.pin_top_n);
-      const restCards = liveSorted.slice(directive.pin_top_n);
-      container.prepend(...topCards);
-      container.append(...restCards);
-    } else {
-      container.append(...liveSorted);
-    }
   };
 
   if (!context) {

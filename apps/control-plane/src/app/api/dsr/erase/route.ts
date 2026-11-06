@@ -12,9 +12,11 @@
  *      before anything else. A store failure answers 503 with nothing done and the OTP unspent. The
  *      xid reaches no log or audit row.
  *   2. In a single transaction, first marking the OTP used, so that any failure rolls that back and
- *      the same OTP retries (500 `erase_failed`; no new OTP can be had while `initiate` refuses every
- *      caller). No order can leave a spent OTP with a live profile:
- *      - DELETE FROM session_embeddings WHERE session_id AND tenant_id
+ *      the same OTP retries (500 `erase_failed`). No order can leave a spent OTP with a live
+ *      profile. Marking it used is also the erasure-ledger entry the ingest retry consumer reads
+ *      (FOLLOW-1308): from that commit on, a queued retry of this session's rows is dropped.
+ *      (`session_embeddings` is no longer read or erased: it never had a writer, and handover
+ *      migration H004 drops it, FOLLOW-1308.)
  *      - DELETE FROM consent_records WHERE session_id AND tenant_id (FOLLOW-1108)
  *        GUARD: ne(session_id, '') — an empty key must never match rows wholesale.
  *      - DELETE FROM conversion_labels WHERE lead_id = session_id AND tenant_id (FOLLOW-172)
@@ -28,15 +30,16 @@
  *      - DELETE FROM quiz_runs WHERE session_id AND tenant_id (FOLLOW-1358; in a SAVEPOINT, and a
  *        missing table — H002 not applied — is tolerated for this table only)
  *      - DELETE FROM intent_sessions WHERE session_id AND tenant_id (FOLLOW-455)
- *   3. Redis DEL session:{session_id}:* AND shadow:{tenant_id}:{session_id}:chat_intent
- *      (fire-and-forget). The shadow key is the chat-intent shadow namespace
- *      written by the Python `write_shadow_intent` (apps/intent-engine/src/
- *      redis_writer.py) — a DIFFERENT prefix from `session:*` that the SCAN
- *      above never matches (FOLLOW-557 / audit A3-F-05).
+ *   3. FOLLOW-1308 (R-01): Redis DEL session:{session_id}:* AND
+ *      shadow:{tenant_id}:{session_id}:chat_intent — run BEFORE step 2, awaited and checked, with
+ *      the OTP unspent. Erased only once absence is confirmed (a full SCAN cycle finds nothing,
+ *      EXISTS = 0); a store failure answers 503 `redis_erase_failed` with nothing else done. The
+ *      shadow key is the chat-intent namespace written by the Python `write_shadow_intent`
+ *      (apps/intent-engine/src/redis_writer.py), a prefix the SCAN never matches (FOLLOW-557).
  *   4. **FOLLOW-039 — RODO Art. 17 hard-delete:**
  *      For each ClickHouse PII table (events, adaptation_decisions, llm_calls,
- *      intent_events) issue an `ALTER TABLE ... DELETE WHERE
- *      session_id IN (...)` mutation and persist a `dsr_clickhouse_mutations`
+ *      intent_events) issue an `ALTER TABLE ... DELETE WHERE tenant_id = ... AND
+ *      session_id IN (...)` mutation (tenant-scoped since FOLLOW-1308, Codex F-13) and persist a `dsr_clickhouse_mutations`
  *      Postgres row tracking its state. FOLLOW-581: `intent_events` is filtered
  *      on `session_id` like every other table — real rows carry the SDK
  *      fingerprint there, with the UUID `intent_session_id` column left at its
@@ -56,7 +59,6 @@ import { z } from 'zod';
 import { eq, and, ne, sql } from 'drizzle-orm';
 import {
   createAdminClient,
-  sessionEmbeddings,
   consentRecords,
   conversionLabels,
   quizCompletions,
@@ -71,6 +73,7 @@ import {
 import { eraseQuizRunsForSession } from '@/lib/quiz-runs';
 import { deleteBuyerProfile, isStrictXid } from '@/lib/buyer-profile-store';
 import { deleteShadowChatIntent } from '@/lib/chat-intent-cache';
+import { upstashCheckedPipeline } from '@/lib/upstash-checked-pipeline';
 import { DSR_AUDIT_ACTIONS, writeDsrAuditLog } from '../_clickhouse';
 import {
   DSR_CLICKHOUSE_TABLES,
@@ -90,52 +93,63 @@ const EraseBodySchema = z.object({
 /** Another request spent the OTP between verification and this transaction. */
 class OtpAlreadyConsumedError extends Error {}
 
-// ─── Redis session DEL (fire-and-forget) ─────────────────────────────────────
+// ─── Redis session erase (FOLLOW-1308: checked, confirmed, awaited) ──────────
 
-async function deleteSessionFromRedis(tenantId: string, sessionId: string): Promise<void> {
-  const base = process.env.UPSTASH_REDIS_URL?.replace(/\/$/, '');
-  if (!base) return;
+/** Full SCAN cycles tried before the namespace is reported as not confirmed empty. */
+const REDIS_ERASE_MAX_PASSES = 3;
+/** SCAN pages per cycle; a session's `session:{id}:*` namespace is a handful of keys. */
+const REDIS_SCAN_MAX_PAGES = 100;
 
-  const token = process.env.UPSTASH_REDIS_TOKEN;
-  const headers: Record<string, string> = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  // SCAN for session:{sessionId}:* keys then DEL them
-  const matchPattern = `session:${sessionId}:*`;
+/** Every key matching `pattern` over one full SCAN cycle; null when a page failed or never ended. */
+async function scanAllKeys(pattern: string): Promise<string[] | null> {
+  const keys: string[] = [];
   let cursor = '0';
+  for (let page = 0; page < REDIS_SCAN_MAX_PAGES; page++) {
+    const out = await upstashCheckedPipeline([['SCAN', cursor, 'MATCH', pattern, 'COUNT', '100']]);
+    if (!out.ok) return null;
+    const reply = out.results[0];
+    if (!Array.isArray(reply) || reply.length < 2 || !Array.isArray(reply[1])) return null;
+    keys.push(...(reply[1] as unknown[]).map(String));
+    cursor = String(reply[0]);
+    if (cursor === '0') return keys;
+  }
+  return null;
+}
 
-  do {
-    const scanUrl = `${base}/scan/${cursor}/match/${encodeURIComponent(matchPattern)}/count/100`;
-    const resp = await fetch(scanUrl, { method: 'GET', headers });
-    if (!resp.ok) break;
+/**
+ * Erase the session's Redis state: `session:{sessionId}:*` (SCAN + DEL) and the chat-intent
+ * shadow key `shadow:{tenantId}:{sessionId}:chat_intent` (FOLLOW-557: written by the Python
+ * `write_shadow_intent`, a prefix the SCAN never matches; deleted through the shared
+ * `deleteShadowChatIntent` so the erase and the `/api/adapt` read path share one key format).
+ *
+ * FOLLOW-1308 (Codex R-01): every call is checked (HTTP status and per-command error), and the
+ * namespace counts as erased only once a full SCAN cycle finds no key and `EXISTS` on the shadow
+ * key is 0: absence is confirmed, not assumed. Before this, a 403 or `[{ error }]` resolved as
+ * success inside an `afterResponse` task that only logged, and the route answered `completed`.
+ *
+ * @returns `erased` (absence confirmed), `not_configured` (no `UPSTASH_REDIS_URL`: nothing held),
+ *   or `failed`.
+ */
+async function eraseSessionFromRedis(
+  tenantId: string,
+  sessionId: string,
+): Promise<'erased' | 'not_configured' | 'failed'> {
+  if (!process.env.UPSTASH_REDIS_URL) return 'not_configured';
 
-    const data = (await resp.json()) as { result?: unknown };
-    const result = data.result;
-    if (!Array.isArray(result) || result.length < 2) break;
-
-    const nextCursor = String(result[0]);
-    const maybeKeys: unknown = result[1];
-    const keys: string[] = Array.isArray(maybeKeys) ? (maybeKeys as unknown[]).map(String) : [];
-    cursor = nextCursor;
-
-    if (keys.length > 0) {
-      await fetch(`${base}/pipeline`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify([['DEL', ...keys]]),
-      });
+  const pattern = `session:${sessionId}:*`;
+  let confirmedEmpty = false;
+  for (let pass = 0; pass < REDIS_ERASE_MAX_PASSES && !confirmedEmpty; pass++) {
+    const keys = await scanAllKeys(pattern);
+    if (keys === null) return 'failed';
+    if (keys.length === 0) {
+      confirmedEmpty = true;
+    } else if (!(await upstashCheckedPipeline([['DEL', ...keys]])).ok) {
+      return 'failed';
     }
-  } while (cursor !== '0');
+  }
+  if (!confirmedEmpty) return 'failed';
 
-  // FOLLOW-557 / audit A3-F-05: the chat-intent shadow namespace
-  // (`shadow:{tenant_id}:{session_id}:chat_intent`, written by the Python
-  // `write_shadow_intent` — apps/intent-engine/src/redis_writer.py) is a
-  // DIFFERENT key prefix that the `session:{sessionId}:*` SCAN above never
-  // matches. It is a single deterministic key (no SCAN needed) — deleted via
-  // the shared deleteShadowChatIntent() helper so both the erase path here
-  // and the /api/adapt read path (chat-intent-cache.ts) stay pinned to one
-  // key-format definition.
-  await deleteShadowChatIntent(tenantId, sessionId);
+  return (await deleteShadowChatIntent(tenantId, sessionId)) === 'failed' ? 'failed' : 'erased';
 }
 
 // ─── ClickHouse hard-delete (FOLLOW-039) ─────────────────────────────────────
@@ -234,6 +248,7 @@ async function issueClickHouseEraseMutations(args: {
       const result = await issueEraseMutation(cfg, {
         table,
         column,
+        tenantId: args.tenantId,
         sessionIds: [args.sessionId],
       });
       await args.db.insert(dsrClickhouseMutations).values({
@@ -367,6 +382,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // ── FOLLOW-1308 (R-01): the session's Redis state, awaited, before the OTP is spent ──
+  // Same posture as the profile above: a store failure is an explicit 503 with the OTP unspent and
+  // the Postgres and ClickHouse legs not started, so the same request retries until the keys are
+  // confirmed absent. It is never reported as `completed`.
+  const redisErasure = await eraseSessionFromRedis(record.tenantId, record.sessionId);
+  if (redisErasure === 'failed') {
+    console.error('[dsr/erase] Redis session erase not confirmed: redis_erase_failed');
+    auditFailure();
+    return NextResponse.json(
+      {
+        error: {
+          code: 'redis_erase_failed',
+          message:
+            'The session cache could not be confirmed erased. The code is still valid. Retry this request.',
+        },
+        buyer_profile_erasure: buyerProfileErasure,
+        redis_erasure: redisErasure,
+      },
+      { status: 503 },
+    );
+  }
+
   // FOLLOW-1358: the quiz_runs leg's outcome (rows deleted, or H002 not applied) is reported on
   // the wire so the erase record states it rather than implying it.
   let quizRunsErasure: number | 'table_missing' = 0;
@@ -376,15 +413,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     await db.transaction(async (tx) => {
       // FOLLOW-1316: spent here, so a rollback below leaves the OTP valid for a retry.
       if (!(await consumeVerifiedOtp(tx, record.id))) throw new OtpAlreadyConsumedError();
-
-      await tx
-        .delete(sessionEmbeddings)
-        .where(
-          and(
-            eq(sessionEmbeddings.sessionId, record.sessionId),
-            eq(sessionEmbeddings.tenantId, record.tenantId),
-          ),
-        );
 
       // ── FOLLOW-1108: consent_records erasure MUST be tenant-scoped ──────────
       //
@@ -468,7 +496,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
       // ── FOLLOW-455 / audit F-20: quiz_completions erasure cascade ────────────
       // MOAT training-data rows written by POST /api/quiz/completion. Session-
-      // scoped, same erasure obligation as session_embeddings.
+      // scoped, the same erasure obligation as every row of this cascade.
       await tx
         .delete(quizCompletions)
         .where(
@@ -667,16 +695,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // ── Redis session DEL (fire-and-forget, RODO Art. 17) ────────────────────
-  // FOLLOW-433 / ESC-033: registered via afterResponse() so the Redis DEL
-  // (active erasure per RODO Art. 17) completes after the response before
-  // Vercel instance suspension.
-  afterResponse(() =>
-    deleteSessionFromRedis(record.tenantId, record.sessionId).catch((err: unknown) => {
-      console.error('[dsr/erase] Redis DEL failed:', err instanceof Error ? err.message : err);
-    }),
-  );
-
   // ── ClickHouse hard-delete (FOLLOW-039 — RODO Art. 17) ────────────────────
   // Awaited (not fire-and-forget) so the response reflects mutation issuance.
   // Per Master Design §H.1, the controller has 1 month to fulfill erasure —
@@ -725,6 +743,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       deleted_at: now.toISOString(),
       // FOLLOW-1316: deleted | not_found | not_configured | not_requested.
       buyer_profile_erasure: buyerProfileErasure,
+      // FOLLOW-1308: erased (absence confirmed) | not_configured. `failed` answers 503 above.
+      redis_erasure: redisErasure,
       // FOLLOW-238 / FOLLOW-239: observable CRM capability provenance (Rule K.2 — not silent).
       // 'complete'                 — Pass B ran, or no CRM-namespace rows exist for this tenant.
       // 'crm_tenant_unverifiable'  — Pass B skipped; tenant has CRM rows but subject membership

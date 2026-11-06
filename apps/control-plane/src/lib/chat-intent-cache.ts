@@ -19,6 +19,8 @@
  * @module apps/control-plane/src/lib/chat-intent-cache
  */
 
+import { upstashCheckedPipeline } from './upstash-checked-pipeline';
+
 // ─── TypeScript mirror of ChatIntentDetectedPayload (FOLLOW-087 / schemas.py) ─
 
 /**
@@ -187,25 +189,28 @@ export async function readShadowChatIntent(
  * above, so the erase path and the read path can never drift on key format
  * (both are pinned to one definition in this module).
  *
- * Structural no-op when `UPSTASH_REDIS_URL` is unset (dev/CI without Redis
- * configured). Does NOT catch fetch/network errors — the caller (DSR erase
- * route) wraps this in its own fire-and-forget `.catch()` and Sentry capture,
- * matching the existing `deleteSessionFromRedis()` posture for the
- * `session:{sessionId}:*` namespace.
+ * FOLLOW-1308 (Codex R-01): the result is checked. `DEL` then `EXISTS` go in one pipeline, and the
+ * key counts as erased only when the HTTP status, both replies and `EXISTS = 0` say so. Before this,
+ * an HTTP 403 or a per-command `[{ error }]` resolved as success.
  *
  * @param tenantId  - Tenant UUID.
  * @param sessionId - Session identifier.
+ * @returns `deleted` or `not_found` (the key is confirmed absent either way), `not_configured`
+ *   (no `UPSTASH_REDIS_URL`: no store, nothing held), or `failed` (absence not confirmed).
  */
-export async function deleteShadowChatIntent(tenantId: string, sessionId: string): Promise<void> {
-  const base = getRedisBase();
-  if (!base) return;
-
+export async function deleteShadowChatIntent(
+  tenantId: string,
+  sessionId: string,
+): Promise<'deleted' | 'not_found' | 'not_configured' | 'failed'> {
   const key = shadowChatIntentKey(tenantId, sessionId);
-  await fetch(`${base}/pipeline`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getRedisHeaders() },
-    body: JSON.stringify([['DEL', key]]),
-  });
+  const out = await upstashCheckedPipeline([
+    ['DEL', key],
+    ['EXISTS', key],
+  ]);
+  if (!out.ok) return out.code === 'redis_unconfigured' ? 'not_configured' : 'failed';
+  const [deleted, exists] = out.results;
+  if (exists !== 0) return 'failed';
+  return deleted === 1 ? 'deleted' : 'not_found';
 }
 
 /**

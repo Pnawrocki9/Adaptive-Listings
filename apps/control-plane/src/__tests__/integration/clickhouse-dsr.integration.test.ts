@@ -54,6 +54,7 @@ import { randomUUID } from 'crypto';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import {
   executeClickHouseSql,
+  countSessionRows,
   issueEraseMutation,
   pollMutationStatus,
   queryClickHouseJson,
@@ -153,9 +154,12 @@ describe('ClickHouse DSR mutation-poll contract (integration)', () => {
       const result = await issueEraseMutation(cfg, {
         table: TEST_TABLE,
         column: 'session_id',
+        tenantId: 'int-test-tenant',
         sessionIds: [ERASE_SESSION_ID],
       });
-      expect(result.alterSql).toContain(`ALTER TABLE ${TEST_TABLE} DELETE WHERE session_id IN`);
+      expect(result.alterSql).toContain(
+        `ALTER TABLE ${TEST_TABLE} DELETE WHERE tenant_id = {dsr_tenant_id:String} AND session_id IN`,
+      );
       expect(result.markerToken).toMatch(/^[a-f0-9]+$/);
 
       // mutation_id may be null on the issue-race; recover it by marker the
@@ -186,6 +190,8 @@ describe('ClickHouse DSR mutation-poll contract (integration)', () => {
       // session's rows are untouched.
       expect(await countRows(ERASE_SESSION_ID)).toBe(0);
       expect(await countRows(KEEP_SESSION_ID)).toBe(2);
+      // FOLLOW-1308: the poller's residue check reads the same (tenant_id, session_id) key.
+      expect(await countSessionRows(cfg, TEST_TABLE, 'int-test-tenant', ERASE_SESSION_ID)).toBe(0);
     },
   );
 
@@ -201,6 +207,7 @@ describe('ClickHouse DSR mutation-poll contract (integration)', () => {
       const result = await issueEraseMutation(cfg, {
         table: TEST_TABLE,
         column: 'session_id',
+        tenantId: 'int-test-tenant',
         sessionIds: [`marker-probe-${RUN_TOKEN}`],
       });
 

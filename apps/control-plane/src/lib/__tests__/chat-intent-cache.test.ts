@@ -6,8 +6,10 @@
  *     `shadow:{tenant_id}:{session_id}:chat_intent` key — tested against a seeded
  *     (pre-existing) key, i.e. the Upstash pipeline mock reports the key was found
  *     and removed (DEL result 1).
- *   AC1b: is a no-op (no fetch call) when UPSTASH_REDIS_URL is unset — matches the
- *     existing `deleteSessionFromRedis()` / `invalidateDescriptionCache()` posture.
+ *   AC1b: is a no-op (no fetch call) when UPSTASH_REDIS_URL is unset, and says so
+ *     (`not_configured`).
+ *   FOLLOW-1308 (Codex R-01): an HTTP error, a per-command error, or a key that EXISTS after the
+ *     DEL is `failed`, never a deletion.
  *   AC2 (FOLLOW-557, Rule Z): the TypeScript `shadowChatIntentKey()` key format is
  *     checked against the LITERAL f-string parsed out of the Python producer,
  *     `apps/intent-engine/src/redis_writer.py`'s `shadow_key()` — NOT a hand-typed
@@ -59,23 +61,25 @@ describe('deleteShadowChatIntent() (FOLLOW-557)', () => {
     // (one key removed) rather than 0 (key absent).
     const mockFetch = vi
       .fn()
-      .mockResolvedValue(new Response(JSON.stringify([{ result: 1 }]), { status: 200 }));
+      .mockResolvedValue(
+        new Response(JSON.stringify([{ result: 1 }, { result: 0 }]), { status: 200 }),
+      );
     vi.stubGlobal('fetch', mockFetch);
 
-    await deleteShadowChatIntent(TENANT_ID, SESSION_ID);
+    expect(await deleteShadowChatIntent(TENANT_ID, SESSION_ID)).toBe('deleted');
 
     expect(mockFetch).toHaveBeenCalledOnce();
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(url).toContain('/pipeline');
     expect(init.method).toBe('POST');
 
-    const body = JSON.parse(init.body as string) as unknown[][];
-    expect(body).toHaveLength(1);
-    expect(body[0]?.[0]).toBe('DEL');
-    expect(body[0]?.[1]).toBe(`shadow:${TENANT_ID}:${SESSION_ID}:chat_intent`);
+    const key = `shadow:${TENANT_ID}:${SESSION_ID}:chat_intent`;
     // Exactly one key targeted — this is a single deterministic key, not a
-    // wildcard namespace, so no SCAN is needed before the DEL.
-    expect(body[0]).toHaveLength(2);
+    // wildcard namespace, so no SCAN is needed before the DEL. FOLLOW-1308: EXISTS confirms it.
+    expect(JSON.parse(init.body as string)).toEqual([
+      ['DEL', key],
+      ['EXISTS', key],
+    ]);
   });
 
   it('AC1b: is a no-op (no fetch call) when UPSTASH_REDIS_URL is unset', async () => {
@@ -83,9 +87,33 @@ describe('deleteShadowChatIntent() (FOLLOW-557)', () => {
     const mockFetch = vi.fn();
     vi.stubGlobal('fetch', mockFetch);
 
-    await deleteShadowChatIntent('tenant-id', 'session-id');
+    expect(await deleteShadowChatIntent('tenant-id', 'session-id')).toBe('not_configured');
 
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  // FOLLOW-1308 (Codex R-01): neither an HTTP error nor a per-command error is an erasure.
+  it.each([
+    ['HTTP 403', new Response('{"error":"NOPERM"}', { status: 403 })],
+    ['a per-command error in a 200', new Response('[{"error":"ERR"},{"result":0}]')],
+    ['the key still there after DEL', new Response('[{"result":1},{"result":1}]')],
+    ['a reply list of the wrong length', new Response('[{"result":1}]')],
+  ])('R-01: %s → failed, never deleted', async (_name, response) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response));
+
+    expect(await deleteShadowChatIntent('tenant-id', 'session-id')).toBe('failed');
+  });
+
+  it('R-01: a network failure → failed', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNRESET')));
+
+    expect(await deleteShadowChatIntent('tenant-id', 'session-id')).toBe('failed');
+  });
+
+  it('an absent key, confirmed by EXISTS = 0 → not_found', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('[{"result":0},{"result":0}]')));
+
+    expect(await deleteShadowChatIntent('tenant-id', 'session-id')).toBe('not_found');
   });
 });
 

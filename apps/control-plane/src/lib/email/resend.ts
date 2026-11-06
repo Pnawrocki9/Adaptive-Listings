@@ -54,7 +54,7 @@ export interface SendEmailOptions {
  *
  * @param opts - Recipient, subject, HTML body, and optional sender override.
  * @throws {Error} when RESEND_API_KEY is not set.
- * @throws {Error} when the Resend API returns an error.
+ * @throws {Error} when the Resend API throws, or resolves an error-shaped result (FOLLOW-1308).
  */
 export async function sendEmail(opts: SendEmailOptions): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
@@ -62,10 +62,19 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
     throw new Error('RESEND_API_KEY is not set — email sending is disabled');
   }
   const client = new Resend(apiKey);
-  await client.emails.send({
+  // The SDK does not throw on an API error: it RESOLVES `{ data: null, error }` (an invalid key, a
+  // rejected sender, a quota). Ignoring that reported an OTP as sent when it never left
+  // (FOLLOW-1308, Codex F-19). The thrown message carries the error name and status only: the
+  // SDK's own message can quote the recipient.
+  const result = await client.emails.send({
     from: opts.from ?? DEFAULT_FROM,
     to: opts.to,
     subject: opts.subject,
     html: opts.html,
   });
+  if (result.error) {
+    throw new Error(
+      `Resend rejected the send: ${result.error.name} (HTTP ${String(result.error.statusCode ?? 'none')})`,
+    );
+  }
 }

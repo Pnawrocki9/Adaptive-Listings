@@ -637,6 +637,15 @@ describe('AC(9) negative control (c): revoked through DSR on a seeded row', () =
     expect(graded(o).verdict).toBe('FAIL');
   });
 
+  // FOLLOW-1308: after the erase, AC(9) must report NO adaptation for the erased subject, not only
+  // a different archetype (a `miss` that still serves directives is an adaptation).
+  it('any adaptation served after the erase is a privacy violation and RED', () => {
+    const o = greenObs();
+    o.controls.c.replay.directives = 1;
+    expect(privacy(o)).toContain('privacy:c:restoredAfterDsr');
+    expect(graded(o).verdict).toBe('FAIL');
+  });
+
   const red: [string, (o: Obs) => void, string][] = [
     ['unpaired', (o) => (o.controls.c.pairRestored = false), 'c:notPaired'],
     [

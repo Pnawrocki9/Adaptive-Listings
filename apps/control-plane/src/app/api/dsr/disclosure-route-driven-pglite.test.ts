@@ -37,8 +37,8 @@
  *     already covered by the DSR erase cascade in
  *     `apps/control-plane/src/app/api/dsr/erase/route.ts` (Postgres DELETE
  *     targets, as of that file's docstring step 2, current HEAD:
- *     session_embeddings, consent_records, conversion_labels,
- *     quiz_completions, intent_sessions) — must ALSO be
+ *     consent_records, conversion_labels, quiz_completions, intent_sessions;
+ *     session_embeddings left the set with FOLLOW-1308) — must ALSO be
  *     disclosed by GET /api/dsr/access and GET /api/dsr/portability. The
  *     "PARITY" describe block below seeds one row per erased Postgres table
  *     and asserts every one of them appears in both disclosure responses.
@@ -99,14 +99,11 @@ vi.mock('@sentry/nextjs', () => ({
 //
 // Tables needed by the access + portability routes:
 //   - tenants, dsr_verifications (OTP lookup)
-//   - session_embeddings, consent_records (read targets)
+//   - consent_records (read target)
 //   - conversion_labels (Pass A + Pass B reads)
 //
-// vector extension needed for session_embeddings.embedding column.
-// PGlite does not include pgvector; we define the column as text to avoid
-// the extension requirement while still exercising all query predicates.
-// The access/portability routes do not query the embedding column — they only
-// read sessionId, tenantId, finalArchetype, matchedArchetype, createdAt, updatedAt.
+// session_embeddings is deliberately ABSENT (FOLLOW-1308: it never had a writer; handover H004
+// drops it): a route that still read it would fail here with `relation ... does not exist`.
 
 const FIXTURE_DDL = /* sql */ `
   CREATE TABLE IF NOT EXISTS tenants (
@@ -147,19 +144,6 @@ const FIXTURE_DDL = /* sql */ `
     created_at      timestamptz NOT NULL DEFAULT now()
   );
 
-  CREATE TABLE IF NOT EXISTS session_embeddings (
-    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id         uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    session_id        text NOT NULL,
-    final_archetype   text,
-    matched_archetype text,
-    similarity_score  numeric(6,5),
-    signal_count      integer NOT NULL DEFAULT 0,
-    quiz_archetype    text,
-    embedding         text,
-    created_at        timestamptz NOT NULL DEFAULT now(),
-    updated_at        timestamptz NOT NULL DEFAULT now()
-  );
 
   CREATE TABLE IF NOT EXISTS consent_records (
     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -276,7 +260,6 @@ afterAll(async () => {
 beforeEach(async () => {
   await pg.exec('DELETE FROM conversion_labels');
   await pg.exec('DELETE FROM consent_records');
-  await pg.exec('DELETE FROM session_embeddings');
   await pg.exec('DELETE FROM dsr_verifications');
   await pg.exec('DELETE FROM quiz_completions');
   await pg.exec('DELETE FROM intent_sessions');
@@ -288,8 +271,8 @@ afterEach(() => {
 
 // ─── Import production handlers ───────────────────────────────────────────────
 
-import { GET as getAccess } from './access/route';
-import { GET as getPortability } from './portability/route';
+import { GET as getAccess, POST as postAccess } from './access/route';
+import { GET as getPortability, POST as postPortability } from './portability/route';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -857,11 +840,11 @@ describe('AC1-LG2 (FOLLOW-256): ne() guard — empty lead_id rows are never disc
 //
 // PARITY: the erase route's Postgres DELETE targets, as of `erase/route.ts`
 // current HEAD (this file is READ-ONLY against that route — see FOLLOW-557),
-// are: session_embeddings, consent_records, conversion_labels,
-// quiz_completions, intent_sessions (engagement_scores dropped by FOLLOW-1268), and quiz_runs
+// are: consent_records, conversion_labels, quiz_completions, intent_sessions (engagement_scores
+// dropped by FOLLOW-1268, session_embeddings by FOLLOW-1308), and quiz_runs
 // (FOLLOW-1358 — a handover table, so its erase/access/portability parity is pinned in
 // `quiz-runs-route-driven-pglite.test.ts` against the real H002 SQL rather than in this fixture).
-// session_embeddings / consent_records / conversion_labels disclosure is
+// consent_records / conversion_labels disclosure is
 // already covered above (AC1-AC3, LG-2). This block proves the remaining two ALSO round-trip
 // through both disclosure routes — closing the Art. 15/20 gap this ticket
 // exists to fix, and giving a future erase/route.ts table addition a test
@@ -1002,19 +985,13 @@ describe('FOLLOW-558: portability handler discloses quiz_completions, intent_ses
 });
 
 describe('FOLLOW-558 PARITY: access and portability disclose the identical erase Postgres table set', () => {
-  it('seeds one row per erased Postgres table and both routes disclose all five', async () => {
+  it('seeds one row per erased Postgres table and both routes disclose all four', async () => {
     const SESSION_ID = 'sess-558-parity';
     const CRM_LEAD = 'crm-558-parity';
 
     // Seed one row in EVERY Postgres table the erase route deletes
     // (erase/route.ts current HEAD, step 3 of its docstring):
-    //   session_embeddings, consent_records, conversion_labels,
-    //   quiz_completions, intent_sessions.
-    await pg.query(
-      `INSERT INTO session_embeddings (tenant_id, session_id, final_archetype)
-       VALUES ($1, $2, 'family_upsizer')`,
-      [TENANT_ID, SESSION_ID],
-    );
+    //   consent_records, conversion_labels, quiz_completions, intent_sessions.
     // FOLLOW-1108: consent_records.tenant_id is NOT NULL in the real schema
     // (packages/db/src/schema/consent_records.ts) and is now part of the
     // disclosure predicate — seed it through the helper.
@@ -1057,7 +1034,6 @@ describe('FOLLOW-558 PARITY: access and portability disclose the identical erase
     expect(portabilityRes.status).toBe(200);
 
     interface ParityBody extends FullDisclosureBody {
-      matched_archetype: string | null;
       consent_records: unknown[];
       conversion_labels: unknown[];
     }
@@ -1067,8 +1043,8 @@ describe('FOLLOW-558 PARITY: access and portability disclose the identical erase
     const portabilityBody = JSON.parse(portabilityText) as ParityBody;
 
     for (const body of [accessBody, portabilityBody]) {
-      // session_embeddings (surfaced as matched_archetype).
-      expect(body.matched_archetype).toBe('family_upsizer');
+      // session_embeddings (once surfaced as matched_archetype): gone, FOLLOW-1308.
+      expect(body).not.toHaveProperty('matched_archetype');
       // consent_records.
       expect(body.consent_records).toHaveLength(1);
       // conversion_labels.
@@ -1152,4 +1128,244 @@ describe('FOLLOW-1108: portability handler scopes consent_records to the request
     expect(exported[0]!.consent_type).toBe('behavioral_tracking');
     expect(exported.map((c) => c.consent_type)).not.toContain('platform_registration');
   });
+});
+
+// ─── FOLLOW-1308: the xid never rides the URL; the OTP is spent only on a complete export ──
+
+describe('FOLLOW-1308: xid intake and spend-after-read on access and portability', () => {
+  const SESSION_ID = 'sess-1308';
+  const XID = '7c9e6679-7425-40de-944b-e07fc1f99ae7';
+
+  interface CapabilityBody {
+    export_complete: boolean;
+    resume_cursor: string | null;
+    buyer_profile: { result: string };
+    clickhouse: { available: boolean; note?: string; tables: { table: string; rows: unknown[] }[] };
+    error?: { code: string };
+  }
+
+  const usedAt = async (id: string): Promise<unknown> =>
+    (
+      await pg.query<{ used_at: unknown }>('SELECT used_at FROM dsr_verifications WHERE id = $1', [
+        id,
+      ])
+    ).rows[0]?.used_at;
+  const attempts = async (id: string): Promise<number> =>
+    (
+      await pg.query<{ attempt_count: number }>(
+        'SELECT attempt_count FROM dsr_verifications WHERE id = $1',
+        [id],
+      )
+    ).rows[0]?.attempt_count ?? -1;
+
+  const handlers = [
+    ['access', getAccess, postAccess],
+    ['portability', getPortability, postPortability],
+  ] as const;
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.each(handlers)(
+    '%s: an xid in the query string is refused before the OTP is looked at',
+    async (dsrType, get) => {
+      const { otp, requestId } = await seedVerification({ sessionId: SESSION_ID, dsrType });
+      const res = await get(
+        new NextRequest(
+          `http://localhost/api/dsr/${dsrType}?request_id=${requestId}&token=${otp}&xid=${XID}`,
+        ),
+      );
+
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as CapabilityBody).error?.code).toBe('XID_IN_QUERY_REFUSED');
+      expect(await usedAt(requestId)).toBeNull();
+      expect(await attempts(requestId)).toBe(0);
+    },
+  );
+
+  it.each(handlers)(
+    '%s: a complete disclosure spends the OTP and says so; the second use is refused',
+    async (dsrType, get) => {
+      vi.stubEnv('CLICKHOUSE_URL', '');
+      const { otp, requestId } = await seedVerification({ sessionId: SESSION_ID, dsrType });
+      const url = `http://localhost/api/dsr/${dsrType}?request_id=${requestId}&token=${otp}`;
+
+      const first = await get(new NextRequest(url));
+
+      expect(first.status).toBe(200);
+      const body = JSON.parse(await first.text()) as CapabilityBody;
+      expect(body.export_complete).toBe(true);
+      expect(body.buyer_profile).toEqual({ result: 'not_requested' });
+      expect(await usedAt(requestId)).not.toBeNull();
+      expect((await get(new NextRequest(url))).status).toBe(401);
+    },
+  );
+
+  it.each(handlers)(
+    '%s: a ClickHouse read failure leaves the OTP unspent, and the same request then completes',
+    async (dsrType, get) => {
+      vi.stubEnv('CLICKHOUSE_URL', 'https://ch.example.test:8443');
+      const { otp, requestId } = await seedVerification({ sessionId: SESSION_ID, dsrType });
+      const url = `http://localhost/api/dsr/${dsrType}?request_id=${requestId}&token=${otp}`;
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('down', { status: 500 })));
+
+      const failed = JSON.parse(await (await get(new NextRequest(url))).text()) as CapabilityBody;
+
+      expect(failed.clickhouse).toMatchObject({
+        available: false,
+        note: 'clickhouse_query_failed',
+      });
+      expect(failed.export_complete).toBe(false);
+      expect(await usedAt(requestId)).toBeNull();
+
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => Promise.resolve(new Response(JSON.stringify({ data: [] })))),
+      );
+      const retried = JSON.parse(await (await get(new NextRequest(url))).text()) as CapabilityBody;
+
+      expect(retried.clickhouse.available).toBe(true);
+      expect(retried.export_complete).toBe(true);
+      expect(await usedAt(requestId)).not.toBeNull();
+    },
+  );
+
+  it('access: a truncated events export keeps the OTP and resumes from resume_cursor', async () => {
+    vi.stubEnv('CLICKHOUSE_URL', 'https://ch.example.test:8443');
+    const { otp, requestId } = await seedVerification({ sessionId: SESSION_ID, dsrType: 'access' });
+    const PAGE = 10_000;
+    const eventRow = (i: number) => ({
+      event_id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+      ts: `2026-11-01 10:00:00.${String(i % 1000).padStart(3, '0')}`,
+      type: 'page.view',
+      payload: '{}',
+    });
+    // First export: full pages until the loop passes the 50,000-row cap. Resumed export: 3 rows.
+    let phase: 'first' | 'resume' = 'first';
+    let served = 0;
+    const resumedFrom: (string | null)[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: unknown, init?: RequestInit) => {
+        const sql = typeof init?.body === 'string' ? init.body : '';
+        if (!sql.includes('FROM events AS e')) {
+          return Promise.resolve(new Response(JSON.stringify({ data: [] })));
+        }
+        const after = new URL(String(input)).searchParams.get('param_after_event_id');
+        if (phase === 'resume') {
+          resumedFrom.push(after);
+          return Promise.resolve(
+            new Response(JSON.stringify({ data: [eventRow(1), eventRow(2), eventRow(3)] })),
+          );
+        }
+        const data = Array.from({ length: PAGE }, (_, i) => eventRow(served + i));
+        served += PAGE;
+        return Promise.resolve(new Response(JSON.stringify({ data })));
+      }),
+    );
+    const base = `http://localhost/api/dsr/access?request_id=${requestId}&token=${otp}`;
+
+    const page1 = (await (await getAccess(new NextRequest(base))).json()) as CapabilityBody;
+
+    expect(page1.export_complete).toBe(false);
+    expect(typeof page1.resume_cursor).toBe('string');
+    expect(page1.clickhouse.tables.find((t) => t.table === 'events')?.rows).toHaveLength(50_000);
+    expect(await usedAt(requestId)).toBeNull();
+
+    phase = 'resume';
+    const page2 = (await (
+      await getAccess(new NextRequest(`${base}&cursor=${page1.resume_cursor ?? ''}`))
+    ).json()) as CapabilityBody;
+
+    expect(resumedFrom[0]).not.toBeNull(); // the resumed read starts after the cursor row
+    expect(page2.export_complete).toBe(true);
+    expect(page2.clickhouse.tables.find((t) => t.table === 'events')?.rows).toHaveLength(3);
+    expect(await usedAt(requestId)).not.toBeNull();
+  });
+
+  it('access: a cursor that does not decode is a 400 and the OTP is untouched', async () => {
+    const { otp, requestId } = await seedVerification({ sessionId: SESSION_ID, dsrType: 'access' });
+    const res = await getAccess(
+      new NextRequest(
+        `http://localhost/api/dsr/access?request_id=${requestId}&token=${otp}&cursor=not-a-cursor`,
+      ),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await usedAt(requestId)).toBeNull();
+  });
+
+  it.each(handlers)(
+    '%s: the xid by header (GET) and by body (POST) reads the profile store',
+    async (dsrType, get, post) => {
+      vi.stubEnv('CLICKHOUSE_URL', '');
+      vi.stubEnv('UPSTASH_REDIS_URL', '');
+      vi.stubEnv('BUYER_PROFILE_ENABLED', '');
+      const a = await seedVerification({ sessionId: SESSION_ID, dsrType });
+      const b = await seedVerification({ sessionId: SESSION_ID, dsrType });
+
+      const viaHeader = await get(
+        new NextRequest(
+          `http://localhost/api/dsr/${dsrType}?request_id=${a.requestId}&token=${a.otp}`,
+          { headers: { 'x-estalara-xid': XID } },
+        ),
+      );
+      const viaBody = await post(
+        new NextRequest(`http://localhost/api/dsr/${dsrType}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ request_id: b.requestId, token: b.otp, xid: XID }),
+        }),
+      );
+
+      for (const res of [viaHeader, viaBody]) {
+        expect(res.status).toBe(200);
+        const body = JSON.parse(await res.text()) as CapabilityBody;
+        // No store and the feature off: nothing is held under the xid, and the export completes.
+        expect(body.buyer_profile).toEqual({ result: 'not_configured' });
+        expect(body.export_complete).toBe(true);
+      }
+    },
+  );
+
+  it.each(handlers)(
+    '%s: a profile store failure keeps the export incomplete and the OTP unspent',
+    async (dsrType, _get, post) => {
+      vi.stubEnv('CLICKHOUSE_URL', '');
+      vi.stubEnv('UPSTASH_REDIS_URL', '');
+      vi.stubEnv('BUYER_PROFILE_ENABLED', 'true'); // flag on, no store: an error, never "none"
+      const { otp, requestId } = await seedVerification({ sessionId: SESSION_ID, dsrType });
+
+      const res = await post(
+        new NextRequest(`http://localhost/api/dsr/${dsrType}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ request_id: requestId, token: otp, xid: XID }),
+        }),
+      );
+
+      const body = JSON.parse(await res.text()) as CapabilityBody;
+      expect(body.buyer_profile).toEqual({ result: 'failed' });
+      expect(body.export_complete).toBe(false);
+      expect(await usedAt(requestId)).toBeNull();
+    },
+  );
+
+  it.each(handlers)(
+    '%s: a POST body with an unknown key is refused',
+    async (dsrType, _get, post) => {
+      const { otp, requestId } = await seedVerification({ sessionId: SESSION_ID, dsrType });
+      const res = await post(
+        new NextRequest(`http://localhost/api/dsr/${dsrType}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ request_id: requestId, token: otp, session_id: 'other' }),
+        }),
+      );
+
+      expect(res.status).toBe(400);
+      expect(await usedAt(requestId)).toBeNull();
+    },
+  );
 });

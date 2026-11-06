@@ -3,7 +3,7 @@
  *
  * FOLLOW-039. The control plane's POST /api/dsr/erase endpoint persists a
  * Postgres soft-delete + an audit-log row, then calls into this module to
- * issue an `ALTER TABLE ... DELETE WHERE session_id IN (...)` mutation
+ * issue an `ALTER TABLE ... DELETE WHERE tenant_id = ... AND session_id IN (...)` mutation
  * against every ClickHouse table that carries session-scoped PII. The
  * /api/dsr/mutation-poll Vercel Cron endpoint polls `system.mutations`
  * via the helpers here and updates the operational state table
@@ -141,7 +141,12 @@ export interface ParameterizedSql {
 }
 
 /**
- * Build an `ALTER TABLE ... DELETE WHERE session_id IN (...)` statement.
+ * Build an `ALTER TABLE ... DELETE WHERE tenant_id = ... AND session_id IN (...)` statement.
+ *
+ * FOLLOW-1308 (Codex F-13): the mutation carries `tenant_id`, bound like the session ids. With one
+ * tenant (ESC-085) it is the constant every stored row carries: the ingest Worker writes the tenant
+ * of the API key, never the SDK's all-zero placeholder, and the control plane writes the request's
+ * tenant. The DSR export reads on the same `(tenant_id, session_id)` key, so erase and export agree.
  *
  * FOLLOW-462: session IDs are bound as ClickHouse HTTP parameters
  * (`{dsr_id_N:String}` placeholders + `param_dsr_id_N=...`), not concatenated
@@ -166,8 +171,9 @@ export interface ParameterizedSql {
  * @param sessionIds - Non-empty array of session IDs to erase.
  * @param markerToken - Caller-supplied identifier (e.g. a UUID) embedded as a
  *   SQL comment so we can find the mutation in `system.mutations` later.
+ * @param tenantId - The tenant the rows belong to (FOLLOW-1308); bound as `{dsr_tenant_id:String}`.
  * @returns `{ sql, params }` ready to POST to ClickHouse via `executeClickHouseSql`.
- * @throws Error if `sessionIds` is empty, or if `table`/`column`/`markerToken`
+ * @throws Error if `sessionIds` is empty, `tenantId` is empty, or if `table`/`column`/`markerToken`
  *   fail their allowlist checks (caller should short-circuit instead).
  */
 export function buildEraseMutationSql(
@@ -175,6 +181,7 @@ export function buildEraseMutationSql(
   column: string,
   sessionIds: readonly string[],
   markerToken: string,
+  tenantId: string,
 ): ParameterizedSql {
   if (sessionIds.length === 0) {
     throw new Error('buildEraseMutationSql: sessionIds must be non-empty');
@@ -184,8 +191,11 @@ export function buildEraseMutationSql(
   if (!MARKER_TOKEN_PATTERN.test(markerToken)) {
     throw new Error(`buildEraseMutationSql: marker token must be alphanumeric+_-`);
   }
+  if (tenantId === '') {
+    throw new Error('buildEraseMutationSql: tenantId must be non-empty');
+  }
 
-  const params: Record<string, string> = {};
+  const params: Record<string, string> = { dsr_tenant_id: escapeClickHouseParamValue(tenantId) };
   const placeholders = sessionIds.map((id, i) => {
     const paramName = `dsr_id_${String(i)}`;
     params[paramName] = escapeClickHouseParamValue(id);
@@ -194,7 +204,7 @@ export function buildEraseMutationSql(
   // The /* DSR:<token> */ comment is preserved verbatim in
   // system.mutations.command — we'll look it up by substring. markerToken is
   // allowlist-validated above, so embedding it directly is safe.
-  const sql = `ALTER TABLE ${table} DELETE WHERE ${column} IN (${placeholders.join(', ')}) /* DSR:${markerToken} */`;
+  const sql = `ALTER TABLE ${table} DELETE WHERE tenant_id = {dsr_tenant_id:String} AND ${column} IN (${placeholders.join(', ')}) /* DSR:${markerToken} */`;
   return { sql, params };
 }
 
@@ -322,7 +332,8 @@ interface ClickHouseEventRow {
 }
 
 /** Keyset continuation cursor for the paginated `events` export. */
-interface EventsExportCursor {
+/** Keyset continuation cursor for the paginated `events` export (resumable, FOLLOW-1308). */
+export interface EventsExportCursor {
   after_ts: string;
   after_event_id: string;
 }
@@ -506,6 +517,9 @@ export interface ClickHouseDisclosure {
  * the erase set is disclosed here automatically, so disclosure can never
  * silently fall below erasure again (anti-FOLLOW-576).
  *
+ * `eventsCursor` (FOLLOW-1308, Codex F-35) resumes the `events` export after the row a previous,
+ * truncated export ended on (its `next_cursor`); the other tables are read whole each time.
+ *
  * Subject key: every DSR ClickHouse PII table is identified by
  * (tenant_id, session_id) — including `intent_events` (FOLLOW-581 aligned the
  * erase-side filter onto the same `session_id` key this disclosure uses).
@@ -514,12 +528,13 @@ export async function getClickHouseDisclosure(
   cfg: ClickHouseConfig,
   tenantId: string,
   sessionId: string,
+  eventsCursor: EventsExportCursor | null = null,
 ): Promise<ClickHouseDisclosure> {
   const tables: ClickHouseTableDisclosure[] = [];
 
   for (const { table } of DSR_CLICKHOUSE_TABLES) {
     if (table === 'events') {
-      const ev = await exportSessionEvents(cfg, tenantId, sessionId);
+      const ev = await exportSessionEvents(cfg, tenantId, sessionId, { cursor: eventsCursor });
       tables.push({
         table,
         rows: ev.rows,
@@ -545,6 +560,8 @@ export async function getClickHouseDisclosure(
 export interface IssueMutationInput {
   table: string;
   column: string;
+  /** The tenant the rows belong to; the mutation is scoped to it (FOLLOW-1308, Codex F-13). */
+  tenantId: string;
   sessionIds: readonly string[];
 }
 
@@ -582,6 +599,7 @@ export async function issueEraseMutation(
     input.column,
     input.sessionIds,
     markerToken,
+    input.tenantId,
   );
 
   await executeClickHouseSql(cfg, alterSql, params);
@@ -666,6 +684,63 @@ export async function pollMutationStatus(
     mutation_id: escapeClickHouseParamValue(mutationId),
   });
   return rows[0] ?? null;
+}
+
+/**
+ * The DSR ownership proof (FOLLOW-1308, absorbs FOLLOW-1279): does ClickHouse hold any row for
+ * this `session_id`, in any table of {@link DSR_CLICKHOUSE_TABLES}?
+ *
+ * Keyed on `session_id` ONLY, never `tenant_id`: a tenant id read back from what the SDK emits is
+ * the all-zero placeholder, so a tenant predicate built from a caller's view of the session
+ * matches nothing. With one tenant (ESC-085) the session id alone is the subject key. This
+ * replaces the `session_embeddings` lookup, a table nothing ever wrote, which made every
+ * `/api/dsr/initiate` answer 404.
+ *
+ * @returns true at the first table holding a row for `sessionId`.
+ * @throws when ClickHouse rejects a query (the caller fails closed, never "not found").
+ */
+export async function sessionHasClickHouseRows(
+  cfg: ClickHouseConfig,
+  sessionId: string,
+): Promise<boolean> {
+  for (const { table, column } of DSR_CLICKHOUSE_TABLES) {
+    assertValidIdentifier(table, TABLE_NAME_PATTERN, 'table name', 'sessionHasClickHouseRows');
+    assertValidIdentifier(column, COLUMN_NAME_PATTERN, 'column name', 'sessionHasClickHouseRows');
+    const rows = await queryClickHouseJson<{ one: number }>(
+      cfg,
+      `SELECT 1 AS one FROM ${table} WHERE ${column} = {session_id:String} LIMIT 1`,
+      { session_id: escapeClickHouseParamValue(sessionId) },
+    );
+    if (rows.length > 0) return true;
+  }
+  return false;
+}
+
+/**
+ * Count the subject's rows still in `table` after its erase mutation reports done (FOLLOW-1308).
+ *
+ * A mutation deletes only the parts that existed when it was created, so a row inserted after it
+ * (an ingest retry that was already past its erasure-ledger check) survives a `done` mutation. The
+ * poller treats a non-zero count as a failed mutation and reissues it: done means confirmed absent.
+ *
+ * @returns the number of `(tenant_id, session_id)` rows left in `table`.
+ */
+export async function countSessionRows(
+  cfg: ClickHouseConfig,
+  table: string,
+  tenantId: string,
+  sessionId: string,
+): Promise<number> {
+  assertValidIdentifier(table, TABLE_NAME_PATTERN, 'table name', 'countSessionRows');
+  const rows = await queryClickHouseJson<{ c: string | number }>(
+    cfg,
+    `SELECT count() AS c FROM ${table} WHERE tenant_id = {tenant_id:String} AND session_id = {session_id:String}`,
+    {
+      tenant_id: escapeClickHouseParamValue(tenantId),
+      session_id: escapeClickHouseParamValue(sessionId),
+    },
+  );
+  return Number(rows[0]?.c ?? 0);
 }
 
 // ─── Aggregate status calculation ─────────────────────────────────────────────

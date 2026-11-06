@@ -183,6 +183,7 @@ visible to the register** until FOLLOW-944 widened its detector:
 | `events_retry_record_oversize`            | a retry message would exceed the queue bound and was NOT sent (FOLLOW-1310)         | **none** |
 | `events_retry_rows_unencodable`           | a queued batch held only rows ClickHouse cannot store; dropped, not re-driven       | **none** |
 | `intent_snapshot_retry_failed`            | a re-queued snapshot side-write still failed; Cloudflare retries, then the DLQ      | **none** |
+| `events_retry_erasure_ledger_unavailable` | the DSR erasure ledger could not be read; nothing inserted, retried (FOLLOW-1308)   | **none** |
 
 **"Consumer: none" is a recorded decision, not an oversight** — that is FOLLOW-937 AC(2). Naming it
 here is what keeps the next reader from mistaking a producer for observability.

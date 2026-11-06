@@ -90,4 +90,24 @@ describe('sendEmail', () => {
       expect.objectContaining({ from: 'Custom <custom@estalara.com>' }),
     );
   });
+
+  // FOLLOW-1308 (Codex F-19): the SDK resolves `{ data: null, error }` instead of throwing.
+  it('throws when Resend resolves an error-shaped result, without the SDK message', async () => {
+    vi.stubEnv('RESEND_API_KEY', 're_test_fake_key_12345678901234567890');
+    mockEmailsSend.mockResolvedValueOnce({
+      data: null,
+      error: {
+        name: 'invalid_from_address',
+        statusCode: 422,
+        message: 'buyer@example.com cannot be sent from this domain',
+      },
+      headers: null,
+    });
+
+    const { sendEmail } = await import('../resend.js');
+    const sent = sendEmail({ to: 'buyer@example.com', subject: 'Test', html: '<p>hi</p>' });
+
+    await expect(sent).rejects.toThrow('Resend rejected the send: invalid_from_address (HTTP 422)');
+    await expect(sent).rejects.not.toThrow('buyer@example.com');
+  });
 });

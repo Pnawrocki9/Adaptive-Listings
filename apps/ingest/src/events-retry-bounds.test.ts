@@ -142,7 +142,12 @@ describe('F-15: the consumer replays a snapshot side-write message into its sink
     const original = globalThis.fetch;
     const urls: string[] = [];
     globalThis.fetch = (input: string | URL | Request) => {
-      urls.push(typeof input === 'string' ? input : (input as URL).toString());
+      const url = typeof input === 'string' ? input : (input as URL).toString();
+      // FOLLOW-1308: the erasure-ledger read comes first and finds no erasure.
+      if (url.includes('/rest/v1/dsr_verifications')) {
+        return Promise.resolve(new Response('[]', { status: 200 }));
+      }
+      urls.push(url);
       return Promise.resolve(new Response(null, { status: 201 }));
     };
     try {
@@ -159,7 +164,14 @@ describe('F-15: the consumer replays a snapshot side-write message into its sink
 
   it('retries (does not ack) while the sink is still failing', async () => {
     const original = globalThis.fetch;
-    globalThis.fetch = () => Promise.resolve(new Response(null, { status: 503 }));
+    globalThis.fetch = (input: string | URL | Request) =>
+      Promise.resolve(
+        (input instanceof Request ? input.url : input.toString()).includes(
+          '/rest/v1/dsr_verifications',
+        )
+          ? new Response('[]', { status: 200 })
+          : new Response(null, { status: 503 }),
+      );
     try {
       const { message, ack, retry } = msg(sideWrite);
       await handleEventsRetryQueue({ messages: [message] } as never, env as never);

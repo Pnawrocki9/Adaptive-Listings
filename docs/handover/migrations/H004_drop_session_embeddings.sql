@@ -1,0 +1,35 @@
+-- Handover migration: H004_drop_session_embeddings
+-- FOLLOW-1308 (plan Phase 6 S2; absorbs FOLLOW-1279, the FOLLOW-1268 residue): drop the
+-- `session_embeddings` table.
+--
+-- WHY THIS FILE IS NOT UNDER packages/db/migrations/
+--   `.github/workflows/db-migrate.yml` applies every file under `packages/db/migrations/**` to the
+--   LIVE production Supabase on each push to `main`. CEO ruling 2026-10-18 ("Tylko localhost, prod
+--   dla CTO"): production schema changes are the CTO's. Localhost: `scripts/dev/localhost-up.sh`
+--   applies every docs/handover/migrations/*.sql file to `al_pg_local` (step 4). Production:
+--   docs/handover/CTO_HANDOVER.md section 4 (the session_embeddings row) - apply it AFTER a control
+--   plane built from FOLLOW-1308 or later is deployed (the control plane deploys on every merge to
+--   main, so in practice: any time after that merge). Before FOLLOW-1308 `/api/dsr/initiate` and the
+--   DSR access / portability / erase routes still read or deleted this table; dropping it under them
+--   would turn every DSR call into a 500.
+--   (H003: a handover number, deliberately outside the drizzle 00NN sequence.)
+--
+-- WHY THE TABLE GOES
+--   Nothing ever wrote it (FOLLOW-1268 finding, 2026-09-29): it holds no row in any environment, and
+--   its only use was the ownership gate of `/api/dsr/initiate`, which therefore answered 404 for
+--   every session. FOLLOW-1308 replaced that gate (ClickHouse by `session_id`, then the tenant's
+--   `consent_records` / `intent_sessions`) and removed every reader. The drizzle schema file
+--   `packages/db/src/schema/session_embeddings.ts` is KEPT until this file is applied, so that a
+--   generated drizzle migration cannot emit the DROP to production first; delete it after.
+--
+-- CHECK FIRST (expected 0; a non-zero count means something wrote it - stop and ask):
+--   SELECT count(*) FROM session_embeddings;
+--
+-- IDEMPOTENT: safe to apply any number of times (DROP ... IF EXISTS; the RLS policy from
+--   0012_rls_policies.sql and the three indexes from 0002 go with the table).
+-- ROLLBACK:  re-create from packages/db/migrations/0002_goofy_spencer_smythe.sql (the
+--   CREATE TABLE "session_embeddings" block and its three indexes) and the
+--   "session_embeddings: tenant isolation" policy in 0012_rls_policies.sql. No data is lost: the
+--   table never held a row.
+
+DROP TABLE IF EXISTS session_embeddings;

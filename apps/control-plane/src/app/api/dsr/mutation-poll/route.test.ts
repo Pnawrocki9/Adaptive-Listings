@@ -32,6 +32,8 @@ const {
   mockCaptureException,
   mockMaybeFinaliseAuditLog,
   mockIssueEraseMutation,
+  mockPollMutationStatus,
+  mockCountSessionRows,
 } = vi.hoisted(() => ({
   mockSelect: vi.fn(),
   mockUpdate: vi.fn(),
@@ -40,6 +42,8 @@ const {
   mockCaptureException: vi.fn(),
   mockMaybeFinaliseAuditLog: vi.fn().mockResolvedValue(undefined),
   mockIssueEraseMutation: vi.fn(),
+  mockPollMutationStatus: vi.fn(),
+  mockCountSessionRows: vi.fn().mockResolvedValue(0),
 }));
 
 vi.mock('@sentry/nextjs', () => ({
@@ -81,7 +85,8 @@ vi.mock('@/lib/clickhouse-dsr', () => ({
   computeNextRetryAt: vi.fn(() => null),
   issueEraseMutation: mockIssueEraseMutation,
   MAX_MUTATION_RETRIES: 3,
-  pollMutationStatus: vi.fn(),
+  pollMutationStatus: mockPollMutationStatus,
+  countSessionRows: mockCountSessionRows,
   resolveMutationIdByMarker: vi.fn(),
 }));
 
@@ -400,8 +405,83 @@ describe('GET /api/dsr/mutation-poll — intent_events retry-path reissue (FOLLO
       expect.objectContaining({
         table: 'intent_events',
         column: 'session_id',
+        // FOLLOW-1308 (Codex F-13): the reissue is tenant-scoped like the first issue.
+        tenantId: 'tenant-uuid-001',
         sessionIds: ['sess-abc123'],
       }),
+    );
+  });
+});
+
+// ─── FOLLOW-1308: done means confirmed absent ──────────────────────────────────
+//
+// A row inserted after its mutation was created (an ingest retry that passed the erasure-ledger
+// check just before the erase committed) survives a `done` mutation. The poller counts the
+// subject's rows before it accepts done; a residue takes the failed path and is reissued.
+
+describe('GET /api/dsr/mutation-poll — residue check before done (FOLLOW-1308)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    vi.stubEnv('CRON_SECRET', 'cron-test-secret');
+    mockReadClickHouseConfig.mockReturnValue({ url: 'http://clickhouse.test:8123' });
+    mockMaybeFinaliseAuditLog.mockResolvedValue(undefined);
+  });
+
+  const pollOnce = async (left: number): Promise<Record<string, unknown>[]> => {
+    const row = makeRow({
+      tableName: 'events',
+      status: 'in_progress',
+      retryCount: 0,
+      mutationId: 'mut-ev-001',
+      sessionId: 'sess-erased',
+      tenantId: 'tenant-uuid-001',
+    });
+    mockSelect
+      .mockReturnValueOnce(buildChain([row])) // main polling query
+      .mockReturnValueOnce(buildChain([])); // stuck check
+    mockPollMutationStatus.mockResolvedValueOnce({
+      mutation_id: 'mut-ev-001',
+      is_done: 1,
+      is_killed: 0,
+      latest_failed_reason: '',
+      create_time: '2026-11-05 10:00:00',
+    });
+    mockCountSessionRows.mockResolvedValueOnce(left);
+    const sets: Record<string, unknown>[] = [];
+    mockUpdate.mockImplementation(() => {
+      const chain = buildChain([]);
+      chain.set = ((v: Record<string, unknown>) => {
+        sets.push(v);
+        return chain;
+      }) as unknown as typeof chain.set;
+      return chain;
+    });
+
+    const { GET } = await import('./route.js');
+    const res = await GET(makeRequest({ authorization: 'Bearer cron-test-secret' }));
+    expect(res.status).toBe(200);
+    expect(mockCountSessionRows).toHaveBeenCalledWith(
+      expect.anything(),
+      'events',
+      'tenant-uuid-001',
+      'sess-erased',
+    );
+    return sets;
+  };
+
+  it('a done mutation with no row left is marked done', async () => {
+    const sets = await pollOnce(0);
+
+    expect(sets.map((s) => s.status)).toContain('done');
+  });
+
+  it('a done mutation with rows left (a racing retry re-inserted them) is failed for reissue, never done', async () => {
+    const sets = await pollOnce(2);
+
+    expect(sets.map((s) => s.status)).not.toContain('done');
+    expect(sets.find((s) => s.status === 'failed')?.lastFailedReason).toBe(
+      'residual_rows_after_mutation: 2',
     );
   });
 });

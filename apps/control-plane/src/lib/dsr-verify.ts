@@ -31,11 +31,17 @@
  *      concurrent request already consumed the token, zero rows are
  *      returned and this call safely reports `already_used` instead of a
  *      double-erasure race.
+ *   4. **The cap is enforced in the UPDATE, not in a prior read** (FOLLOW-1308, Codex R-02). A
+ *      wrong guess increments only `WHERE attempt_count < MAX_OTP_ATTEMPTS`; a guess whose
+ *      increment matched no row is `locked`. A correct guess re-checks the cap with a guarded
+ *      UPDATE before it resolves, and the consume carries the same guard. Before this, every
+ *      parallel guess read the count first, so eight parallel wrong codes left `attempt_count = 8`
+ *      against a cap of 5 and a correct code in the same burst still succeeded.
  *
  * @module apps/control-plane/src/lib/dsr-verify
  */
 
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, lt, sql } from 'drizzle-orm';
 import { dsrVerifications } from '@estalara/db';
 import type { DsrVerification, createAdminClient } from '@estalara/db';
 import { verifyOtp } from '@/lib/dsr-otp';
@@ -61,37 +67,18 @@ export type DsrVerifyResult =
   | { ok: false; reason: DsrVerifyFailureReason };
 
 /**
- * Verify a submitted `(requestId, token)` pair for the given DSR capability
- * and, on success, atomically mark the request consumed.
+ * Verify a submitted `(requestId, token)` pair for the given DSR capability: lockout, used,
+ * expired, the code, and the attempt counter on a wrong code. The request stays unspent until
+ * {@link consumeVerifiedOtp}, so every route spends it only once its work is done and a failure
+ * can be retried with the same code (FOLLOW-1316: erase; FOLLOW-1308: access and portability,
+ * which spend it only on a complete export). FOLLOW-1308 removed the combined
+ * `verifyAndConsumeOtp`, whose last callers were those two routes.
  *
- * @param db - Admin Drizzle client (RLS-bypassing; OTP possession is the
- *   authorisation mechanism for these routes, mirroring pre-existing DSR
- *   route auth model).
+ * @param db - Admin Drizzle client (RLS-bypassing; OTP possession is the authorisation mechanism
+ *   for these routes).
  * @param args.requestId - The `request_id` returned by `POST /api/dsr/initiate`.
  * @param args.token - The 6-digit OTP submitted by the caller.
  * @param args.dsrType - The capability this route serves ('access' | 'erase' | 'portability').
- */
-export async function verifyAndConsumeOtp(
-  db: ReturnType<typeof createAdminClient>,
-  args: { requestId: string; token: string; dsrType: DsrCapability },
-): Promise<DsrVerifyResult> {
-  const verified = await verifyOtpWithoutConsuming(db, args);
-  if (!verified.ok) return verified;
-  if (!(await consumeVerifiedOtp(db, args.requestId))) {
-    return { ok: false, reason: 'already_used' };
-  }
-  return verified;
-}
-
-/**
- * The verification half of {@link verifyAndConsumeOtp}: lockout, used, expired, the code, and the
- * attempt counter on a wrong code. The request stays unspent until {@link consumeVerifiedOtp}.
- *
- * For a route whose work can fail in a way the data subject must be able to retry (FOLLOW-1316:
- * `/api/dsr/erase`, because no new OTP can be had while `initiate` refuses every caller).
- *
- * @param db - Admin Drizzle client, as for {@link verifyAndConsumeOtp}.
- * @param args - As for {@link verifyAndConsumeOtp}.
  */
 export async function verifyOtpWithoutConsuming(
   db: ReturnType<typeof createAdminClient>,
@@ -124,17 +111,39 @@ export async function verifyOtpWithoutConsuming(
   const matches = verifyOtp(args.token, record.otpHash);
 
   if (!matches) {
-    // Atomically increment the attempt counter, guarded on used_at IS NULL so
-    // a losing racer's failed-guess increment can never clobber a concurrent
-    // successful verification's state.
-    await db
+    // Atomically take one guess from the budget. Guarded on used_at IS NULL so a losing racer's
+    // increment never touches a consumed request, and on attempt_count < cap so a burst of
+    // parallel guesses can never take the counter past the cap (FOLLOW-1308, R-02).
+    const counted = await db
       .update(dsrVerifications)
       .set({ attemptCount: sql`${dsrVerifications.attemptCount} + 1` })
-      .where(and(eq(dsrVerifications.id, args.requestId), isNull(dsrVerifications.usedAt)));
-    return { ok: false, reason: 'invalid_code' };
+      .where(underCapAndUnused(args.requestId))
+      .returning({ id: dsrVerifications.id });
+    return { ok: false, reason: counted.length > 0 ? 'invalid_code' : 'locked' };
+  }
+
+  // The resolving step re-checks the cap against the row as it is NOW: the row lock orders this
+  // UPDATE after any concurrent increment, so a correct code that arrives behind the guesses that
+  // exhausted the budget is refused (FOLLOW-1308, R-02). It changes nothing (`id = id`).
+  const stillOpen = await db
+    .update(dsrVerifications)
+    .set({ id: sql`${dsrVerifications.id}` })
+    .where(underCapAndUnused(args.requestId))
+    .returning({ id: dsrVerifications.id });
+  if (stillOpen.length === 0) {
+    return { ok: false, reason: 'locked' };
   }
 
   return { ok: true, record };
+}
+
+/** The request is unspent and has guesses left. */
+function underCapAndUnused(requestId: string): ReturnType<typeof and> {
+  return and(
+    eq(dsrVerifications.id, requestId),
+    isNull(dsrVerifications.usedAt),
+    lt(dsrVerifications.attemptCount, MAX_OTP_ATTEMPTS),
+  );
 }
 
 /**
@@ -142,8 +151,9 @@ export async function verifyOtpWithoutConsuming(
  *
  * @param db - The admin client or a transaction on it.
  * @param requestId - The verified request.
- * @returns false when another request consumed it first: WHERE used_at IS NULL guards against two
- *   concurrent requests that both passed the used_at check in verification.
+ * @returns false when another request consumed it first (WHERE used_at IS NULL guards against two
+ *   concurrent requests that both passed the used_at check in verification), or when the request
+ *   was locked in the meantime (the same cap guard as a wrong guess, FOLLOW-1308).
  */
 export async function consumeVerifiedOtp(
   db: Pick<ReturnType<typeof createAdminClient>, 'update'>,
@@ -152,7 +162,7 @@ export async function consumeVerifiedOtp(
   const consumed = await db
     .update(dsrVerifications)
     .set({ usedAt: new Date() })
-    .where(and(eq(dsrVerifications.id, requestId), isNull(dsrVerifications.usedAt)))
+    .where(underCapAndUnused(requestId))
     .returning({ id: dsrVerifications.id });
   return consumed.length > 0;
 }

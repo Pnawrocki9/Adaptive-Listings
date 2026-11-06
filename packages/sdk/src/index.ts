@@ -4,8 +4,7 @@
  */
 
 import { boot } from './core/boot.js';
-import { mountOptOutToggle, offerWithdrawal } from './core/consent-flow.js';
-import type { ProfilingToggleController } from './ui/profiling-toggle.js';
+import { mountOptOutToggle } from './core/consent-flow.js';
 import { createAdaptLoop } from './core/adapt-loop.js';
 import { createIntentLoop } from './core/intent-loop.js';
 import { dispatchEvents } from './core/events.js';
@@ -89,14 +88,10 @@ async function init(): Promise<IntentState | null> {
     // The quiz card opens on the served config alone, never after a slow first decision; a quiz
     // refresh supersedes the cold-start one (latest wins, FOLLOW-380) [FOLLOW-1370].
     intent.quiz(adapt);
-    let profilingToggle: ProfilingToggleController | null = null;
-    // Whenever the flag comes, later decisions carry the xid, so the withdrawal offer comes with it;
-    // past the mount, nothing else would offer it to a buyer whose id has not left yet (R25).
+    // Whenever the flag comes, later decisions carry the xid. The withdrawal control no longer waits
+    // for it: the toggle always offers it (FOLLOW-1316 R25) [FOLLOW-1444].
     void lateConfig?.then((late) => {
-      if (late?.buyerProfileEnabled) {
-        ctx.config.buyerProfileEnabled = true;
-        if (profilingToggle) offerWithdrawal(ctx, adapt, profilingToggle);
-      }
+      if (late?.buyerProfileEnabled) ctx.config.buyerProfileEnabled = true;
     });
     // A config past the 1 s race holds the first decision up to LATE_CONFIG_WAIT_MS more: without
     // the xid it is keyed on the session and the next on the xid, which can put one visit in both
@@ -112,7 +107,7 @@ async function init(): Promise<IntentState | null> {
 
     // 5. Reuse the Shadow DOM host created by boot's consent gate. 5b. Opt-out toggle.
     const shadowHost = ctx.host;
-    profilingToggle = mountOptOutToggle(ctx, adapt);
+    const profilingToggle = mountOptOutToggle(ctx, adapt);
 
     // 6. Behavioral observers and the favorites bridge; then the chat bridge and the
     // live.signup / inquiry.completed listeners.
@@ -125,21 +120,25 @@ async function init(): Promise<IntentState | null> {
       });
     }
 
-    // Store cleanup on window for testing / SPA teardown
-    const teardown = (): void => {
+    // Store cleanup on window for testing / SPA teardown. `keepUi`: the withdrawal keeps the toggle
+    // to show its result (FOLLOW-1444).
+    const teardown = (keepUi?: boolean): void => {
       if (flushTimer) clearInterval(flushTimer);
       intent.stopDwell();
       cleanupObservers();
       teardownDescriptionObservers();
       // destroy() does not call resetAdaptState() [FOLLOW-791].
       teardownAdaptObservers();
-      profilingToggle?.destroy();
-      shadowHost?.destroy();
+      if (!keepUi) {
+        profilingToggle?.destroy();
+        shadowHost?.destroy();
+      }
       // Detach listeners and invalidate in-flight replies on teardown [FOLLOW-1306].
       ctx.lifetime.abort();
       adapt.stop();
     };
-    (window as Window & { __estalaraTeardown?: () => void }).__estalaraTeardown = teardown;
+    (window as Window & { __estalaraTeardown?: (keepUi?: boolean) => void }).__estalaraTeardown =
+      teardown;
 
     // Another tab's withdrawal, or cleared storage, stops this tab too: the seller's DOM back, this
     // tab's intent state and queued events gone, then the same halt (FOLLOW-1316 P-4) [FOLLOW-1446].

@@ -27,6 +27,7 @@
  */
 
 import type {
+  ConsentTextLocale,
   LabelI18n,
   OptOutWidgetConfig,
   QuizLanguage,
@@ -138,8 +139,15 @@ export interface ProfilingToggleController {
   destroy: () => void;
   /** Current opt-out state (true = opted out / adaptation OFF). */
   isOptedOut: () => boolean;
-  /** Show the withdrawal control, once; one click runs `onWithdraw` (FOLLOW-1316, R24). */
-  showWithdraw: (onWithdraw: () => void) => void;
+  /**
+   * Show the withdrawal control, once; one click runs `onWithdraw` (FOLLOW-1316, R24). `text` is the
+   * served consent text; it adds the explanation and the result sentences when it arrives, and the
+   * control never waits for it (FOLLOW-1444).
+   */
+  showWithdraw: (
+    onWithdraw: () => Promise<boolean>,
+    text: Promise<ConsentTextLocale | undefined>,
+  ) => void;
 }
 
 /**
@@ -248,8 +256,9 @@ export function renderProfilingToggle(
   shadowRoot.appendChild(container);
 
   return {
-    showWithdraw(onWithdraw) {
+    showWithdraw(onWithdraw, text) {
       if (container.querySelector('button')) return;
+      let words: ConsentTextLocale | undefined;
       const button = document.createElement('button');
       button.setAttribute('data-estalara-withdraw', '');
       button.textContent = copy.withdraw;
@@ -258,8 +267,27 @@ export function renderProfilingToggle(
         'flex-basis:100%;padding:0;border:0;background:none;color:#fff;font:inherit;' +
           'text-align:left;text-decoration:underline;cursor:pointer',
       );
-      button.addEventListener('click', onWithdraw);
+      // FOLLOW-1444: the controls go at once, so nothing writes after the denial; the container
+      // becomes a status region showing the in-bundle state text, then the served result sentence.
+      button.addEventListener('click', () => {
+        container.setAttribute('role', 'status');
+        container.textContent = stateText(true);
+        void onWithdraw().then((ok) => {
+          const result = ok ? words?.withdrawDone : words?.withdrawFail;
+          if (result) container.textContent = result;
+        });
+      });
       container.insertBefore(button, attribution);
+      // One sentence above the button, once the text arrives; nothing if it never does.
+      void text.then((t) => {
+        words = t;
+        if (t?.withdrawWhy && button.isConnected) {
+          const why = document.createElement('span');
+          why.textContent = t.withdrawWhy;
+          why.setAttribute('style', 'flex-basis:100%;font-size:11px;color:#c0bfcd');
+          container.insertBefore(why, button);
+        }
+      });
     },
     destroy() {
       try {

@@ -52,6 +52,15 @@ export const ConsentTextLocaleSchema = z.object({
   accept: z.string().min(1),
   /** Secondary button label. */
   decline: z.string().min(1),
+  /**
+   * The withdrawal control, shown after a grant (FOLLOW-1444, signed review P-2, ESC-092 C-b):
+   * one sentence on what it does, the confirmation after a successful delete, and the message
+   * when the delete failed. Optional, so a document without them still renders the banner; the
+   * SDK then keeps its in-bundle button label and state text, and withdrawal still works.
+   */
+  withdrawWhy: z.string().min(1).optional(),
+  withdrawDone: z.string().min(1).optional(),
+  withdrawFail: z.string().min(1).optional(),
 });
 
 export type ConsentTextLocale = z.infer<typeof ConsentTextLocaleSchema>;

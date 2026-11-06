@@ -6,10 +6,11 @@
  * strings are served as one identifier-free static document and fetched before the banner
  * renders, so the next regulator-driven text change costs zero SDK bytes.
  *
- * ORDERING (§D2). The fetch runs only on the `pending` path — a returning visitor whose
- * consent is already `granted` or `denied` pays no extra request. It MUST be awaited before
- * the banner renders. Everything that could profile is sequenced behind it, so a slow fetch
- * delays the banner and the product equally, never the banner alone.
+ * ORDERING (§D2). On the `pending` path the fetch MUST be awaited before the banner renders.
+ * Everything that could profile is sequenced behind it, so a slow fetch delays the banner and
+ * the product equally, never the banner alone. A `denied` visitor pays no request. A `granted`
+ * page fetches once more after the grant, for the withdrawal control's sentences, and does not
+ * wait for it or fail closed on it (ADR-0021 amendment 2026-11-06, FOLLOW-1444).
  *
  * WHY THIS IS LAWFUL PRE-CONSENT (§D3, compliance-countersigned 2026-08-09). The request
  * carries no tenant id, no api key, no session or visitor id, no query string and no
@@ -21,7 +22,7 @@
  * compliance review before anyone parameterizes it.
  *
  * FAIL-CLOSED (§D4). On network error, non-2xx, timeout or validation failure this returns
- * `null` and the caller halts the page view: no banner, zero events, zero storage writes,
+ * `null` and the banner caller halts the page view: no banner, zero events, zero storage writes,
  * consent stays `pending` and is retried on the next page load. **No fallback text ships in
  * the bundle** — a trimmed fallback is exactly the ESC-051 defect (disclosure content degraded
  * by an engineering constraint), and consent obtained on an incomplete disclosure is not
@@ -51,7 +52,8 @@ const CONSENT_TEXT_TIMEOUT_MS = 10000;
  *   `navigator.language` → `'en'`). Selection is client-side by contract: the document ships
  *   every locale so the URL cannot leak one (§D3).
  * @returns the locale's copy and the document's `text_version` (recorded at grant, FOLLOW-1316 R6),
- *   or `null` for EVERY failure mode — the caller must fail closed.
+ *   or `null` for EVERY failure mode — the banner caller must fail closed; the withdrawal control
+ *   falls back to its in-bundle text.
  */
 export async function fetchConsentText(
   language: QuizLanguage,

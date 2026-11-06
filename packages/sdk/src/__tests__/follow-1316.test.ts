@@ -464,7 +464,8 @@ describe('FOLLOW-1316 send path', () => {
       // The abort ends it: no flag arrives, nothing more is sent.
       await vi.advanceTimersByTimeAsync(13_000);
       expect(adaptBodies()).toHaveLength(1);
-      expect(withdrawControl()).toBeNull();
+      // FOLLOW-1444 re-pin: the control no longer waits for the flag (P-2), so it is there anyway.
+      expect(withdrawControl()).not.toBeNull();
     });
 
     it('a stalled weights body cannot hold boot either', async () => {
@@ -480,10 +481,10 @@ describe('FOLLOW-1316 send path', () => {
       await init;
       expect(adaptBodies()).toHaveLength(1);
       expect(adaptBodies()[0]?.xid).toBeUndefined();
-      expect(withdrawControl()).toBeNull();
+      // FOLLOW-1444 re-pin: offered from the mount, before the flag is known (P-2).
+      expect(withdrawControl()).not.toBeNull();
 
       await vi.advanceTimersByTimeAsync(3_000);
-      // Offered as soon as the flag is known, before this id has left the browser.
       expect(withdrawControl()).not.toBeNull();
       expect(adaptBodies()).toHaveLength(1);
 
@@ -894,12 +895,18 @@ describe('FOLLOW-1316 withdrawal control', () => {
     },
   );
 
-  it('flag off, never sent: no control and no network for it', async () => {
+  // FOLLOW-1444 re-pin (P-2): the control renders with the flag off too; an id that never left the
+  // browser still needs no request, so the click erases it locally.
+  it('flag off, never sent: the control renders, and withdrawing needs no network', async () => {
     seedGranted();
     seedXid();
     await bootSdk({ flag: false });
     expect(query('[data-estalara-profiling-toggle]')).not.toBeNull();
-    expect(withdrawControl()).toBeNull();
+    expect(withdrawControl()).not.toBeNull();
+    withdrawControl()?.click();
+    await vi.waitFor(() => {
+      expect(localStorage.getItem(XID_KEY)).toBeNull();
+    });
     expect(eraseCalls()).toEqual([]);
   });
 
@@ -974,9 +981,12 @@ describe('FOLLOW-1316 withdrawal control', () => {
     expect(sessionStorage.getItem(`estalara_intent_${SESSION_ID}`)).toBeNull();
     expect(sessionStorage.getItem('estalara_quiz_config_cache')).toBeNull();
 
-    // R28: the tenant's copy is back and the widget is gone.
+    // R28: the tenant's copy is back and the widget is gone. FOLLOW-1444 re-pin: the host stays only
+    // for the result, a status line with no control left in it.
     expect(headline.textContent).toBe('Seller headline');
-    expect(document.querySelector('[data-estalara-host]')).toBeNull();
+    const status = query('[data-estalara-profiling-toggle]');
+    expect(status?.getAttribute('role')).toBe('status');
+    expect(status?.querySelector('input, button')).toBeNull();
 
     // The audit event is the only other request, and it is valid at the ingest boundary.
     await vi.waitFor(() => {

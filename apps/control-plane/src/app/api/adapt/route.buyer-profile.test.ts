@@ -909,6 +909,7 @@ describe('R39-R41 — the arm per xid', () => {
       tenant_id: TENANT,
       session_id: 'irrelevant',
       assignment_unit_id: xid,
+      consent_state: 'consented', // the route's caller below is consenting [FOLLOW-1465]
       holdout_pct: 0.5,
       assignment_secret: secret,
     });

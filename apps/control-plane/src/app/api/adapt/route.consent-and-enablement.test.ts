@@ -346,6 +346,10 @@ describe('route.ab010.test.ts — Tests for TICKET-AB-010 — holdout gating + c
    *   - holdout_pct: 0.0 + consent granted → treatment arm, directives non-empty
    *   - holdout_pct absent → default 0.1 (neither guaranteed hold-out nor treatment)
    *
+   * FOLLOW-1465 re-pinned: "consent granted" is the wire value `consented` (the SDK maps its
+   * `granted` to it, `mapConsentState`), and anything else skips with or without
+   * `consent_mode_enabled`, which the route now ignores (ESC-091 C-1).
+   *
    * Approach:
    *   - holdout_pct: 1.0 guarantees every session lands in holdout (100% holdout rate).
    *   - holdout_pct: 0.0 guarantees every session lands in treatment (0% holdout rate).
@@ -476,14 +480,14 @@ describe('route.ab010.test.ts — Tests for TICKET-AB-010 — holdout gating + c
       vi.unstubAllGlobals();
     });
 
-    it('AC-2: holdout_pct=1.0 + consent granted → directives:[], holdout_group:true', async () => {
+    it('AC-2: holdout_pct=1.0 + consented → directives:[], holdout_group:true', async () => {
       vi.stubEnv('ADAPT_API_KEY', OPS_KEY); // FOLLOW-1201: body holdout_pct is ops-only
       vi.stubEnv('OPS_TENANT_ID', BASE_BODY.tenant_id);
       const res = await POST(
         makeOpsPostRequest({
           ...BASE_BODY,
           holdout_pct: 1.0,
-          consent_state: 'granted',
+          consent_state: 'consented',
           consent_mode_enabled: false,
         }),
       );
@@ -530,12 +534,12 @@ describe('route.ab010.test.ts — Tests for TICKET-AB-010 — holdout gating + c
     // covered in `route.clickhouse.test.ts`, which asserts it on the `adaptation_decisions` INSERT
     // (FOLLOW-988 step 5). Retired here rather than deleted silently, so the trade is on the record.
 
-    it('AC-4: holdout_pct=0.0 + consent granted → treatment arm, directives non-empty', async () => {
+    it('AC-4: holdout_pct=0.0 + consented → treatment arm, directives non-empty', async () => {
       const res = await POST(
         makePostRequest({
           ...BASE_BODY,
           holdout_pct: 0.0,
-          consent_state: 'granted',
+          consent_state: 'consented',
           consent_mode_enabled: false,
         }),
       );
@@ -593,11 +597,13 @@ describe('route.ab010.test.ts — Tests for TICKET-AB-010 — holdout gating + c
       expect(getBanditArms).not.toHaveBeenCalled();
 
       // Positive control: the same request with consent granted DOES consult it.
-      await POST(makePostRequest({ ...BASE_BODY, consent_state: 'granted' }));
+      await POST(makePostRequest({ ...BASE_BODY, consent_state: 'consented' }));
       expect(getBanditArms).toHaveBeenCalled();
     });
 
-    it('consent_mode_enabled=false → consent state ignored, assignment proceeds', async () => {
+    // FOLLOW-1465 re-pinned: these two encoded the pre-ESC-091 behaviour (no consent gate unless
+    // the caller asked for one). Consent only now: both skip.
+    it('consent_mode_enabled=false → ignored, opted_out still skips (FOLLOW-1465)', async () => {
       const res = await POST(
         makePostRequest({
           ...BASE_BODY,
@@ -608,11 +614,12 @@ describe('route.ab010.test.ts — Tests for TICKET-AB-010 — holdout gating + c
       );
       expect(res.status).toBe(200);
       const body = (await res.json()) as Record<string, unknown>;
-      // With holdout_pct=0.0 and consent_mode_enabled=false, treatment arm runs
-      expect(body.source).not.toBe('default');
+      expect(body.source).toBe('default');
+      expect(body.directives).toEqual([]);
+      expect(body.holdout_group).toBeUndefined();
     });
 
-    it('missing consent fields → defaults to no consent gating (treatment proceeds)', async () => {
+    it('missing consent fields → skipped, no arm (FOLLOW-1465)', async () => {
       const res = await POST(
         makePostRequest({
           ...BASE_BODY,
@@ -622,8 +629,9 @@ describe('route.ab010.test.ts — Tests for TICKET-AB-010 — holdout gating + c
       );
       expect(res.status).toBe(200);
       const body = (await res.json()) as Record<string, unknown>;
-      // With holdout_pct=0.0, treatment arm runs
-      expect(body.source).not.toBe('default');
+      expect(body.source).toBe('default');
+      expect(body.directives).toEqual([]);
+      expect(body.holdout_group).toBeUndefined();
     });
   });
 

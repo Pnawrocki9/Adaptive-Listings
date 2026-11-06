@@ -285,6 +285,10 @@ export function conversionEventsSubquery(
  * This also implements the stub's "conversion for a session never seen by `/api/adapt`": such a
  * session has no `ad` row at all, so it is in no arm and no count. Ingest does not check it — the
  * decision log lives in ClickHouse, behind a cross-store read ingest's <50 ms ACK cannot afford.
+ *
+ * The same fact is the readers' consent filter (ESC-091 C-1, FOLLOW-1465): `/api/adapt` writes an
+ * `ad` row only for a `consented` caller, so a session the readers can count is a consented one.
+ * Keep every count over `ad`; a count drawn from `events` alone would bypass it.
  */
 const ATTRIBUTED_CONVERSION_PREDICATE = `ev.signed_conversions > 0 AND ev.last_signed_conversion_at >= ad.ts`;
 

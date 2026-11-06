@@ -91,9 +91,9 @@ const AdaptPostBodySchema = z.object({
   holdout_group: z.boolean().optional(),
   /** Holdout rate; honoured only for the ops caller [TICKET-AB-010, FOLLOW-1201]. */
   holdout_pct: z.number().min(0).max(1).optional(),
-  /** Session consent state, for holdout consent gating [TICKET-AB-010]. */
+  /** Session consent state; only `consented` gets an arm and a decision row [FOLLOW-1465]. */
   consent_state: z.string().optional(),
-  /** When true, non-granted consent skips A/B assignment [TICKET-AB-010]. */
+  /** Accepted and IGNORED since FOLLOW-1465: the consent gate no longer depends on it. */
   consent_mode_enabled: z.boolean().optional(),
   /** Content locale for slot copy; falls back to English per slot [F-09]. */
   locale: z.enum(['en', 'pl', 'es']).optional(),
@@ -326,7 +326,8 @@ async function runDecisionTree(
 
 /**
  * Log a decision to `adaptation_decisions` (fire-and-forget); never on opt-out/consent-skip
- * [FOLLOW-358].
+ * [FOLLOW-358]. Every row is therefore a consented session's, which is what keeps the lift readers
+ * consent-only [FOLLOW-1465].
  */
 function logDecisionAsync(
   sessionId: string,
@@ -773,14 +774,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     tenant_id: tenantId,
     session_id: body.session_id,
     ...(consentedXid ? { assignment_unit_id: consentedXid.xid } : {}),
-    ...(body.consent_state !== undefined ? { consent_state: body.consent_state } : {}),
-    consent_mode_enabled: body.consent_mode_enabled ?? false,
+    // Consent only (ESC-091 C-1): anything but `consented`, absent included, skips [FOLLOW-1465].
+    consent_state: body.consent_state,
     holdout_pct: effectiveHoldoutPct,
     assignment_secret: assignmentSecret,
   });
 
   if (assignment.skipped) {
-    // AC-3: consent skip → no adaptation, no holdout_group field.
+    // AC-3: consent skip → no adaptation, no holdout_group field, no decision row [FOLLOW-1465].
     return NextResponse.json({
       adapt_decision_id: adaptDecisionId,
       session_id: body.session_id,

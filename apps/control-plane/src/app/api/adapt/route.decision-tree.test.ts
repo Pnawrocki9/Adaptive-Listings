@@ -677,7 +677,7 @@ describe('route.test.ts — Tests for POST /api/adapt — Decision API real logi
         'Content-Type': 'application/json',
         ...(authHeader !== undefined ? { Authorization: authHeader } : {}),
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 
@@ -1213,6 +1213,7 @@ describe('route.llm-call.test.ts — FOLLOW-1287 — characterisation of the LLM
         body: JSON.stringify({
           tenant_id: 'tenant-follow1287',
           session_id: 'sess-follow1287',
+          consent_state: 'consented', // a consenting SDK caller [FOLLOW-1465]
           page_type: 'listing_detail',
           archetype_hint: 'yield_hunter',
           confidence: 0.9,
@@ -2041,7 +2042,7 @@ describe('route.variant.test.ts — Tests for FOLLOW-007 / FOLLOW-342 — Thomps
     confidence: 0.8,
     similarity: 0.9,
     holdout_pct: 0.0,
-    consent_state: 'granted',
+    consent_state: 'consented', // the SDK's wire value for a grant [FOLLOW-1465]
     consent_mode_enabled: false,
   };
 
@@ -2052,7 +2053,7 @@ describe('route.variant.test.ts — Tests for FOLLOW-007 / FOLLOW-342 — Thomps
         'Content-Type': 'application/json',
         Authorization: 'Bearer demo_key',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 
@@ -2638,7 +2639,7 @@ describe('route.follow397.test.ts — FOLLOW-397 — Derive VARIANT_INDEX from S
     confidence: 0.9,
     similarity: 0.9,
     holdout_pct: 0.0,
-    consent_state: 'granted',
+    consent_state: 'consented', // the SDK's wire value for a grant [FOLLOW-1465]
     consent_mode_enabled: false,
   };
 
@@ -2649,7 +2650,7 @@ describe('route.follow397.test.ts — FOLLOW-397 — Derive VARIANT_INDEX from S
         'Content-Type': 'application/json',
         Authorization: 'Bearer demo_key',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 
@@ -2881,7 +2882,7 @@ describe('route.follow362.test.ts — FOLLOW-362 — Fix locale/A/B variant logg
         'Content-Type': 'application/json',
         Authorization: 'Bearer demo_key',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 
@@ -2893,7 +2894,7 @@ describe('route.follow362.test.ts — FOLLOW-362 — Fix locale/A/B variant logg
     confidence: 0.8,
     similarity: 0.9,
     holdout_pct: 0.0,
-    consent_state: 'granted',
+    consent_state: 'consented', // the SDK's wire value for a grant [FOLLOW-1465]
     consent_mode_enabled: false,
   };
 
@@ -3160,7 +3161,7 @@ describe('route.follow359.test.ts — FOLLOW-359 tests: the response `variant` a
     return new NextRequest('http://localhost/api/adapt', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer demo_key' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 
@@ -3355,7 +3356,7 @@ describe('route.bandit-freeze.test.ts — FOLLOW-1286 (CEO ruling D3) — the Th
     confidence: 0.8,
     similarity: 0.9,
     holdout_pct: 0.0,
-    consent_state: 'granted',
+    consent_state: 'consented', // the SDK's wire value for a grant [FOLLOW-1465]
     consent_mode_enabled: false,
   };
 
@@ -3589,7 +3590,7 @@ describe('route.demo.test.ts — DEMO MODE tests for POST /api/adapt — DEMO-00
         'Content-Type': 'application/json',
         Authorization: 'Bearer test_key',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 
@@ -3857,7 +3858,7 @@ describe('route.chat-intent.test.ts — FOLLOW-101 tests for POST /api/adapt —
         'Content-Type': 'application/json',
         Authorization: 'Bearer test_key',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 
@@ -4132,7 +4133,7 @@ describe('route.follow346.test.ts — FOLLOW-346 / FOLLOW-635 tests: chat-intent
         'Content-Type': 'application/json',
         Authorization: 'Bearer test_key',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 
@@ -4345,7 +4346,7 @@ describe('route.follow796.test.ts — FOLLOW-796 AC-4 (re-files RETRO-093 §4c T
     return new NextRequest('http://localhost/api/adapt', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer demo_key' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 
@@ -4638,7 +4639,7 @@ describe('route.follow1202.test.ts — FOLLOW-1202 / CEO decision #3 (2026-09-13
     return new NextRequest('http://localhost/api/adapt', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-token' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 

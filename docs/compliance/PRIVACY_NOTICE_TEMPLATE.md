@@ -117,7 +117,7 @@ where §3 is published: If you accept the personalization prompt, a separate ide
 > is measured; C-5 no header without optional analytics, as the paragraph's first sentence already
 > says. **C-4 is still open,** so the paragraph still promises no erasure route. The sentence "We do
 > this only with your consent" is true on localhost because the SDK asks before any of it happens;
-> the server does not check it (record H-13).
+> since FOLLOW-1465 the server also refuses an arm without `consented` (record H-13).
 
 [Only where the conversion flow is enabled: If you are logged in, have accepted the personalization
 prompt and have accepted optional analytics cookies, then when you register for or first join a live

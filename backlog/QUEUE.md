@@ -533,6 +533,11 @@
   series (#1146 ×4, #1147, #1148) and each PR still reached 3 GREEN on unchanged code; AC(10)(b)
   `locator.click` 3000 ms on `.estalara-quiz-reject` once on #1149. Find the cause of the AC(9)
   REDs; raise the AC(10)(b) click timeout if it recurs. K6 ledger, findings.
+- **FOLLOW-1472** — status: BACKLOG # P3 gate. `scripts/check-rule-i.sh` reads only
+  `export const|function|class…` declarations and counts importers by name, so a Next.js
+  file-convention hook (`onRequestError` in `instrumentation.ts`, FOLLOW-1442) reads as dead code;
+  #1151 wrote it as a re-export, which the scanner does not see. Give the scanner an explicit list
+  of framework-convention exports instead.
 - **FOLLOW-1473** — status: READY # P1 sdk, gates FOLLOW-1446/1444/1445. `import * as z from 'zod'`
   in the 36 files of `packages/shared/src` and `packages/sdk/src`, plus an ESLint guard: −1,212 B
   measured, behaviour unchanged (ESC-092 A1). Typecheck and tests of shared, sdk, control-plane and

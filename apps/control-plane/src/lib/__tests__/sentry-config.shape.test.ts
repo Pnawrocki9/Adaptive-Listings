@@ -88,7 +88,6 @@ describe('FOLLOW-811 — control-plane Sentry init options (server)', () => {
 
     // Whole-structure assertion: an added key fails here on purpose.
     expect(Object.keys(options ?? {}).sort()).toEqual([
-      'autoInstrumentServerFunctions',
       'dsn',
       'environment',
       'integrations',

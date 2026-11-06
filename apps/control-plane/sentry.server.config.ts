@@ -56,7 +56,5 @@ if (dsn) {
      * `src/lib/__tests__/sentry-xid-capture.test.ts`.
      */
     integrations: [Sentry.requestDataIntegration({ include: { data: false } })],
-    // Capture all server-side unhandled exceptions
-    autoInstrumentServerFunctions: true,
   });
 }

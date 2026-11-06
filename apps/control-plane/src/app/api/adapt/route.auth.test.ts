@@ -266,7 +266,7 @@ describe('route.test.ts — Tests for POST /api/adapt — Decision API real logi
         'Content-Type': 'application/json',
         ...(authHeader !== undefined ? { Authorization: authHeader } : {}),
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 
@@ -572,7 +572,7 @@ describe('route.demo-auth.test.ts — Auth hardening tests for POST /api/adapt �
         'Content-Type': 'application/json',
         Authorization: authHeader,
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 
@@ -601,7 +601,7 @@ describe('route.demo-auth.test.ts — Auth hardening tests for POST /api/adapt �
       const req = new NextRequest('http://localhost/api/adapt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(BASE_BODY),
+        body: JSON.stringify({ consent_state: 'consented', ...BASE_BODY }), // a consenting SDK caller [FOLLOW-1465]
       });
 
       const res = await POST(req);
@@ -905,7 +905,7 @@ describe('route.follow451.test.ts — Auth-matrix tests for POST /api/adapt — 
     return new NextRequest('http://localhost/api/adapt', {
       method: 'POST',
       headers,
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 

@@ -617,6 +617,9 @@ H-3, H-6, H-8, H-10 and H-12 change, and H-13 is new.
     arm and logged, and the lift readers do not filter on consent (`lift/route-helpers.ts`). Either
     `/api/adapt` assigns the holdout only to `consented`, or the record states why the SDK gate
     suffices. Implementation FOLLOW owed, with a before-go-live `depends_on`. [Backend, Compliance]
+    **Met by FOLLOW-1465 (2026-11-06):** `assignHoldout` assigns an arm only to `consent_state`
+    `consented` and skips every other value or none, `/api/adapt` writes no decision row for a
+    skipped caller, and every lift reader counts sessions only from those rows.
 
 ## 11. Points on which the CEO must rule
 

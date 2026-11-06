@@ -1216,7 +1216,8 @@ stays. C-3: deferred until H-12. C-5: no header without optional analytics. **C-
 the account-holder route of "Controls that do not exist" is still undecided. Two controls are added
 to that list by the rulings themselves: no re-prompt of earlier grants until the SDK's minimum text
 version is raised (record H-3), and no server-side check that a holdout or lift row came from a
-consented session (record H-13). The rating still waits for counsel and the DPO.
+consented session (record H-13; met by FOLLOW-1465, 2026-11-06: no arm or decision row without
+`consented`). The rating still waits for counsel and the DPO.
 
 ---
 
@@ -1270,8 +1271,8 @@ _Amended v2.29 (ESC-091 C-1, CEO 2026-11-03)._ "Behavioral analytics" above does
 holdout or conversion measurement (§3.1(d)). Assigning a session to an arm, logging it in
 `adaptation_decisions.holdout_group`, and measuring conversions against it rest on Article 6(1)(a)
 consent only, in every mode, as the returning-buyer profile does (ESC-090 item 1). Today the SDK
-enforces this by calling `/api/adapt` only after the banner's grant; the server does not check it
-(record H-13).
+enforces this by calling `/api/adapt` only after the banner's grant, and since FOLLOW-1465 the
+server assigns no arm and logs no decision row unless the request says `consented` (record H-13).
 
 **ePrivacy:** Article 5(3) of Directive 2002/58/EC requires prior consent for storing information
 in, or accessing information stored in, terminal equipment unless it is strictly necessary for a

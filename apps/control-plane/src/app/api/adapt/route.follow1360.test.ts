@@ -45,6 +45,7 @@ function adapt(extra: Record<string, unknown>, similarity = 0.95): Promise<Respo
       body: JSON.stringify({
         tenant_id: 'est_demo_tenant',
         session_id: 'sess-follow1360',
+        consent_state: 'consented', // a consenting SDK caller [FOLLOW-1465]
         page_type: 'listing_detail',
         archetype_hint: 'family_buyer',
         confidence: 0.9,

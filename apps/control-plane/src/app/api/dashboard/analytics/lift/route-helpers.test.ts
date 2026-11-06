@@ -470,3 +470,54 @@ describe('FOLLOW-1458 a session has the arm of its first decision', () => {
     );
   });
 });
+
+// ─── FOLLOW-1465: the lift counts only consented sessions ─────────────────────────────────────
+
+/**
+ * ESC-091 C-1: consent only. The readers hold no consent column; the consent check is the decision
+ * row itself, which `/api/adapt` writes only for `consented` (`route.holdout.test.ts`, FOLLOW-1465
+ * block). That holds only while every session the readers count is drawn from
+ * `adaptation_decisions`. A query that counted sessions off `events` alone (where `consent_state` is
+ * the sender's word, and a signed conversion has no decision behind it) would let a non-consented
+ * session in. This pins the shape that keeps it out.
+ */
+describe('FOLLOW-1465 every lift session comes from a decision row', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  async function sentSql(read: () => Promise<unknown>): Promise<string[]> {
+    vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test:8123');
+    vi.stubEnv('CALLER_SIGNED_COLUMN_ENABLED', 'true');
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('', { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    await read();
+    return (fetchMock.mock.calls as unknown as [string][]).map(
+      ([url]) => new URL(url).searchParams.get('query') ?? '',
+    );
+  }
+
+  it('each query is driven by adaptation_decisions, or INNER JOINs it', async () => {
+    const queries = [
+      ...(await sentSql(() => fetchLiftRaw(TENANT_ID, 7))),
+      ...(await sentSql(() => fetchLiftDaily(TENANT_ID, '2026-11-01', '2026-11-02'))),
+    ];
+    expect(queries).toHaveLength(4);
+    for (const sql of queries) {
+      // The outermost FROM: the last top-level `FROM x AS y` before the first JOIN.
+      const driving = /FROM (\w+) AS (\w+)\s+(INNER JOIN|LEFT JOIN)/.exec(sql);
+      expect(driving).not.toBeNull();
+      const [, table, , join] = driving ?? [];
+      if (table === 'adaptation_decisions') {
+        // Every count is over the decision row's session.
+        expect(sql).not.toMatch(/count\w*\(ev\.session_id/);
+      } else {
+        // The funnel: events, but only sessions with a decision row survive the INNER JOIN.
+        expect(table).toBe('events');
+        expect(join).toBe('INNER JOIN');
+        expect(sql).toMatch(/INNER JOIN \(\s*SELECT[\s\S]*FROM adaptation_decisions/);
+      }
+    }
+  });
+});

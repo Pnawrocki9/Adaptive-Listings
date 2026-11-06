@@ -7503,6 +7503,9 @@ async function driveHoldoutArm(profile) {
         session_id: holdoutSessionId,
         page_type: 'listing_detail',
         holdout_pct: CONTROL_ARM_HOLDOUT_PCT,
+        // FOLLOW-1465: the server assigns an arm and logs the row only for `consented`, the value
+        // the SDK sends after the banner's grant. Without it the control arm logs nothing.
+        consent_state: 'consented',
         // FOLLOW-1131: mirror the adapted arm's profile (the four axes it does NOT equalise are
         // listed in the docblock above).
         ...(profile && profile.archetype

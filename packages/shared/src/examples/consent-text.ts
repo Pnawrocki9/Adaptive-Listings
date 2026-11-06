@@ -18,7 +18,7 @@ import type { ConsentTextDocument } from '../schemas/consent-text.js';
 
 export const CONSENT_TEXT_EXAMPLE: ConsentTextDocument = {
   schema_version: 1,
-  text_version: '2026-11-03.1',
+  text_version: '2026-11-06.1',
   locales: {
     en: {
       text: 'We personalize this page based on your browsing behavior. Your consent also covers measuring whether the personalized page leads you to register for a live presentation or contact an agent, compared with a group of visitors who see the standard page.',

@@ -170,15 +170,17 @@
   the console only. Read from code, not measured at runtime.
 - **FOLLOW-1443** — status: BACKLOG # P3 measurement. Returning holdout rows log `neutral`,
   treatment rows the restored archetype, so `by_archetype` lift compares unlike cohorts.
-- **FOLLOW-1444** — status: READY # P1 before go-live (P-2), depends_on FOLLOW-1316. The withdrawal
-  control renders with the flag off, explains itself, confirms the result, reports a failed delete.
-  Binds the SDK embed even if the flag is never set. The SDK bundle has 8 B of room: an ESC or a
-  trim first.
-- **FOLLOW-1445** — status: BACKLOG # P1 before go-live (P-3). A buyer can reach access and export;
-  nothing in the SDK calls `/api/profile/access` or `/portability`.
-- **FOLLOW-1446** — status: BACKLOG # P1 before go-live (P-4). Withdrawal restores all directives
-  (`cta`, `feature` stay today), other open tabs stop adapting (no `storage` listener), and a way
-  back from `denied` is decided.
+- **FOLLOW-1444** — status: READY # P1 before go-live (P-2), depends_on FOLLOW-1316, 1446. ESC-092
+  (C-b: sentences in `consent-text.json`); plan PR 3, Opus. The withdrawal control renders with the
+  flag off, explains itself, confirms the result, reports a failed delete. Binds the SDK embed even
+  if the flag is never set. The SDK bundle has 8 B of room: an ESC or a trim first.
+- **FOLLOW-1445** — status: READY # P1 before go-live (P-3), depends_on FOLLOW-1444. ESC-092 (D: one
+  "Download my data" control on `/api/profile/portability`); plan PR 4, Opus. A buyer can reach
+  access and export; nothing in the SDK calls `/api/profile/access` or `/portability`.
+- **FOLLOW-1446** — status: READY # P1 before go-live (P-4), depends_on FOLLOW-1473. ESC-092 (B-d:
+  persistent "turn on" chip; F: `/api/adapt` declines `consent_state: none`); plan PR 2 + 2b.
+  Withdrawal restores all directives (`cta`, `feature` stay today), other open tabs stop adapting
+  (no `storage` listener), and a way back from `denied` is decided.
 - **FOLLOW-1447** — status: BACKLOG # P2 before go-live (P-5). Trust in `x-forwarded-for` for the
   quota, and a keyed rather than unsalted address hash.
 - **FOLLOW-1448** — status: BACKLOG # P2 before go-live (P-6). Retention for self-service
@@ -199,10 +201,11 @@
 - **FOLLOW-1454** — status: BACKLOG # P1 before go-live, depends_on FOLLOW-1308. Production
   conditions H-1 to H-12 of `docs/compliance/FOLLOW-1339-session-header-review.md`, including the
   FOLLOW-1308 erase test with a `caller_signed = 1` row; ESC-091 ruled 2026-11-03 (#1143), C-4 open.
-- **FOLLOW-1455** — status: BACKLOG # P1 before go-live, compliance. Notice §1 "does not read … any
-  account credentials" is false today, `boot.ts:160` reads `kc_token` and parses `sub`. Production
-  serves no SDK per ESC-081/082 (not re-checked), so no buyer reads it yet; correct it before any
-  production SDK.
+- **FOLLOW-1455** — status: READY # P1 before go-live, compliance. ESC-092 E-B: keep the read,
+  correct the text (DPIA §1, notice §1); plan PR 1, Sonnet. Notice §1 "does not read … any account
+  credentials" is false today, `boot.ts:160` reads `kc_token` and parses `sub`. Production serves no
+  SDK per ESC-081/082 (not re-checked), so no buyer reads it yet; correct it before any production
+  SDK.
 - **FOLLOW-1456** — status: BACKLOG # P2 counsel. Same review, section 12: DPIA §1 claims Art. 3(1)
   while the host policy says Art. 3(2); `deriveLeadId` is unkeyed; the host's optional-analytics box
   is pre-ticked. Wiring `adaptation_decisions.lead_id` (FOLLOW-170) returns to compliance first, it
@@ -240,8 +243,7 @@
   consent text from `:3000` (`ESTALARA_LOCAL_CONSENT_TEXT_URL`, allow-listed; `build:check` refuses
   a local URL in a shipped bundle). Found when #1143's series was RED on AC(9) 7/7: the SDK read
   production's `2026-08-24.1`. Series 3× GREEN `[FRESH]`. CTO: deploy the control plane's consent
-  text before or with the SDK. Next free: FOLLOW-1472, RETRO-381, ESC-092 (FOLLOW-1470/1471: K6,
-  below).
+  text before or with the SDK. Next free: see FOLLOW-1473 below.
 - **FOLLOW-1429** — status: DONE # PR #1129, README §5.69. Was: P2 product. Blind audit of
   2026-11-01: 32 firm language errors on PL and ES pages, in 21 of 56 texts, many of them translated
   persona phrases ("matematyka wyjścia", "ogon najmu", "zaprojektowany pod więcej weekendów"), plus
@@ -536,6 +538,11 @@
   file-convention hook (`onRequestError` in `instrumentation.ts`, FOLLOW-1442) reads as dead code;
   #1151 wrote it as a re-export, which the scanner does not see. Give the scanner an explicit list
   of framework-convention exports instead.
+- **FOLLOW-1473** — status: READY # P1 sdk, gates FOLLOW-1446/1444/1445. `import * as z from 'zod'`
+  in the 36 files of `packages/shared/src` and `packages/sdk/src`, plus an ESLint guard: −1,212 B
+  measured, behaviour unchanged (ESC-092 A1). Typecheck and tests of shared, sdk, control-plane and
+  ingest. Plan `docs/PLAN-WAVE2-SDK-2026-11-06.md` PR 0. Next free: FOLLOW-1474, RETRO-381, ESC-093
+  (1472 is used by #1151).
 - **FOLLOW-1279** — status: CLOSED # absorbed by FOLLOW-1308.
 - **FOLLOW-1251, 1302, 1303, 1291, 1294, 1297** — amended (see FOLLOW_UPS); statuses unchanged.
 

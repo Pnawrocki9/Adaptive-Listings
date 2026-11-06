@@ -647,7 +647,9 @@ either direction: the header exists because localhost needs an emitter, not beca
    after the consent gate. By this role's rule, a false statement to data subjects is a P0 on the
    text. No live exposure as far as the record shows: "production serves no SDK" (ESC-081, ESC-082,
    dated 2026-10-04; not re-checked here). Fix the sentence (section 8), and DPIA §13.2 if it
-   repeats it.
+   repeats it. **FOLLOW-1455 met (ESC-092 E-B, 2026-11-06):** notice §1 carries the corrected
+   sentence (v1.16); DPIA §1 now names the read; the served consent text, ROPA and DPIA §13.2 never
+   made the claim.
 2. **DPIA §1 and the host policy disagree on establishment.** L-11.
 3. **`deriveLeadId` is unkeyed,** so "pseudonymous lead ID" holds only against a party without the
    user list. Worth a keyed hash; it changes `lead_id` continuity, so ESC first.

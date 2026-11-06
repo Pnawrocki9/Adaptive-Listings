@@ -207,7 +207,7 @@ describe('route.holdout.test.ts — Smoke tests for holdout_group wiring into Cl
         'Content-Type': 'application/json',
         Authorization: 'Bearer demo_key',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 
@@ -223,7 +223,7 @@ describe('route.holdout.test.ts — Smoke tests for holdout_group wiring into Cl
         'Content-Type': 'application/json',
         Authorization: `Bearer ${OPS_KEY}`,
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 
@@ -371,6 +371,110 @@ describe('route.holdout.test.ts — Smoke tests for holdout_group wiring into Cl
       expect(parsed).toHaveProperty('confidence');
       // PII check: session/lead IDs must NOT be in the snapshot.
       expect(snapshot).not.toMatch(/"session_id":/);
+    });
+  });
+
+  // ─── FOLLOW-1465: consent only, enforced where the data lands ─────────────────
+  //
+  // ESC-091 C-1 (CEO 2026-11-03): the holdout rests on consent only. Server-side, `consented` is
+  // the one value that gets an arm and an `adaptation_decisions` row. Every lift reader counts
+  // sessions off that table only (`lift/route-helpers.ts`: every count is over `ad.session_id`,
+  // the funnel INNER JOINs it), so no row means no arm, no denominator and no conversion count.
+  // Driven through the ops caller with `holdout_pct` 1 and 0, so a skip cannot hide behind the
+  // 10% draw: without the gate each case below would land in a forced arm and write a row.
+
+  describe('POST /api/adapt — consent only: no arm and no decision row without `consented` (FOLLOW-1465)', () => {
+    /** No default consent, unlike the builders above: the body is exactly what the caller sent. */
+    function rawOpsPost(body: Record<string, unknown>): NextRequest {
+      return new NextRequest('http://localhost/api/adapt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPS_KEY}` },
+        body: JSON.stringify(body),
+      });
+    }
+
+    /** Counts every `adaptation_decisions` INSERT the request issues. */
+    function countDecisionInserts(): () => number {
+      let inserts = 0;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockImplementation((_url: unknown, opts?: { body?: string }) => {
+          if ((opts?.body ?? '').includes('INSERT INTO adaptation_decisions')) inserts += 1;
+          return Promise.resolve(new Response('', { status: 200 }));
+        }),
+      );
+      return () => inserts;
+    }
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      vi.stubEnv('CLICKHOUSE_URL', 'http://clickhouse.test:8123/');
+      vi.stubEnv('ADAPT_API_KEY', OPS_KEY);
+      vi.stubEnv('OPS_TENANT_ID', VALID_POST_BODY.tenant_id);
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    });
+
+    const NOT_CONSENTED: (readonly [string, Record<string, unknown>])[] = [
+      ['legitimate-interest', { consent_state: 'legitimate-interest' }],
+      ['unknown', { consent_state: 'unknown' }],
+      ['absent', {}],
+      ['opted_out', { consent_state: 'opted_out' }],
+      ['none', { consent_state: 'none' }],
+      ['session-only', { consent_state: 'session-only' }],
+      [
+        'granted (the SDK maps it to consented; the raw word is not accepted)',
+        { consent_state: 'granted' },
+      ],
+      [
+        'opted_out with consent_mode_enabled=false (the flag is ignored)',
+        { consent_state: 'opted_out', consent_mode_enabled: false },
+      ],
+    ];
+
+    for (const holdoutPct of [1, 0] as const) {
+      it.each(NOT_CONSENTED)(
+        `holdout_pct=${String(holdoutPct)}, consent %s → no arm, nothing adapted, no decision row`,
+        async (_label, consent) => {
+          const inserts = countDecisionInserts();
+          const res = await POST(
+            rawOpsPost({ ...VALID_POST_BODY, holdout_pct: holdoutPct, ...consent }),
+          );
+          expect(res.status).toBe(200);
+          const body = (await res.json()) as Record<string, unknown>;
+          expect(body.holdout_group).toBeUndefined();
+          expect(body.archetype).toBe('neutral');
+          expect(body.source).toBe('default');
+          expect(body.directives).toEqual([]);
+          expect(body.reorderDirectives).toEqual([]);
+          // No row → no lift count: the lift readers see no session this request could add.
+          expect(inserts()).toBe(0);
+        },
+      );
+    }
+
+    it('positive control: `consented` is unchanged, holdout arm logged with holdout_group=1', async () => {
+      const capture = captureFetchBody();
+      const res = await POST(
+        rawOpsPost({ ...VALID_POST_BODY, holdout_pct: 1, consent_state: 'consented' }),
+      );
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(body.holdout_group).toBe(true);
+      expect(capture.getLastUrl()?.searchParams.get('param_p_holdout_group')).toBe('1');
+    });
+
+    it('positive control: `consented` is unchanged, treatment arm adapted and logged with holdout_group=0', async () => {
+      const capture = captureFetchBody();
+      const res = await POST(
+        rawOpsPost({ ...VALID_POST_BODY, holdout_pct: 0, consent_state: 'consented' }),
+      );
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(body.holdout_group).toBeUndefined();
+      expect(body.source).not.toBe('default');
+      expect(capture.getLastUrl()?.searchParams.get('param_p_holdout_group')).toBe('0');
     });
   });
 
@@ -551,7 +655,7 @@ describe('route.follow360.test.ts — FOLLOW-360 / ESC-026 regression tests: the
     return new NextRequest('http://localhost/api/adapt', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer demo_key' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 
@@ -799,7 +903,7 @@ describe('route.follow452.test.ts — FOLLOW-452 tests (audit F-08): per-archety
     return new NextRequest('http://localhost/api/adapt', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPS_KEY}` },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 
@@ -920,7 +1024,7 @@ describe('route.follow452.test.ts — FOLLOW-452 tests (audit F-08): per-archety
     return new NextRequest('http://localhost/api/adapt', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer demo_key' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 
@@ -1108,7 +1212,7 @@ describe('route.forgery-canary.test.ts — `forgery_canary` — the control-plan
     return new NextRequest('http://localhost/api/adapt', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${bearer}` },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 

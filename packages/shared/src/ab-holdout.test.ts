@@ -63,6 +63,7 @@ describe('assignHoldout — server-side secret keying [FOLLOW-1201 AC(2)]', () =
     for (const sid of predictedTreatment) {
       const r = await assignHoldout({
         tenant_id: TENANT_ID,
+        consent_state: 'consented',
         session_id: sid,
         holdout_pct: HOLDOUT_PCT,
         assignment_secret: SECRET_A,
@@ -81,12 +82,14 @@ describe('assignHoldout — server-side secret keying [FOLLOW-1201 AC(2)]', () =
     for (const sid of ids) {
       const a = await assignHoldout({
         tenant_id: TENANT_ID,
+        consent_state: 'consented',
         session_id: sid,
         holdout_pct: HOLDOUT_PCT,
         assignment_secret: SECRET_A,
       });
       const b = await assignHoldout({
         tenant_id: TENANT_ID,
+        consent_state: 'consented',
         session_id: sid,
         holdout_pct: HOLDOUT_PCT,
         assignment_secret: SECRET_B,
@@ -101,12 +104,14 @@ describe('assignHoldout — server-side secret keying [FOLLOW-1201 AC(2)]', () =
   it('is deterministic for the same (secret, tenant_id, session_id)', async () => {
     const first = await assignHoldout({
       tenant_id: TENANT_ID,
+      consent_state: 'consented',
       session_id: 'a'.repeat(32),
       assignment_secret: SECRET_A,
     });
     for (let i = 0; i < 50; i++) {
       const again = await assignHoldout({
         tenant_id: TENANT_ID,
+        consent_state: 'consented',
         session_id: 'a'.repeat(32),
         assignment_secret: SECRET_A,
       });
@@ -123,12 +128,14 @@ describe('assignHoldout — server-side secret keying [FOLLOW-1201 AC(2)]', () =
     for (const sid of ids) {
       const a = await assignHoldout({
         tenant_id: TENANT_ID,
+        consent_state: 'consented',
         session_id: sid,
         holdout_pct: HOLDOUT_PCT,
         assignment_secret: SECRET_A,
       });
       const b = await assignHoldout({
         tenant_id: '660e8400-e29b-41d4-a716-446655440000',
+        consent_state: 'consented',
         session_id: sid,
         holdout_pct: HOLDOUT_PCT,
         assignment_secret: SECRET_A,
@@ -143,6 +150,7 @@ describe('assignHoldout — server-side secret keying [FOLLOW-1201 AC(2)]', () =
     await expect(
       assignHoldout({
         tenant_id: TENANT_ID,
+        consent_state: 'consented',
         session_id: 'b'.repeat(32),
         assignment_secret: '',
       }),
@@ -153,6 +161,7 @@ describe('assignHoldout — server-side secret keying [FOLLOW-1201 AC(2)]', () =
 describe('assignment_unit_id (FOLLOW-1316, ESC-090 item 2)', () => {
   const base = {
     tenant_id: '00000000-0000-4000-8000-0000000000aa',
+    consent_state: 'consented',
     assignment_secret: 'unit-id-test-secret-'.repeat(2),
     holdout_pct: 0.5,
   };
@@ -181,5 +190,60 @@ describe('assignment_unit_id (FOLLOW-1316, ESC-090 item 2)', () => {
     for (let i = 0; i < 16; i++) {
       expect(await armOf('ignored', `id-${String(i)}`)).toBe(await armOf(`id-${String(i)}`));
     }
+  });
+});
+
+/**
+ * FOLLOW-1465 (ESC-091 C-1, record H-13): the arm rests on consent only, and the server enforces
+ * it. Only `consented` (the value the SDK sends after the banner's grant, and the one value
+ * `honourConsentedXid` and `/api/quiz/run` accept) is assigned. Every other value, and an absent
+ * one, is skipped. Before FOLLOW-1465 the skip fired only for `opted_out` / `unknown` / `none`, and
+ * only under a caller-sent `consent_mode_enabled` that no SDK sends.
+ */
+describe('consent only [FOLLOW-1465, ESC-091 C-1]', () => {
+  const base = {
+    tenant_id: TENANT_ID,
+    session_id: 'c'.repeat(32),
+    holdout_pct: HOLDOUT_PCT,
+    assignment_secret: SECRET_A,
+  };
+
+  it.each([
+    ['legitimate-interest'],
+    ['unknown'],
+    ['opted_out'],
+    ['none'],
+    ['session-only'],
+    ['granted'],
+    ['denied'],
+    ['Consented'],
+    [''],
+  ])('consent_state %j is skipped, with no arm', async (consent_state) => {
+    expect(await assignHoldout({ ...base, consent_state })).toEqual({ skipped: true });
+  });
+
+  it('an absent consent_state is skipped, with no arm', async () => {
+    expect(await assignHoldout({ ...base, consent_state: undefined })).toEqual({ skipped: true });
+  });
+
+  it('`consented` is assigned, with the same arm as before FOLLOW-1465', async () => {
+    const outcome = await assignHoldout({ ...base, consent_state: 'consented' });
+    expect(outcome.skipped).toBe(false);
+    // Unchanged arithmetic: the arm equals the HMAC draw over the same inputs.
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(SECRET_A),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+    const sig = await crypto.subtle.sign(
+      'HMAC',
+      key,
+      encoder.encode(`${TENANT_ID}\n${base.session_id}`),
+    );
+    const expected = new DataView(sig).getUint32(0, false) / 0xffffffff < HOLDOUT_PCT;
+    expect(outcome).toMatchObject({ holdout_group: expected, holdout_pct: HOLDOUT_PCT });
   });
 });

@@ -14,14 +14,15 @@
 export const DEFAULT_HOLDOUT_PCT = 0.1 as const;
 
 /**
- * Consent states that require skipping A/B assignment.
+ * The one consent state under which a session is assigned an arm [FOLLOW-1465, ESC-091 C-1].
  *
- * The existing ConsentStateSchema uses: 'none' | 'session-only' | 'legitimate-interest' | 'consented'.
- * The adapt request also accepts 'opted_out' | 'unknown' for the A/B layer.
- * Any consent state that is NOT 'granted' / 'consented' triggers a skip when the tenant
- * has consent mode enabled.
+ * The holdout, and the decision row that carries its arm, rest on consent only (CEO 2026-11-03).
+ * `consented` is what the SDK sends after the banner's grant (`mapConsentState`), and the only value
+ * `honourConsentedXid` and `/api/quiz/run` accept. Any other value, and an absent one, is skipped:
+ * fail closed. Before FOLLOW-1465 only `opted_out` / `unknown` / `none` were skipped, and only under
+ * a caller-sent `consent_mode_enabled` that no SDK sends (record H-13).
  */
-export const SKIP_CONSENT_STATES = new Set(['opted_out', 'unknown', 'none'] as const);
+const ASSIGNABLE_CONSENT_STATE = 'consented';
 
 /**
  * Return value when assignment is skipped due to consent.
@@ -60,16 +61,10 @@ export interface AssignHoldoutOptions {
    */
   assignment_unit_id?: string;
   /**
-   * Consent state from the inbound request.
-   * If 'opted_out' | 'unknown' | 'none' AND consent_mode_enabled is true, assignment is skipped.
+   * Consent state from the inbound request. Required, so no caller can leave it out by accident:
+   * anything but `consented`, `undefined` included, skips assignment [FOLLOW-1465].
    */
-  consent_state?: string;
-  /**
-   * Whether the tenant has consent mode enabled.
-   * When true, sessions with non-granted consent are skipped.
-   * @default false
-   */
-  consent_mode_enabled?: boolean;
+  consent_state: string | undefined;
   /**
    * Holdout percentage. Must be in [0, 1].
    * @default DEFAULT_HOLDOUT_PCT (0.10)
@@ -112,7 +107,7 @@ export const MIN_ASSIGNMENT_SECRET_LENGTH = 16;
  *   - Idempotent: pure function, no state.
  *
  * @param opts - Assignment options.
- * @returns    AssignmentSkipped when consent blocks assignment, AssignmentResult otherwise.
+ * @returns    AssignmentSkipped unless `consent_state` is `consented`, AssignmentResult otherwise.
  * @throws     When `assignment_secret` is missing or too short — never falls back to public keying.
  */
 export async function assignHoldout(opts: AssignHoldoutOptions): Promise<AssignmentOutcome> {
@@ -121,7 +116,6 @@ export async function assignHoldout(opts: AssignHoldoutOptions): Promise<Assignm
     session_id,
     assignment_unit_id,
     consent_state,
-    consent_mode_enabled = false,
     holdout_pct = DEFAULT_HOLDOUT_PCT,
     assignment_secret,
   } = opts;
@@ -136,11 +130,9 @@ export async function assignHoldout(opts: AssignHoldoutOptions): Promise<Assignm
     );
   }
 
-  // Consent-aware skip.
-  if (consent_mode_enabled && consent_state !== undefined) {
-    if (SKIP_CONSENT_STATES.has(consent_state as 'opted_out' | 'unknown' | 'none')) {
-      return { skipped: true };
-    }
+  // Consent only (ESC-091 C-1): no arm without `consented` [FOLLOW-1465].
+  if (consent_state !== ASSIGNABLE_CONSENT_STATE) {
+    return { skipped: true };
   }
 
   // Deterministic hash-based assignment.

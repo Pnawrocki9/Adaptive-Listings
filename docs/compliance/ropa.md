@@ -457,10 +457,11 @@ returns documentation commits only).
 > text names this measurement and the comparison group from `text_version` `2026-11-03.1`
 > (`apps/control-plane/public/consent-text.json`). **What enforces it today:** the SDK calls
 > `/api/adapt` only after the banner's `granted` (`resolveConsent`,
-> `packages/sdk/src/core/consent-flow.ts`). The server does not check it: `assignHoldout` skips only
-> `opted_out`, `unknown` and `none`, and only when the request sets `consent_mode_enabled`, which
-> the SDK never sends (`packages/shared/src/ab-holdout.ts`). Server-side enforcement is condition
-> H-13 of `docs/compliance/FOLLOW-1339-session-header-review.md`. Grants of the earlier text are not
+> `packages/sdk/src/core/consent-flow.ts`). Since FOLLOW-1465 the server checks it too:
+> `assignHoldout` assigns an arm only when the request says `consented`, `/api/adapt` logs no
+> decision row otherwise, and the lift counts only sessions with such a row
+> (`packages/shared/src/ab-holdout.ts`; condition H-13 of
+> `docs/compliance/FOLLOW-1339-session-header-review.md`, met). Grants of the earlier text are not
 > yet re-asked (H-3). "Anonymous property buyers" under Data subjects reads "consenting buyers".
 
 > **Amended v2.23 (FOLLOW-1339; localhost only, production not enabled).** Measuring the effect of

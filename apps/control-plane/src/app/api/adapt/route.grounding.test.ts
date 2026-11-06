@@ -221,7 +221,7 @@ describe('route.follow1140.test.ts — FOLLOW-1140 (b) / ESC-074 — POST /api/a
     return new NextRequest('http://localhost/api/adapt', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer demo_key' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 
@@ -489,7 +489,7 @@ describe('route.follow1163.test.ts — FOLLOW-1163 / MASTER_DESIGN §E.7.0 (ESC-
     return new NextRequest('http://localhost/api/adapt', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer demo_key' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ consent_state: 'consented', ...body }), // a consenting SDK caller [FOLLOW-1465]
     });
   }
 

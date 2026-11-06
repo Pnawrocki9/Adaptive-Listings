@@ -19,6 +19,7 @@ import {
 import { mark } from './core/boot-timing.js';
 import type { IntentState } from './core/intent.js';
 import { SDK_VERSION } from './core/version.js';
+import { eraseIntentState, getConsentState } from './core/session.js';
 
 // init() phases live in core/*; re-exported to keep the public surface [FOLLOW-1296].
 export { mergeQuizConfig } from './core/boot.js';
@@ -50,7 +51,7 @@ async function init(): Promise<IntentState | null> {
   try {
     // 1–4a. Bot gate, script tag + config, consent gate, session, opt-out read, page.view and
     // session.started, intent-state rehydration, the parallel server-config fetch.
-    const ctx = await boot(eventQueue);
+    const ctx = await boot(eventQueue, () => void init());
     if (!ctx) return null;
     // FOLLOW-1242: event batches held for retry by flush() (step 7). Declared here, before any
     // listener that can call flush(), so no early caller can hit its temporal dead zone.
@@ -125,7 +126,7 @@ async function init(): Promise<IntentState | null> {
     }
 
     // Store cleanup on window for testing / SPA teardown
-    (window as Window & { __estalaraTeardown?: () => void }).__estalaraTeardown = () => {
+    const teardown = (): void => {
       if (flushTimer) clearInterval(flushTimer);
       intent.stopDwell();
       cleanupObservers();
@@ -138,6 +139,18 @@ async function init(): Promise<IntentState | null> {
       ctx.lifetime.abort();
       adapt.stop();
     };
+    (window as Window & { __estalaraTeardown?: () => void }).__estalaraTeardown = teardown;
+
+    // Another tab's withdrawal, or cleared storage, stops this tab too: the seller's DOM back, this
+    // tab's intent state and queued events gone, then the same halt (FOLLOW-1316 P-4) [FOLLOW-1446].
+    ctx.on(window, 'storage', () => {
+      if (getConsentState() !== 'granted') {
+        adapt.revert();
+        eraseIntentState(ctx.session.sessionId);
+        eventQueue.length = 0;
+        teardown();
+      }
+    });
 
     // Return the final resolved intent state (used only by _initForTest seam).
     return ctx.state;

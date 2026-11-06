@@ -54,6 +54,20 @@ export function setConsentState(state: 'granted' | 'denied'): void {
   }
 }
 
+/**
+ * Forget a stored denial, so the next consent gate asks again (`pending`). Only the way back from
+ * `denied` calls it, on the buyer's own click (ESC-092 B-d) [FOLLOW-1446].
+ */
+export function clearConsentDenial(): void {
+  try {
+    if (localStorage.getItem(CONSENT_STORAGE_KEY) === 'denied') {
+      localStorage.removeItem(CONSENT_STORAGE_KEY);
+    }
+  } catch {
+    // storage unavailable — the gate reads `pending` anyway
+  }
+}
+
 /** localStorage key of the consent text version the buyer accepted (FOLLOW-1316, R6). */
 const CONSENT_TEXT_VERSION_KEY = 'estalara_consent_text_version';
 

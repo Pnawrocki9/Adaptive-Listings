@@ -1017,7 +1017,9 @@ describe('FOLLOW-1316 withdrawal control', () => {
       await bootSdk({ flag: true });
       expect(wire.map((c) => new URL(c.url).pathname)).toEqual(['/api/profile/erase']);
       expect(localStorage.getItem(XID_KEY)).toBeNull();
-      expect(document.querySelector('[data-estalara-host]')).toBeNull();
+      // FOLLOW-1446 re-pin: the halted host keeps only the "turn on" chip (ESC-092 B-d).
+      expect(query('[data-estalara-reopen]')).not.toBeNull();
+      expect(query('[data-estalara-profiling-toggle]')).toBeNull();
     },
   );
 

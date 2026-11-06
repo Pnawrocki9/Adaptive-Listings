@@ -83,15 +83,55 @@ export interface ProfilingToggleOptions {
  * earlier quiz rows outlive it (design review §4, R35), and tells no buyer they were recognised (R42).
  */
 const COPY = {
-  en: { title: 'Personalization', on: 'active', off: 'disabled', withdraw: 'Withdraw consent' },
-  pl: { title: 'Personalizacja', on: 'aktywna', off: 'wyłączona', withdraw: 'Wycofaj zgodę' },
+  en: {
+    title: 'Personalization',
+    on: 'active',
+    off: 'disabled',
+    withdraw: 'Withdraw consent',
+    reopen: 'Turn on personalization',
+  },
+  pl: {
+    title: 'Personalizacja',
+    on: 'aktywna',
+    off: 'wyłączona',
+    withdraw: 'Wycofaj zgodę',
+    reopen: 'Włącz personalizację',
+  },
   es: {
     title: 'Personalización',
     on: 'activa',
     off: 'desactivada',
     withdraw: 'Retirar el consentimiento',
+    reopen: 'Activar la personalización',
   },
 } as const;
+
+/**
+ * The way back from `denied` (ESC-092 B-d, FOLLOW-1446): a small persistent chip, a real `<button>`
+ * in the Shadow DOM, where the toggle sits by default. It reads and sends nothing; its click is the
+ * caller's (show the first-visit banner again). Not a dialog: the page stays usable around it.
+ *
+ * @param shadowRoot - The Shadow DOM root to render into.
+ * @param language   - UI language of the label.
+ * @param onClick    - Called on a click.
+ */
+export function renderReopenChip(
+  shadowRoot: ShadowRoot,
+  language: QuizLanguage,
+  onClick: () => void,
+): void {
+  const chip = document.createElement('button');
+  chip.setAttribute('data-estalara-reopen', '');
+  chip.textContent = COPY[language].reopen;
+  chip.setAttribute(
+    'style',
+    `position:fixed;${placementToCss(DEFAULT_OPTOUT_PLACEMENT)};background:#1a1a2e;color:#fff;` +
+      'border:0;border-radius:10px;padding:6px 10px;font:12px system-ui,sans-serif;' +
+      'z-index:9998;pointer-events:auto;cursor:pointer;text-decoration:underline',
+  );
+  chip.addEventListener('click', onClick);
+  shadowRoot.appendChild(chip);
+}
 
 export interface ProfilingToggleController {
   /** Remove the toggle from the Shadow DOM. */

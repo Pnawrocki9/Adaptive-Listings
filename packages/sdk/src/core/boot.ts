@@ -125,9 +125,13 @@ function isValidIntentState(raw: unknown): raw is IntentState {
  * Run the boot phase. See the module doc.
  *
  * @param queue - The shared event queue (owned by `index.ts`).
+ * @param reinit - Runs `init()` again: the way back from `denied` [FOLLOW-1446].
  * @returns The boot context, or `null` when init must stop here.
  */
-export async function boot(queue: CollectedEvent[]): Promise<BootContext | null> {
+export async function boot(
+  queue: CollectedEvent[],
+  reinit: () => void,
+): Promise<BootContext | null> {
   // Bot gate before any session or data work [FOLLOW-099].
   const navGlobal = (globalThis as { navigator?: { userAgent?: string } }).navigator;
   if (navGlobal !== undefined && BOT_UA_RE.test(navGlobal.userAgent ?? '')) {
@@ -147,7 +151,7 @@ export async function boot(queue: CollectedEvent[]): Promise<BootContext | null>
   // 3a. Consent gate — MUST run before any data collection (TICKET-041, GDPR/CCPA).
   //     Create the shadow host early so we have a ShadowRoot to render the banner in.
   const earlyHost = createShadowHost();
-  if (!(await resolveConsent(config, earlyHost, queue))) return null;
+  if (!(await resolveConsent(config, earlyHost, queue, reinit))) return null;
 
   // 3. Initialize anonymous session (reset idempotency state for new session)
   resetAdaptState();

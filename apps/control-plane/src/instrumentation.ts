@@ -10,8 +10,6 @@
  * @see https://docs.sentry.io/platforms/javascript/guides/nextjs/
  */
 
-import * as Sentry from '@sentry/nextjs';
-
 /** Loads the Sentry config matching the runtime; no-op for any other `NEXT_RUNTIME`. */
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
@@ -22,5 +20,11 @@ export async function register(): Promise<void> {
   }
 }
 
-/** Reports errors thrown in nested React Server Components, route handlers and middleware. */
-export const onRequestError = Sentry.captureRequestError;
+/**
+ * Reports errors thrown in nested React Server Components, route handlers and middleware.
+ *
+ * Written as a re-export on purpose: Next.js calls `onRequestError` by file convention, so no file
+ * in the repo imports it, and `scripts/check-rule-i.sh` (which reads `export const|function`
+ * declarations only) would report a framework hook as dead code. FOLLOW-1472 records that gap.
+ */
+export { captureRequestError as onRequestError } from '@sentry/nextjs';

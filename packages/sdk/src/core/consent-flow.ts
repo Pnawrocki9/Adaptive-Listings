@@ -18,7 +18,7 @@ import {
   clearConsentDenial,
 } from './session.js';
 import { eraseCrossSessionId, getOrCreateCrossSessionId, isXidLive, readStoredXid } from './xid.js';
-import { postProfileErase } from './adapt.js';
+import { downloadProfile, postProfileErase } from './adapt.js';
 import type { ShadowHost } from '../ui/shadow-host.js';
 import { fetchConsentText } from './consent-text.js';
 import { renderConsentBanner } from '../ui/consent-banner.js';
@@ -252,5 +252,9 @@ export function mountOptOutToggle(
     () => withdrawConsent(ctx, adapt),
     fetchConsentText(config.language).then((t) => t?.copy),
   );
+  // Access and export, one control (ESC-092 D) [FOLLOW-1445]: only for an id that has left the
+  // browser and is still live, the only case with a server profile to return. No flag gates it.
+  const xid = readStoredXid();
+  if (xid?.sent && isXidLive(xid)) toggle.showData(() => downloadProfile(config, xid.id));
   return toggle;
 }

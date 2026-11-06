@@ -82,6 +82,8 @@ export interface ProfilingToggleOptions {
  * `withdraw` is the withdrawal control (FOLLOW-1316, R24), a separate act from the toggle, whose
  * words imply no deletion (R38). It promises nothing about "all data", since the consent log and
  * earlier quiz rows outlive it (design review §4, R35), and tells no buyer they were recognised (R42).
+ * `data` is the one access-and-export control (ESC-092 D) [FOLLOW-1445]; `dataFail` replaces its
+ * label when the download fails, and the button stays for a retry.
  */
 const COPY = {
   en: {
@@ -90,6 +92,8 @@ const COPY = {
     off: 'disabled',
     withdraw: 'Withdraw consent',
     reopen: 'Turn on personalization',
+    data: 'Download my data',
+    dataFail: 'Download failed, try again',
   },
   pl: {
     title: 'Personalizacja',
@@ -97,6 +101,8 @@ const COPY = {
     off: 'wyłączona',
     withdraw: 'Wycofaj zgodę',
     reopen: 'Włącz personalizację',
+    data: 'Pobierz moje dane',
+    dataFail: 'Nie udało się pobrać, spróbuj ponownie',
   },
   es: {
     title: 'Personalización',
@@ -104,6 +110,8 @@ const COPY = {
     off: 'desactivada',
     withdraw: 'Retirar el consentimiento',
     reopen: 'Activar la personalización',
+    data: 'Descargar mis datos',
+    dataFail: 'No se pudo descargar, inténtalo de nuevo',
   },
 } as const;
 
@@ -148,6 +156,11 @@ export interface ProfilingToggleController {
     onWithdraw: () => Promise<boolean>,
     text: Promise<ConsentTextLocale | undefined>,
   ) => void;
+  /**
+   * Show the "Download my data" control after the withdrawal control; each click runs `onData`, and
+   * a false result changes the label to the failure text (FOLLOW-1445).
+   */
+  showData: (onData: () => Promise<boolean>) => void;
 }
 
 /**
@@ -255,18 +268,25 @@ export function renderProfilingToggle(
 
   shadowRoot.appendChild(container);
 
+  /** A full-width, underlined text `<button>` above the attribution (FOLLOW-1444, FOLLOW-1445). */
+  function linkButton(attr: string, label: string): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.setAttribute(attr, '');
+    button.textContent = label;
+    button.setAttribute(
+      'style',
+      'flex-basis:100%;padding:0;border:0;background:none;color:#fff;font:inherit;' +
+        'text-align:left;text-decoration:underline;cursor:pointer',
+    );
+    container.insertBefore(button, attribution);
+    return button;
+  }
+
   return {
     showWithdraw(onWithdraw, text) {
-      if (container.querySelector('button')) return;
+      if (container.querySelector('[data-estalara-withdraw]')) return;
       let words: ConsentTextLocale | undefined;
-      const button = document.createElement('button');
-      button.setAttribute('data-estalara-withdraw', '');
-      button.textContent = copy.withdraw;
-      button.setAttribute(
-        'style',
-        'flex-basis:100%;padding:0;border:0;background:none;color:#fff;font:inherit;' +
-          'text-align:left;text-decoration:underline;cursor:pointer',
-      );
+      const button = linkButton('data-estalara-withdraw', copy.withdraw);
       // FOLLOW-1444: the controls go at once, so nothing writes after the denial; the container
       // becomes a status region showing the in-bundle state text, then the served result sentence.
       button.addEventListener('click', () => {
@@ -277,7 +297,6 @@ export function renderProfilingToggle(
           if (result) container.textContent = result;
         });
       });
-      container.insertBefore(button, attribution);
       // One sentence above the button, once the text arrives; nothing if it never does.
       void text.then((t) => {
         words = t;
@@ -287,6 +306,14 @@ export function renderProfilingToggle(
           why.setAttribute('style', 'flex-basis:100%;font-size:11px;color:#c0bfcd');
           container.insertBefore(why, button);
         }
+      });
+    },
+    showData(onData) {
+      const button = linkButton('data-estalara-data', copy.data);
+      button.addEventListener('click', () => {
+        void onData().then((ok) => {
+          button.textContent = ok ? copy.data : copy.dataFail;
+        });
       });
     },
     destroy() {

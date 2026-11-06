@@ -39,7 +39,19 @@ interface Stub {
   blockErase?: boolean;
   /** Block the consent-text GET at the network (FOLLOW-1444 fallback). */
   blockConsentText?: boolean;
+  /** The `/profile/portability` status (FOLLOW-1445); 200 by default. */
+  portabilityStatus?: number;
 }
+
+/** What the portability route answers, as `buyer-profile-route.ts` shapes it (FOLLOW-1445). */
+const PORTABILITY_DOC = JSON.stringify({
+  format: 'estalara.buyer_profile',
+  format_version: 1,
+  exported_at: '2026-11-07T00:00:00.000Z',
+  profile: { archetype: 'yield_hunter' },
+  expires_at: '2027-02-05T00:00:00.000Z',
+  data_source: 'redis',
+});
 
 interface Sent {
   url: string;
@@ -87,6 +99,12 @@ async function stub(page: Page, options: Stub): Promise<void> {
     } else if (url.endsWith('/profile/erase')) {
       if (options.blockErase) await route.abort('failed');
       else await json(route, { result: 'deleted', data_source: 'redis' });
+    } else if (url.endsWith('/profile/portability')) {
+      await route.fulfill({
+        status: options.portabilityStatus ?? 200,
+        headers: { 'content-type': 'application/json' },
+        body: PORTABILITY_DOC,
+      });
     } else if (url.includes('/adapt/description')) {
       await route.fulfill({ status: 404, body: '{}' });
     } else if (url.endsWith('/adapt')) {
@@ -132,6 +150,7 @@ async function seedConsented(page: Page, version: string = SERVED_TEXT_VERSION):
 
 const shadow = (page: Page, selector: string) => page.locator(`[data-estalara-host] ${selector}`);
 const withdraw = (page: Page) => shadow(page, '[data-estalara-withdraw]');
+const dataControl = (page: Page) => shadow(page, '[data-estalara-data]');
 
 const adaptBodies = (sent: Sent[]): Record<string, unknown>[] =>
   sent
@@ -144,7 +163,7 @@ const storedXid = async (page: Page): Promise<string | undefined> =>
 function expectXidOnlyInAllowedBodies(sent: Sent[], xid: string): void {
   for (const { url, body } of sent) {
     expect(url).not.toContain(xid);
-    if (!url.endsWith('/adapt') && !url.endsWith('/profile/erase')) {
+    if (!/\/adapt$|\/profile\/(erase|portability)$/.test(url)) {
       expect(body, url).not.toContain(xid);
     }
   }
@@ -336,4 +355,48 @@ test.describe('FOLLOW-1316 in a real browser', () => {
       });
     });
   }
+
+  test('FOLLOW-1445: Enter on "Download my data" saves the profile; the xid only in the body', async ({
+    page,
+  }, testInfo) => {
+    await seedConsented(page);
+    await stub(page, { flag: true });
+    const sent = capture(page);
+    await page.goto(PAGE_URL);
+    // The first decision sends the id, so a profile can exist and the control is offered.
+    await expect(dataControl(page)).toHaveText('Download my data');
+    await page.screenshot({
+      path: testInfo.outputPath('download-my-data-en.png'),
+      clip: { x: 0, y: 540, width: 420, height: 180 },
+    });
+    const xid = await storedXid(page);
+    await dataControl(page).focus();
+    await expect(dataControl(page)).toBeFocused();
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.keyboard.press('Enter'),
+    ]);
+    expect(download.suggestedFilename()).toBe('estalara-profile.json');
+    expect(readFileSync(await download.path(), 'utf8')).toBe(PORTABILITY_DOC);
+    const calls = sent.filter((s) => s.url.endsWith('/profile/portability'));
+    expect(calls).toHaveLength(1);
+    expect(JSON.parse(calls[0]?.body ?? '{}')).toEqual({ tenant_id: TENANT_ID, xid });
+    expectXidOnlyInAllowedBodies(sent, String(xid));
+    // Reading changes nothing.
+    expect(await storage(page, 'estalara_consent')).toBe('granted');
+    expect(await storedXid(page)).toBe(xid);
+  });
+
+  test('FOLLOW-1445: a refused download says so and saves nothing', async ({ page }) => {
+    await seedConsented(page);
+    await stub(page, { flag: true, portabilityStatus: 503 });
+    await page.goto(PAGE_URL);
+    let downloads = 0;
+    page.on('download', () => {
+      downloads += 1;
+    });
+    await dataControl(page).click();
+    await expect(dataControl(page)).toHaveText('Download failed, try again');
+    expect(downloads).toBe(0);
+  });
 });

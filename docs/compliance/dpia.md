@@ -42,13 +42,17 @@ US, UK, UAE), and is delivered as a software-as-a-service product used by real e
 that is derived from no device, browser or visitor attribute and is held in tab-scoped
 `sessionStorage` for the lifetime of the browsing tab. The full mechanism, and precisely what it
 does and does not guarantee, is in **§2.2.1** — read that section before relying on any property of
-the identifier asserted elsewhere in this document. The system never reads cookies, never stores
-login credentials, and never requires user registration. Time2Show does not collect directly
-identifying information (names, emails, phone numbers, government identifiers, addresses) about
-visitors. However, **pseudonymous session identifiers constitute personal data under GDPR art. 4(1)
-read with Recital 26**, as confirmed by EDPB Guidelines 02/2023 on technical scope of Art. 5(3) of
-the ePrivacy Directive (finalized October 2024) and consistent CJEU case law (Breyer C-582/14). The
-data processed is therefore **pseudonymous personal data**, not the absence of personal data.
+the identifier asserted elsewhere in this document. The system never reads cookies, never stores or
+sends the login token, and never requires user registration. It does read that token: after consent,
+if the buyer is logged in to the host, the SDK reads `localStorage['kc_token']`, parses only its
+`sub` claim, and keeps the first 16 hex characters of the SHA-256 of it (the lead id, §2.2.1 item 2)
+in tab-scoped `sessionStorage`; the token itself leaves the browser nowhere (FOLLOW-1455). Time2Show
+does not collect directly identifying information (names, emails, phone numbers, government
+identifiers, addresses) about visitors. However, **pseudonymous session identifiers constitute
+personal data under GDPR art. 4(1) read with Recital 26**, as confirmed by EDPB Guidelines 02/2023
+on technical scope of Art. 5(3) of the ePrivacy Directive (finalized October 2024) and consistent
+CJEU case law (Breyer C-582/14). The data processed is therefore **pseudonymous personal data**, not
+the absence of personal data.
 
 _Correction (v2.28, FOLLOW-1339): since ESC-085 the only host is Time2Show's own platform, so at
 company level Time2Show also holds the account data of logged-in buyers. "Does not collect directly

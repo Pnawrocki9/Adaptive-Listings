@@ -425,6 +425,11 @@ The accepted boundary: control-plane is unscrubbed **by construction, not by con
 mechanism prevents a future change from routing buyer text into a captured exception. Whether it
 should get its own hook was decided under **FOLLOW-811**; see §2.7.1 immediately below.
 
+**FOLLOW-1442 (P-7):** until this change the control-plane server and edge Sentry configs were never
+loaded (`@sentry/nextjs` v10 needs `src/instrumentation.ts`), so server captures reached the console
+only. `register()` now loads them by `NEXT_RUNTIME`; with `SENTRY_DSN_CONTROL_PLANE` unset it stays
+a no-op. The description above is accurate from that change on.
+
 ### 2.7.1 FOLLOW-811 decision — no `beforeSend` for `apps/control-plane`; residual risk ACCEPTED with triggers (2026-08-05)
 
 **Decision: no redaction hook was added.** The three configs (`sentry.server.config.ts`,

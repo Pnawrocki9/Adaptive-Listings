@@ -238,7 +238,11 @@ names the section 8 item that holds it.
     no privacy defect here, since fewer recipients is the safe side. It does mean R18's "reported to
     Sentry" is `console.error` plus the wire, for this feature and **for every server capture in the
     control plane**, so DPIA §2.7's Sentry description overstates what runs. When someone adds the
-    file, `include: { data: false }` is what keeps the xid out, and that is pinned by test.
+    file, `include: { data: false }` is what keeps the xid out, and that is pinned by test. **Update
+    (FOLLOW-1442):** P-7 is met by this change. `apps/control-plane/src/instrumentation.ts` now
+    loads the server and edge configs, so with `SENTRY_DSN_CONTROL_PLANE` set the server captures
+    reach Sentry and R18's "reported to Sentry" and DPIA §2.7 are true. `include: { data: false }`
+    is unchanged and still pinned by test.
 11. **Holdout rows log `neutral`, treatment rows the restored archetype. ACCEPTED, both, for
     privacy.** It follows from R40: reading a profile to label a row would read it for a buyer who
     gets no use from it. It is a measurement defect, recorded in MASTER_DESIGN: `by_archetype` lift

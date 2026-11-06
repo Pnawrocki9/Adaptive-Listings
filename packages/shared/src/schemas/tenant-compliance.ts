@@ -17,7 +17,7 @@
  * @module @estalara/shared/schemas/tenant-compliance
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 /**
  * Schema for creating a Legitimate Interest Assessment (LIA) record.

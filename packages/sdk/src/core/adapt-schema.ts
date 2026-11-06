@@ -29,7 +29,7 @@
  */
 
 import { ArchetypeIdSchema } from '@estalara/shared';
-import { z } from 'zod';
+import * as z from 'zod';
 
 /**
  * Canonical archetype identifiers — re-export of `@estalara/shared`'s

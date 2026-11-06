@@ -28,7 +28,7 @@
  * @module @estalara/shared/schemas/description
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 import { CANONICAL_ARCHETYPE_IDS } from '../archetypes.js';
 import { QUIZ_LANGUAGE_VALUES } from './quiz-config.js';

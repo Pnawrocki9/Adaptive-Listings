@@ -6,7 +6,7 @@
  * @module @estalara/shared/schemas/events/cross-listing
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 import { EventEnvelopeBaseSchema } from '../event.js';
 

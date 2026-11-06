@@ -22,7 +22,7 @@
  * required field or a wrong `schema_version` fails validation and the SDK fails CLOSED (§D4).
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 import { QuizLanguageSchema } from './quiz-config.js';
 

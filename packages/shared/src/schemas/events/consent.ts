@@ -10,7 +10,7 @@
  * @module @estalara/shared/schemas/events/consent
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 import { EventEnvelopeBaseSchema } from '../event.js';
 import { QuizLanguageSchema } from '../quiz-config.js';

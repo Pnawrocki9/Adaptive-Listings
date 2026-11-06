@@ -21,7 +21,7 @@
  * @module @estalara/shared/schemas/events/boot-timing
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 import { EventEnvelopeBaseSchema } from '../event.js';
 

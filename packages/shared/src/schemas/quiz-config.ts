@@ -39,7 +39,7 @@
  * @module @estalara/shared/schemas/quiz-config
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 import { WidgetPlacementSchema, type WidgetPlacement } from './widget-placement.js';
 

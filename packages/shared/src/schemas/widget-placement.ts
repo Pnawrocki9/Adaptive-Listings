@@ -14,7 +14,7 @@
  * @module @estalara/shared/schemas/widget-placement
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 /**
  * The four viewport corners a fixed widget can anchor to. `offset_x` is measured from the

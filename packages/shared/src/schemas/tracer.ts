@@ -26,7 +26,7 @@
  * @module @estalara/shared/schemas/tracer
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 import { IntentWeightsSchema } from './intent-weights.js';
 

@@ -24,7 +24,7 @@
  * @module @estalara/shared/schemas/presentation-config
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 import { CANONICAL_ARCHETYPE_IDS } from '../archetypes.js';
 import { isTraitId, type TraitId } from '../traits.js';

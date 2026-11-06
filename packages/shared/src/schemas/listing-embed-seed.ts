@@ -14,7 +14,7 @@
  * @module @estalara/shared/schemas/listing-embed-seed
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 /**
  * Payload POSTed when listings left over by an activation embed-seed hop must be processed

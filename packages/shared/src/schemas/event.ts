@@ -14,7 +14,7 @@
  * @module @estalara/shared/schemas/event
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 import { noPii } from './pii-blacklist.js';
 

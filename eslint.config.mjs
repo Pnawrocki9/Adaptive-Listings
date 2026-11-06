@@ -65,6 +65,22 @@ export default tseslint.config(
     },
   },
 
+  // FOLLOW-1473: `import { z } from 'zod'` pins the whole zod export object into the SDK
+  // bundle (esbuild cannot tree-shake it). Use `import * as z from 'zod'` instead.
+  {
+    files: ['packages/shared/**/*.ts', 'packages/sdk/**/*.ts', 'packages/sdk/**/*.tsx'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "ImportDeclaration[source.value='zod'] > ImportSpecifier[imported.name='z']",
+          message:
+            "Use `import * as z from 'zod'` so esbuild can tree-shake unused zod (FOLLOW-1473).",
+        },
+      ],
+    },
+  },
+
   // Relax some rules in test files
   {
     files: ['**/*.test.ts', '**/*.test.tsx', '**/*.spec.ts', '**/*.spec.tsx'],

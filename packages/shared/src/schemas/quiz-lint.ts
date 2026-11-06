@@ -22,7 +22,7 @@
  * @module @estalara/shared/schemas/quiz-lint
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 import { CANONICAL_ARCHETYPE_IDS } from '../archetypes.js';
 import { isTraitId } from '../traits.js';

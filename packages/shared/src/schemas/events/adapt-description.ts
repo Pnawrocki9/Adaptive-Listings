@@ -24,7 +24,7 @@
  * @module @estalara/shared/schemas/events/adapt-description
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 import { EventEnvelopeBaseSchema } from '../event.js';
 

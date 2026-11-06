@@ -26,7 +26,7 @@
  * @module @estalara/shared/schemas/quiz-run
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 import { CANONICAL_ARCHETYPE_IDS } from '../archetypes.js';
 import { CANONICAL_TRAIT_IDS } from '../traits.js';

@@ -4,7 +4,7 @@
  * @module @estalara/shared/schemas/events/sidebar
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 import { EventEnvelopeBaseSchema } from '../event.js';
 

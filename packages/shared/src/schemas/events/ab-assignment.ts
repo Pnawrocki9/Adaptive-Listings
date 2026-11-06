@@ -14,7 +14,7 @@
  * @module @estalara/shared/schemas/events/ab-assignment
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 
 import { EventEnvelopeBaseSchema } from '../event.js';
 

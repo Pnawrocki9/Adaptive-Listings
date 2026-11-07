@@ -3388,3 +3388,13 @@ to the next PR that repeats the same citation, exactly as happened here.
   against the PR's _own remote branch_ (`git show origin/<branch>:<file>`), not the local working
   tree — the local tree can be checked out on an unrelated PM bookkeeping branch from a prior
   session and silently show stale values, which would be a false "not wired" finding if not caught.
+
+- **Date / ticket:** 2026-11-07 — FOLLOW-1346 (H3)
+- **Delegation row used:** none (PM bookkeeping, no delegation)
+- **What validation caught (or missed):** Running the K7 controls during H3 caught a red one:
+  `check-measured-premises.mjs` exits 1 on `main` (FOLLOW-1430 plus MP-008 expired 2026-11-02,
+  tracked by no ticket). FOLLOW-1454 (P1 before go-live) proved to carry product residue under a
+  handover row, which two CEO rulings decide differently.
+- **A delegation/validation rule I'd add:** Before any checkpoint close, run every scripted control
+  the plan lists for the next checkpoint, so a dated premise does not expire unseen between weekly
+  runs.

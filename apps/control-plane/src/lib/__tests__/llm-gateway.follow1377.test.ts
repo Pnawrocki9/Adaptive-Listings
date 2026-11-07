@@ -1,7 +1,7 @@
 /**
  * FOLLOW-1377 — the `/api/adapt` generation call with a 5.x model (the global generation model, or
- * a DEMO MODE `forceModel`). Measured 2026-10-22: at `max_tokens: 512` every 5.x call spent the
- * budget thinking and the gateway fell back with `llm_unavailable`. The request now carries the
+ * a DEMO MODE `forceModel`). At `max_tokens: 512` a 5.x call can spend the budget
+ * thinking and the gateway then falls back with `llm_unavailable` [MP-018]. The request now carries the
  * model's catalog profile; a 4.x request is unchanged.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

@@ -4,21 +4,27 @@
 
 ### Dispatch record (session 180)
 
-- **FOLLOW-1345** — status: IN_PROGRESS # K3 ledger = this PR (`k3-green`). Remaining: AC(1b)/AC(9)
-  at K4a/K4b; KQ1/KQ2 ledgers under Faza Q.
+- **FOLLOW-1345** — status: DONE # H3 2026-11-07: ledgers K0 #1018, K1 #1022, K2a #1031, K2b #1034,
+  K2c #1040, K3 #1048, K4a #1127; AC(1b) #1126; AC(9) #1133 (the AC(9) branch was folded into it);
+  KQ1 #1074 and KQ2 #1080 under FOLLOW-1361; K4b to K6 and H1 under their own tickets. Was
+  IN_PROGRESS # K3 ledger = this PR (`k3-green`). Remaining: AC(1b)/AC(9) at K4a/K4b; KQ1/KQ2
+  ledgers under Faza Q.
 - **FOLLOW-1351** — status: DONE # #1047 `434b2513`, 2026-10-19. SDK: one chat-refresh chain at a
   time (generation counter, timer handle cleared on every reassignment); series 3× GREEN `[FRESH]`
   (README §5.31).
 - **FOLLOW-1352** — status: DONE # #1046 `4fa860ef`, 2026-10-19. Harness: AC(8) hops 6 and 11 graded
   on the request sent after the fold (`chatPriorAppliedAt === stamp`), page kept open for the
   follow-up.
-- **FOLLOW-1353** — status: BACKLOG # P2 control-plane. Audit-failure `Sentry.captureException(err)`
+- **FOLLOW-1353** — status: DEFERRED # H3 2026-11-07: post-K7, P2 product; `api/audit/route.ts:259`
+  still captures `err`. Was BACKLOG # P2 control-plane. Audit-failure `Sentry.captureException(err)`
   sends drizzle query params (staff UUID, FAQ text, IP/UA) — capture `err.cause ?? err`; DPIA §2.7.1
   note. K3 ledger finding 1.
-- **FOLLOW-1354** — status: BACKLOG # P2 sdk. `/api/adapt` fetch has no per-request timeout (only
-  the lifetime signal) — bounded timeout + retry budget. K3 ledger finding 2.
-- **FOLLOW-1355** — status: IN_PROGRESS # Faza Q Q0 docs: this PR (plan copy, research record,
-  PREREG, ESC-086, tickets) + the architect's MASTER_DESIGN 4.28 §E.4 v3 PR.
+- **FOLLOW-1354** — status: DEFERRED # H3 2026-11-07: post-K7, P2 sdk; needs SDK bytes. Was
+  BACKLOG # P2 sdk. `/api/adapt` fetch has no per-request timeout (only the lifetime signal) —
+  bounded timeout + retry budget. K3 ledger finding 2.
+- **FOLLOW-1355** — status: DONE # H3 2026-11-07: #1050 `38896939` and #1049 `0857a7aa`, 2026-10-19.
+  Was IN_PROGRESS # Faza Q Q0 docs: this PR (plan copy, research record, PREREG, ESC-086, tickets) +
+  the architect's MASTER_DESIGN 4.28 §E.4 v3 PR.
 - **FOLLOW-1356** — status: DONE # #1052 `5de4ff9b`, 2026-10-19 (+ ADR-0019 note #1051). Faza Q Q1
   shared model; Opus review applied; bundle 40,846 B.
 - **FOLLOW-1357** — status: DONE # #1055 `9df1ffb4`, 2026-10-20. Faza Q Q2 widget v2; series 3×
@@ -42,12 +48,18 @@
 - **FOLLOW-1376** — status: DONE # #1079, 2026-10-21. `CP_MODE=prod` local control plane
   (`next build && next start`) + `ESTALARA_LOCAL_ORIGINS=1` (ignored on Vercel). Series README
   §5.35. For the CEO's KQ2 walkthrough on a slow machine.
-- **FOLLOW-1374** — status: BACKLOG # P2, Phase 4. First chat message does not adapt.
-- **FOLLOW-1375** — status: BACKLOG # P2, Phase 4. Confirmed results that change only the CTA.
-- **FOLLOW-1378** — status: BACKLOG # P2. 4.x description budget: Sonnet 4.6 hit the 450-token floor
-  on 3/4 fixture descriptions (FOLLOW-1377 measurement); raise or rebalance the 4.x floor.
-- **FOLLOW-1379** — status: BACKLOG # P3. `GET /api/admin/analytics/rollup` answered 500 twice under
-  load during README §5.36 (AC(5) RED); capture the ClickHouse error and harden the query.
+- **FOLLOW-1374** — status: DEFERRED # H3 2026-11-07: post-K7, P2 product; Phase 4 closed at K4b
+  without it (KQ2 ledger lists it). Was BACKLOG # P2, Phase 4. First chat message does not adapt.
+- **FOLLOW-1375** — status: DEFERRED # H3 2026-11-07: post-K7, P2 product; depends on FOLLOW-1368;
+  Phase 4 closed at K4b without it. Was BACKLOG # P2, Phase 4. Confirmed results that change only
+  the CTA.
+- **FOLLOW-1378** — status: SUPERSEDED # H3 2026-11-07: by FOLLOW-1381 (#1083 `6aa0303d`,
+  2026-10-25): Sonnet 5.5 is the default; the 4.x floor applies only if staff pick a 4.x model. Was
+  BACKLOG # P2. 4.x description budget: Sonnet 4.6 hit the 450-token floor on 3/4 fixture
+  descriptions (FOLLOW-1377 measurement); raise or rebalance the 4.x floor.
+- **FOLLOW-1379** — status: DEFERRED # H3 2026-11-07: post-K7, P3; seen only under load. Was
+  BACKLOG # P3. `GET /api/admin/analytics/rollup` answered 500 twice under load during README §5.36
+  (AC(5) RED); capture the ClickHouse error and harden the query.
 - **FOLLOW-1377** — status: DONE # #1081 `ffb5ad12`, 2026-10-22. Platform Settings: Claude 5.x
   generation models with measured cost/time; pricing fixed (Haiku 4.5, Opus 4.8). Series §5.36.
 - **FOLLOW-1380** — status: DONE # 2026-10-23. Blind compare Haiku 5.5 vs Sonnet 5.5 (24 cases,
@@ -89,14 +101,16 @@
   was IN_REVIEW (branch ml-engineer/FOLLOW-1413-claim-false-refusals) # P3. Seen live in
   FOLLOW-1411: headline typo "dwuipokojowe"; a body saying "The listing says the home is close to
   schools" (talks about the listing, not the home) — tighten the prompt.
-- **FOLLOW-1416** — status: BACKLOG # P3. Follow-up of FOLLOW-1396 (#1101): the exonym table
-  ("Warsaw" ↔ "Warszawa") is wired into the headline check only; `/api/adapt` slot copy still
-  refuses an exonym. Share the table with the `/api/adapt` claim path.
-- **FOLLOW-1417** — status: BACKLOG # P3. Follow-up of FOLLOW-1413 (#1101): list negation carries
-  only through or/nor connectors; Polish "o" between list items is not read as a connector.
-- **FOLLOW-1418** — status: BACKLOG # P3. Follow-up of FOLLOW-1413 (#1101): "not only a pool but
-  also a garden" is an affirmation, not a negation; pin it so a later negation change cannot flip
-  it.
+- **FOLLOW-1416** — status: DEFERRED # H3 2026-11-07: post-K7, P3 product; a refused exonym keeps
+  the seller's copy. Was BACKLOG # P3. Follow-up of FOLLOW-1396 (#1101): the exonym table ("Warsaw"
+  ↔ "Warszawa") is wired into the headline check only; `/api/adapt` slot copy still refuses an
+  exonym. Share the table with the `/api/adapt` claim path.
+- **FOLLOW-1417** — status: DEFERRED # H3 2026-11-07: post-K7, P3 product. Was BACKLOG # P3.
+  Follow-up of FOLLOW-1413 (#1101): list negation carries only through or/nor connectors; Polish "o"
+  between list items is not read as a connector.
+- **FOLLOW-1418** — status: DEFERRED # H3 2026-11-07: post-K7, P3 product (a test pin). Was
+  BACKLOG # P3. Follow-up of FOLLOW-1413 (#1101): "not only a pool but also a garden" is an
+  affirmation, not a negation; pin it so a later negation change cannot flip it.
 - **FOLLOW-1419** — status: DONE # PR #1103, merged as `a76f6291`; README §5.46; stamp `claims-v6`,
   parity corpus v19 (stamp only). CEO 2026-10-30: Treblinka, Sobibór, Bełżec and Majdanek stay
   refused on their own (listings from those villages are near zero); town names shared with a camp
@@ -120,8 +134,9 @@
   always passes.
 - **FOLLOW-1421** — status: DONE # PR #1108. CEO ruling: prices always exact; the multiplier
   tolerance from #1101 removed for money, kept only for people and area counts.
-- **FOLLOW-1422** — status: READY # P2 docs (RETRO-371). Record the 2026-10-30 guard rulings in
-  ESC-089, MASTER_DESIGN and ADR-0023 with the claims stamp history.
+- **FOLLOW-1422** — status: DEFERRED # H3 2026-11-07: post-K7, P2 docs; ADR-0023 still has no
+  `protected_ground` (grep count 0). Was READY # P2 docs (RETRO-371). Record the 2026-10-30 guard
+  rulings in ESC-089, MASTER_DESIGN and ADR-0023 with the claims stamp history.
 - **FOLLOW-1233** — status: DONE # PR #1111, merged as `c7d34d91`; README §5.52. Phase 4 P4:
   bring-up seeds the cosine inputs, the preflight aborts without them.
 - **FOLLOW-1168** — status: DONE # PR #1112, merged as `6d58d1c2`; README §5.53. Phase 4 P5: an arm
@@ -141,34 +156,47 @@
 - **FOLLOW-1427** — status: DONE # PR #1122, merged as `cec50c2c` (2026-11-01), README §5.65.
   One-hour Redis guard per listing, archetype, language, model, revision and claims version. It has
   not fired live yet.
-- **FOLLOW-1428** — status: BACKLOG # P3 product. FAILED descriptions (truncated, empty, wrong
-  language) also follow a billed call, write nothing and regenerate on every miss; FOLLOW-1427
-  guards REFUSED only.
-- **FOLLOW-1431** — status: BACKLOG # P2 product, RETRO-372. A listing's own address with a
-  sensitive street name is refused unless it carries a street marker; the buyer keeps the seller's
-  copy. Blanking the address was stopped by readers three times (#1130 shipped tightenings only): it
+- **FOLLOW-1428** — status: DEFERRED # H3 2026-11-07: post-K7, P3 product. Was BACKLOG # P3 product.
+  FAILED descriptions (truncated, empty, wrong language) also follow a billed call, write nothing
+  and regenerate on every miss; FOLLOW-1427 guards REFUSED only.
+- **FOLLOW-1431** — status: DEFERRED # H3 2026-11-07: post-K7, P2 product; #1130 merged the
+  tightenings from its branch; blanking stays a dead end until a new idea; a false refusal keeps the
+  seller's copy. Was BACKLOG # P2 product, RETRO-372. A listing's own address with a sensitive
+  street name is refused unless it carries a street marker; the buyer keeps the seller's copy.
+  Blanking the address was stopped by readers three times (#1130 shipped tightenings only): it
   spares sensitive copy.
 - **FOLLOW-1436** — status: DONE # PR #1130, README §5.71.
-- **FOLLOW-1432** — status: BACKLOG # P2 product. `recentEvents` is printed in every adapt prompt
-  and set by nothing.
-- **FOLLOW-1433** — status: BACKLOG # P2 measurement. Discharge MP-012, MP-013, MP-017.
-- **FOLLOW-1434** — status: BACKLOG # P3 product. T8 spellings.
-- **FOLLOW-1435** — status: BACKLOG # P3 measurement. Count a FOLLOW-1427 guard hit, one live proof.
-- **FOLLOW-1437** — status: BACKLOG # P3 gate. Piped `git push` hides a failed pre-push hook.
-- **FOLLOW-1438** — status: READY # P2 compliance. ROPA line 159 and DPIA lines 1215 and 1295 say
-  GPC is honoured; no code reads it. FOLLOW-1316 R7 fixes this for that feature only.
-- **FOLLOW-1439** — status: BACKLOG # P3 compliance. `intent_sessions` has no ROPA retention row,
-  and ingest accepts a client-supplied `cross_session_id` into it.
-- **FOLLOW-1440** — status: BACKLOG # P2 product. Guard gaps served at origin/main: statements about
-  residents outside the closed list (`Mieszkańcy to katolicy.`, `The residents are Muslim.`), other
-  terms with the marker exemption (`Ghetto Road.`, `Birkenau Road.`),
-  `ul. Treblinki 3. Tu był obóz.`. Closing them tightens.
-- **FOLLOW-1441** — status: BACKLOG # P3 product. Body names: `Located in Miami` passes (slice 5
-  limit). A judge was tried and removed: 4 of 24 harmless cases passed.
+- **FOLLOW-1432** — status: DEFERRED # H3 2026-11-07: post-K7, P2 product; `llm-gateway.ts:266`
+  still prints `none`. Was BACKLOG # P2 product. `recentEvents` is printed in every adapt prompt and
+  set by nothing.
+- **FOLLOW-1433** — status: DEFERRED # H3 2026-11-07: post-K7, P2 measurement. Was BACKLOG # P2
+  measurement. Discharge MP-012, MP-013, MP-017.
+- **FOLLOW-1434** — status: DEFERRED # H3 2026-11-07: post-K7, P3 product. Was BACKLOG # P3 product.
+  T8 spellings.
+- **FOLLOW-1435** — status: DEFERRED # H3 2026-11-07: post-K7, P3 measurement. Was BACKLOG # P3
+  measurement. Count a FOLLOW-1427 guard hit, one live proof.
+- **FOLLOW-1437** — status: DEFERRED # H3 2026-11-07: post-K7, P3 gate. Was BACKLOG # P3 gate. Piped
+  `git push` hides a failed pre-push hook.
+- **FOLLOW-1438** — status: DEFERRED # H3 2026-11-07: post-K7, compliance docs, for the one legal
+  review once the product works (CEO 2026-11-03, ESC-091); owed before production (handover row 21,
+  H-10). Was READY # P2 compliance. ROPA line 159 and DPIA lines 1215 and 1295 say GPC is honoured;
+  no code reads it. FOLLOW-1316 R7 fixes this for that feature only.
+- **FOLLOW-1439** — status: DEFERRED # H3 2026-11-07: post-K7, compliance, for the one legal review
+  once the product works (CEO 2026-11-03, ESC-091). Was BACKLOG # P3 compliance. `intent_sessions`
+  has no ROPA retention row, and ingest accepts a client-supplied `cross_session_id` into it.
+- **FOLLOW-1440** — status: DEFERRED # H3 2026-11-07: post-K7, P2 product; closing the gaps only
+  tightens. Was BACKLOG # P2 product. Guard gaps served at origin/main: statements about residents
+  outside the closed list (`Mieszkańcy to katolicy.`, `The residents are Muslim.`), other terms with
+  the marker exemption (`Ghetto Road.`, `Birkenau Road.`), `ul. Treblinki 3. Tu był obóz.`. Closing
+  them tightens.
+- **FOLLOW-1441** — status: DEFERRED # H3 2026-11-07: post-K7, P3 product. Was BACKLOG # P3 product.
+  Body names: `Located in Miami` passes (slice 5 limit). A judge was tried and removed: 4 of 24
+  harmless cases passed.
 - **FOLLOW-1442** — status: DONE 2026-11-06 (#1151, series 3× GREEN) # P1 before go-live (record
   P-7). Server Sentry looks uninitialised: `apps/control-plane` has no `instrumentation.ts`, so
   every server capture reaches the console only. Read from code, not measured at runtime.
-- **FOLLOW-1443** — status: BACKLOG # P3 measurement. Returning holdout rows log `neutral`,
+- **FOLLOW-1443** — status: DEFERRED # H3 2026-11-07: post-K7, P3 measurement; matters for the
+  production lift reading. Was BACKLOG # P3 measurement. Returning holdout rows log `neutral`,
   treatment rows the restored archetype, so `by_archetype` lift compares unlike cohorts.
 - **FOLLOW-1444** — status: DONE 2026-11-07 (#1158, series 3× GREEN) # P1 before go-live (P-2),
   depends_on FOLLOW-1316, 1446. ESC-092 (C-b: sentences in `consent-text.json`); plan PR 3, Opus.
@@ -184,35 +212,49 @@
   `consent_state: none`); plan PR 2 + 2b. Withdrawal restores all directives (`cta`, `feature` stay
   today), other open tabs stop adapting (no `storage` listener), and a way back from `denied` is
   decided.
-- **FOLLOW-1447** — status: BACKLOG # P2 before go-live (P-5). Trust in `x-forwarded-for` for the
-  quota, and a keyed rather than unsalted address hash.
-- **FOLLOW-1448** — status: BACKLOG # P2 before go-live (P-6). Retention for self-service
-  `dsr_audit_log` rows; a withdrawal distinguishable from a Decline in the log.
-- **FOLLOW-1449** — status: BACKLOG # P2 before go-live (P-8). "None of these" leaves the stored
-  label, restored in that session.
-- **FOLLOW-1450** — status: BACKLOG # P3 gate. The privacy keys gate misses `*_VERSION_KEY` and
-  `*_CACHE_KEY`; also a stale MASTER_DESIGN §Snapshot line from the review.
-- **FOLLOW-1451** — status: BACKLOG # P2 gate. CI does not run the Lua of `buyer-profile-store.ts`,
-  only a JavaScript mirror; a Lua regression passes CI. Needs a job with Redis, or a checkpoint
-  step.
-- **FOLLOW-1452** — status: BACKLOG # P3 gate. `@estalara/shared/playbook-traits` has a `require`
-  condition naming a file dist does not have; AC(1b)'s CommonJS helper breaks on any import of it.
-- **FOLLOW-1453** — status: BACKLOG # P2 product. Playbook `cta` and `feature` text promises what
-  the slot does not do on the real page: "Download Expat Relocation Guide" on a button that opens a
-  message, "Your First Step" over the amenities grid. Measure on the K5 live run, then decide before
-  the CEO walk.
-- **FOLLOW-1454** — status: BACKLOG # P1 before go-live, depends_on FOLLOW-1308. Production
-  conditions H-1 to H-12 of `docs/compliance/FOLLOW-1339-session-header-review.md`, including the
-  FOLLOW-1308 erase test with a `caller_signed = 1` row; ESC-091 ruled 2026-11-03 (#1143), C-4 open.
+- **FOLLOW-1447** — status: DEFERRED # H3 2026-11-07: post-K7; production condition P-5 of the
+  FOLLOW-1316 signed review §8; handover row 20 keeps `BUYER_PROFILE_ENABLED` off until it holds;
+  P2, so outside the 2026-11-06 P1 ruling. Was BACKLOG # P2 before go-live (P-5). Trust in
+  `x-forwarded-for` for the quota, and a keyed rather than unsalted address hash.
+- **FOLLOW-1448** — status: DEFERRED # H3 2026-11-07: post-K7; production condition P-6, same review
+  §8; handover row 20 keeps the flag off until it holds. Was BACKLOG # P2 before go-live (P-6).
+  Retention for self-service `dsr_audit_log` rows; a withdrawal distinguishable from a Decline in
+  the log.
+- **FOLLOW-1449** — status: DEFERRED # H3 2026-11-07: post-K7; production condition P-8, same review
+  §8; handover row 20 keeps the flag off until it holds. Was BACKLOG # P2 before go-live (P-8).
+  "None of these" leaves the stored label, restored in that session.
+- **FOLLOW-1450** — status: DEFERRED # H3 2026-11-07: post-K7, P3 gate. Was BACKLOG # P3 gate. The
+  privacy keys gate misses `*_VERSION_KEY` and `*_CACHE_KEY`; also a stale MASTER_DESIGN §Snapshot
+  line from the review.
+- **FOLLOW-1451** — status: DEFERRED # H3 2026-11-07: post-K7, P2 gate; handover row 20 asks the CTO
+  to confirm `EVAL` on hosted Upstash. Was BACKLOG # P2 gate. CI does not run the Lua of
+  `buyer-profile-store.ts`, only a JavaScript mirror; a Lua regression passes CI. Needs a job with
+  Redis, or a checkpoint step.
+- **FOLLOW-1452** — status: DEFERRED # H3 2026-11-07: post-K7, P3 gate. Was BACKLOG # P3 gate.
+  `@estalara/shared/playbook-traits` has a `require` condition naming a file dist does not have;
+  AC(1b)'s CommonJS helper breaks on any import of it.
+- **FOLLOW-1453** — status: SUPERSEDED # H3 2026-11-07: by the FOLLOW-1459 rules (#1138 `0c46e483`),
+  `docs/checkpoints/K5.md` "Not fixed"; the button wording is for the CEO walk. Was BACKLOG # P2
+  product. Playbook `cta` and `feature` text promises what the slot does not do on the real page:
+  "Download Expat Relocation Guide" on a button that opens a message, "Your First Step" over the
+  amenities grid. Measure on the K5 live run, then decide before the CEO walk.
+- **FOLLOW-1454** — status: HANDOVER (row 21) # H3 2026-11-07: `CTO_HANDOVER.md` §4 row 21 cites it.
+  C-4 was ruled "as built" on 2026-11-03 (ESC-091), so "C-4 open" below is stale. Not done on
+  localhost: H-3 (ii) and (iii) (FOLLOW-1466 and the `web-master` helper), H-6, the H-8 erase test
+  with a `caller_signed = 1` row, H-10, H-12; ESC-091 moves H-1 to H-13 to one review before
+  production. Was BACKLOG # P1 before go-live, depends_on FOLLOW-1308. Production conditions H-1 to
+  H-12 of `docs/compliance/FOLLOW-1339-session-header-review.md`, including the FOLLOW-1308 erase
+  test with a `caller_signed = 1` row; ESC-091 ruled 2026-11-03 (#1143), C-4 open.
 - **FOLLOW-1455** — status: DONE 2026-11-06 (#1154) # P1 before go-live, compliance. ESC-092 E-B:
   keep the read, correct the text (DPIA §1, notice §1); plan PR 1, Sonnet. Notice §1 "does not read
   … any account credentials" is false today, `boot.ts:160` reads `kc_token` and parses `sub`.
   Production serves no SDK per ESC-081/082 (not re-checked), so no buyer reads it yet; correct it
   before any production SDK.
-- **FOLLOW-1456** — status: BACKLOG # P2 counsel. Same review, section 12: DPIA §1 claims Art. 3(1)
-  while the host policy says Art. 3(2); `deriveLeadId` is unkeyed; the host's optional-analytics box
-  is pre-ticked. Wiring `adaptation_decisions.lead_id` (FOLLOW-170) returns to compliance first, it
-  would link every session to an account.
+- **FOLLOW-1456** — status: DEFERRED # H3 2026-11-07: post-K7, counsel, for the one legal review
+  once the product works (CEO 2026-11-03, ESC-091). Was BACKLOG # P2 counsel. Same review, section
+  12: DPIA §1 claims Art. 3(1) while the host policy says Art. 3(2); `deriveLeadId` is unkeyed; the
+  host's optional-analytics box is pre-ticked. Wiring `adaptation_decisions.lead_id` (FOLLOW-170)
+  returns to compliance first, it would link every session to an account.
 - **FOLLOW-1457** — status: DONE # #1138 `0c46e483`, 2026-11-02. Lift funnel alias.
 - **FOLLOW-1458** — status: DONE # #1138. Reader fixes the arm per session, counts sessions in both.
 - **FOLLOW-1459** — status: DONE # #1138. Slot copy rules; resolves FOLLOW-1453.
@@ -220,27 +262,34 @@
 - **FOLLOW-1461** — status: DONE # #1142 `00e3902a`, 2026-11-05. `CONSENT_TEXT_TIMEOUT_MS` 3000 →
   10000 ms, fail closed unchanged (ADR-0021 amended). Series: run 1 RED AC(9) b, runs 2-4 GREEN
   `[FRESH]` (K5 ledger).
-- **FOLLOW-1462** — status: BACKLOG # P2 host + sdk. The host re-renders around its silent SSO
-  answer (about 60 s on this box): a click then can be lost, a login started then is lost, and the
-  seller's copy returns until the next decision, since a repair during a newer request stops as
-  `stale`.
-- **FOLLOW-1463** — status: BACKLOG # P2 core-master. A refused `PATCH` is still saved (around
+- **FOLLOW-1462** — status: DEFERRED # H3 2026-11-07: post-K7, P2 host + sdk; not a handover row.
+  Was BACKLOG # P2 host + sdk. The host re-renders around its silent SSO answer (about 60 s on this
+  box): a click then can be lost, a login started then is lost, and the seller's copy returns until
+  the next decision, since a repair during a newer request stops as `stale`.
+- **FOLLOW-1463** — status: DEFERRED # H3 2026-11-07: post-K7, P2 host backend (`core-master`); not
+  a handover row. Was BACKLOG # P2 core-master. A refused `PATCH` is still saved (around
   `ListingServiceImpl.kt` 1285-1305). Slow ingest can duplicate signed events. Locally,
   `POST /auth/register` answers 500 and `setup-keycloak.sh` makes no agent role.
-- **FOLLOW-1464** — status: BACKLOG # P3 control-plane, sdk, docs. Staff JWT path does not check
-  `exp`. `pilot/inquiry-starts` and `analytics/summary` take the arm per row. The opt-out toggle is
-  unbounded when `/adapt` stalls. The plan's `insufficient` class does not exist. README and harness
-  `late_config` comments are stale.
+- **FOLLOW-1464** — status: DEFERRED # H3 2026-11-07: post-K7, P3; the `exp` part is met by
+  FOLLOW-1307 (#1146: `exp`, `nbf`, `alg`, issuer, audience); the rest is open. Was BACKLOG # P3
+  control-plane, sdk, docs. Staff JWT path does not check `exp`. `pilot/inquiry-starts` and
+  `analytics/summary` take the arm per row. The opt-out toggle is unbounded when `/adapt` stalls.
+  The plan's `insufficient` class does not exist. README and harness `late_config` comments are
+  stale.
 - **FOLLOW-1465** — status: DONE 2026-11-06 (#1152, canary fix #1156) # P1 before go-live,
   depends_on FOLLOW-1308. ESC-091 C-1 says consent only, but the server does not enforce it:
   `assignHoldout` skips only `opted_out`, `unknown` and `none`, and only under
   `consent_mode_enabled`, which the SDK never sends. The lift readers do not filter on consent.
   Record H-13 of `docs/compliance/FOLLOW-1339-session-header-review.md`.
-- **FOLLOW-1466** — status: BACKLOG # P2 sdk + compliance. A grant with no recorded text version is
-  never asked again, so it never reaches the C-1 text (record H-3 (ii)). Needs SDK bytes; 7 B
-  headroom after #1142. The `web-master` header helper does not check the version (H-3 (iii)).
-- **FOLLOW-1467** — status: BACKLOG # P3 compliance. Notice §4 lists `estalara_variant:{sessionId}`
-  written via `SESSION_VARIANT_KEY_PREFIX`; neither appears in non-test SDK source.
+- **FOLLOW-1466** — status: DEFERRED # H3 2026-11-07: post-K7; condition H-3 (ii) and (iii) of
+  handover row 21, which keeps the header off until it holds; needs SDK bytes. Was BACKLOG # P2
+  sdk + compliance. A grant with no recorded text version is never asked again, so it never reaches
+  the C-1 text (record H-3 (ii)). Needs SDK bytes; 7 B headroom after #1142. The `web-master` header
+  helper does not check the version (H-3 (iii)).
+- **FOLLOW-1467** — status: DEFERRED # H3 2026-11-07: post-K7, P3 compliance, for the one legal
+  review once the product works (CEO 2026-11-03, ESC-091). Was BACKLOG # P3 compliance. Notice §4
+  lists `estalara_variant:{sessionId}` written via `SESSION_VARIANT_KEY_PREFIX`; neither appears in
+  non-test SDK source.
 - **FOLLOW-1468** — not allocated (skipped).
 - **FOLLOW-1469** — status: DONE # #1144 `2da09f3d`, 2026-11-05. Localhost SDK build fetches the
   consent text from `:3000` (`ESTALARA_LOCAL_CONSENT_TEXT_URL`, allow-listed; `build:check` refuses
@@ -251,16 +300,20 @@
   2026-11-01: 32 firm language errors on PL and ES pages, in 21 of 56 texts, many of them translated
   persona phrases ("matematyka wyjścia", "ogon najmu", "zaprojektowany pod więcej weekendów"), plus
   "sqm" and "Lisbon" on Polish pages. `docs/checkpoints/K4a.md`.
-- **FOLLOW-1430** — status: READY # P3 gate. `check-measured-premises.mjs` fails on dated
-  measurements in `generation-models.ts` and the FOLLOW-1377 tests (#1081 on). K7 gate; runs only
-  weekly. Move them to `docs/ops/MEASURED_PREMISES.md`.
+- **FOLLOW-1430** — status: READY # H3 2026-11-07: OPEN before K7. `check-measured-premises.mjs` is
+  a K7 control; at `16e5bde5` it exits 1 with 2 problems: the dated measurements of this ticket, and
+  MP-008 EXPIRED (`revalidate_by` 2026-11-02). Was READY # P3 gate. `check-measured-premises.mjs`
+  fails on dated measurements in `generation-models.ts` and the FOLLOW-1377 tests (#1081 on). K7
+  gate; runs only weekly. Move them to `docs/ops/MEASURED_PREMISES.md`.
 - **FOLLOW-1425** — status: DONE # PR #1121, merged as `3746fd4f` (2026-11-01), README §5.64. The
   evidence keeps the Playwright call log of a failed CTA click, bounded. The cause of run 188 is
   still unknown.
-- **FOLLOW-1423** — status: BACKLOG # P2 product. Composition rule gaps left by #1108: percentages
-  ("80% of residents are Muslim"), a group before "most" ("Catholics make up most of…"), Polish
-  majority phrasing without to/jest/są/stanowi.
-- **FOLLOW-1424** — status: BACKLOG # P2 product. Inferred from code, not yet observed:
+- **FOLLOW-1423** — status: DEFERRED # H3 2026-11-07: post-K7, P2 product; closing the gaps only
+  tightens. Was BACKLOG # P2 product. Composition rule gaps left by #1108: percentages ("80% of
+  residents are Muslim"), a group before "most" ("Catholics make up most of…"), Polish majority
+  phrasing without to/jest/są/stanowi.
+- **FOLLOW-1424** — status: DEFERRED # H3 2026-11-07: post-K7, P2 product, not observed; the CEO can
+  look on the H4 walk. Was BACKLOG # P2 product. Inferred from code, not yet observed:
   `{location_highlight}` prefers `publicLocationLabel`, so a second_home_buyer headline can carry a
   street and ZIP ("Your Holiday Home — 9 Blackberry Pl"). Check on the real app, then ask the CEO.
   Also fold: stale comment at `scripts/dev/fixture-listing-details-server.mjs:40`.
@@ -278,21 +331,22 @@
   framing); ESC-089 (CEO 2026-10-29) allows that framing; grounding still applies.
 - **FOLLOW-1409** — status: WONTFIX # PR #1091 closed unmerged: superseded by the CEO ruling
   ESC-089.
-- **FOLLOW-1406** — status: IN_REVIEW # branch
-  `ml-engineer/FOLLOW-1406-claims-v2-and-template-conflicts`. P1 compliance.
+- **FOLLOW-1406** — status: DONE # H3 2026-11-07: #1090 `156cc5b1`, merged 2026-10-26. Was
+  IN_REVIEW # branch `ml-engineer/FOLLOW-1406-claims-v2-and-template-conflicts`. P1 compliance.
   `CLAIMS_VALIDATION_VERSION` is `claims-v2`: a `claims-v1` FIT row (Postgres or Redis) is a miss
   and is regenerated once on its next request. Parity corpus v10 = stamp-only re-freeze of v9. CTO
   handover: the production description cache regenerates lazily, once per (listing, archetype,
   locale, model) pair, after deploy (about USD 0.025 per pair, measured locally).
-- **FOLLOW-1407** — status: IN_REVIEW # branch
-  `ml-engineer/FOLLOW-1406-claims-v2-and-template-conflicts`. P2 compliance. yield_hunter (en/pl): a
-  garden is a lettability / tenant-retention fact as the listing states it, no family tenant;
-  family_buyer (en/pl/es): never the reader's children or household composition, no exception. Two
-  new template scans. Steering vocabulary unchanged; OPEN CEO wording questions: diaspora
-  "zabezpieczenie dla rodziny w kraju"; PL "rodzinna okolica" parity. Not in scope, reported: the
-  upsizer template still frames copy by children ("the next child has their own room"),
-  lifestyle_expat cites "international families", and the family_buyer `description` still says
-  children are assumed with the has_children trait.
+- **FOLLOW-1407** — status: DONE # H3 2026-11-07: #1090 `156cc5b1` (same branch), merged 2026-10-26;
+  the open CEO wording questions were overtaken by ESC-089 (2026-10-29, familial limits lifted). Was
+  IN_REVIEW # branch `ml-engineer/FOLLOW-1406-claims-v2-and-template-conflicts`. P2 compliance.
+  yield_hunter (en/pl): a garden is a lettability / tenant-retention fact as the listing states it,
+  no family tenant; family_buyer (en/pl/es): never the reader's children or household composition,
+  no exception. Two new template scans. Steering vocabulary unchanged; OPEN CEO wording questions:
+  diaspora "zabezpieczenie dla rodziny w kraju"; PL "rodzinna okolica" parity. Not in scope,
+  reported: the upsizer template still frames copy by children ("the next child has their own
+  room"), lifestyle_expat cites "international families", and the family_buyer `description` still
+  says children are assumed with the has_children trait.
 - **FOLLOW-1408** — status: DONE # PR #1101, merged as `17cede38`; README §5.45; stamp `claims-v5`;
   was IN_REVIEW (branch ml-engineer/FOLLOW-1413-claim-false-refusals) # P3. No negation guard for
   guarantees ("no guarantee of income" refused); first_time_buyer headline persona still says
@@ -348,8 +402,9 @@
   `copy_template` recommends "turnkey", which the claim check refuses.
 - **FOLLOW-1386** — status: DONE # by #1117, was BACKLOG # P3. Polish room-count convention
   ("dwupokojowe" = 1 bedroom + living room) mistranslated by both models; add guidance.
-- **FOLLOW-1368** — status: BACKLOG # ESC-087 option 3: `/api/adapt` uses the playbook branch only
-  when every slot is grounded, else the LLM — all sessions; own series; after KQ2.
+- **FOLLOW-1368** — status: DEFERRED # H3 2026-11-07: post-K7, P2 product, own series; the KQ1 and
+  KQ2 ledgers list it as open. Was BACKLOG # ESC-087 option 3: `/api/adapt` uses the playbook branch
+  only when every slot is grounded, else the LLM — all sessions; own series; after KQ2.
 - **FOLLOW-1367** — status: DONE # folded into #1071 (AC(5) after the quiz card, warm
   public-config).
 - **FOLLOW-1364** — status: DONE # #1070 `c79d3547`, 2026-10-20. Retention 13 months.
@@ -422,17 +477,22 @@
 - **FOLLOW-1344** — status: DONE # #1140 `1ab4bc72`; K5 GREEN 2026-11-05 (tag `k5-green` `0c170c61`,
   #1141): N3 29/29 at `5b30a527` on consent text `2026-11-03.1`, docs/checkpoints/K5.md. #
   Instrument N3 (`real-app-acceptance.mjs`). K4b first use, K5 full.
-- **FOLLOW-1345** — status: IN_PROGRESS # Ledgers K0 #1018, K1 #1022, K2a #1031, K2b #1034, K2c
-  (this PR, `k2c-green`). Harness AC(1b), AC(9) at K4a/K4b.
-- **FOLLOW-1346** — status: BACKLOG # Phase 7 H1/H2 final proof and handover v1. K7.
+- **FOLLOW-1345** — status: DONE # H3 2026-11-07: see the session 180 row: every ledger merged. Was
+  IN_PROGRESS # Ledgers K0 #1018, K1 #1022, K2a #1031, K2b #1034, K2c (this PR, `k2c-green`).
+  Harness AC(1b), AC(9) at K4a/K4b.
+- **FOLLOW-1346** — status: IN_PROGRESS # H3 2026-11-07: OPEN before K7. H1 GREEN #1162
+  (`docs/checkpoints/H1.md`), H2 #1163 (`CTO_HANDOVER.md` v1), H3 `docs/checkpoints/H3.md`; open
+  only for H4 (CEO walk) and K7. Was BACKLOG # Phase 7 H1/H2 final proof and handover v1. K7.
 - **FOLLOW-1347** — status: DONE # #1037 `a432f080`, 2026-10-18. `demo_sessions` reader removed;
   handover row 13 has no reader left (DROP = CTO).
 - **FOLLOW-1348** — status: DONE # #1038 `bdb93d7a`, 2026-10-18. R10 compliance condition C4 docs.
 - **FOLLOW-1349** — status: DONE # #1038 `bdb93d7a`, 2026-10-18. Stale install-snippet comments
   repointed; Rule L note in the SDK integration runbook.
-- **FOLLOW-1350** — status: BACKLOG # P3 compliance docs. `docs/compliance/ropa.md:256` (tenant
-  accounts) still lists billing linkage / Stripe ids and `registration_id`/`approver_id` after R9
-  and R3.
+- **FOLLOW-1350** — status: DEFERRED # H3 2026-11-07: post-K7, compliance docs, for the one legal
+  review once the product works (CEO 2026-11-03, ESC-091); `ropa.md` still lists Stripe ids,
+  `registration_id`, `approver_id`. Was BACKLOG # P3 compliance docs. `docs/compliance/ropa.md:256`
+  (tenant accounts) still lists billing linkage / Stripe ids and `registration_id`/`approver_id`
+  after R9 and R3.
 - Reused tickets, new phase and order: **FOLLOW-1246** P1, **1317** P2, **1318** P3, **1233** P4,
   **1168** P5, **1311** P6, **1316** P7 (Phase 4, gates K4a/K4b); **1307..1310** S1..S4 (Phase 6,
   gate K6, re-scoped from post-GO). Statuses unchanged; see the AMENDMENT blocks in FOLLOW_UPS.
@@ -532,23 +592,30 @@
 - **FOLLOW-1470** — status: DONE # this PR. Checkpoint K6 ledger `docs/checkpoints/K6.md`: N2 13
   passed with the staff-token rows, N3 GREEN 29/29 on the third run at `65580349`. Tag `k6-green` on
   merge. Next: Phase 7 (H1-H4). **FOLLOW-1311** — Phase 4 P6 (gate K4a).
-- **FOLLOW-1471** — status: BACKLOG # P2 measurement. AC(9) went RED 6 times across the Phase 6
-  series (#1146 ×4, #1147, #1148) and each PR still reached 3 GREEN on unchanged code; AC(10)(b)
-  `locator.click` 3000 ms on `.estalara-quiz-reject` once on #1149. Find the cause of the AC(9)
-  REDs; raise the AC(10)(b) click timeout if it recurs. K6 ledger, findings. Wave 2: AC(9) RED on
-  the first run after a cold bring-up again (#1159 af1b6228 run 1), and AC(10)(b) once with
+- **FOLLOW-1471** — status: DEFERRED # H3 2026-11-07: post-K7, P2 measurement; AC(9) RED again in H1
+  runs 1 and 3; handover §7 records it. Was BACKLOG # P2 measurement. AC(9) went RED 6 times across
+  the Phase 6 series (#1146 ×4, #1147, #1148) and each PR still reached 3 GREEN on unchanged code;
+  AC(10)(b) `locator.click` 3000 ms on `.estalara-quiz-reject` once on #1149. Find the cause of the
+  AC(9) REDs; raise the AC(10)(b) click timeout if it recurs. K6 ledger, findings. Wave 2: AC(9) RED
+  on the first run after a cold bring-up again (#1159 af1b6228 run 1), and AC(10)(b) once with
   `stepMs=null/answerPath=null` on a `corrected` row (#1159 run 3).
-- **FOLLOW-1472** — status: BACKLOG # P3 gate. `scripts/check-rule-i.sh` reads only
-  `export const|function|class…` declarations and counts importers by name, so a Next.js
-  file-convention hook (`onRequestError` in `instrumentation.ts`, FOLLOW-1442) reads as dead code;
-  #1151 wrote it as a re-export, which the scanner does not see. Give the scanner an explicit list
-  of framework-convention exports instead.
+- **FOLLOW-1472** — status: DEFERRED # H3 2026-11-07: post-K7, P3 gate; handover §7 records it. Was
+  BACKLOG # P3 gate. `scripts/check-rule-i.sh` reads only `export const|function|class…`
+  declarations and counts importers by name, so a Next.js file-convention hook (`onRequestError` in
+  `instrumentation.ts`, FOLLOW-1442) reads as dead code; #1151 wrote it as a re-export, which the
+  scanner does not see. Give the scanner an explicit list of framework-convention exports instead.
 - **FOLLOW-1473** — status: DONE 2026-11-06 (#1155, 43,129 → 41,917 B gzip) # P1 sdk, gates
   FOLLOW-1446/1444/1445. `import * as z from 'zod'` in the 36 files of `packages/shared/src` and
   `packages/sdk/src`, plus an ESLint guard: −1,212 B measured, behaviour unchanged (ESC-092 A1).
   Typecheck and tests of shared, sdk, control-plane and ingest. Plan
-  `docs/PLAN-WAVE2-SDK-2026-11-06.md` PR 0. Next free: FOLLOW-1475, RETRO-381, ESC-093 (FOLLOW-1474
-  = this wave 2 close-out PR) (1472 is used by #1151).
+  `docs/PLAN-WAVE2-SDK-2026-11-06.md` PR 0. FOLLOW-1474 = the wave 2 close-out PR; 1472 is used by
+  #1151; 1475 to 1477 by #1161 to #1163; 1478 below (H3). Next free: FOLLOW-1479, RETRO-381,
+  ESC-093.
+- **FOLLOW-1478** — status: BACKLOG # P3 docs, filed at H3 2026-11-07. `JWT_SECRET` is listed in
+  `apps/control-plane/.env.example` (line 61) and `docs/ops/DOPPLER_SECRETS_MATRIX.md`, but nothing
+  reads it: the code reads `SUPABASE_JWT_SECRET`. The matrix still has `REDPANDA_*` rows and "Phase
+  2" rows. `docs/runbooks/INGEST_WORKER_DEPLOY.md` §1 names `REDPANDA_*` as optional Worker secrets.
+  Redpanda was retired by FOLLOW-1263 (#942). Remove or mark the stale rows.
 - **FOLLOW-1279** — status: CLOSED # absorbed by FOLLOW-1308.
 - **FOLLOW-1251, 1302, 1303, 1291, 1294, 1297** — amended (see FOLLOW_UPS); statuses unchanged.
 
@@ -594,7 +661,8 @@ ADR-0024 for WP-2.10a).
   visibility) was attempted and is rule-h-BLOCKED: `SPEND_KEY_TTL_SECONDS` and `spendKeyFor` have no
   non-test consumer and Pattern 2's advertised deferral-stub option is unimplemented — filed
   FOLLOW-1304.
-- **FOLLOW-1302** — status: OPEN # filed by #963; qa-engineer (Opus); depends_on FOLLOW-1301.
+- **FOLLOW-1302** — status: DONE # H3 2026-11-07: #978 `84535b94`, 2026-10-12 (the DONE row of
+  session 177). Was OPEN # filed by #963; qa-engineer (Opus); depends_on FOLLOW-1301.
 - **FOLLOW-1303** — status: DONE # #981 `2284a5db`, 2026-10-12 (see session 177 record). Was: OPEN #
   filed by #966; backend-engineer (Opus); rollup lift SQL predicates + parity test (feeds AC(5)'s
   `rollup.ctaLift`).
@@ -604,8 +672,9 @@ ADR-0024 for WP-2.10a).
 
 ### Dispatch record (session 175)
 
-- **FOLLOW-1257** — status: IN_PROGRESS # epic; K1 PASSED 2026-10-04; Phase 2 started. Closes at K2
-  (FOLLOW-819 6/6 ×3 with AC(8)).
+- **FOLLOW-1257** — status: DONE # H3 2026-11-07: K2 passed by CEO ruling 2026-10-13 (#1003
+  `670e2cd3`); the plan of 2026-10-17 took over with K0 to K7. Was IN_PROGRESS # epic; K1 PASSED
+  2026-10-04; Phase 2 started. Closes at K2 (FOLLOW-819 6/6 ×3 with AC(8)).
 - **FOLLOW-1259, 1269** — status: DONE # PRs #951, #952.
 - **FOLLOW-1279, 1280** — status: READY # P1, filed by RETRO-367/363; 1280 is on the 820 path
   (ClickHouse migrations for 1203/1220); 1279 is a post-GO deployment step by its own stub.
@@ -635,10 +704,10 @@ ADR-0024 for WP-2.10a).
 - **FOLLOW-1288, FOLLOW-1289** — status: IN_PROGRESS # both STALLED 2026-10-05 on the RAM guard (a
   VS Code tsserver held ~2.1 GB for 12 h); work parked as local WIP commits in their worktrees;
   resume when the editor's TS server is restarted.
-- **FOLLOW-1288** — status: IN_PROGRESS # backend-engineer (Opus), dispatched 2026-10-05, worktree;
-  `route.ts` chain.
-- **FOLLOW-1289** — status: IN_PROGRESS # backend-engineer (Sonnet), dispatched 2026-10-05,
-  worktree; parallel wave (disjoint files).
+- **FOLLOW-1288** — status: DONE # H3 2026-11-07: #965 `6e8bae54`, 2026-10-05. Was IN_PROGRESS #
+  backend-engineer (Opus), dispatched 2026-10-05, worktree; `route.ts` chain.
+- **FOLLOW-1289** — status: DONE # H3 2026-11-07: #964 `b34ed27d`, 2026-10-05. Was IN_PROGRESS #
+  backend-engineer (Sonnet), dispatched 2026-10-05, worktree; parallel wave (disjoint files).
 - **ESC-081, ESC-082** — RESOLVED 2026-10-04 by the CEO # ESC-081 (D9: `identify()` + `tier`
   removed) unblocks FOLLOW-1293; ESC-082 (`session.quality.snapshot` removed from the schema, stale
   senders rejected per event) unblocks FOLLOW-1294. Next free: ESC-083.
@@ -695,7 +764,8 @@ ADR-0024 for WP-2.10a).
 
 ### Dispatch record (session 169)
 
-- **FOLLOW-1257** — status: IN_PROGRESS # epic; opened 2026-09-24 by this PR.
+- **FOLLOW-1257** — status: DONE # H3 2026-11-07: K2 passed by CEO ruling 2026-10-13 (#1003
+  `670e2cd3`). Was IN_PROGRESS # epic; opened 2026-09-24 by this PR.
 - **FOLLOW-1258** — status: DONE # architect (Fable); PR #937, merged 2026-09-25 as `6687dcff`.
   MASTER_DESIGN 4.16 + §Snapshot.0; CLAUDE.md critical path re-cut per CEO D1/D2.
 - **FOLLOW-1262** — status: DONE # backend-engineer (Opus — cuts across CI, infra, shared, gates).
@@ -703,8 +773,9 @@ ADR-0024 for WP-2.10a).
   2026-09-25: PR #938 merged as `f46490b3` (verifier exit 0, Rule I 0 new / 13 fixed). Residue:
   FOLLOW-1277 (dead `/api/internal/schema`), FOLLOW-1278 (K1 check unreachable as written), live
   Worker/DNS/Doppler rows = operator step without an owner (RETRO-357).
-- **FOLLOW-1263** — status: IN_PROGRESS # assigned_to: data-engineer (Opus — cuts across CI matrix,
-  Modal images, two Python apps, C-07). Isolation: agent worktree, branch
+- **FOLLOW-1263** — status: DONE # H3 2026-11-07: #942 `7e2ece97`, 2026-09-29; doc leftovers are
+  FOLLOW-1478. Was IN_PROGRESS # assigned_to: data-engineer (Opus — cuts across CI matrix, Modal
+  images, two Python apps, C-07). Isolation: agent worktree, branch
   `data-engineer/FOLLOW-1263-remove-stream-consumer`. Dispatched 2026-09-25 (session 172).
 - **FOLLOW-1259, 1260, 1261, 1264..1269** — status: READY # see stubs; dependencies in each stub.
   Order: 1266 → 1260 after 1263 (shared `ci.yml`), then 1259/1261/1264/1265/1267/1268/1269 in
@@ -891,12 +962,12 @@ are listed in the audit's §8; #1–#5 are owed before stage 3 starts.
 
 ### Dispatch record
 
-- **FOLLOW-1191** — status: IN_PROGRESS # dispatched session 159, 2026-09-13. assigned_to:
-  ml-engineer (Opus — cross-module: tsx ESM/CJS resolution, PostgREST → direct Postgres, two CI
-  workflows and the required-checks register). Isolation: agent worktree, branch
-  `ml-engineer/FOLLOW-1191-seed-path` from `origin/main`. Brief = the stub in
-  `backlog/FOLLOW_UPS.md` verbatim. PM verifies with `scripts/gh-pr-checks-verified.sh <pr>` before
-  READY_FOR_REVIEW.
+- **FOLLOW-1191** — status: DONE # H3 2026-11-07: #892 `f34d1c9c`, 2026-09-13 (the DONE row of
+  session 160). Was IN_PROGRESS # dispatched session 159, 2026-09-13. assigned_to: ml-engineer (Opus
+  — cross-module: tsx ESM/CJS resolution, PostgREST → direct Postgres, two CI workflows and the
+  required-checks register). Isolation: agent worktree, branch `ml-engineer/FOLLOW-1191-seed-path`
+  from `origin/main`. Brief = the stub in `backlog/FOLLOW_UPS.md` verbatim. PM verifies with
+  `scripts/gh-pr-checks-verified.sh <pr>` before READY_FOR_REVIEW.
 
 ### NEXT (audit §4 critical path, replaces the session-158 order)
 

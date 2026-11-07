@@ -13,7 +13,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { QuizLanguage } from '@estalara/shared';
 
-import { COLLAPSE_MS, renderProfilingToggle } from '../ui/profiling-toggle.js';
+import { renderProfilingToggle } from '../ui/profiling-toggle.js';
+
+/** The CEO's ceiling (2026-11-07), pinned here: the source constant is module-private (Rule I). */
+const COLLAPSE_MS = 3000;
 
 function mount(language: QuizLanguage = 'en'): {
   root: ShadowRoot;

@@ -41,7 +41,7 @@ import { placementToCss } from './placement.js';
  * The panel collapses to its icon this long after it appears, and again this long after the pointer
  * and focus have both left it (CEO ruling 2026-11-07) [FOLLOW-1480].
  */
-export const COLLAPSE_MS = 3000;
+const COLLAPSE_MS = 3000;
 
 export interface ProfilingToggleOptions {
   /**

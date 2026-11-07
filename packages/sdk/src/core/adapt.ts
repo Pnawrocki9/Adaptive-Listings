@@ -237,8 +237,9 @@ async function postProfile(
   const body = JSON.stringify({ tenant_id: config.tenantId, xid });
   const signatureHex = await computeHmacSha256Hex(config.apiKey, body);
   if (signatureHex === null) return null;
+  const profileUrl = buildEndpoint(config.decisionApiUrl, `/profile/${action}`);
   try {
-    return await fetch(buildEndpoint(config.decisionApiUrl, `/profile/${action}`), {
+    return await fetch(profileUrl, {
       method: 'POST',
       keepalive: true,
       headers: {

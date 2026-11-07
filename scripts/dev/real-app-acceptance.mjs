@@ -1947,9 +1947,32 @@ const isDenied = (page) =>
     .evaluate(() => window.localStorage.getItem('estalara_consent') === 'denied')
     .catch(() => false);
 
+/**
+ * FOLLOW-1480: the SDK's toggle panel collapses to `[data-estalara-toggle-icon]` 3 s after it
+ * appears, and a hidden control cannot be clicked. Open the panel from its icon, then rest the
+ * pointer on the control, which holds the panel open for the click that follows. A collapse in
+ * between is tried again. Resolves `true` once the control is visible under the pointer.
+ */
+export async function openToggleControl(page, control, timeout) {
+  await control.waitFor({ state: 'attached', timeout });
+  const icon = page.locator('[data-estalara-toggle-icon]').first();
+  for (let i = 0; i < 3; i++) {
+    if (await icon.isVisible().catch(() => false)) await icon.click({ timeout: 3000 });
+    if (
+      await control.hover({ timeout: 2000 }).then(
+        () => true,
+        () => false,
+      )
+    )
+      return true;
+  }
+  return false;
+}
+
 async function clickWithdraw(page) {
   const control = page.locator('[data-estalara-withdraw]').first();
-  await control.waitFor({ state: 'visible', timeout: ADAPT_MS });
+  if (!(await openToggleControl(page, control, ADAPT_MS)))
+    throw new Error('withdraw control not reachable from the toggle icon');
   await control.click({ timeout: 5000 });
   if (!(await pollUntil(() => isDenied(page), 15000)))
     throw new Error('withdrawal stored no denial');

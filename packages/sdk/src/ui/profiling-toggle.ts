@@ -37,6 +37,12 @@ import { DEFAULT_OPTOUT_PLACEMENT } from '@estalara/shared';
 
 import { placementToCss } from './placement.js';
 
+/**
+ * The panel collapses to its icon this long after it appears, and again this long after the pointer
+ * and focus have both left it (CEO ruling 2026-11-07) [FOLLOW-1480].
+ */
+export const COLLAPSE_MS = 3000;
+
 export interface ProfilingToggleOptions {
   /**
    * UI language for toggle labels.
@@ -171,6 +177,9 @@ export interface ProfilingToggleController {
  * focus and activation handling. Uses inline styles (not a <style> block) to
  * minimise bundle size impact.
  *
+ * The panel collapses to a small `[data-estalara-toggle-icon]` button `COLLAPSE_MS` after it
+ * appears; the icon (Enter/Space/click) expands it again (FOLLOW-1480).
+ *
  * The toggle does NOT control app.estalara.com buying-intent / lead-ranking /
  * agent chat-summary processing (those are covered by mandatory registration
  * consent per §H.8).
@@ -268,6 +277,46 @@ export function renderProfilingToggle(
 
   shadowRoot.appendChild(container);
 
+  // FOLLOW-1480: the panel shrinks to a small icon button in the same corner; it stays in the DOM,
+  // hidden, so its state and listeners survive. Pointer over it or focus inside holds it open.
+  const icon = document.createElement('button');
+  icon.setAttribute('data-estalara-toggle-icon', '');
+  icon.setAttribute('aria-label', copy.title);
+  icon.textContent = '\u25d0';
+  icon.setAttribute(
+    'style',
+    `position:fixed;${placementCss};background:#1a1a2e;color:#fff;border:0;border-radius:50%;` +
+      'width:24px;height:24px;z-index:9998;pointer-events:auto;cursor:pointer',
+  );
+  shadowRoot.appendChild(icon);
+  let over = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  /** Collapse in COLLAPSE_MS unless, by then, the pointer is over the panel or focus is inside. */
+  const arm = (): void => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (!over && !container.contains(shadowRoot.activeElement)) open(false);
+    }, COLLAPSE_MS);
+  };
+  const open = (on: boolean): void => {
+    container.style.display = on ? 'flex' : 'none';
+    icon.hidden = on;
+    icon.setAttribute('aria-expanded', String(on));
+    if (on) arm();
+  };
+  container.addEventListener('pointerenter', () => (over = true));
+  container.addEventListener('pointerleave', () => {
+    over = false;
+    arm();
+  });
+  container.addEventListener('focusout', arm);
+  icon.addEventListener('click', (e) => {
+    open(true);
+    // Enter / Space click with detail 0: move focus in, so Tab reaches withdraw and download.
+    if (!e.detail) checkbox.focus();
+  });
+  open(true);
+
   /** A full-width, underlined text `<button>` above the attribution (FOLLOW-1444, FOLLOW-1445). */
   function linkButton(attr: string, label: string): HTMLButtonElement {
     const button = document.createElement('button');
@@ -292,9 +341,14 @@ export function renderProfilingToggle(
       button.addEventListener('click', () => {
         container.setAttribute('role', 'status');
         container.textContent = stateText(true);
+        // The status reads for COLLAPSE_MS, then the icon stays to reopen it (FOLLOW-1480). The
+        // hovered button is gone, and Chromium then sends no pointerleave, so the hover is dropped.
+        over = false;
+        arm();
         void onWithdraw().then((ok) => {
           const result = ok ? words?.withdrawDone : words?.withdrawFail;
           if (result) container.textContent = result;
+          arm();
         });
       });
       // One sentence above the button, once the text arrives; nothing if it never does.
@@ -317,11 +371,10 @@ export function renderProfilingToggle(
       });
     },
     destroy() {
-      try {
-        container.remove();
-      } catch {
-        // ignore
-      }
+      // `Element.remove()` does not throw, so no guard (FOLLOW-1480 needed the bytes).
+      clearTimeout(timer);
+      container.remove();
+      icon.remove();
     },
     isOptedOut: () => optedOut,
   };

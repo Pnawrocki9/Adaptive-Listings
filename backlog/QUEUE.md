@@ -239,12 +239,13 @@
   "Download Expat Relocation Guide" on a button that opens a message, "Your First Step" over the
   amenities grid. Measure on the K5 live run, then decide before the CEO walk.
 - **FOLLOW-1454** — status: HANDOVER (row 21) # H3 2026-11-07: `CTO_HANDOVER.md` §4 row 21 cites it.
-  C-4 was ruled "as built" on 2026-11-03 (ESC-091), so "C-4 open" below is stale. Not done on
-  localhost: H-3 (ii) and (iii) (FOLLOW-1466 and the `web-master` helper), H-6, the H-8 erase test
-  with a `caller_signed = 1` row, H-10, H-12; ESC-091 moves H-1 to H-13 to one review before
-  production. Was BACKLOG # P1 before go-live, depends_on FOLLOW-1308. Production conditions H-1 to
-  H-12 of `docs/compliance/FOLLOW-1339-session-header-review.md`, including the FOLLOW-1308 erase
-  test with a `caller_signed = 1` row; ESC-091 ruled 2026-11-03 (#1143), C-4 open.
+  CEO 2026-11-07: the 2026-11-03 ESC-091 ruling governs; the open conditions go to the one review
+  before production. C-4 was ruled "as built" on 2026-11-03 (ESC-091), so "C-4 open" below is stale.
+  Not done on localhost: H-3 (ii) and (iii) (FOLLOW-1466 and the `web-master` helper), H-6, the H-8
+  erase test with a `caller_signed = 1` row, H-10, H-12; ESC-091 moves H-1 to H-13 to one review
+  before production. Was BACKLOG # P1 before go-live, depends_on FOLLOW-1308. Production conditions
+  H-1 to H-12 of `docs/compliance/FOLLOW-1339-session-header-review.md`, including the FOLLOW-1308
+  erase test with a `caller_signed = 1` row; ESC-091 ruled 2026-11-03 (#1143), C-4 open.
 - **FOLLOW-1455** — status: DONE 2026-11-06 (#1154) # P1 before go-live, compliance. ESC-092 E-B:
   keep the read, correct the text (DPIA §1, notice §1); plan PR 1, Sonnet. Notice §1 "does not read
   … any account credentials" is false today, `boot.ts:160` reads `kc_token` and parses `sub`.

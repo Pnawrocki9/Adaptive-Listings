@@ -5,19 +5,12 @@
  * are NOT here: `llm-pricing.ts` is the billing source of truth, and the per-description cost below
  * is derived from it.
  *
- * Why the 5.x models need a request profile. Measured 2026-10-22 through the real generator path
- * (the FOLLOW-819 fixture listing, `yield_hunter` / `family_buyer`, EN and PL): Haiku 5.5, Sonnet
- * 5.5, Opus 5.5 and Fable 5.1 think by default, and thinking tokens count against `max_tokens`. At
- * the 4.x budget every 5.x description and `/api/adapt` call spent the whole budget thinking and
- * returned no text (`stop_reason: max_tokens`). They also use a different tokenizer: the same
- * prompt counts ~1.4–1.6x more tokens. So, per model:
+ * Why the 5.x models need a request profile [MP-018, MP-019, MP-020, MP-021]. They think by
+ * default and thinking tokens count against `max_tokens`, so at the 4.x budget a reply can be all
+ * thinking and carry no text; they also use a different tokenizer. So, per model:
  *   - Haiku 5.5 accepts `thinking: {type: 'disabled'}`. Sonnet 5.5 takes `between_tools` instead,
- *     at `effort: 'low'`: at its default `high` effort it still thought 2,498 tokens on a 220-word
- *     original and ran out; at `low` it thought 0 on 4 calls. Sonnet 5.5 rejects `disabled` at
- *     every effort level and `between_tools` + `low` is the least thinking the API offers
- *     (platform docs, "Troubleshooting thinking", checked 2026-10-26), yet on 5 of 60 FOLLOW-1399
- *     calls it still thought, and 2 exhausted the 2,000-token reserve (no text / a truncated audit
- *     block). FOLLOW-1403 gives it its own, larger reserve.
+ *     at `effort: 'low'`, the least thinking the API offers it; it can still think on some calls,
+ *     so FOLLOW-1403 gives it its own, larger reserve.
  *   - Opus 5.5 and Fable 5.1 cannot turn thinking off; they run at `effort: 'low'` and get a
  *     thinking reserve on top of the text budget.
  *   - Every 5.x text budget is scaled by the tokenizer factor.
@@ -68,16 +61,16 @@ interface GenerationModelEntry {
 
 const NO_PROFILE = { tokenizerFactor: 1, reserveTokens: 0, extras: {} } as const;
 
-/** The 5.x tokenizer counts ~1.58x the tokens for the same text (PM bench, 2026-10-22). */
+/** The 5.x tokenizer counts more tokens for the same text than the 4.x one [MP-019]. */
 const TOKENIZER_5X = 1.6;
 /**
- * Covers the measured thinking of Opus 5.5 / Fable 5.1 at `effort: 'low'` (322–1449 tokens) with
- * room to spare; a reply that still runs out is `truncated` and never served.
+ * Covers the measured thinking of Opus 5.5 / Fable 5.1 at `effort: 'low'` [MP-020] with room to
+ * spare; a reply that still runs out is `truncated` and never served.
  */
 const THINKING_RESERVE = 2000;
 /**
- * Sonnet 5.5 at `between_tools` + `low` (FOLLOW-1403). FOLLOW-1399 saw it think on 5 of 60 calls,
- * 1,487 to more than 2,720 output tokens per call; the reserve covers that with room for the text.
+ * Sonnet 5.5 at `between_tools` + `low` (FOLLOW-1403). It still thinks on some calls, more than the
+ * general reserve covers [MP-021]; this reserve covers that with room for the text.
  * A cap, not a charge: a call that does not think bills only its text; a call that thinks now
  * completes (about USD 0.03 more than the failed call it replaces) instead of failing.
  */
@@ -86,14 +79,8 @@ const SONNET_55_THINKING_RESERVE = 6000;
 const HEADROOM_RESERVE = 300;
 
 /**
- * The catalog. `measured`: 2026-10-22, FOLLOW-1377. `generateDescription()` called directly with the
- * Doppler dev Anthropic key and every sink unconfigured (no cache or DB write), on the FOLLOW-819
- * fixture listing (`839ecbd1-…`, 31-word original) × {`yield_hunter`, `family_buyer`} × {EN, PL}:
- * 4 description calls per model, each with its headline call when the verdict was FIT. Tokens are
- * the means over those calls (every call is billed, whatever its outcome); `p50Ms` is the median
- * description wall time plus the median headline wall time. The 4.x rows were measured with their
- * unchanged requests, the 5.x rows with the profiles below. One machine, sequential calls: a guide
- * for staff, not an SLA.
+ * The catalog. `measured` holds mean tokens per call and the median wall time of one description
+ * plus its headline call; the method, date and limits are in [MP-022]. A guide for staff, not an SLA.
  */
 export const GENERATION_MODELS: Readonly<Record<AllowedGenerationModel, GenerationModelEntry>> = {
   'claude-haiku-4-5-20251001': {

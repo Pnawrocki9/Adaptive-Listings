@@ -1,9 +1,8 @@
 /**
  * FOLLOW-1377 — the 5.x generation models through `generateDescription()`.
  *
- * Measured 2026-10-22 on the real path: at the 4.x budget every 5.x reply spent `max_tokens`
- * thinking and carried no text, and the generator read `content[0]`, which on a 5.x reply is the
- * `thinking` block. These tests pin the per-model request (budget and thinking fields) and the
+ * At the 4.x budget a 5.x reply can spend `max_tokens` thinking and carry no text [MP-018], and the
+ * generator read `content[0]`, which on a 5.x reply is the `thinking` block. These tests pin the per-model request (budget and thinking fields) and the
  * text-block read, and that a 4.x request is unchanged.
  */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';

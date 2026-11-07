@@ -1180,6 +1180,24 @@ describe('the driver, against the source', () => {
     expect(mint).toContain('readAc9Seed(s)');
   });
 
+  it('the withdrawal click opens the collapsed panel from its icon first [FOLLOW-1480]', () => {
+    const helper = harnessSrc.slice(
+      harnessSrc.indexOf('export async function openToggleControl('),
+      harnessSrc.indexOf('async function driveAc9Withdrawal('),
+    );
+    expect(helper).toContain(`'[data-estalara-toggle-icon]'`);
+    expect(helper).toContain('icon.click(');
+    expect(helper).toContain('control.hover(');
+    const withdrawal = harnessSrc.slice(
+      harnessSrc.indexOf('async function driveAc9Withdrawal('),
+      harnessSrc.indexOf('async function driveAc9Dsr('),
+    );
+    expect(withdrawal).toContain('openToggleControl(s.page, control,');
+    expect(withdrawal.indexOf('openToggleControl(')).toBeLessThan(
+      withdrawal.indexOf('control.click('),
+    );
+  });
+
   it('the raw xid stays out of the evidence: only its hash tag', () => {
     expect(harnessSrc).toContain('mint.xidTag = ac9XidTag(');
     const facts = harnessSrc.slice(

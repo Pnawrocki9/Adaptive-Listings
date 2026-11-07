@@ -77,6 +77,7 @@ interface N3Module {
   gradeArmConversions(sessions: unknown): Graded;
   gradeArmsReader(facts: unknown): Graded & { evidence?: { poolIsRun?: boolean } };
   gradeArmsSample(n: number): Graded;
+  openToggleControl(page: unknown, control: unknown, timeout: number): Promise<boolean>;
   parseN3Args(argv: string[]): {
     exitCode: number | null;
     message: string | null;
@@ -94,6 +95,74 @@ beforeAll(async () => {
 });
 
 const GATE = { value: 0.6, comparison: '<=', source: 'route.ts' };
+
+/**
+ * A panel that is open or collapsed: the icon is visible only while it is collapsed, a click on the
+ * icon opens it, and the control can be hovered only while it is open. `collapseOnHover` collapses
+ * it under the first hover (the 3 s timer firing in between) [FOLLOW-1480].
+ */
+function fakePanel(open: boolean, o: { collapseOnHover?: number; attached?: boolean } = {}) {
+  const log: string[] = [];
+  let collapses = o.collapseOnHover ?? 0;
+  const icon = {
+    isVisible: () => Promise.resolve(!open),
+    click: () => {
+      log.push('icon');
+      open = true;
+      return Promise.resolve();
+    },
+  };
+  const control = {
+    waitFor: () => {
+      if (o.attached === false) return Promise.reject(new Error('not attached'));
+      log.push('attached');
+      return Promise.resolve();
+    },
+    hover: () => {
+      if (open && collapses > 0) {
+        collapses -= 1;
+        open = false;
+      }
+      if (!open) return Promise.reject(new Error('hidden'));
+      log.push('hover');
+      return Promise.resolve();
+    },
+  };
+  const page = {
+    locator: (sel: string) => ({ first: () => (sel.includes('toggle-icon') ? icon : null) }),
+  };
+  return { page, control, log };
+}
+
+describe('openToggleControl (FOLLOW-1480: the panel collapses to an icon after 3 s)', () => {
+  it('a collapsed panel is opened from its icon, then the control is hovered', async () => {
+    const f = fakePanel(false);
+    expect(await n3.openToggleControl(f.page, f.control, 1000)).toBe(true);
+    expect(f.log).toEqual(['attached', 'icon', 'hover']);
+  });
+
+  it('an open panel is not toggled by an icon click', async () => {
+    const f = fakePanel(true);
+    expect(await n3.openToggleControl(f.page, f.control, 1000)).toBe(true);
+    expect(f.log).toEqual(['attached', 'hover']);
+  });
+
+  it('a collapse between the check and the hover is tried again', async () => {
+    const f = fakePanel(true, { collapseOnHover: 1 });
+    expect(await n3.openToggleControl(f.page, f.control, 1000)).toBe(true);
+    expect(f.log).toEqual(['attached', 'icon', 'hover']);
+  });
+
+  it('a control that never opens is false, not a click on a hidden button', async () => {
+    const f = fakePanel(true, { collapseOnHover: 99 });
+    expect(await n3.openToggleControl(f.page, f.control, 1000)).toBe(false);
+  });
+
+  it('a control that never renders throws, as the visible wait did before', async () => {
+    const f = fakePanel(false, { attached: false });
+    await expect(n3.openToggleControl(f.page, f.control, 1000)).rejects.toThrow('not attached');
+  });
+});
 
 const allGreen = (): Hop[] => n3.N3_HOPS.map((hop: string) => ({ hop, status: 'GREEN' }));
 const withRow = (row: Hop): Hop[] => allGreen().map((r) => (r.hop === row.hop ? row : r));

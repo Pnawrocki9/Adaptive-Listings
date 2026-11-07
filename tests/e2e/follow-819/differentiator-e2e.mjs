@@ -4912,6 +4912,28 @@ async function driveAc9NonPersistable(browser, wire, served, tenantId, heldOut, 
   return out;
 }
 
+/**
+ * FOLLOW-1480: the SDK's toggle panel collapses to `[data-estalara-toggle-icon]` 3 s after it
+ * appears, and a hidden control cannot be clicked. Open the panel from its icon, then rest the
+ * pointer on the control, which holds the panel open for the click that follows. A collapse in
+ * between is tried again. Resolves `true` once the control is visible under the pointer.
+ */
+export async function openToggleControl(page, control, timeout) {
+  await control.waitFor({ state: 'attached', timeout });
+  const icon = page.locator('[data-estalara-toggle-icon]').first();
+  for (let i = 0; i < 3; i++) {
+    if (await icon.isVisible().catch(() => false)) await icon.click({ timeout: 3000 });
+    if (
+      await control.hover({ timeout: 2000 }).then(
+        () => true,
+        () => false,
+      )
+    )
+      return true;
+  }
+  return false;
+}
+
 /** Control (b). The positive restore is this same page's, immediately before the click. */
 async function driveAc9Withdrawal(browser, wire, seed, sessionIds) {
   const out = {
@@ -4933,10 +4955,9 @@ async function driveAc9Withdrawal(browser, wire, seed, sessionIds) {
     const restored = await waitForAc9Call(s, (c) => c.xid !== null);
     out.pairRestored = restored?.body?.profile_restore === 'restored';
     const control = s.page.locator('[data-estalara-withdraw]').first();
-    out.controlShown = await control
-      .waitFor({ state: 'visible', timeout: AC10_QUIZ_MOUNT_MS })
-      .then(() => true)
-      .catch(() => false);
+    out.controlShown = await openToggleControl(s.page, control, AC10_QUIZ_MOUNT_MS).catch(
+      () => false,
+    );
     if (out.controlShown) {
       await control.click({ timeout: 3000 });
       await pollUntil(() => s.erase.status !== null, AC9_KEY_WAIT_MS);

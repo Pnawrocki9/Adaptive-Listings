@@ -707,6 +707,8 @@ describe('the arm draw mirrors the server', () => {
         session_id: unit,
         holdout_pct: 0.1,
         assignment_secret: secret,
+        // FOLLOW-1465 (#1152): only a consented session is assigned an arm.
+        consent_state: 'consented',
       });
       const mine = n3.predictHoldout(secret, tenant, unit, 0.1);
       expect(mine, unit).toBe((server as { holdout_group: boolean }).holdout_group);
@@ -883,7 +885,7 @@ describe('FOLLOW-1344 honest measurements', () => {
 
   it('a late sent line is waited for: the last read grades green', async () => {
     let reads = 0;
-    const read = async () => (++reads < 3 ? counts(4, 7) : counts(5, 8));
+    const read = () => Promise.resolve(++reads < 3 ? counts(4, 7) : counts(5, 8));
     const after = await n3.readBackendCountsSettled(counts(4, 7), {
       read,
       budgetMs: 1000,
@@ -894,7 +896,7 @@ describe('FOLLOW-1344 honest measurements', () => {
   });
 
   it('a send that never happens stays RED after the bounded wait', async () => {
-    const read = async () => counts(4, 7);
+    const read = () => Promise.resolve(counts(4, 7));
     const after = await n3.readBackendCountsSettled(counts(4, 7), {
       read,
       budgetMs: 20,
@@ -905,7 +907,7 @@ describe('FOLLOW-1344 honest measurements', () => {
 
   it('an unreadable log is returned at once, not waited on', async () => {
     let reads = 0;
-    const read = async () => (++reads, null);
+    const read = () => Promise.resolve((++reads, null));
     expect(
       await n3.readBackendCountsSettled(counts(1, 1), { read, budgetMs: 1000, pollMs: 1 }),
     ).toBe(null);

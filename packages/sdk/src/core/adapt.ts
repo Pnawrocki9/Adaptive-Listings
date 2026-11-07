@@ -224,18 +224,22 @@ export function postQuizRunPing(
 }
 
 /**
- * POST /api/profile/erase, signed like the quiz pings (FOLLOW-1316, R25). `keepalive`, since a buyer
- * may leave right after withdrawing. The xid goes in the body only (R3).
- * @returns true only on a 2xx; anything else, 429 included, means the caller keeps the local xid.
+ * POST /api/profile/{action}, signed like the quiz pings (FOLLOW-1316, R25, R30). `keepalive`, since a
+ * buyer may leave right after withdrawing. The xid goes in the body only (R3), never in the URL.
+ * @returns the response, or null when nothing could be sent or the fetch failed.
  */
-export async function postProfileErase(config: SdkConfig, xid: string): Promise<boolean> {
-  if (!config.decisionApiUrl || !config.tenantId) return false;
-  const eraseUrl = buildEndpoint(config.decisionApiUrl, '/profile/erase');
+async function postProfile(
+  config: SdkConfig,
+  action: 'erase' | 'portability',
+  xid: string,
+): Promise<Response | null> {
+  if (!config.decisionApiUrl || !config.tenantId) return null;
   const body = JSON.stringify({ tenant_id: config.tenantId, xid });
   const signatureHex = await computeHmacSha256Hex(config.apiKey, body);
-  if (signatureHex === null) return false;
+  if (signatureHex === null) return null;
+  const profileUrl = buildEndpoint(config.decisionApiUrl, `/profile/${action}`);
   try {
-    const res = await fetch(eraseUrl, {
+    return await fetch(profileUrl, {
       method: 'POST',
       keepalive: true,
       headers: {
@@ -245,7 +249,37 @@ export async function postProfileErase(config: SdkConfig, xid: string): Promise<
       },
       body,
     });
-    return res.ok;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * POST /api/profile/erase (FOLLOW-1316, R25).
+ * @returns true only on a 2xx; anything else, 429 included, means the caller keeps the local xid.
+ */
+export async function postProfileErase(config: SdkConfig, xid: string): Promise<boolean> {
+  return (await postProfile(config, 'erase', xid))?.ok === true;
+}
+
+/**
+ * The buyer's copy of their stored profile, for access and export alike (ESC-092 D) [FOLLOW-1445]:
+ * POST /api/profile/portability, then its JSON as `estalara-profile.json` through a Blob URL and a
+ * detached `<a download>` that never joins the host page. The URL is revoked after the click.
+ * @returns true once the file is handed to the browser; false on any failure, which the caller shows.
+ */
+export async function downloadProfile(config: SdkConfig, xid: string): Promise<boolean> {
+  const res = await postProfile(config, 'portability', xid);
+  if (!res?.ok) return false;
+  try {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([await res.text()], { type: 'application/json' }));
+    a.download = 'estalara-profile.json';
+    a.click();
+    setTimeout(() => {
+      URL.revokeObjectURL(a.href);
+    });
+    return true;
   } catch {
     return false;
   }

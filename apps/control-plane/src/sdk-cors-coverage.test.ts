@@ -102,13 +102,23 @@ interface Site {
 const REGISTRY: Site[] = [
   {
     file: 'core/adapt.ts',
-    expr: 'fetch(eraseUrl',
+    expr: 'fetch(profileUrl',
     path: '/api/profile/erase',
     producer: 'middleware',
     enforcedIn: 'apps/control-plane/src/lib/buyer-profile-route.ts',
     actualResponse: 'listed',
     methods: ['POST'],
     note: 'FOLLOW-1316 R25: the withdrawal delete. Listed origins, not wildcard: signed, and it carries the bearer xid in the body.',
+  },
+  {
+    file: 'core/adapt.ts',
+    expr: 'fetch(profileUrl',
+    path: '/api/profile/portability',
+    producer: 'middleware',
+    enforcedIn: 'apps/control-plane/src/lib/buyer-profile-route.ts',
+    actualResponse: 'listed',
+    methods: ['POST'],
+    note: 'FOLLOW-1445 (ESC-092 D): "Download my data". The same `postProfile` call site as the erase, so the same signed, listed-origin answer.',
   },
   {
     file: 'core/consent-text.ts',

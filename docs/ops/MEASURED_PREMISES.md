@@ -199,8 +199,8 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
 - **claim:** The three hostnames named in `packages/shared/src/domains.ts` have NO dedicated DNS
   record. They fall through the `*.estalara.com` wildcard to a non-Cloudflare host presenting a
   self-signed `CN=TRAEFIK DEFAULT CERT`, so nothing is served from them.
-- **measured_on:** 2026-08-04
-- **revalidate_by:** 2026-11-02
+- **measured_on:** 2026-11-07
+- **revalidate_by:** 2027-02-05
 - **revalidate_on:** any of the three is provisioned, or the `*.estalara.com` wildcard target
   changes
 - **watch_status:** watchable-but-unwatched — A scheduled job could run this entry’s own
@@ -213,6 +213,9 @@ sprint cycle unexamined. It is a default, not a law: an entry may carry a shorte
   `openssl s_client -connect <host>:443 -servername <host> </dev/null 2>/dev/null | openssl x509 -noout -subject`
   — a `CN=TRAEFIK DEFAULT CERT` subject is the wildcard fall-through signature
 - **relied_on_by:** `packages/shared/src/domains.ts` (FOLLOW-878 / ESC-052, CEO option 2)
+- **re-measured:** 2026-11-07 by PM (FOLLOW-1430): `dig +short` gave 193.181.213.7 for each of the
+  three staging hosts (ingest, cdn, api), and each presented `subject=CN = TRAEFIK DEFAULT CERT`;
+  the claim holds.
 - **falsified_means:** one of the three now resolves to something real, so constants documented as
   pointing at nothing are pointing at a live host — and any code that treats them as inert is wrong.
 
@@ -957,3 +960,105 @@ Haiku worst case of 6 s as well. Any revalidation of this entry must report clau
   `fallback_reason` split in code remains valid either way, but the runbook query above, and every
   diagnosis that starts from it, would need a different signal. It does NOT falsify FOLLOW-1120's
   fix, which is keyed on the flag and not on the token count.
+
+## MP-018 — the Claude 5.x models think by default, and thinking tokens spend `max_tokens`
+
+- **claim:** Haiku 5.5, Sonnet 5.5, Opus 5.5 and Fable 5.1 think by default, and thinking tokens
+  count against `max_tokens`. At the 4.x output budget every 5.x description call and every
+  `/api/adapt` call spent the whole budget thinking and returned no text (`stop_reason: max_tokens`;
+  the gateway fell back with `llm_unavailable`). A 5.x reply carries a `thinking` block first, so
+  the text is not `content[0]`.
+- **measured_on:** 2026-10-22
+- **revalidate_by:** 2027-01-20
+- **revalidate_on:** any change of the pinned 5.x model ids, or an Anthropic change to the default
+  thinking behaviour
+- **watch_status:** out-of-repo-only — the behaviour of the live Anthropic API; CI has no call path.
+- **measure_with:** `generateDescription()` called directly with the Doppler dev Anthropic key and
+  every sink unconfigured (no cache or DB write), on the FOLLOW-819 fixture listing ×
+  {`yield_hunter`, `family_buyer`} × {EN, PL}, with an empty request profile; read `stop_reason` and
+  the block types
+- **relied_on_by:** `apps/control-plane/src/lib/generation-models.ts` (the 5.x request profiles);
+  `apps/control-plane/src/lib/__tests__/description-generator.follow1377.test.ts`;
+  `apps/control-plane/src/lib/__tests__/llm-gateway.follow1377.test.ts`
+- **falsified_means:** a 5.x model answers within the 4.x budget with text first, so the profile and
+  the text-block read are unnecessary overhead (not a correctness fault), and the reserves in the
+  catalog over-allocate output tokens.
+
+## MP-019 — the 5.x tokenizer counts about 1.4 to 1.6 times the tokens of the 4.x one
+
+- **claim:** For the same prompt the 5.x models count roughly 1.4 to 1.6 times the tokens of the 4.x
+  models (the PM bench put it at about 1.58x), so a 4.x text budget is too small on 5.x.
+- **measured_on:** 2026-10-22
+- **revalidate_by:** 2027-01-20
+- **revalidate_on:** any change of the pinned 5.x model ids, or the description prompt builders
+- **watch_status:** out-of-repo-only — token counts come from the live Anthropic API.
+- **measure_with:** send one fixed prompt to a 4.x and a 5.x model and compare `usage.input_tokens`
+  (the FOLLOW-1377 PM bench; same fixture listing as MP-018)
+- **relied_on_by:** `TOKENIZER_5X` and the per-model `tokenizerFactor` in
+  `apps/control-plane/src/lib/generation-models.ts`
+- **falsified_means:** the factor is wrong, so every 5.x text budget is scaled too high (wasted cap,
+  no harm) or too low (truncated descriptions that are refused, not served).
+
+## MP-020 — which thinking settings each 5.x model accepts, and how much it thinks at each
+
+- **claim:** Haiku 5.5 accepts `thinking: {type: 'disabled'}`. Sonnet 5.5 rejects `disabled` at
+  every effort level; `between_tools` with `effort: 'low'` is the least thinking the API offers it
+  (platform docs, "Troubleshooting thinking", checked 2026-10-26). At its default `high` effort
+  Sonnet 5.5 thought 2,498 tokens on a 220-word original and ran out of budget; at `low` it thought
+  0 tokens on 4 calls. Opus 5.5 and Fable 5.1 cannot turn thinking off; at `effort: 'low'` they
+  thought 322 to 1,449 tokens per call.
+- **measured_on:** 2026-10-22
+- **revalidate_by:** 2027-01-20
+- **revalidate_on:** any change of the pinned 5.x model ids, or an Anthropic API change to the
+  `thinking` or `output_config` fields
+- **watch_status:** out-of-repo-only — the acceptance rules of the live Anthropic API.
+- **measure_with:** call each 5.x model through `generateDescription()` as in MP-018 with `thinking`
+  set to `disabled`, then `between_tools` with `effort` `low`, and read the HTTP status and the
+  thinking tokens of the reply
+- **relied_on_by:** the `extras` and `reserveTokens` of each entry, and `THINKING_RESERVE`, in
+  `apps/control-plane/src/lib/generation-models.ts`
+- **falsified_means:** a request the table sends is rejected (HTTP 400) or a model thinks past its
+  reserve, so descriptions and `/api/adapt` calls on that model come back truncated or fall back
+  with `llm_unavailable`.
+
+## MP-021 — Sonnet 5.5 still thinks on some calls at `between_tools` + `low`
+
+- **claim:** In the FOLLOW-1399 blind re-run (60 calls) Sonnet 5.5 at `between_tools` + `low` still
+  thought on 5 of 60 calls, from 1,487 to more than 2,720 output tokens per call. Two of them
+  exhausted the 2,000-token reserve (one returned no text, one a truncated audit block).
+- **measured_on:** 2026-10-26
+- **revalidate_by:** 2027-01-24
+- **revalidate_on:** a change of the Sonnet 5.5 request profile or reserve, or of the pinned model
+  id
+- **watch_status:** out-of-repo-only — the behaviour of the live Anthropic API.
+- **measure_with:** the FOLLOW-1399 study protocol in
+  `docs/research/MODEL-COMPARE-RERUN-2026-10-26.md` (60 cases), counting calls with thinking tokens
+  and calls that end at `max_tokens`
+- **relied_on_by:** `SONNET_55_THINKING_RESERVE` in
+  `apps/control-plane/src/lib/generation-models.ts` (FOLLOW-1403)
+- **falsified_means:** Sonnet 5.5 no longer thinks at this profile, so the 6,000-token reserve is
+  dead headroom; or it thinks past 6,000, so the reserve is too small and some replies are refused
+  as truncated.
+
+## MP-022 — measured cost and time of one description per generation model
+
+- **claim:** The `measured` figures in the generation-model catalog (mean description and headline
+  tokens in and out, and `p50Ms`) were taken on 2026-10-22 (FOLLOW-1377) by calling
+  `generateDescription()` directly with the Doppler dev Anthropic key and every sink unconfigured
+  (no cache or DB write), on the FOLLOW-819 fixture listing (31-word original) × {`yield_hunter`,
+  `family_buyer`} × {EN, PL}: 4 description calls per model, each with its headline call when the
+  verdict was FIT. Tokens are means over those calls (every call is billed, whatever its outcome);
+  `p50Ms` is the median description wall time plus the median headline wall time. The 4.x rows were
+  measured with their unchanged requests, the 5.x rows with the catalog profiles. One machine,
+  sequential calls: a guide for staff, not an SLA.
+- **measured_on:** 2026-10-22
+- **revalidate_by:** 2027-01-20
+- **revalidate_on:** any change of a model profile, of the description prompt builders, or of
+  `llm-pricing.ts`
+- **watch_status:** out-of-repo-only — figures from live Anthropic calls on one machine.
+- **measure_with:** the call described in the claim, repeated per catalog model; compare against the
+  `measured` block of each entry
+- **relied_on_by:** `GENERATION_MODELS` in `apps/control-plane/src/lib/generation-models.ts`, and
+  through it the cost and time shown in the Platform Settings generation-model picker
+- **falsified_means:** staff see a cost or time per description that no longer matches reality;
+  billing is unaffected (it comes from `llm-pricing.ts` and the recorded usage).

@@ -550,14 +550,16 @@ const IS_CAMP_NAME_RE = new RegExp(`^(?:${CAMP_NAME})$`, 'iu');
  * A word that names the camp or its memorial beside the camp's street: "ul. Treblinki 3, dawny
  * obóz", "miejsce pamięci", "the death camp", "las víctimas". A camp's name keeps no street
  * exemption in copy that says one [FOLLOW-1507]: the address is spared, the camp is not. A museum
- * or a monument by itself ("Muzeum Narodowe", "pomnik przyrody", "Science Museum") is not one.
+ * or a monument by itself ("Muzeum Narodowe", "pomnik przyrody", "Science Museum") is not one;
+ * a state museum ("Państwowe Muzeum"), martyrology and martyrdom are.
  */
 const CAMP_CONTEXT_RE = anyOf(
   [
     String.raw`ob[oó]z\p{L}*|miejsc\p{L}*\s+pami[eę]ci|upami[eę]tni\p{L}*|ofiar\p{L}*|ka[zź][nń]\p{L}*`,
-    String.raw`mauzole\p{L}*|zag[lł]ad\p{L}*`,
-    String.raw`extermination|(?:death|concentration|former|old)\s+camps?|victims?|memorials?`,
-    String.raw`campos?\s+de\s+(?:concentraci[oó]n|exterminio)|antigu[oa]s?\s+campos?|v[ií]ctimas?`,
+    String.raw`mauzole\p{L}*|zag[lł]ad\p{L}*|pa[nń]stwow\p{L}*\s+muze\p{L}*|martyrologi\p{L}*`,
+    String.raw`m[eę]cze[nń]stw\p{L}*`,
+    String.raw`extermination|camps?|victims?|memorials?`,
+    String.raw`campos?|v[ií]ctimas?`,
     String.raw`memorial(?:es)?|mausoleos?`,
   ],
   'iu',
@@ -565,9 +567,10 @@ const CAMP_CONTEXT_RE = anyOf(
 
 /**
  * An address's abbreviation breaks a composition phrase, with its dot and its extra word: "Most
- * residents at ul. Długa 5 are Muslim" [FOLLOW-1431]. Composition is read without it as well.
+ * residents at ul. Długa 5 are Muslim" [FOLLOW-1431], "os." too [FOLLOW-1507]. Composition is read
+ * without it as well.
  */
-const ADDRESS_ABBREVIATION_RE = /(?<![\p{L}\p{N}])(?:[Uu]l|[Aa]l|[Cc])\.\s+/gu;
+const ADDRESS_ABBREVIATION_RE = /(?<![\p{L}\p{N}])(?:[Uu]l|[Aa]l|[Cc]|(?<!\p{N}\s*)[Oo]s)\.\s+/gu;
 
 /**
  * An address marker, then up to three capitalised words of the street's name, ending where the
@@ -575,7 +578,9 @@ const ADDRESS_ABBREVIATION_RE = /(?<![\p{L}\p{N}])(?:[Uu]l|[Aa]l|[Cc])\.\s+/gu;
  * and a Spanish "de" before the name too ("Calle de Sobibor") [FOLLOW-1507].
  */
 const ADDRESS_BEFORE_RE = new RegExp(
-  String.raw`(?<![\p{L}\p{N}])(?:[Uu]l\.|[Uu]lic(?:a|y|ą|ę)|[Aa]l\.|[Aa]lej(?:a|i|ą|ę)|[Pp]l\.|[Pp]lac(?:u|em)?|[Oo]s\.` +
+  String.raw`(?<![\p{L}\p{N}])(?:[Uu]l\.|[Uu]lic(?:a|y|ą|ę)|[Aa]l\.|[Aa]lej(?:a|i|ą|ę)|[Pp]l\.|[Pp]lac(?:u|em)?` +
+    // "os." is an estate, not the "os." (osób) after a count: "dla 2 os." [FOLLOW-1507]
+    String.raw`|(?<!\p{N}\s*)[Oo]s\.` +
     String.raw`|[Cc]alle|[Cc]\/|[Aa]venida|[Aa]vda\.|[Pp]laza)\s+` +
     // "Calle de Sobibor", "Plaza de la …" [FOLLOW-1507]
     String.raw`(?:de(?:l|\s+la|\s+los|\s+las)?\s+)?(?:\p{Lu}[\p{L}'’-]*\s+){0,3}$`,

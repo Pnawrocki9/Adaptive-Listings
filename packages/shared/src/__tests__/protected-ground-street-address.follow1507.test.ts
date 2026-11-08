@@ -73,6 +73,19 @@ describe('FOLLOW-1507: a camp name in any street address passes, on every listin
     'Calle Sobibor 3, junto al campo de exterminio.',
     'Calle Sobibor 3, en memoria de las víctimas.',
     'Calle Sobibor 3, junto al memorial.',
+    'Treblinka Road 5, tours of the camp.',
+    'Calle Sobibor 3, cerca del campo.',
+    'ul. Majdanek 5, blisko Państwowego Muzeum.',
+    'ul. Majdanek 5, obok Muzeum Martyrologii.',
+    'ul. Majdanek 5, Muzeum Walki i Męczeństwa.',
+    // "os." after a count is "osób", not an estate: no street, so the term is refused
+    'Pokój dla 2 os. Treblinka – muzeum 5 km.',
+    'Domek dla 4 os. Treblinka 10 min jazdy.',
+    'Max 6 os. Auschwitz w pobliżu.',
+    'Mieszkanie dla 2 os. Getto było tu dawniej.',
+    // composition is read past "os." as past "ul."
+    'Most residents of os. Kościuszki are Muslim.',
+    'Większość mieszkańców os. Słoneczne to muzułmanie.',
   ])('refused: %j', (value) => {
     expect(guard(value)).toBe(true);
   });

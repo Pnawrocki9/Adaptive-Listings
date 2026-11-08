@@ -57837,6 +57837,7 @@ AC:
 - [ ] Red-first: the old spec with the clock advanced past 3 s fails.
 
 cross_ref: [RETRO-394, RETRO-393, FOLLOW-1480]
+
 ## FOLLOW-1510 — [product] the protected-ground guard misses memorial phrases next to a street address, and one religion-word composition is served
 
 source_retro: none — filed by the PM 2026-11-08 from the second independent review (Rule BD) of

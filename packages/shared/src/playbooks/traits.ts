@@ -246,8 +246,10 @@ export function traitSlots(addOns: readonly TraitAddOn[]): SlotDirective[] {
  *
  * "Treblinka and the like refused outright" (CEO) [FOLLOW-1431]: Treblinka, Sobibór, Bełżec, Majdanek
  * and Auschwitz keep the street exemption only when the listing's `listing_location` names the same
- * camp, and composition is also read past an address's abbreviation. This guard spares nothing it
- * did not spare before; "Adres to adres" for the rest of a listing's own address is an open limit.
+ * camp, and composition is also read past an address's abbreviation. "Adres to adres" (CEO,
+ * ESC-093 (1), 2026-11-08) [FOLLOW-1507]: a camp's name in the listing's OWN address, with its house
+ * number, passes wherever the listing is ({@link isOwnAddressCamp}); outside an address, and in a
+ * street the listing does not have, it stays refused outright.
  *
  * A NARROW, closed en / pl / es phrase list, not a classifier: the gateway and the description
  * path refuse a text that matches, whoever wrote the words. What it is NOT: a buyer's nationality
@@ -555,6 +557,98 @@ function isUnlistedCamp(term: string, listingLocation: string): boolean {
 }
 
 /**
+ * A word that recalls the camp beside its street's name: "ul. Treblinki 3 — the former camp", "to
+ * miejsce pamięci", "junto al antiguo campo". A camp's name keeps no street exemption in copy that
+ * says one [FOLLOW-1507]: the address is spared, the camp is not.
+ */
+const CAMP_CONTEXT_RE = anyOf(
+  [
+    String.raw`camps?|memorials?|museums?`,
+    String.raw`ob[oó]z\p{L}*|muze\p{L}*|pomnik\p{L}*|miejsc\p{L}*\s+pami[eę]ci`,
+    String.raw`antigu[oa]s?\s+campos?|museos?|memorial(?:es)?`,
+  ],
+  'iu',
+);
+
+/** A house number: "3", "12A"; "3/5" reads as 3. */
+const HOUSE_NUMBER = String.raw`(\d{1,4}\p{L}?)(?![\p{L}\p{N}])`;
+/** The number right after a street's name: "ul. Treblinki 3", "Calle Sobibor 3". */
+const NUMBER_RIGHT_AFTER_RE = new RegExp(String.raw`^\s+${HOUSE_NUMBER}`, 'u');
+/** English, after the street word ("Treblinka Road 5") or before the name ("5 Treblinka Road"). */
+const NUMBER_AFTER_STREET_WORD_RE = new RegExp(
+  String.raw`^(?:\s+\p{Lu}[\p{L}'’-]*){0,3}\s+(?:Street|St\.|Avenue|Ave\.|Road|Rd\.|Square),?\s+${HOUSE_NUMBER}`,
+  'u',
+);
+const NUMBER_BEFORE_RE = /(?<![\p{L}\p{N}])(\d{1,4}\p{L}?),?\s+$/u;
+
+/** The address the street name at `[start, end)` is in: where it starts and its house number. */
+function addressOf(
+  text: string,
+  start: number,
+  end: number,
+): { start: number; number: string } | null {
+  const before = text.slice(0, start);
+  const after = text.slice(end);
+  const marker = ADDRESS_BEFORE_RE.exec(before);
+  if (marker !== null) {
+    const n = NUMBER_RIGHT_AFTER_RE.exec(after)?.[1];
+    return n === undefined ? null : { start: marker.index, number: n.toLowerCase() };
+  }
+  if (!ADDRESS_AFTER_RE.test(after)) return null;
+  const n = NUMBER_AFTER_STREET_WORD_RE.exec(after)?.[1];
+  if (n !== undefined) return { start, number: n.toLowerCase() };
+  const lead = NUMBER_BEFORE_RE.exec(before);
+  return lead?.[1] === undefined ? null : { start: lead.index, number: lead[1].toLowerCase() };
+}
+
+/**
+ * Does a `listing_location` state a street of its own: an address marker ("ul.", "calle"), an
+ * English street word ("Road", "Lane") or a leading house number ("9 Blackberry Pl")?
+ */
+const LOCATION_STREET_RE =
+  /(?<![\p{L}\p{N}])(?:ul\.|ulic\p{L}*|al\.|alej\p{L}*|pl\.|plac\p{L}*|calle|c\/|avenida|avda\.|street|st\.|avenue|ave\.?|road|rd\.?|square|drive|lane|place|court|boulevard|blvd\.?)(?![\p{L}\p{N}])|^\s*\d+\p{L}?\s+\p{L}/iu;
+
+/**
+ * What puts an address in the listing's own text as the listing's own: the start of a line, a
+ * comma, colon, semicolon, bracket or dash ("Mieszkanie, ul. Treblinki 3"), or a locating word
+ * ("przy", "na", "at", "on", "en"). "5 min od ul. Treblinki 12" and "near 5 Treblinka Road" own
+ * nothing.
+ */
+const OWN_ADDRESS_LEAD_RE = /(?:^|[\n,:;(–—-]|(?<![\p{L}\p{N}])(?:przy|na|at|on|en))[ \t]*$/iu;
+
+/**
+ * "Adres to adres" (CEO, ESC-093 (1)) [FOLLOW-1507]: is the camp name at `[start, end)` of `value`
+ * the listing's OWN address, wherever the listing is? The copy must state it as an address with a
+ * house number, and the listing's own text must state that camp's street, with the same number, as
+ * its address ({@link OWN_ADDRESS_LEAD_RE}). The listing's own text (`listingText`: its description
+ * and title) is read only when `listing_location` states no street ("Warszawa, Targówek"): a
+ * location that names a camp spares it already ({@link isUnlistedCamp}), and one that names
+ * another street is the listing's address, so a camp's street in the description is not. A camp
+ * named in prose is no address at all.
+ */
+function isOwnAddressCamp(
+  value: string,
+  start: number,
+  end: number,
+  listingLocation: string,
+  listingText: string,
+): boolean {
+  const copy = addressOf(value, start, end);
+  if (copy === null || LOCATION_STREET_RE.test(listingLocation)) return false;
+  const camp = campOf(value.slice(start, end));
+  return Array.from(listingText.matchAll(CAMP_NAME_RE)).some((m) => {
+    const ownEnd = m.index + m[0].length;
+    if (campOf(m[0]) !== camp || !isStreetName(listingText, m.index, ownEnd)) return false;
+    const own = addressOf(listingText, m.index, ownEnd);
+    return (
+      own !== null &&
+      own.number === copy.number &&
+      OWN_ADDRESS_LEAD_RE.test(listingText.slice(0, own.start))
+    );
+  });
+}
+
+/**
  * An address's abbreviation breaks a composition phrase, with its dot and its extra word: "Most
  * residents at ul. Długa 5 are Muslim" [FOLLOW-1431]. Composition is read without it as well.
  */
@@ -585,17 +679,30 @@ function isStreetName(text: string, start: number, end: number): boolean {
  *
  * @param value - Copy as the model wrote it (a directive, a description body or a headline).
  * @param listingLocation - The listing's `listing_location`: a camp's name in a street needs it.
+ * @param listingText - The listing's own description and title: they hold its own address when
+ *        `listing_location` states no street [FOLLOW-1507].
  * @returns `true` when it matches a phrase of the closed en / pl / es list: a sensitive-history
  *          term (rule 3), a composition or exclusion statement (rule 2), a group of residents not
  *          put in the past by a historical qualifier (rules 1 and 2), or a place named by a group
  *          with no historical adjective directly before it [FOLLOW-1419].
  */
-export function describesResidentsByProtectedGround(value: string, listingLocation = ''): boolean {
+export function describesResidentsByProtectedGround(
+  value: string,
+  listingLocation = '',
+  listingText = '',
+): boolean {
   if (COMPOSITION_RE.test(value)) return true;
   if (COMPOSITION_RE.test(value.replace(ADDRESS_ABBREVIATION_RE, ''))) return true;
   for (const m of value.matchAll(SENSITIVE_HISTORY_RE)) {
-    if (!isStreetName(value, m.index, m.index + m[0].length)) return true;
-    if (isUnlistedCamp(m[0], listingLocation)) return true;
+    const end = m.index + m[0].length;
+    if (!isStreetName(value, m.index, end)) return true;
+    if (IS_CAMP_NAME_RE.test(m[0]) && CAMP_CONTEXT_RE.test(value)) return true;
+    if (
+      isUnlistedCamp(m[0], listingLocation) &&
+      !isOwnAddressCamp(value, m.index, end, listingLocation, listingText)
+    ) {
+      return true;
+    }
   }
   for (const m of value.matchAll(RESIDENT_GROUND_RE)) {
     if (!isHistoricalMention(value, m.index, m.index + m[0].length)) return true;

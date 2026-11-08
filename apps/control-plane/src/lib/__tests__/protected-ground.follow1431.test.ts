@@ -104,7 +104,8 @@ type Row = [string, Context, string, Locale, string, string, string];
 /**
  * `[text, listing_context, description, locale, body, headline, adapt]`. Each hole of the three
  * readers stays refused. Each own-listing sentence origin/main refused stays refused: FOLLOW-1431 is
- * open. What passes here passed at origin/main too.
+ * open. What passes here passed at origin/main too, except the one row FOLLOW-1507 (ESC-093 (1))
+ * moved: a camp's street with its number that the listing's own description states as its address.
  */
 const TABLE: Row[] = [
   [
@@ -1088,8 +1089,66 @@ const TABLE: Row[] = [
     'protected_ground',
     'protected_ground',
   ],
+  // FOLLOW-1507 (CEO ESC-093 (1), "adres to adres"): the listing's own description states this
+  // address and no location states another street, so it is the listing's own address and passes.
+  ['ul. Treblinki 3.', {}, 'Dom przy ul. Treblinki 3.', 'pl', 'FIT', 'served', 'served'],
+  [
+    'Mieszkanie przy ul. Treblinki 3.',
+    { listing_location: 'Warszawa, Targówek' },
+    'Mieszkanie przy ul. Treblinki 3.',
+    'pl',
+    'FIT',
+    'served',
+    'served',
+  ],
+  [
+    'Piso en Calle Sobibor 3.',
+    { listing_location: 'Madrid' },
+    'Piso en Calle Sobibor 3.',
+    'es',
+    'FIT',
+    'served',
+    'served',
+  ],
+  [
+    'A flat at 5 Treblinka Road.',
+    { listing_location: 'Leeds' },
+    'A flat at 5 Treblinka Road.',
+    'en',
+    'FIT',
+    'served',
+    'served',
+  ],
+  [
+    'Near Treblinka.',
+    {},
+    'Dom przy ul. Treblinki 3.',
+    'en',
+    'protected_ground',
+    'protected_ground',
+    'protected_ground',
+  ],
+  // Another street the description mentions is not the listing's address.
   [
     'ul. Treblinki 3.',
+    {},
+    '5 min od ul. Treblinki 3.',
+    'pl',
+    'protected_ground',
+    'protected_ground',
+    'protected_ground',
+  ],
+  [
+    'ul. Treblinki 3.',
+    { listing_location: 'ul. Długa 5, Warszawa' },
+    'Dom przy ul. Treblinki 3.',
+    'pl',
+    'protected_ground',
+    'protected_ground',
+    'protected_ground',
+  ],
+  [
+    'ul. Treblinki 3, miejsce pamięci.',
     {},
     'Dom przy ul. Treblinki 3.',
     'pl',

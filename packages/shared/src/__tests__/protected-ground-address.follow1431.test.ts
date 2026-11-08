@@ -3,6 +3,8 @@
  * the guard at origin/main `55679f49`, recorded by running that code on each sentence, as literal
  * values and never recomputed: `[sentence, listing_location, refused there, refused now]`. It spares
  * nothing new: the listing's own address has no exemption here, which is FOLLOW-1431's open limit.
+ * FOLLOW-1507 (ESC-093 (1)) closes it through the guard's third argument, the listing's own text,
+ * which no case here passes; its pins are `protected-ground-own-address.follow1507.test.ts`.
  */
 import { describe, expect, it } from 'vitest';
 import { describesResidentsByProtectedGround } from '../playbooks/traits.js';

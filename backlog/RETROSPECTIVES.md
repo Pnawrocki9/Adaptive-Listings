@@ -90100,3 +90100,817 @@ design ("keeps a future split readable"). Both are records, not signals.
 ### 8. Cross-references
 
 - RETRO-385 (scopes cascade), Rule AI, Rule AJ, FOLLOW-1308 (#1149, retry versus erasure).
+
+## RETRO-387 — #1146 (FOLLOW-1307: staff JWT registered claims, a method × caller permission matrix, `POST /api/tenants` removed) — the code axis is clean, and its evidence is the best kind: run against the pre-fix `middleware.ts`, the matrix failed exactly 22 cells, every one in the expired-JWT column. Two findings, both about what the PR did not reach. (1) **The operator banner `localhost-up.sh` prints since #1138 tells an operator to sign a staff token with `sub`, `email`, `estalara_staff` and `estalara_role` only. This PR refuses that token (no `exp`, `iss` or `aud`), and its body says "`localhost-up.sh` is unchanged"** (Rule AI; FOLLOW-1500, P3). (2) The matrix is "every mutating route" by HTTP method. The seven Vercel cron handlers are `GET`, they delete or write, and no inventory forces a new one in (FOLLOW-1501, P3) — 2026-11-08
+
+### 1. Summary of change
+
+- **PR:** #1146 (merged 2026-11-05 22:11 UTC, commit ad34a62)
+- **Files changed:** 23 (+909 / -811); about 230 lines under `src` outside tests
+- **Modules touched:** `packages/auth` (`middleware.ts`), control-plane (`demo-jwt-verify.ts`,
+  `bandit-*`, two admin docblocks, the removed tenants route), scripts (N3 minter, single-tenant
+  ratchet), tests/e2e (admin-smoke, N3 verdict), docs (two runbooks)
+- **Key contracts changed:** `getAuthClaims` (through `verifyAndDecodeJwtPayload`) now refuses a
+  validly signed token unless `alg` is `HS256`, `exp` is numeric and not reached, `nbf` is reached,
+  `iss` is `<NEXT_PUBLIC_SUPABASE_URL>/auth/v1` and `aud` holds `authenticated`. Breaking: yes for
+  any hand-minted staff token. `verifyDemoJwt` now requires `exp`. `POST /api/tenants` and
+  `lib/bandit-seed.ts` removed. Breaking: no caller (grep in the PR, re-run below).
+
+### 2. Verification done in PR
+
+- Test files changed: `middleware.test.ts` (+15 cases, red-first), `demo-jwt-verify.test.ts` (+5,
+  red-first), `mutation-permission-matrix.test.ts` (new, 455 tests: 37 route-methods × 12 callers,
+  inventory and fake-store controls), `real-app-acceptance-verdict.test.ts` (+1), admin-smoke.
+- CI checks: 70 pass, 6 skipped, the only red is Rule I (pre-existing, 0 new). The lefthook `lint`
+  step was skipped at commit for memory (`LEFTHOOK_EXCLUDE=lint`); CI lint is green.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. CHECK A: no new export. The removed route's imports keep other consumers
+(`secretEquals`, `isBanditEnabled`, `createAdminClient`); `SEED_VARIANTS` keeps `variant-index.ts`.
+`grep -rn` for `bandit-seed` and `seedBanditWeightsForTenant` in `*.ts`, `*.mjs`, `*.sh`
+outside node_modules → no code hit (only `backlog/HANDOFFS.md` history and the SUPERSEDED
+`BRAND_PROVISIONING.md`, which carries the removal at its line 8). CHECK B: the one new input,
+`NEXT_PUBLIC_SUPABASE_URL` read by `@estalara/auth` (`middleware.ts:101`, `expectedIssuer`), has a
+producer on localhost (Doppler `dev`, already passed to the plane) and a production row (handover row
+27). Every `getAuthClaims` consumer goes through the changed function: `grep -rln "@estalara/auth"
+apps packages` → `staff-rank.ts`, `session-auth.ts`, `tracer-auth.ts`, the lia, labels, ab-weights
+and pilot routes; `apps/control-plane/src/middleware.ts` reads the SSR cookie only.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3) — a printed recipe for a token the plane now refuses.** `scripts/dev/localhost-up.sh`
+  lines 686-687 (added by #1138, FOLLOW-1460): "sign an HS256 JWT with
+  .localhost-up/local-staff-jwt-secret, claims sub, email, estalara_staff=true,
+  estalara_role=estalara:readonly; send it as a Bearer token." `hasValidRegisteredClaims`
+  (`middleware.ts:112`) returns false for such a token on its first line (`exp` missing), so an
+  operator following the banner gets 401 on every staff route with no hint why. The PR updated both
+  in-repo minters (N3, admin-smoke) and both READMEs, and wrote "`localhost-up.sh` is unchanged",
+  which is true of its environment and false of its banner. `grep -rn "HS256" scripts tests` →
+  `real-app-acceptance.mjs`, `admin-smoke.spec.ts`, the backoffice README (all updated) and
+  `localhost-up.sh` (not). Rule AI: a change that makes a capability claim false updates every
+  document asserting it. FOLLOW-1500.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A. I checked the other HMAC verifiers in the repo for the same omission:
+  `grep -rln "importKey\|createHmac" apps packages` (non-test) → the ingest Worker
+  (`auth.ts`: signature over timestamp and nonce, 5-minute skew, nonce replay key), the demo JWT
+  (fixed here), and request-signature checks on quiz, crm, feedback and consent routes. None of
+  those is a bearer token with a lifetime.
+
+#### 4c. Test coverage gaps
+
+- **The matrix does not see a mutating `GET`.** `MUTATING = ['POST', 'PUT', 'PATCH', 'DELETE']`
+  (the matrix test, line 283). `apps/control-plane/vercel.json` schedules seven `GET`
+  handlers, and each writes or deletes: `dsr/mutation-poll` (marks erasures done, reissues
+  mutations), `internal/retention/conversion-labels` and `/consent-log` (retention deletes),
+  `canary/adaptation-writes`, `cron/lift-snapshot`, `cron/quiz-accuracy-watch`,
+  `cron/quiz-retention`. Each gates on `CRON_SECRET` with `secretEquals` and has its own
+  `route.test.ts`, so nothing is open today. But the PR's guarantee, "a new mutating route … fails
+  the first test until someone decides who may call it", does not hold for a new cron, and no test
+  reads `vercel.json`'s `crons` (`grep -rln "crons" apps/control-plane/src scripts` → the poller's
+  docblock and one compliance script). The `CRON_SECRET` column of the matrix has no route that
+  should accept it. FOLLOW-1501.
+- No clock leeway on `exp` / `nbf`: stated in the PR's risks, not a gap.
+
+#### 4d. Documentation gaps
+
+- LG-1 above.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1464 (DEFERRED): its `exp` part is met, as its QUEUE row already says. The rest stays open.
+- FOLLOW-1471 (DEFERRED): AC(9) went RED four times on this PR's series and reached 3 GREEN on
+  unchanged code (QUEUE row). Nothing in this diff touches AC(9)'s path; recorded there already.
+
+#### 5b. Future sprint tickets affected
+
+- CTO handover row 27: both names on Vercel production, for the same Supabase project as the SSR
+  login. Doppler `prd` holds no `SUPABASE_JWT_SECRET` (PR, names only), so the Bearer path is off in
+  production today and staff use the SSR session.
+
+#### 5c. Contracts changed others rely on
+
+- Any out-of-repo staff-token minter. None found: `grep -rn "estalara_staff" scripts tests docs`
+  shows only design text and the two updated minters.
+
+#### 5d. Architectural assumptions affected
+
+- HS256 only. A Supabase move to asymmetric signing keys refuses every Bearer token until a JWKS
+  path exists (PR risks). Fail closed, the correct direction.
+
+### 6. New lesson candidates
+
+- Pattern: "a contract change updates the consumers its author grepped for and leaves one outside
+  that grep on the old contract: an operator banner, a live canary, an e2e spec" — seen in: this
+  (the banner), RETRO-390 (the canary and the N3 pin, both red on `main` after merge), RETRO-394 (the
+  SDK Playwright spec) — prior count 0 (I find no instance in RETRO-375 to RETRO-380), so no rule.
+  Rule AI covers the document half and Rule AC the grep half; this is an application of both.
+
+### 7. Follow-ups
+
+- FOLLOW-1500: the `localhost-up.sh` staff-token recipe names the claims #1146 requires (devops or
+  qa-engineer, Sonnet, 0.5h, priority P3, docs).
+- FOLLOW-1501: the permission matrix covers the `vercel.json` cron `GET` handlers, generated from
+  `crons` (qa-engineer, Sonnet, 2h, priority P3, gate).
+
+### 8. Cross-references
+
+- RETRO-367 (the DSR initiate gap #1149 closes), Codex F-09 / F-10, FOLLOW-1460 (#1138, the banner),
+  RETRO-390, RETRO-394 (§6 pattern), Rule AI, Rule AC.
+
+## RETRO-388 — #1148 (FOLLOW-1309: SSRF guard on the listing-details fetch, DNS pinned once, no redirects) — clean. The guard is placed where it can matter: the one server-side fetch whose upstream serves tenant content. Its own threat model is stated honestly: the attacker-controlled input, the listing id, was already URL-encoded into a query value, so the guard defends against a misconfigured or rebinding `ESTALARA_BACKEND_URL`, not against a request. The loopback allowance is fenced by `VERCEL`, not by `NODE_ENV`, with the reason (the `CP_MODE=prod` stack) and a test. No stubs. Three observations — 2026-11-08
+
+### 1. Summary of change
+
+- **PR:** #1148 (merged 2026-11-05 22:12 UTC, commit 1c1dafb)
+- **Files changed:** 17 (+955 / -14); about 320 lines under `src` outside tests
+- **Modules touched:** control-plane (`lib/pinned-fetch.ts` new, `lib/listing-details.ts`), the
+  observability register, `localhost-up.sh` step 9, the FOLLOW-819 harness (AC(1b) child env)
+- **Key contracts changed:** new `pinnedFetch(url, { signal })` and `OutboundTargetRefusedError`;
+  new env `ESTALARA_ALLOW_LOOPBACK_BACKEND`; Sentry `kind: outbound_refused`. Breaking: a control
+  plane started by hand without the flag refuses `http://localhost:8081` (PR NEXT says so).
+
+### 2. Verification done in PR
+
+- Test files: `pinned-fetch.test.ts` (new; red-first 52 of 56 failing on a stub that kept the old
+  behaviour), `listing-details.follow1309.test.ts` (new, 3 red-first), six suites re-pointed from a
+  global `fetch` stub to a `pinnedFetch` mock, `grounding-source.test.ts` (18 red without the flag).
+- CI checks: 70 pass, Rule I the only red (pre-existing). Series README §5.74.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. CHECK A: both exports have a non-test importer, `listing-details.ts`, whose
+two exported readers have three consumers: `grep -rn "lib/listing-details'" apps/control-plane/src`
+(non-test) → `placeholder-tokens.ts`, `listing-facts-context.ts`, `listings/embed/route.ts`. CHECK B:
+`ESTALARA_ALLOW_LOOPBACK_BACKEND` has producers (`localhost-up.sh`, the harness child env,
+`.env.example`) and one consumer (`loopbackAllowedFor`); the new Sentry kind is in the
+`observability-signals` register (113 → 114 sites).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- N/A. Re-ran the PR's inventory claim: `grep -rn "fetch(" apps/control-plane/src` (non-test) → 30
+  sites. Every one targets a configured host (Upstash, ClickHouse, Supabase, Modal, our own base URL)
+  except the browser-side `use-suggest-weights.ts`. `grep -rln "listing/details\|ESTALARA_BACKEND_URL"
+  apps packages` → only these two files, so the Python intent engine has no second listing fetch.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A.
+
+#### 4c. Test coverage gaps
+
+- Observation, P3: the keep-alive pools (`AGENTS`) reuse a socket opened to an address checked
+  earlier. That is safe (the old address was public) and the docblock says so, but no test pins that a
+  pooled socket is never handed to a different host.
+
+#### 4d. Documentation gaps
+
+- N/A. Handover row 26 carries the production rule (never set the flag; a public backend name).
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1471: AC(9) RED once on this PR's series (QUEUE row); not on this path.
+
+#### 5b. Future sprint tickets affected
+
+- CTO handover: a non-Vercel deployment is fenced only by never setting the flag (PR's own note,
+  row 26).
+
+#### 5c. Contracts changed others rely on
+
+- The listing fetch no longer goes through Next's patched `fetch`: no Next fetch span, no Next data
+  cache. Nothing in the repo read either for this call.
+
+#### 5d. Architectural assumptions affected
+
+- "The backend is a public DNS name" is now load-bearing for grounding in production. A private
+  backend address would refuse every listing fetch and fail open into ungrounded copy, loudly
+  (`outbound_refused` in Sentry, once the DSN exists: handover row 25).
+
+### 6. New lesson candidates
+
+- Observations, not filed: (1) `outbound_refused` has a register entry and no alert rule, like its
+  siblings `upstream_non_ok` and `fetch failed`: Rule AJ asks for a delivery channel, which is the
+  Sentry DSN of handover row 25. (2) The PR's three dropped Codex items (F-26, F-27, F-29) were
+  dropped on code-gone evidence with the deleting commit named, the right standard (Rule AR asks for
+  two strategies; the PR used a file grep and the deleting commit).
+
+### 7. Follow-ups
+
+- N/A.
+
+### 8. Cross-references
+
+- Codex F-11, F-26, F-27, F-29; FOLLOW-1328 amendment (`lib/ssrf.ts` deleted); RETRO-387 (same
+  series); Rule AJ.
+
+## RETRO-389 — #1149 (FOLLOW-1308: DSR ownership proof, checked Redis erase, OTP cap, the erasure ledger in the ingest retry consumer) — it closes RETRO-367's finding (1) end to end: `/api/dsr/initiate` no longer reads `session_embeddings`, which nothing wrote, and a staff caller can now start a request. One finding with a production fuse. **Before this PR the ClickHouse erase was keyed on `session_id` alone. It is now keyed on `(tenant_id, session_id)` with the control plane's `ESTALARA_TENANT_ID`, and so are the poller's residue check and the ingest erasure ledger. The rows carry other configured values: the ingest API key's tenant (`events`, `intent_events`) and the `/api/adapt` caller's tenant (`adaptation_decisions`, `llm_calls`).** On localhost all three are `…00e2`. In production nothing checks that they are equal. If one differs, the erase deletes nothing, the residue count reads 0 and accepts "done", and a queued retry re-inserts the erased rows (FOLLOW-1502, P2) — 2026-11-08
+
+### 1. Summary of change
+
+- **PR:** #1149 (merged 2026-11-06 15:08 UTC, commit 854fa45)
+- **Files changed:** 38 (+2279 / -697); about 900 lines under `src` outside tests
+- **Modules touched:** control-plane (the five DSR routes, `_capability.ts` new, `dsr-verify.ts`,
+  `clickhouse-dsr.ts`, `chat-intent-cache.ts`, `upstash-checked-pipeline.ts` new, `email/resend.ts`),
+  ingest (`erasure-ledger.ts` new, the retry consumer), docs (DPIA v2.30, ROPA v2.25, handover rows
+  22, 23, 30, H004), the FOLLOW-819 harness
+- **Key contracts changed:** `/api/dsr/initiate` now staff ops+ (was: refused everyone);
+  `buildEraseMutationSql(…, tenantId)` (new required parameter); `getClickHouseDisclosure(…,
+  eventsCursor)`; `sessionHasClickHouseRows`, `countSessionRows`, `readErasedSessions` new; xid in a
+  query string → 400 `XID_IN_QUERY_REFUSED`; new Sentry signal
+  events_retry_erasure_ledger_unavailable (handover row 23). Breaking: yes for a DSR client sending the xid in the
+  query (none in the repo).
+
+### 2. Verification done in PR
+
+- Test files: `dsr-routes.test.ts`, the erase and disclosure PGlite suites, `dsr-verify.test.ts`
+  (R-02 reproduced first: 8 parallel wrong codes gave `attempt_count = 8`),
+  `events-retry-consumer.test.ts` (+159), `mutation-poll/route.test.ts`, `clickhouse-dsr.test.ts`,
+  the CH integration test, `ac9-verdict.test.ts`.
+- CI checks: 70 pass, Rule I the only red. DSR + matrix 611/612 locally (one timeout, green on rerun).
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. CHECK A: `_capability.ts` → `dsr/access` and `dsr/portability`;
+`upstash-checked-pipeline.ts` → `chat-intent-cache.ts`, `dsr/erase`; `erasure-ledger.ts` → the retry
+consumer (`events-retry-consumer.ts:82` and `:228`); `countSessionRows` →
+`dsr/mutation-poll/route.ts:243`; `sessionHasClickHouseRows` → `dsr/initiate`. CHECK B: the ledger's
+producer is `POST /api/dsr/erase` (sets `used_at`), its consumer the Worker; the new Sentry signal is
+in the ingest `observability-signals` register and handover row 23.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — erasure completeness now rests on an equality nothing checks.** Traced per table:
+
+  | Store / table                  | `tenant_id` written                          | Where                       |
+  | --- | --- | --- |
+  | CH `events`, `intent_events`   | the `KV_API_KEYS` record's tenant            | ingest `events.ts:205, :471` |
+  | CH `adaptation_decisions`      | API key tenant, else the body's `tenant_id`  | adapt `route.ts:705`        |
+  | CH `llm_calls`                 | the same request tenant (`'unknown'` if none) | `llm-gateway.ts:531`        |
+  | PG `dsr_verifications`         | `ESTALARA_TENANT_ID`                         | `dsr/initiate` `:139`       |
+
+  The erase uses the verification row's tenant: `ALTER TABLE … DELETE WHERE tenant_id =
+  {dsr_tenant_id:String} AND session_id IN (…)` (`clickhouse-dsr.ts:207`); before #1149 it was
+  `DELETE WHERE session_id IN (…)` (`git show 854fa455 -- …clickhouse-dsr.ts`). The poller's residue
+  check uses the same predicate (`:737`), so a mismatch cannot show up as residue: it reads 0. The
+  ledger filters `tenant_id=eq.<message tenant>` (`erasure-ledger.ts:76`), where the message tenant is
+  the API key's and the ledger row's is `ESTALARA_TENANT_ID`, so a mismatch reads "not erased" and
+  the retry re-inserts. Three configured values must therefore be equal: the KV key's `tenant_id`,
+  the host's `PUBLIC_ESTALARA_TENANT_ID` (web-master env, handover §3 line 128), and
+  `NEXT_PUBLIC_ESTALARA_TENANT_ID`, whose production fallback is the baked id `cbc51cfa…`. Handover
+  §2 asserts "there is simply one value"; no gate, boot check or handover step proves it. On
+  localhost all three are `…00e2` (`localhost-up.sh:60, :403, :516`), so nothing local can fail.
+- **The PR's two docblocks disagree on the key.** `sessionHasClickHouseRows` (`:702`) keys on
+  `session_id` only "never `tenant_id`", because a tenant predicate "matches nothing";
+  `buildEraseMutationSql` says every stored row carries the one constant. Both can be true only under
+  the unchecked equality above. The ownership proof is the robust one: it would find rows the erase
+  then leaves.
+- **Why the binding exists.** Codex F-13 asked for it against cross-tenant erasure, a multi-tenant
+  risk. The PR re-scoped its other items to the single tenant (ESC-085) and kept this one. Not a
+  reversal of anything: the question for the PM is which of two cheap fixes to take (FOLLOW-1502).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- P2: LG-1 → FOLLOW-1502. Production is untouched and localhost is consistent, so no buyer is
+  affected today; it is a pre-production condition.
+
+#### 4c. Test coverage gaps
+
+- The CH integration test seeds its rows under the tenant it erases (`'int-test-tenant'` on both
+  sides), so by construction it cannot see LG-1 (Rule AV: the probe shares the property under test).
+- AC(9) control (c) erases a seeded verification row on a throwaway session that holds no rows
+  (`differentiator-e2e.mjs`, the AC(9) header comment around line 3696). The harness therefore never
+  drives a ClickHouse erase over rows, or the poller's residue path, end to end.
+
+#### 4d. Documentation gaps
+
+- Stale after this PR, in the harness: "`/api/dsr/initiate` refuses every caller today" at
+  `differentiator-e2e.mjs` around lines 3697 and 4999. `AC9_DSR_NOTE` (line 3780) was updated to the
+  new reason, these two comments were not (Rule AI). In FOLLOW-1502's AC.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **RETRO-367 finding (1) closed, traced:** `grep -rn "session_embeddings\|sessionEmbeddings"
+  apps/control-plane/src` (non-test) → docblocks only; initiate → `sessionHasClickHouseRows` →
+  verification row + staff audit in one transaction → OTP mail → erase → CH mutation →
+  `dsr/mutation-poll` → done only with residue 0. Closed with LG-1's limit.
+- FOLLOW-1454 and FOLLOW-1465 unblocked (QUEUE). FOLLOW-1279 absorbed.
+
+#### 5b. Future sprint tickets affected
+
+- CTO handover rows 22 (H004), 23 (Worker secrets), 30 (deploy order). LG-1 needs one more line
+  there or a code change; FOLLOW-1502 says which.
+
+#### 5c. Contracts changed others rely on
+
+- `buildEraseMutationSql` gained a required `tenantId`: its consumers are `issueEraseMutation` and
+  the integration test, both updated.
+
+#### 5d. Architectural assumptions affected
+
+- Handover §2's "one value of `tenant_id`" moved from a description to a premise of erasure
+  completeness. Severity for the PM: medium, pre-production.
+
+### 6. New lesson candidates
+
+- Pattern: "a check and the action it verifies share one predicate, so the check cannot see the
+  action's blind spot" (here the residue count and the erase) — seen in: this; Rule AV is the closest
+  rule (a probe that shares the axis under test). Count 1, no rule.
+- The memory note on the SDK's all-zero `tenant_id` (FOLLOW-1124) is correct and narrow: it is about
+  the event-dispatch path. This PR read it correctly for the ownership proof and then relied, for the
+  erase, on a different equality the note does not cover.
+
+### 7. Follow-ups
+
+- FOLLOW-1502: the ClickHouse residue check and the retry ledger key on `session_id`, or a check
+  proves the three tenant values equal (backend-engineer, Opus, 3h, priority P2, product).
+- Observations, not filed: `dsr/initiate` inserts the verification row before the e-mail, so a failed
+  send spends one rate-limit slot (the row expires); harmless at one tenant.
+
+### 8. Cross-references
+
+- RETRO-367 (finding 1 closed), Codex F-13 / F-14 / F-19 / F-34 / F-35, R-01, R-02; FOLLOW-1124
+  (all-zero tenant on events); handover §2 and rows 22, 23, 30; Rule AV, Rule AI.
+
+## RETRO-390 — #1152 (FOLLOW-1465: the holdout arm and the lift rest on consent only, enforced on the server) — the rule is the right one and is analysed on every axis the ruling names: both arms, the decision row, every lift reader, the returning-buyer restore. One value, `consent_state === 'consented'`, the same one `honourConsentedXid` and `/api/quiz/run` use. The finding is about the merge, not the rule. **`main` went red twice after it: the live LLM-source canary sent no `consent_state` and read the neutral skip "on every PR built on main" (fixed by #1156), and the N3 arm-draw pin compared against `undefined` in the nightly e2e-smoke (fixed by #1161).** The PR's "harness assumptions (read, not run)" named `real-app-acceptance.mjs` "not affected" and did not list `tests/integration`. A third break does not exist: I checked every direct caller. No stub — 2026-11-08
+
+### 1. Summary of change
+
+- **PR:** #1152 (merged 2026-11-06 19:45 UTC, commit ebed178)
+- **Files changed:** 18 (+322 / -73); about 30 lines under `src` outside tests, about 270 with tests
+- **Modules touched:** `packages/shared` (`ab-holdout.ts`), control-plane (`adapt/route.ts`, the lift
+  helpers), the FOLLOW-819 harness (control arm), DPIA, ROPA, notice, session-header record
+- **Key contracts changed:** `AssignHoldoutOptions.consent_state` now required (`string |
+  undefined`); `consent_mode_enabled` removed from it and ignored on the wire;
+  `SKIP_CONSENT_STATES` removed. Wire shape unchanged. Breaking: behaviour, for any caller that sent
+  no `consent_state` — which is what broke the two tests.
+
+### 2. Verification done in PR
+
+- Red-first: 16 of 18 route cases and 10 shared cases on `main`'s logic. Re-pins listed with reasons
+  (eight suites default to `consented`).
+- CI checks: 70 pass, Rule I the only red. It was green, and the two breaks were in jobs a PR does not
+  run against itself: the canary reads a deployed plane, the N3 verdict pin runs nightly.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. CHECK A: `ASSIGNABLE_CONSENT_STATE` is module-private; `assignHoldout` has
+one production caller (`grep -rn "assignHoldout(" apps packages` non-test → `adapt/route.ts:773`).
+CHECK B: no new field, event or column.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **Multi-axis check, done:** holdout and treatment arms both need `consented` (the skip returns the
+  neutral shape with no `holdout_group` for both); the lift readers count only sessions with an
+  `adaptation_decisions` row, and the PR pins that shape (`route-helpers.test.ts`); `/api/adapt` is
+  the table's only writer (`grep -rn "INSERT INTO adaptation_decisions" apps packages` → one hit).
+- **Every direct caller, checked after the fact:** `grep -rln "api/adapt" scripts tests` (non-SDK) →
+  the canary (fixed, #1156), the N3 verdict pin (fixed, #1161), the harness control arm (fixed in the
+  PR), the two preflight probes (`buildControlPlaneProbeRequest` sends `{}` and stops at 400 before
+  assignment, by design), `bandit-probe.mjs` and `local-pilot-session.mjs` (path references, no
+  POST). No third break.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- The two post-merge reds, both fixed within hours. Recorded for §6.
+
+#### 4c. Test coverage gaps
+
+- The live canary cannot fail on the PR that breaks its contract: it reads a plane deployed from
+  `main`. Structural, and the reason "CI green" did not cover this PR. Observation.
+
+#### 4d. Documentation gaps
+
+- Observation, P3: `bandit-flag.ts`'s docblock says "`POST`/`GET /api/adapt` never draw an arm"; the
+  route exports only `POST`. Pre-existing.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-013 and FOLLOW-1212 (iv) made moot, per the PR; the PM may close them.
+- Handover row 29 records the consent-aware canary.
+
+#### 5b. Future sprint tickets affected
+
+- **A question for the PM, not a proposal:** the PR notes that `apps/ingest/src/consent-gate.ts`
+  still persists profiling events under `legitimate-interest`. ESC-091 C-1 rules conversion
+  measurement and the holdout "consent only, never legitimate interest"; whether profiling events
+  fall under that ruling is the CEO's or counsel's call, not mine (no legal analysis). No ticket owns
+  the question today.
+
+#### 5c. Contracts changed others rely on
+
+- `assignHoldout` is in `@estalara/shared`; its only consumer is the adapt route.
+
+#### 5d. Architectural assumptions affected
+
+- "A decision row exists only for a consented session" is now the lift's consent filter. Any second
+  writer of `adaptation_decisions` would bypass it; the PR's pin guards the readers, not the writers.
+
+### 6. New lesson candidates
+
+- Pattern: as RETRO-387 §6 (consumers outside the author's grep left on the old contract). Here the
+  cost was two red `main` reads. Count: this batch only, no rule.
+
+### 7. Follow-ups
+
+- N/A. Both breaks are fixed; the remaining question (§5b) is a ruling-scope question for the PM.
+
+### 8. Cross-references
+
+- ESC-091 C-1, record H-13; #1156, #1161 (the two repairs); RETRO-387, RETRO-394 (§6 pattern).
+
+## RETRO-391 — #1157 (FOLLOW-1446: withdrawal restores every directive, other tabs stop, the way back from `denied`) — careful work: a first-write undo log that keeps a slot the host re-rendered, a `storage` listener bound to the instance lifetime, and a "turn on" chip that reads and sends nothing before a new Accept, all red-first through the real `init()`. One wiring finding. **The host event `estalara:consent:reopen` (approved by ESC-092 item 1, "not required by B-d") has a consumer and no producer: nothing in this repo or in the host app dispatches it, and the host integration runbook does not name it.** That is 13 B of a bundle that now has 31 B left (FOLLOW-1503, P2, docs). One limit on the PR's own claim about re-rendered slots — 2026-11-08
+
+### 1. Summary of change
+
+- **PR:** #1157 (merged 2026-11-06 23:31 UTC, commit 66c5948)
+- **Files changed:** 48 (+761 / -69); about 200 lines under `packages/sdk/src` outside tests; 36
+  files are the zod namespace import from #1155
+- **Modules touched:** SDK (`adapt.ts`, `adapt-loop.ts`, `consent-flow.ts`, `boot.ts`, `session.ts`,
+  `index.ts`, `ui/profiling-toggle.ts`), shared schemas (import form), eslint config, notice v1.18
+- **Key contracts changed:** `restoreDom()` (new export), `clearConsentDenial()`,
+  `renderReopenChip()`; `boot(queue, reinit)`; new host-facing DOM event
+  `estalara:consent:reopen`. Bundle 41,917 → 42,354 B (+437 B). Breaking: the §H.9 opt-out now also
+  restores `cta`, `feature`, classes and order (intended).
+
+### 2. Verification done in PR
+
+- `follow-1446.test.ts` (14 tests, 11 red-first). SDK 1,412/1,412. One re-pin with its reason.
+- CI checks: 69 pass, Rule I the only red. Playwright not run in the PR; series 3× GREEN (QUEUE).
+
+### 3. Wiring Audit
+
+- **HALF_WIRE_C — `estalara:consent:reopen`** (`consent-flow.ts:100`, `offerReopen`). Consumer: the
+  SDK listener. Producer: none. `grep -rn "consent:reopen"` over the repo → the listener, the plan,
+  ESC-092; a read-only grep of the host checkout (`Estalara-gitlab-2026-08-17` under `~/Projects`,
+  `*.svelte *.ts *.js`) → no hit. `SDK_PRODUCTION_INTEGRATION.md` (runbooks) lists the host's dispatch duties
+  as `[HOST]` rows (`estalara:chat:message-sent` is row 1); this event has no row. The class default is
+  P0; I rank it P2 because the function it calls has a working in-repo producer (the chip's click), so
+  no buyer path waits on the event. What it costs is bytes: 13 B of the 31 B left after #1167.
+  FOLLOW-1503.
+- CHECK A otherwise clean: `restoreDom` → `adapt-loop.ts`; `clearConsentDenial`, `renderReopenChip` →
+  `consent-flow.ts`.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3, observation) — the re-render guard covers four of six slot kinds.** `restoreDom` puts a
+  value back only where the DOM still shows our write. `restoreOriginalSlots` (`adapt-loop.ts:167`)
+  then writes the headline and description from the per-listing maps unconditionally, so the PR's "a
+  slot the host re-rendered keeps the host's content" holds for `cta`, `feature`, classes and order,
+  not for the two slots most visibly adapted. And the description original is captured as
+  `textContent` (`:157-161`, FOLLOW-1019, pre-existing), so a seller description with paragraph
+  markup returns as one run of text. Not measured on the real app (the stack is not mine to touch).
+  The PR is explicit that the maps "still run after it"; I record the limit of its sentence.
+- Cross-tab is one-directional, as the ticket asks: a tab showing the chip does not learn of a grant
+  in another tab. Harmless: its click reads storage again.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A.
+
+#### 4c. Test coverage gaps
+
+- `onListingViewed` resets fingerprints but not the undo log, so entries for cards of an earlier
+  listing stay until a withdrawal. `restoreDom` compares before writing, so a detached element is
+  touched harmlessly. No test of withdrawal after an in-place navigation. Observation.
+
+#### 4d. Documentation gaps
+
+- The notice sentences the PR flagged as stale were fixed by #1158 (v1.19). Chain closed.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1444 and 1445 built on this branch (RETRO-392, RETRO-393).
+
+#### 5b. Future sprint tickets affected
+
+- The "turn on" chip and whether it should also collapse is open with the CEO (K7 findings). No
+  ticket, by the brief.
+
+#### 5c. Contracts changed others rely on
+
+- `estalara:consent:reopen` is a public host surface with no host-facing document (§3).
+
+#### 5d. Architectural assumptions affected
+
+- N/A.
+
+### 6. New lesson candidates
+
+- Pattern: "an approved optional surface is wired on the consumer side with no producer or hand-off
+  document" — seen in: this. Count 1, no rule. Rule AJ is the nearest (a signal needs a consumer);
+  this is its mirror for a host event.
+
+### 7. Follow-ups
+
+- FOLLOW-1503: `estalara:consent:reopen` gets a `[HOST]` row in the SDK integration runbook and the
+  handover, or the PM asks the CEO whether to drop it for 13 B (sdk-engineer, Sonnet, 1h, priority
+  P2, docs).
+
+### 8. Cross-references
+
+- ESC-092 items B-d and 1; FOLLOW-1316 signed review P-4; FOLLOW-1019; RETRO-392, RETRO-394.
+
+## RETRO-392 — #1158 (FOLLOW-1444: the withdrawal control always shown, explained, confirmed) — closes P-2 of the FOLLOW-1316 signed review end to end in Chromium: the control renders with the flag on, off and never set; `withdrawWhy` arrives from the served `consent-text.json`; the result is announced with `role="status"`; a failed delete says so and keeps the id for the retry. It stopped before the `text_version` bump and put it to the PM, who bumped it with the reason. One finding, shared with #1159: **the PR says "Firefox and WebKit browsers are not installed locally; CI covers them". CI does not: `sdk-e2e` installs Chromium only and the Playwright config has no projects** (filed from RETRO-393 as FOLLOW-1504) — 2026-11-08
+
+### 1. Summary of change
+
+- **PR:** #1158 (merged 2026-11-06 23:43 UTC, commit 7b51f2e)
+- **Files changed:** 17 (+717 / -87); about 120 lines under `src` outside tests
+- **Modules touched:** SDK (`consent-flow.ts`, `consent-text.ts`, `index.ts`,
+  `ui/profiling-toggle.ts`), shared (`ConsentTextLocaleSchema`), the served `consent-text.json`,
+  ADR-0021 amendment, `INTERFACES.md`, notice v1.19
+- **Key contracts changed:** three optional fields in the consent-text document (`withdrawWhy`,
+  `withdrawDone`, `withdrawFail`); the SDK now GETs the document on the granted path too (§D3 shape
+  unchanged); `__estalaraTeardown(keepUi?)`; `deleteThenEraseXid()` returns a boolean;
+  `text_version` `2026-11-06.1`. Breaking: no (fields optional, the parameter optional).
+
+### 2. Verification done in PR
+
+- `follow-1444.test.ts` (20 cases, 17 red-first), shared schema (+4 red-first), five re-pins with
+  reasons, Playwright `returning-buyer.spec.ts` 10/10 and `consent.spec.ts` 4/4 in Chromium.
+- CI checks: 69 pass, Rule I the only red.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. CHECK B: each new field has a producer (the served file in three locales, the
+wire example) and a consumer (`ui/profiling-toggle.ts`, the `withdrawWhy` and result reads);
+`__estalaraTeardown`'s new parameter has its one in-repo caller (`consent-flow.ts:75`) and an
+optional signature, so the audit probe that calls it bare still works.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- N/A. The two limits are the PR's own: a failed text fetch plus a failed delete shows only
+  "Personalization: disabled" (the notice says so); the granted-path GET is a second request after a
+  fresh Accept, normally served from cache.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A.
+
+#### 4c. Test coverage gaps
+
+- **The cross-engine claim.** `.github/workflows/ci.yml:1261` runs `npx playwright install chromium`;
+  `packages/sdk/playwright.config.ts` defines no `projects`, so every spec runs in Chromium. The
+  withdrawal flow, its `role="status"` result and the Shadow DOM control have never run in Firefox or
+  WebKit, locally or in CI. Filed once, from RETRO-393, where the download makes it sharper.
+
+#### 4d. Documentation gaps
+
+- N/A. ADR-0021 amended in the same PR; notice v1.19 corrects the two sentences #1157 flagged.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1466 (DEFERRED) is untouched, as the PR argues: the bump re-asks no buyer, because only
+  `MIN_PROFILE_TEXT_VERSION` re-prompts.
+
+#### 5b. Future sprint tickets affected
+
+- Handover row 24: deploy the control plane's text before or with the SDK.
+
+#### 5c. Contracts changed others rely on
+
+- `INTERFACES.md` carries the granted-path GET.
+
+#### 5d. Architectural assumptions affected
+
+- "The SDK makes no request on a granted page except decisions and events" is gone: every granted
+  page load now GETs the consent text (identifier-free, §D3). Stated in the ADR amendment.
+
+### 6. New lesson candidates
+
+- Pattern: "a PR records a verification the pipeline it names does not run" — seen in: this and
+  RETRO-393 (same sentence). Rule AU and Rule AI amendment 4 cover the shape. Count: this batch only,
+  no rule.
+
+### 7. Follow-ups
+
+- N/A here; see FOLLOW-1504 (RETRO-393).
+
+### 8. Cross-references
+
+- FOLLOW-1316 signed review P-2; ESC-092 C-b; ADR-0021 §D2/§D7; RETRO-391, RETRO-393, RETRO-394.
+
+## RETRO-393 — #1159 (FOLLOW-1445: the buyer downloads their stored profile) — small and correct. The control is offered only for a sent, live xid, the one state in which a server profile can exist; the xid travels only in the POST body; the file is saved byte for byte through a detached anchor; red-first through `_initForTest` and a real Chromium download. It closes P-3 of the signed review end to end, in one engine. **That is the finding: like #1158, the PR says Firefox and WebKit are covered by CI, and CI runs Chromium only.** A detached `<a download>` on a blob URL is exactly the kind of code that differs between engines (FOLLOW-1504, P2, gate) — 2026-11-08
+
+### 1. Summary of change
+
+- **PR:** #1159 (merged 2026-11-07 10:03 UTC, commit 959dcf3)
+- **Files changed:** 9 (+627 / -38); about 90 lines under `packages/sdk/src` outside tests
+- **Modules touched:** SDK (`adapt.ts`: `postProfile`, `downloadProfile`; `consent-flow.ts`;
+  `ui/profiling-toggle.ts`: `showData`, `linkButton`), CORS coverage test, notice v1.20
+- **Key contracts changed:** the SDK now calls `POST /api/profile/portability` (route unchanged);
+  `postProfileErase` returns a boolean through a private `postProfile`. Bundle +360 B (42,858 B).
+  Breaking: no.
+
+### 2. Verification done in PR
+
+- `follow-1445.test.ts` (19 tests, 12 red-first); `returning-buyer.spec.ts` +2 cases (a real
+  `download` event, a 503); `sdk-cors-coverage.test.ts`. No re-pins.
+- CI checks: 69 pass, Rule I the only red. Series 3× GREEN at `af1b6228` (QUEUE).
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. CHECK A: `downloadProfile` → `consent-flow.ts` (`mountOptOutToggle` →
+`showData`). CHECK B: the new request's consumer is `profile/portability/route.ts` →
+`handleProfileRequest` (`lib/buyer-profile-route.ts`).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- N/A. Axes checked: flag on, off and never set (the control follows the xid state, not the flag,
+  and the route ignores the flag, R8); denied and pending pages (no control: the toggle mounts only on
+  the granted path); after withdrawal (removed).
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A in Chromium. Unknown elsewhere: §4c.
+
+#### 4c. Test coverage gaps
+
+- **CI covers one engine.** Same evidence as RETRO-392 §4c: `ci.yml:1261` installs Chromium only;
+  `playwright.config.ts` has no `projects`; the PR's "CI should cover them" is false. The download
+  path (`URL.createObjectURL`, an anchor never attached to the document, `revokeObjectURL` in a
+  timeout) and the Shadow DOM controls have never run in Firefox or WebKit. app.estalara.com buyers on
+  iOS reach the page through WebKit only. Not a claim that anything is broken there: nothing has
+  looked. FOLLOW-1504.
+- The config's `retries: 1` lets a flaky spec pass on its second attempt with no record in the
+  verdict. Relevant to RETRO-394 §4c.
+
+#### 4d. Documentation gaps
+
+- N/A. Notice v1.20 fills the P-3 slot.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- Each download writes a `dsr_audit_log` row (`buyer-profile-route.ts`, `afterResponse`); retention
+  for those rows is FOLLOW-1448 (DEFERRED), and the address-based quota is FOLLOW-1447 (DEFERRED).
+  Both already own it.
+
+#### 5b. Future sprint tickets affected
+
+- One control for Art. 15 and Art. 20: counsel at the single legal review (ESC-092 D). Not mine.
+
+#### 5c. Contracts changed others rely on
+
+- N/A.
+
+#### 5d. Architectural assumptions affected
+
+- N/A.
+
+### 6. New lesson candidates
+
+- As RETRO-392 §6. Observation: the failure text replaces the button label and is not in a live
+  region (the PR says so, kept for bytes).
+
+### 7. Follow-ups
+
+- FOLLOW-1504: the SDK Playwright specs run in Firefox and WebKit in CI, or the PR template stops
+  saying they do (qa-engineer, Sonnet, 2h, priority P2, gate).
+
+### 8. Cross-references
+
+- FOLLOW-1316 signed review P-3; ESC-092 D; FOLLOW-1447, FOLLOW-1448; RETRO-392, RETRO-394.
+
+## RETRO-394 — #1167 (FOLLOW-1480: the withdrawal control collapses to an icon after 3 s, CEO ruling 2026-11-07) — a faithful build of the ruling: the panel stays in the DOM, hover and focus hold it open, a keyboard activation moves focus inside, and both harnesses open it through the icon before withdrawing (N3 3/3 GREEN at `59ea780c`). Two findings. (1) **The privacy notice now says what the SDK no longer does: "You can withdraw it at any time with one click on 'Withdraw consent', next to the Personalization control on the page", and "A short message then replaces the control". After 3 s it is two clicks behind a 24 px icon, and the message is hidden after 3 s** (Rule AI; FOLLOW-1505, P2, docs; whether two clicks suit the signed review's P-2 reading is a question for the one legal review, not for me). (2) The SDK Playwright spec was not updated: its clicks race the 3 s timer and pass because they are fast, with `retries: 1` behind them (FOLLOW-1506, P3) — 2026-11-08
+
+### 1. Summary of change
+
+- **PR:** #1167 (merged 2026-11-07 21:53 UTC, commit 59ea780)
+- **Files changed:** 7 (+408 / -10); 58 lines under `packages/sdk/src` outside tests, 253 with them
+- **Modules touched:** SDK (`ui/profiling-toggle.ts`), N3 (`real-app-acceptance.mjs`), the
+  FOLLOW-819 harness (`differentiator-e2e.mjs`), their verdict pins
+- **Key contracts changed:** new `[data-estalara-toggle-icon]` button; `COLLAPSE_MS = 3000`; the
+  panel is `display:none` when collapsed. Bundle 42,865 → 43,105 B gzip: **31 B** under 43,136 B.
+  Breaking: for any automation that clicks the panel's controls more than 3 s after mount.
+
+### 2. Verification done in PR
+
+- `follow-1480.test.ts` (11 new, fake timers); e2e pins 350; a manual real-Chromium check (collapse at
+  about 3.2 s). Series README §5.75 and N3 3/3 (K7 ledger C7, C8).
+- CI checks: 69 pass, Rule I the only red. `SDK E2E tests` passed twice.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. The icon is created, wired and removed inside `renderProfilingToggle`'s
+closure (`destroy` clears the timer and removes both). `openToggleControl` is exported and consumed by
+both harnesses (`real-app-acceptance.mjs:1956`, `differentiator-e2e.mjs:4921`) and their verdict
+pins.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- Observation, P3: after a keyboard withdrawal the checkbox is gone, so a later Enter on the icon runs
+  `checkbox.focus()` (`profiling-toggle.ts:316`) on a removed node; the icon then hides itself and
+  focus falls to the page. Only the status line is left to read, so nothing is unreachable.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A.
+
+#### 4c. Test coverage gaps
+
+- **The SDK Playwright spec still assumes an expanded panel.** `returning-buyer.spec.ts` was not in
+  the diff. Its cases click `[data-estalara-withdraw]` (line 213) and focus `[data-estalara-data]`
+  (line 367) after `page.goto` and a headline wait, with no `openToggleControl` step and no
+  `page.clock`. They pass because they act inside 3 s of the mount. On a slower runner a hidden
+  control fails `click()`, and `retries: 1` (`playwright.config.ts`) re-runs it with no record. No e2e
+  asserts the collapse itself; the unit test does, with fake timers. The R24 screenshots (around line
+  352) capture an expanded panel buyers see for 3 s. FOLLOW-1506.
+
+#### 4d. Documentation gaps
+
+- **DOC-1 (P2) — notice §3 after the collapse.** `PRIVACY_NOTICE_TEMPLATE.md` lines 213-219: "one
+  click on 'Withdraw consent', next to the Personalization control on the page"; "A short message
+  then replaces the control". After `COLLAPSE_MS` the control is behind the icon (two activations),
+  and the message is hidden 3 s after it appears; the icon stays to reopen it. #1167 says "consent
+  copy untouched", which is true of `consent-text.json` and not of the notice's account of the
+  control. The FOLLOW-1316 signed review records P-2 against "visible, native button, one click"
+  (lines 187-190), with Art. 7(3) left to counsel. I do not propose undoing the CEO's ruling; the
+  notice should describe what is built, and the reading belongs to the one legal review (CEO
+  2026-11-03). FOLLOW-1505.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- K7: "the withdrawal control after FOLLOW-1480" is OPEN for the CEO walk (3 s, icon size). The notice
+  fix in FOLLOW-1505 should follow the walk, in case the CEO changes either number.
+
+#### 5b. Future sprint tickets affected
+
+- **31 B of headroom.** Tickets that need SDK bytes: FOLLOW-1466 (its QUEUE row still says "7 B
+  headroom after #1142"), FOLLOW-1354, FOLLOW-1462 (host + SDK), and the open chip-collapse question.
+  FOLLOW-1444's QUEUE row says "8 B of room", from before #1155. Both numbers are stale; the K7
+  ledger has the right one. The 13 B `estalara:consent:reopen` listener with no producer (RETRO-391,
+  FOLLOW-1503) is the cheapest known saving, if the CEO wants it.
+
+#### 5c. Contracts changed others rely on
+
+- Any automation that drives the toggle: the two harnesses are updated, the SDK spec is not (§4c).
+
+#### 5d. Architectural assumptions affected
+
+- "The withdrawal control is always visible" (FOLLOW-1444's title, P-2) became "always reachable".
+  That was the CEO's change of 2026-11-07; recorded here so the next reader of P-2 knows.
+
+### 6. New lesson candidates
+
+- Pattern: as RETRO-387 §6. This PR updated the two consumers its author ran (N3, FOLLOW-819) and not
+  the one it did not (the SDK spec). Count: this batch only, no rule.
+- Pattern: "a UI change leaves a document describing the old UI" — Rule AI, an application.
+
+### 7. Follow-ups
+
+- FOLLOW-1505: notice §3 and the signed review's P-2 note describe the collapsed control, after the
+  CEO walk (compliance-engineer, Sonnet, 1h, priority P2, docs).
+- FOLLOW-1506: the SDK Playwright spec opens the toggle through the icon and pins the collapse with
+  `page.clock` (qa-engineer, Sonnet, 1.5h, priority P3, gate).
+
+### 8. Cross-references
+
+- CEO ruling 2026-11-07 (K7 ledger); FOLLOW-1316 signed review P-2; ESC-092; RETRO-387 (§6),
+  RETRO-391 (the 13 B listener), RETRO-392, RETRO-393 (`retries: 1`, one engine); Rule AI.
+
+### Batch note — rules and the agent definition
+
+- **No Rule promoted.** Three in-batch patterns (consumers outside the author's grep, RETRO-387 §6;
+  a verification the named pipeline does not run, RETRO-392 §6; a check sharing its action's
+  predicate, RETRO-389 §6) have no occurrence in RETRO-375 to RETRO-380, and the batch does not count
+  itself (the adjudication of RETRO-380 §6). Each is an application of an existing rule (AI, AC, AU,
+  AV).
+- **Agent-definition drift, unchanged since RETRO-380:** the agent definition (`retrospective-analyst.md`)
+  steps 10-11 still state the D8 moratorium; ESC-085 lifted it and CLAUDE.md says so. Its CHECK B
+  also fixes HALF_WIRE_C at P0, which over-ranks a consumer whose function has a second, working
+  producer (RETRO-391 §3). I followed the ruling and gave the reason.

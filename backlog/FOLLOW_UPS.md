@@ -57662,3 +57662,178 @@ cross_ref: [RETRO-386, FOLLOW-1310, FOLLOW-1308, Rule AI]
 as a refusal class ahead of the name scan, which changes the split MP-012 describes.
 `MEASURED_PREMISES.md` was not in the diff. When this ticket discharges MP-012 / 013 / 017, measure
 on code at or after `0c46e483`.
+
+## FOLLOW-1500 — [docs] the `localhost-up.sh` staff-token recipe names claims the plane has refused since #1146
+
+source_retro: RETRO-387 source_ticket: FOLLOW-1307 recommended_sprint: next recommended_agent:
+qa-engineer (Sonnet) priority: P3 estimated_hours: 0.5 tag: docs depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What.** `scripts/dev/localhost-up.sh` prints (lines 686-687, added by #1138 for FOLLOW-1460):
+"sign an HS256 JWT with .localhost-up/local-staff-jwt-secret, claims sub, email,
+estalara_staff=true, estalara_role=estalara:readonly". Since #1146 `hasValidRegisteredClaims` in
+`@estalara/auth` refuses a token with no `exp`, no `iss` equal to
+`<NEXT_PUBLIC_SUPABASE_URL>/auth/v1` and no `aud` `authenticated`. An operator following the banner
+gets 401 on every staff route. The two in-repo minters (N3, admin-smoke) were updated; the banner
+was not.
+
+AC:
+
+- [ ] The banner names every claim the verifier requires (`exp`, `iss`, `aud`, optional `nbf`) and
+      where the issuer URL comes from, or points at the N3 minter as the reference.
+- [ ] A token signed exactly as the banner says is accepted by a running plane (paste the status).
+- [ ] `grep -rn "HS256" scripts tests docs/runbooks` has no other recipe on the old claim set.
+
+cross_ref: [RETRO-387, FOLLOW-1307, FOLLOW-1460, Rule AI]
+
+## FOLLOW-1501 — [gate] the mutation permission matrix covers the cron `GET` handlers that write
+
+source_retro: RETRO-387 source_ticket: FOLLOW-1307 recommended_sprint: next recommended_agent:
+qa-engineer (Sonnet) priority: P3 estimated_hours: 2 tag: gate depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What.** `mutation-permission-matrix.test.ts` takes only POST/PUT/PATCH/DELETE (line 283).
+`apps/control-plane/vercel.json` schedules seven `GET` handlers, each of which writes or deletes:
+`dsr/mutation-poll`, `internal/retention/conversion-labels`, `internal/retention/consent-log`,
+`canary/adaptation-writes`, `cron/lift-snapshot`, `cron/quiz-accuracy-watch`, `cron/quiz-retention`.
+Each checks `CRON_SECRET` and has its own route test, so nothing is open today, but a new cron is
+not forced into any matrix, and the matrix's `CRON_SECRET` column has no route that should accept
+it.
+
+AC:
+
+- [ ] The matrix reads `vercel.json` `crons` and adds a `GET` row per path: anonymous, every staff
+      column, `ADMIN_API_SECRET` and `INTERNAL_API_SECRET` denied with no write and no fetch;
+      `CRON_SECRET` not refused by auth.
+- [ ] A `crons` entry with no handler, or a handler with no row, fails the inventory test.
+- [ ] Red-first: drop the `CRON_SECRET` check from one cron in a scratch copy and show the cell
+      fail.
+
+cross_ref: [RETRO-387, FOLLOW-1307]
+
+## FOLLOW-1502 — [product] DSR erasure in ClickHouse and the ingest retry ledger depend on three tenant ids being equal, and nothing checks it
+
+source_retro: RETRO-389 source_ticket: FOLLOW-1308 recommended_sprint: before production (handover)
+recommended_agent: backend-engineer (Opus: DSR, cross-runtime) priority: P2 estimated_hours: 3 tag:
+product depends_on: [] blocks: [] promoted_to_queue: false
+
+**What.** Since #1149 the ClickHouse erase is
+`DELETE WHERE tenant_id = {dsr_tenant_id:String} AND session_id IN (…)` (`clickhouse-dsr.ts`, line
+207; before: `session_id` only), with the tenant of the `dsr_verifications` row, which
+`dsr/initiate` sets to `ESTALARA_TENANT_ID`. The poller's residue check `countSessionRows`
+(line 737) uses the same predicate, and the ingest erasure ledger filters
+`tenant_id=eq.<message tenant>` (`erasure-ledger.ts`, line 76). The rows carry other configured
+values: `events` and `intent_events` the `KV_API_KEYS` record's tenant (ingest `events.ts` 205,
+471); `adaptation_decisions` and `llm_calls` the `/api/adapt` request tenant (`route.ts` 705), which
+on the SDK path is the host's `PUBLIC_ESTALARA_TENANT_ID`. If any of the three differs from
+`NEXT_PUBLIC_ESTALARA_TENANT_ID` (production fallback: the baked id), the erase removes nothing, the
+residue check reads 0 and accepts "done", and a queued retry re-inserts the erased rows. Localhost
+is consistent (`…00e2` everywhere), so no local run can fail. The same PR's ownership proof
+(`sessionHasClickHouseRows`) keys on `session_id` alone, and its integration test seeds rows under
+the tenant it erases.
+
+AC:
+
+- [ ] Choose and state one: (a) `countSessionRows` and the ledger read key on `session_id` only (one
+      tenant, ESC-085), so a mismatch shows as residue and the poller never accepts it; or (b) keep
+      the tenant binding and add a check that fails loudly when a session's rows carry another
+      tenant (and a handover row naming the three values).
+- [ ] Red-first: rows seeded under tenant X, erase run for tenant Y, same session: the poller does
+      not report done, or the check fires. Today it reports done.
+- [ ] The retry consumer: a message under tenant X for a session erased under Y is not re-inserted.
+- [ ] Harness comments "`/api/dsr/initiate` refuses every caller today" in `differentiator-e2e.mjs`
+      (around lines 3697 and 4999) corrected; `AC9_DSR_NOTE` already is.
+- [ ] Handover §2 or row 30 says what the CTO verifies, if (b).
+
+cross_ref: [RETRO-389, RETRO-367, FOLLOW-1308, FOLLOW-1124, Rule AV]
+
+## FOLLOW-1503 — [docs] `estalara:consent:reopen` has a listener in the SDK and no producer: hand it to the host, or ask the CEO to drop it for 13 B
+
+source_retro: RETRO-391 source_ticket: FOLLOW-1446 recommended_sprint: next recommended_agent:
+sdk-engineer (Sonnet) priority: P2 estimated_hours: 1 tag: docs depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What.** #1157 wired the host event approved by ESC-092 item 1 ("not required by B-d"):
+`consent-flow.ts` line 100, a `document` listener for `estalara:consent:reopen`, measured at +13 B.
+Nothing dispatches it: not this repo, not the host checkout (read-only grep). The host's dispatch
+duties live as `[HOST]` rows in `SDK_PRODUCTION_INTEGRATION.md` (row 1 is
+`estalara:chat:message-sent`); this event has no row and no handover line. HALF_WIRE_C by class,
+ranked P2 because the chip's click reaches the same function. The SDK has 31 B of headroom after
+#1167.
+
+AC:
+
+- [ ] Either a `[HOST]` row (what the host dispatches, where, what the buyer then sees) plus a
+      handover line, or a PM question to the CEO recording the choice to remove it (−13 B).
+- [ ] If kept: one test dispatching the event on a denied page already exists
+      (`follow-1446.test.ts`); cite it in the row.
+- [ ] No change to the chip or its copy (the collapse question is open with the CEO).
+
+cross_ref: [RETRO-391, RETRO-394, ESC-092, FOLLOW-1446]
+
+## FOLLOW-1504 — [gate] the SDK Playwright specs run in Chromium only, and two PRs said CI covers Firefox and WebKit
+
+source_retro: RETRO-393 source_ticket: FOLLOW-1445 recommended_sprint: next recommended_agent:
+qa-engineer (Sonnet) priority: P2 estimated_hours: 2 tag: gate depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What.** #1158 and #1159 each wrote "Firefox and WebKit … CI covers them". `ci.yml` job `sdk-e2e`
+installs `chromium` only (line 1261), and `packages/sdk/playwright.config.ts` defines no `projects`.
+The withdrawal control, its `role="status"` result, the "Download my data" save through a detached
+`<a download>` on a blob URL, and the Shadow DOM toggle have never run outside Chromium. iOS buyers
+reach app.estalara.com through WebKit only.
+
+AC:
+
+- [ ] `playwright.config.ts` gains `firefox` and `webkit` projects for `returning-buyer.spec.ts` and
+      `consent.spec.ts` at least; CI installs both engines.
+- [ ] One CI run green in all three, or each engine-specific failure filed with its reproduction.
+- [ ] If the cost is refused, the PR body template says "Chromium only" instead.
+
+cross_ref: [RETRO-392, RETRO-393, FOLLOW-1444, FOLLOW-1445, Rule AU]
+
+## FOLLOW-1505 — [docs] notice §3 still describes a one-click, always-visible withdrawal control; since #1167 it is behind an icon after 3 s
+
+source_retro: RETRO-394 source_ticket: FOLLOW-1480 recommended_sprint: after the K7 CEO walk
+recommended_agent: compliance-engineer (Sonnet) priority: P2 estimated_hours: 1 tag: docs
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**What.** `PRIVACY_NOTICE_TEMPLATE.md` (v1.20) §3, lines 213-219: "You can withdraw it at any time
+with one click on 'Withdraw consent', next to the Personalization control on the page" and "A short
+message then replaces the control". Since #1167 (CEO ruling 2026-11-07) the panel collapses to a 24
+px icon 3 s after it appears, so a later withdrawal is two activations, and the result message is
+hidden 3 s after it shows. The FOLLOW-1316 signed review records P-2 against "visible, native
+button, one click" and leaves Art. 7(3) to counsel. Not a proposal to change the ruling: the notice
+should describe what is built; the legal reading is for the one review (CEO 2026-11-03).
+
+AC:
+
+- [ ] After the K7 walk (the CEO may change 3 s or the icon size), §3 describes the icon, how it
+      opens, and the result message as built; a revision row; README version row.
+- [ ] The signed review gets a dated note under P-2: "as built after FOLLOW-1480", with the question
+      for counsel, without a legal conclusion.
+- [ ] `check-privacy-notice-keys.sh` and `check-compliance-docs.sh` pass.
+
+cross_ref: [RETRO-394, FOLLOW-1480, FOLLOW-1444, FOLLOW-1316, Rule AI]
+
+## FOLLOW-1506 — [gate] the SDK Playwright spec races the 3 s collapse and no e2e pins the collapse
+
+source_retro: RETRO-394 source_ticket: FOLLOW-1480 recommended_sprint: next recommended_agent:
+qa-engineer (Sonnet) priority: P3 estimated_hours: 1.5 tag: gate depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What.** `returning-buyer.spec.ts` was not in #1167. It clicks `[data-estalara-withdraw]` and
+focuses `[data-estalara-data]` after `page.goto` and a headline wait, with no step through
+`[data-estalara-toggle-icon]`. It passes because it acts within 3 s of the mount; on a slower runner
+`click()` meets a hidden control, and `retries: 1` re-runs it without a record. The collapse itself
+is pinned only with fake timers in `follow-1480.test.ts`.
+
+AC:
+
+- [ ] The spec opens the toggle through the icon before each control action (as the two harnesses'
+      `openToggleControl` do).
+- [ ] One case uses `page.clock` to pass `COLLAPSE_MS`: panel hidden, icon visible with its
+      `aria-label`, Enter reopens and focus lands inside.
+- [ ] Red-first: the old spec with the clock advanced past 3 s fails.
+
+cross_ref: [RETRO-394, RETRO-393, FOLLOW-1480]

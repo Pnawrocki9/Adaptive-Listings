@@ -16,40 +16,14 @@ Canonical domain: **estalara.com** (per DECISIONS_2026-05-18_v2). See
 
 ## apps/ingest (Cloudflare Worker)
 
-| Env Var                 | App    | Type   | Notes                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ----------------------- | ------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CLOUDFLARE_API_TOKEN`  | ingest | Secret | Worker deploy token (formerly also the removed decision-api)                                                                                                                                                                                                                                                                                                                                                                |
-| `CLOUDFLARE_ACCOUNT_ID` | ingest | Config | Same value for all Workers                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `CLOUDFLARE_ZONE_ID`    | ingest | Config | Zone ID for **estalara.com**. NOT read by the ingest Worker or by `wrangler` — `wrangler.toml` binds routes with `zone_name`, not a zone id. Its only consumer in this repo is Terraform (`infra/terraform/cloudflare/variables.tf`, fed as `TF_VAR_cloudflare_zone_id`), which has never been applied. Absent from Doppler `prd`/`stg` as of 2026-08-04 and that blocks nothing.                                           |
-| `REDPANDA_REST_URL`     | ingest | Config | Pandaproxy REST URL (e.g. `https://pandaproxy.redpanda.cloud:30082`)                                                                                                                                                                                                                                                                                                                                                        |
-| `REDPANDA_TOPIC_EVENTS` | ingest | Config | `estalara.events` (prod). `apps/ingest/wrangler.toml` `[env.staging]` also sets `events-staging`, but that Worker is a bundle/upload smoke with no bindings and no DNS record — no topic by that name is produced to (FOLLOW-878 / ESC-052)                                                                                                                                                                                 |
-| `SENTRY_DSN_INGEST`     | ingest | Secret | Set via `wrangler secret put SENTRY_DSN_INGEST`                                                                                                                                                                                                                                                                                                                                                                             |
-| `OTEL_EXPORTER_HEADERS` | ingest | Secret | Grafana Cloud OTLP auth header; set via `wrangler secret put`                                                                                                                                                                                                                                                                                                                                                               |
-| `OTEL_EXPORTER_URL`     | ingest | Config | Grafana Cloud OTLP endpoint                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `KV_API_KEYS_ID`        | ingest | Config | Substitute into `wrangler.toml` before deploy; not a runtime secret                                                                                                                                                                                                                                                                                                                                                         |
-| `KV_IDEMPOTENCY_ID`     | ingest | Config | Same — substitute into `wrangler.toml`                                                                                                                                                                                                                                                                                                                                                                                      |
-| `FIRST_PARTY_TENANT_ID` | ingest | Config | **RETIRED by FOLLOW-1333 (2026-10-18) — nothing reads it.** Browser origins are one constant list (`packages/shared/src/browser-origins.ts`). Delete the production Worker secret after the FOLLOW-1333 deploy: `wrangler secret delete FIRST_PARTY_TENANT_ID --env production` (`docs/handover/CTO_HANDOVER.md` §4). Was FOLLOW-658's origin-gate provisioning guard input; removed from the control plane by FOLLOW-1332. |
-
----
-
-## apps/decision-api (Cloudflare Worker) — REMOVED 2026-09-24 (FOLLOW-1262)
-
-> The Worker was deleted from the repo (410 Gone since ADR-0006). The rows below are kept only so an
-> operator can find and delete the matching Doppler/Wrangler secrets; nothing reads them.
-
-| Env Var                     | App          | Type   | Notes                                                                                               |
-| --------------------------- | ------------ | ------ | --------------------------------------------------------------------------------------------------- |
-| `CLOUDFLARE_API_TOKEN`      | decision-api | Secret | Shared with ingest                                                                                  |
-| `CLOUDFLARE_ACCOUNT_ID`     | decision-api | Config | Shared with ingest                                                                                  |
-| `CLOUDFLARE_ZONE_ID`        | decision-api | Config | Not read by this Worker either — see the ingest row; Terraform-only, never applied                  |
-| `ADAPT_API_KEY`             | decision-api | Secret | Bearer token gating `/api/adapt`; set via `wrangler secret put`                                     |
-| `ESTALARA_DECISION_API_URL` | decision-api | Config | `https://decision.estalara.com` (doc previously misstated `api.estalara.com`; Worker retired → 410) |
-| `SCHEMA_API_URL`            | decision-api | Config | Removed by FOLLOW-1323 (2026-10-18): route deleted, no caller since FOLLOW-1262                     |
-| `SCHEMA_API_TOKEN`          | decision-api | Secret | Removed by FOLLOW-1323 (2026-10-18): delete from Doppler/Wrangler                                   |
-| `REDPANDA_REST_URL`         | decision-api | Config | Same Pandaproxy as ingest                                                                           |
-| `REDPANDA_TOPIC_EVENTS`     | decision-api | Config | `estalara.events`                                                                                   |
-| `UPSTASH_REDIS_URL`         | decision-api | Config | Phase 2 — leave blank in Phase 1                                                                    |
-| `UPSTASH_REDIS_TOKEN`       | decision-api | Secret | Phase 2 — leave blank in Phase 1                                                                    |
+| Env Var                 | App    | Type   | Notes                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------------------- | ------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN`  | ingest | Secret | Worker deploy token                                                                                                                                                                                                                                                                                                                                                               |
+| `CLOUDFLARE_ACCOUNT_ID` | ingest | Config | Same value for all Workers                                                                                                                                                                                                                                                                                                                                                        |
+| `CLOUDFLARE_ZONE_ID`    | ingest | Config | Zone ID for **estalara.com**. NOT read by the ingest Worker or by `wrangler` — `wrangler.toml` binds routes with `zone_name`, not a zone id. Its only consumer in this repo is Terraform (`infra/terraform/cloudflare/variables.tf`, fed as `TF_VAR_cloudflare_zone_id`), which has never been applied. Absent from Doppler `prd`/`stg` as of 2026-08-04 and that blocks nothing. |
+| `SENTRY_DSN_INGEST`     | ingest | Secret | Set via `wrangler secret put SENTRY_DSN_INGEST`                                                                                                                                                                                                                                                                                                                                   |
+| `OTEL_EXPORTER_HEADERS` | ingest | Secret | Grafana Cloud OTLP auth header; set via `wrangler secret put`                                                                                                                                                                                                                                                                                                                     |
+| `OTEL_EXPORTER_URL`     | ingest | Config | Grafana Cloud OTLP endpoint                                                                                                                                                                                                                                                                                                                                                       |
 
 ---
 
@@ -60,7 +34,6 @@ Canonical domain: **estalara.com** (per DECISIONS_2026-05-18_v2). See
 | `NEXT_PUBLIC_CONTROL_PLANE_URL`        | control-plane | Config         | `https://admin.estalara.com`                                                                                                                                                                                            |
 | `NEXT_PUBLIC_SDK_CDN_URL`              | control-plane | Config         | `https://cdn.estalara.com`                                                                                                                                                                                              |
 | `ESTALARA_INGEST_URL`                  | control-plane | Config         | `https://ingest.estalara.com`                                                                                                                                                                                           |
-| `ESTALARA_DECISION_API_URL`            | control-plane | Config         | OBSOLETE (FOLLOW-1262): no reader; delete from Doppler. Was `https://decision.estalara.com`                                                                                                                             |
 | `ESTALARA_BACKEND_URL`                 | control-plane | Config         | `https://api.app.estalara.com` — Estalara-app Spring backend (listing details / grounding). Renamed from `api.estalara.com` ~2026-06-30 (FOLLOW-568); must ALSO exist in Vercel prod env (was missing until 2026-07-11) |
 | `NEXT_PUBLIC_SUPABASE_URL`             | control-plane | Config         | `https://<ref>.supabase.co`                                                                                                                                                                                             |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY`        | control-plane | Secret         | Public anon key                                                                                                                                                                                                         |
@@ -68,8 +41,6 @@ Canonical domain: **estalara.com** (per DECISIONS_2026-05-18_v2). See
 | `DATABASE_URL`                         | control-plane | Secret         | Postgres connection string (via pgBouncer)                                                                                                                                                                              |
 | `DATABASE_URL_ADMIN`                   | control-plane | Secret         | Admin role; used by migration scripts                                                                                                                                                                                   |
 | `DATABASE_URL_DIRECT`                  | control-plane | Secret         | Direct Postgres; bypasses pgBouncer                                                                                                                                                                                     |
-| `JWT_SECRET`                           | control-plane | Secret         | Supabase JWT signing secret                                                                                                                                                                                             |
-| `API_KEY_HMAC_SECRET`                  | control-plane | Secret         | HMAC secret for tenant API key generation                                                                                                                                                                               |
 | `ADMIN_API_SECRET`                     | control-plane | Secret         | Internal admin-only API secret                                                                                                                                                                                          |
 | `DEMO_MODE_JWT_SECRET`                 | control-plane | Secret         | **No fallback in prod** — must be set (see B12)                                                                                                                                                                         |
 | `SENTRY_DSN_CONTROL_PLANE`             | control-plane | Secret         | Per-project Sentry DSN                                                                                                                                                                                                  |
@@ -78,26 +49,14 @@ Canonical domain: **estalara.com** (per DECISIONS_2026-05-18_v2). See
 | `SENTRY_ORG`                           | control-plane | Config         | Sentry organisation slug                                                                                                                                                                                                |
 | `SENTRY_PROJECT`                       | control-plane | Config         | Sentry project slug                                                                                                                                                                                                     |
 | `RESEND_API_KEY`                       | control-plane | Secret         | Email delivery via Resend                                                                                                                                                                                               |
-| `STRIPE_SECRET_KEY`                    | control-plane | Secret         | Removed by FOLLOW-1331 (2026-10-18): Stripe code deleted; delete from Doppler/Vercel                                                                                                                                    |
-| `STRIPE_WEBHOOK_SECRET`                | control-plane | Secret         | Removed by FOLLOW-1331 (2026-10-18): Stripe code deleted; delete from Doppler/Vercel                                                                                                                                    |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`   | control-plane | Config         | Removed by FOLLOW-1331 (2026-10-18): Stripe code deleted; delete from Doppler/Vercel                                                                                                                                    |
-| `STRIPE_PRICE_OBSERVER`                | control-plane | Config         | Removed by FOLLOW-1331 (2026-10-18): Stripe code deleted; delete from Doppler/Vercel                                                                                                                                    |
-| `STRIPE_PRICE_AUGMENT`                 | control-plane | Config         | Removed by FOLLOW-1331 (2026-10-18): Stripe code deleted; delete from Doppler/Vercel                                                                                                                                    |
-| `STRIPE_PRICE_NATIVE`                  | control-plane | Config         | Removed by FOLLOW-1331 (2026-10-18): Stripe code deleted; delete from Doppler/Vercel                                                                                                                                    |
 | `LISTING_UPDATED_WEBHOOK_SECRET`       | control-plane | Secret         | Listing-updated webhook HMAC                                                                                                                                                                                            |
 | `ADAPT_API_KEY`                        | control-plane | Secret         | Bearer token for internal /api/adapt calls                                                                                                                                                                              |
-| `SCHEMA_API_TOKEN`                     | control-plane | Secret         | Removed by FOLLOW-1323 (2026-10-18): route deleted; delete from Doppler/Vercel                                                                                                                                          |
 | `ANTHROPIC_API_KEY`                    | control-plane | Secret         | Claude API key                                                                                                                                                                                                          |
 | `OPENAI_API_KEY`                       | control-plane | Secret         | OpenAI API key                                                                                                                                                                                                          |
-| `CLICKHOUSE_URL`                       | control-plane | Config         | Phase 2 — ClickHouse endpoint                                                                                                                                                                                           |
-| `CLICKHOUSE_PASSWORD`                  | control-plane | Secret         | Phase 2                                                                                                                                                                                                                 |
-| `REDPANDA_REST_URL`                    | control-plane | Config         | Phase 2 — Pandaproxy                                                                                                                                                                                                    |
-| `REDPANDA_REST_USERNAME`               | control-plane | Config         | Phase 2                                                                                                                                                                                                                 |
-| `REDPANDA_REST_PASSWORD`               | control-plane | Secret         | Phase 2                                                                                                                                                                                                                 |
-| `REDPANDA_TOPIC_EVENTS`                | control-plane | Config         | Phase 2                                                                                                                                                                                                                 |
-| `REDPANDA_TOPIC_DESCRIPTIONS`          | control-plane | Config         | Phase 2                                                                                                                                                                                                                 |
-| `UPSTASH_REDIS_URL`                    | control-plane | Config         | Phase 2                                                                                                                                                                                                                 |
-| `UPSTASH_REDIS_TOKEN`                  | control-plane | Secret         | Phase 2                                                                                                                                                                                                                 |
+| `CLICKHOUSE_URL`                       | control-plane | Config         | ClickHouse Cloud endpoint (analytics and DSR reads)                                                                                                                                                                     |
+| `CLICKHOUSE_PASSWORD`                  | control-plane | Secret         | ClickHouse password                                                                                                                                                                                                     |
+| `UPSTASH_REDIS_URL`                    | control-plane | Config         | Upstash REST URL (caches)                                                                                                                                                                                               |
+| `UPSTASH_REDIS_TOKEN`                  | control-plane | Secret         | Upstash REST token (caches)                                                                                                                                                                                             |
 | `GIT_SHA`                              | control-plane | Injected by CI | Set by GitHub Actions                                                                                                                                                                                                   |
 | `NEXT_PUBLIC_GIT_SHA`                  | control-plane | Injected by CI | Set by GitHub Actions                                                                                                                                                                                                   |
 | `NODE_ENV`                             | control-plane | Config         | `production` in prod                                                                                                                                                                                                    |
@@ -117,36 +76,24 @@ Canonical domain: **estalara.com** (per DECISIONS_2026-05-18_v2). See
 
 ## Phase 1 minimum set (must be configured before activation)
 
-These 20 vars are the minimum to boot Phase 1 (CF Worker + Supabase + Vercel + Doppler + DNS). Phase
-2 vars (ClickHouse, Redpanda, Upstash, Modal) can remain blank.
+These vars are the minimum to boot Phase 1 (CF Worker + Supabase + Vercel + Doppler + DNS). Vars
+outside this list (ClickHouse, Upstash, Modal) can remain blank to boot. Names that nothing reads
+any more are not listed; secrets to delete from production are tracked in
+`docs/handover/CTO_HANDOVER.md`.
 
 1. `CLOUDFLARE_API_TOKEN`
 2. `CLOUDFLARE_ACCOUNT_ID`
-3. ~~`CLOUDFLARE_ZONE_ID`~~ — **not actually required for activation.** Both Workers have been
-   serving production traffic without it present in Doppler `prd`/`stg` (verified 2026-08-04:
-   `https://ingest.estalara.com/health` and `https://decision.estalara.com/api/health` both 200).
-   Needed only if `infra/terraform/cloudflare/` is ever applied. Left in place, struck through,
-   rather than deleted, so the "20 vars" count below and any external checklist keyed to this
-   numbering do not silently shift.
-4. `ADAPT_API_KEY`
-5. `SENTRY_DSN_INGEST`
-6. `OTEL_EXPORTER_HEADERS`
-7. `NEXT_PUBLIC_SUPABASE_URL`
-8. `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-9. `SUPABASE_SERVICE_ROLE_KEY`
-10. `DATABASE_URL`
-11. `JWT_SECRET`
-12. `API_KEY_HMAC_SECRET`
-13. `DEMO_MODE_JWT_SECRET`
-14. `RESEND_API_KEY`
-15. `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` + `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` — **removed
-    by FOLLOW-1331 (2026-10-18):** Stripe code deleted; delete from Doppler/Vercel
-16. `NEXT_PUBLIC_CONTROL_PLANE_URL` = `https://admin.estalara.com`
-17. `ESTALARA_INGEST_URL` = `https://ingest.estalara.com`
-18. `ESTALARA_DECISION_API_URL` = `https://decision.estalara.com` — **obsolete since 2026-09-24
-    (FOLLOW-1262):** nothing reads it any more; delete from Doppler
-19. `ESTALARA_BACKEND_URL` = `https://api.app.estalara.com` (renamed from `api.estalara.com`,
+3. `ADAPT_API_KEY`
+4. `SENTRY_DSN_INGEST`
+5. `OTEL_EXPORTER_HEADERS`
+6. `NEXT_PUBLIC_SUPABASE_URL`
+7. `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+8. `SUPABASE_SERVICE_ROLE_KEY`
+9. `DATABASE_URL`
+10. `DEMO_MODE_JWT_SECRET`
+11. `RESEND_API_KEY`
+12. `NEXT_PUBLIC_CONTROL_PLANE_URL` = `https://admin.estalara.com`
+13. `ESTALARA_INGEST_URL` = `https://ingest.estalara.com`
+14. `ESTALARA_BACKEND_URL` = `https://api.app.estalara.com` (renamed from `api.estalara.com`,
     FOLLOW-568; mirror into Vercel prod env)
-20. `SCHEMA_API_TOKEN` — **removed 2026-10-18 (FOLLOW-1323):** `/api/internal/schema` is deleted;
-    delete the secret from Doppler and Vercel
-21. `TURBO_TOKEN` + `TURBO_TEAM` (CI only)
+15. `TURBO_TOKEN` + `TURBO_TEAM` (CI only)

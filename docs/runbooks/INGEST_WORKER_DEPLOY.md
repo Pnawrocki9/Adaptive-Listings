@@ -26,8 +26,7 @@ piotr@estalara.com.)
 2. **Account resources:** `wrangler kv namespace list` (ids must match toml),
    `wrangler queues list`, `wrangler secret list --env production`. Optional secrets that degrade
    gracefully when absent (verified in code 2026-07-26): `SENTRY_DSN_INGEST` (Sentry no-op),
-   `MODAL_CHAT_NLP_URL` (chat-NLP dispatch skipped), `REDPANDA_*` (skipped when `REDPANDA_REST_URL`
-   var is `""`).
+   `MODAL_CHAT_NLP_URL` (chat-NLP dispatch skipped).
 3. **Record the rollback target:** `wrangler deployments list --env production` → note the current
    100% Version ID verbatim.
 4. **Live-traffic sample:** `wrangler tail --env production` for 3–5 min; record origins seen. If

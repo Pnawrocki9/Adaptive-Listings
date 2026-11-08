@@ -638,12 +638,13 @@
   `UPSTASH_REDIS_REST_URL`/`TOKEN`, `ANTHROPIC_API_KEY`); `apps/control-plane/.env.example` keeps
   `API_KEY_HMAC_SECRET` and `apps/ingest/.env.example` the KV ids, which nothing reads. Add a full
   per-app reader list (the handover §3 is the production list of record). Next free: FOLLOW-1482.
-- **FOLLOW-1507** — status: IN_PROGRESS # ml-engineer (Opus), 2026-11-08. ESC-093 (1), CEO
-  2026-11-08 "adres to adres": a camp name that is part of the listing's own address passes the
-  protected-ground guard wherever the listing is (`ul. Treblinki 3` on a Targówek listing is
-  served); camp names outside an address stay refused outright.
-  `packages/shared/src/playbooks/traits.ts`, claims stamp bump. Closes the open half of FOLLOW-1431
-  for camp names. Series 3× GREEN `[FRESH]`.
+- **FOLLOW-1507** — status: IN_PROGRESS # ml-engineer (Opus), #1174, 2026-11-08. ESC-093 (1), CEO
+  2026-11-08 "adres to adres", clarified the same day: a camp name written as a street address
+  passes the protected-ground guard on every listing (own or neighbouring street, with or without a
+  house number); camp names in prose stay refused, and a camp or memorial word next to the address
+  refuses it. `packages/shared/src/playbooks/traits.ts`, `claims-v12`. Closes the open half of
+  FOLLOW-1431 for camp names. Independent review (Rule BD) on the first build: fix first; rework in
+  progress. Series 3× GREEN `[FRESH]`.
 - **FOLLOW-1508** — status: IN_PROGRESS # backend-engineer (Opus), 2026-11-08. ESC-093 (2), CEO
   2026-11-08: ESC-091 C-1 covers profiling events. `apps/ingest/src/consent-gate.ts` persists a
   profiling-class event only with `consent_state = 'consented'`; `legitimate-interest` is dropped

@@ -37,8 +37,11 @@ only, never legitimate interest"; whether that reaches profiling events at inges
 
 **Resolution (CEO, 2026-11-08):**
 
-- **(1) "Adres to adres."** A camp name that is part of the listing's own address passes, wherever
-  the listing is. The refusal of camp names outside an address stays → FOLLOW-1507.
+- **(1) "Adres to adres."** A camp name written as a street address passes, wherever the listing is.
+  Clarified by the CEO the same day, after an independent review of the first build found that "the
+  listing's own address" could not be told apart from a neighbouring street: **any** street address
+  passes (own or neighbouring, with or without a house number); a camp name in prose ("obok
+  Treblinki", "dawny obóz") stays refused → FOLLOW-1507.
 - **(2) "Tak, obejmuje i zdarzenia."** ESC-091 C-1 covers profiling events too: ingest persists a
   profiling-class event only with `consent_state = 'consented'`; legitimate interest is no basis →
   FOLLOW-1508 (code), FOLLOW-1509 (records: DPIA, ROPA, LIA, Notice; no legal analysis, per the

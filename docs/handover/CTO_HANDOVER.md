@@ -1,9 +1,12 @@
 # Adaptive Listings — CTO handover package
 
 **Version:** v1 (2026-11-07, plan Phase 7 step H2). **Final product SHA: `959dcf3b`** (#1159, the
-last product PR of the plan). v0 was opened 2026-10-18 by FOLLOW-1319 (plan package 0.4, CEO ruling
-D-F of 2026-10-16: production deployment is a handover package for the CTO, not steps the PM
-executes).
+last product PR of the plan at H2). **Moved at K7 to `59ea780c`** (#1167, FOLLOW-1480, CEO ruling of
+2026-11-07: the consent-withdrawal control collapses to an icon after 3 s); its localhost proof is
+`docs/checkpoints/K7.md` (series README §5.75, N3 3/3 GREEN 29/29). Sections 1 to 9 still cite
+`959dcf3b`; the one product change since then adds no production step. v0 was opened 2026-10-18 by
+FOLLOW-1319 (plan package 0.4, CEO ruling D-F of 2026-10-16: production deployment is a handover
+package for the CTO, not steps the PM executes).
 
 **What "frozen" means.** Sections 1 to 9 describe the tree at `959dcf3b`; the localhost proof of
 that SHA is `docs/checkpoints/H1.md` (PR #1162, GREEN). Frozen is not closed: by this file's own
@@ -317,8 +320,8 @@ the ruling in `docs/checkpoints/K7.md`.
   with the stack down: exit 0, 72 static pages at `959dcf3b` (H1 ledger; vendor warning noted in
   §7).
 
-The final evidence is `docs/checkpoints/H1.md`; `docs/checkpoints/K7.md` is owed at K7 and will hold
-the CEO's ruling, not new measurements.
+The final evidence is `docs/checkpoints/H1.md` at `959dcf3b` and `docs/checkpoints/K7.md` at
+`59ea780c` (series, N3 and the K7 controls); K7 also holds the CEO's ruling.
 
 ## 9. Post-deploy checks for the CTO — the four production canaries
 

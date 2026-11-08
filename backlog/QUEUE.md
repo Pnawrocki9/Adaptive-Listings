@@ -301,8 +301,9 @@
   2026-11-01: 32 firm language errors on PL and ES pages, in 21 of 56 texts, many of them translated
   persona phrases ("matematyka wyjścia", "ogon najmu", "zaprojektowany pod więcej weekendów"), plus
   "sqm" and "Lisbon" on Polish pages. `docs/checkpoints/K4a.md`.
-- **FOLLOW-1430** — status: READY # H3 2026-11-07: OPEN before K7. `check-measured-premises.mjs` is
-  a K7 control; at `16e5bde5` it exits 1 with 2 problems: the dated measurements of this ticket, and
+- **FOLLOW-1430** — status: DONE # #1165, 2026-11-07; `check-measured-premises.mjs` exit 0 at
+  `59ea780c` (K7 C3). Was READY # H3 2026-11-07: OPEN before K7. `check-measured-premises.mjs` is a
+  K7 control; at `16e5bde5` it exits 1 with 2 problems: the dated measurements of this ticket, and
   MP-008 EXPIRED (`revalidate_by` 2026-11-02). Was READY # P3 gate. `check-measured-premises.mjs`
   fails on dated measurements in `generation-models.ts` and the FOLLOW-1377 tests (#1081 on). K7
   gate; runs only weekly. Move them to `docs/ops/MEASURED_PREMISES.md`.
@@ -481,9 +482,11 @@
 - **FOLLOW-1345** — status: DONE # H3 2026-11-07: see the session 180 row: every ledger merged. Was
   IN_PROGRESS # Ledgers K0 #1018, K1 #1022, K2a #1031, K2b #1034, K2c (this PR, `k2c-green`).
   Harness AC(1b), AC(9) at K4a/K4b.
-- **FOLLOW-1346** — status: IN_PROGRESS # H3 2026-11-07: OPEN before K7. H1 GREEN #1162
-  (`docs/checkpoints/H1.md`), H2 #1163 (`CTO_HANDOVER.md` v1), H3 `docs/checkpoints/H3.md`; open
-  only for H4 (CEO walk) and K7. Was BACKLOG # Phase 7 H1/H2 final proof and handover v1. K7.
+- **FOLLOW-1346** — status: IN_PROGRESS # K7 2026-11-08: `docs/checkpoints/K7.md`, technical
+  controls GREEN at the final SHA `59ea780c`; open only for the CEO walk (H4), then tag `k7-green`.
+  H3 2026-11-07: OPEN before K7. H1 GREEN #1162 (`docs/checkpoints/H1.md`), H2 #1163
+  (`CTO_HANDOVER.md` v1), H3 `docs/checkpoints/H3.md`; open only for H4 (CEO walk) and K7. Was
+  BACKLOG # Phase 7 H1/H2 final proof and handover v1. K7.
 - **FOLLOW-1347** — status: DONE # #1037 `a432f080`, 2026-10-18. `demo_sessions` reader removed;
   handover row 13 has no reader left (DROP = CTO).
 - **FOLLOW-1348** — status: DONE # #1038 `bdb93d7a`, 2026-10-18. R10 compliance condition C4 docs.
@@ -610,13 +613,19 @@
   `packages/sdk/src`, plus an ESLint guard: −1,212 B measured, behaviour unchanged (ESC-092 A1).
   Typecheck and tests of shared, sdk, control-plane and ingest. Plan
   `docs/PLAN-WAVE2-SDK-2026-11-06.md` PR 0. FOLLOW-1474 = the wave 2 close-out PR; 1472 is used by
-  #1151; 1475 to 1477 by #1161 to #1163; 1478 below (H3). Next free: FOLLOW-1479, RETRO-381,
-  ESC-093.
+  #1151; 1475 to 1477 by #1161 to #1163; 1478 below (H3); 1479 and 1480 below (K7). Next free:
+  FOLLOW-1481, RETRO-381, ESC-093.
 - **FOLLOW-1478** — status: BACKLOG # P3 docs, filed at H3 2026-11-07. `JWT_SECRET` is listed in
   `apps/control-plane/.env.example` (line 61) and `docs/ops/DOPPLER_SECRETS_MATRIX.md`, but nothing
   reads it: the code reads `SUPABASE_JWT_SECRET`. The matrix still has `REDPANDA_*` rows and "Phase
   2" rows. `docs/runbooks/INGEST_WORKER_DEPLOY.md` §1 names `REDPANDA_*` as optional Worker secrets.
   Redpanda was retired by FOLLOW-1263 (#942). Remove or mark the stale rows.
+- **FOLLOW-1479** — status: DONE # #1166, 2026-11-07. K7 PM handover review: the names the code
+  reads that production lacks (Upstash REST pair, `PLATFORM_REGISTRATION_CONSENT_SECRET`,
+  `CONSENT_IP_ENCRYPTION_KEY`) are in handover §3 and §4 step 32; the Modal secret is in §3.
+- **FOLLOW-1480** — status: DONE # #1167, 2026-11-07, CEO ruling of the same day. The consent
+  withdrawal control collapses to a 24 px icon after 3 s and reopens on click. Series README §5.75
+  and N3 3/3 GREEN 29/29 at `59ea780c` (K7 ledger). SDK bundle 43,105 of 43,136 B gzip.
 - **FOLLOW-1279** — status: CLOSED # absorbed by FOLLOW-1308.
 - **FOLLOW-1251, 1302, 1303, 1291, 1294, 1297** — amended (see FOLLOW_UPS); statuses unchanged.
 

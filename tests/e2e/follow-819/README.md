@@ -4030,6 +4030,15 @@ holdout on the adapted arm (AC(1), AC(5), AC(7) reclassified UNMEASURED), run 3 
 AC(10) only (8 green). The three GREEN runs (1, 5, 6) are `green=9 total=9 run=GREEN [FRESH]`;
 UNMEASURED is neutral. N3 on the same SHA is in `docs/checkpoints/K7.md`.
 
+### 5.76 — 2026-11-08 (#1173 + #1174, ESC-093, final SHA `460147e0`) — **three consecutive `run=GREEN` with `total=9`**
+
+Series `k7b` on `main` `460147e0` after the merges of #1171 to #1174 (ingest stores profiling events
+only with consent; a camp name written as a street address passes the guard). Runs, in order: RED,
+GREEN, UNMEASURED, GREEN, GREEN. Run 1, the first after a cold bring-up, was RED on AC(9) only
+(FOLLOW-1471's pattern) with AC(1) UNMEASURED (`no_description`); run 3 was 8 green, 1 UNMEASURED.
+The three GREEN runs (2, 4, 5) are `green=9 total=9 run=GREEN [FRESH]`. N3 on the same SHA is in
+`docs/checkpoints/K7.md`.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

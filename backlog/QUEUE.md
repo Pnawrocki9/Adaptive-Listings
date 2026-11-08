@@ -602,7 +602,8 @@
   AC(10)(b) `locator.click` 3000 ms on `.estalara-quiz-reject` once on #1149. Find the cause of the
   AC(9) REDs; raise the AC(10)(b) click timeout if it recurs. K6 ledger, findings. Wave 2: AC(9) RED
   on the first run after a cold bring-up again (#1159 af1b6228 run 1), and AC(10)(b) once with
-  `stepMs=null/answerPath=null` on a `corrected` row (#1159 run 3).
+  `stepMs=null/answerPath=null` on a `corrected` row (#1159 run 3). K7 re-run 2026-11-08: AC(9) RED
+  on run 1 after a cold bring-up again (series `k7b`, `460147e0`, README §5.76).
 - **FOLLOW-1472** — status: DEFERRED # H3 2026-11-07: post-K7, P3 gate; handover §7 records it. Was
   BACKLOG # P3 gate. `scripts/check-rule-i.sh` reads only `export const|function|class…`
   declarations and counts importers by name, so a Next.js file-convention hook (`onRequestError` in
@@ -615,8 +616,8 @@
   `docs/PLAN-WAVE2-SDK-2026-11-06.md` PR 0. FOLLOW-1474 = the wave 2 close-out PR; 1472 is used by
   #1151; 1475 to 1477 by #1161 to #1163; 1478 below (H3); 1479 and 1480 below (K7); 1481 below
   (FOLLOW-1478); 1482 to 1489 and 1500 to 1506 by the retro batch RETRO-381 to 394 (stubs in
-  FOLLOW_UPS.md, not queued); 1507 to 1509 below (ESC-093). Next free: FOLLOW-1510, RETRO-395,
-  ESC-094.
+  FOLLOW_UPS.md, not queued); 1507 to 1509 below (ESC-093); 1510 to 1513 by the ESC-093 close-out
+  (stubs in FOLLOW_UPS.md, not queued). Next free: FOLLOW-1514, RETRO-395, ESC-094.
 - **FOLLOW-1478** — status: DONE # this PR, 2026-11-08: rows nothing reads removed from the matrix
   (`REDPANDA_*`, `JWT_SECRET`, the `decision-api` section, Stripe, `API_KEY_HMAC_SECRET`, KV ids),
   Phase 2 labels dropped, `JWT_SECRET` out of `.env.example`, Redpanda out of the Worker runbook.
@@ -638,20 +639,22 @@
   `UPSTASH_REDIS_REST_URL`/`TOKEN`, `ANTHROPIC_API_KEY`); `apps/control-plane/.env.example` keeps
   `API_KEY_HMAC_SECRET` and `apps/ingest/.env.example` the KV ids, which nothing reads. Add a full
   per-app reader list (the handover §3 is the production list of record). Next free: FOLLOW-1482.
-- **FOLLOW-1507** — status: IN_PROGRESS # ml-engineer (Opus), #1174, 2026-11-08. ESC-093 (1), CEO
-  2026-11-08 "adres to adres", clarified the same day: a camp name written as a street address
+- **FOLLOW-1507** — status: DONE # ml-engineer (Opus), #1174 (`460147e0`), 2026-11-08, after two
+  independent reviews (Rule BD); review residue FOLLOW-1510 (P2) and FOLLOW-1511 (P3). ESC-093 (1),
+  CEO 2026-11-08 "adres to adres", clarified the same day: a camp name written as a street address
   passes the protected-ground guard on every listing (own or neighbouring street, with or without a
   house number); camp names in prose stay refused, and a camp or memorial word next to the address
   refuses it. `packages/shared/src/playbooks/traits.ts`, `claims-v12`. Closes the open half of
-  FOLLOW-1431 for camp names. Independent review (Rule BD) on the first build: fix first; rework in
-  progress. Series 3× GREEN `[FRESH]`.
-- **FOLLOW-1508** — status: IN_PROGRESS # backend-engineer (Opus), 2026-11-08. ESC-093 (2), CEO
-  2026-11-08: ESC-091 C-1 covers profiling events. `apps/ingest/src/consent-gate.ts` persists a
-  profiling-class event only with `consent_state = 'consented'`; `legitimate-interest` is dropped
-  like `none`. SDK unchanged (no bytes). Series 3× GREEN `[FRESH]` and N3.
-- **FOLLOW-1509** — status: IN_PROGRESS # compliance-engineer (Sonnet), 2026-11-08. ESC-093 (2) in
-  the records: DPIA, ROPA, LIA and Notice say profiling events at ingest rest on consent only.
-  Records only, no legal analysis (CEO 2026-11-03).
+  FOLLOW-1431 for camp names. Series and N3 at `460147e0`: K7 ledger.
+- **FOLLOW-1508** — status: DONE # backend-engineer (Opus), #1173 (`80fc6f78`), 2026-11-08; review
+  residue FOLLOW-1512 (P2). ESC-093 (2), CEO 2026-11-08: ESC-091 C-1 covers profiling events.
+  `apps/ingest/src/consent-gate.ts` persists a profiling-class event only with
+  `consent_state = 'consented'`; `legitimate-interest` is dropped like `none`. SDK unchanged (no
+  bytes). Series and N3 at `460147e0`: K7 ledger.
+- **FOLLOW-1509** — status: DONE # compliance-engineer (Sonnet), #1172, 2026-11-08; the "not
+  shipped" notes in DPIA and ROPA updated after #1173 by the PM; stale LI wording FOLLOW-1513.
+  ESC-093 (2) in the records: DPIA, ROPA, LIA and Notice say profiling events at ingest rest on
+  consent only. Records only, no legal analysis (CEO 2026-11-03).
 - **FOLLOW-1279** — status: CLOSED # absorbed by FOLLOW-1308.
 - **FOLLOW-1251, 1302, 1303, 1291, 1294, 1297** — amended (see FOLLOW_UPS); statuses unchanged.
 

@@ -57837,3 +57837,98 @@ AC:
 - [ ] Red-first: the old spec with the clock advanced past 3 s fails.
 
 cross_ref: [RETRO-394, RETRO-393, FOLLOW-1480]
+## FOLLOW-1510 — [product] the protected-ground guard misses memorial phrases next to a street address, and one religion-word composition is served
+
+source_retro: none — filed by the PM 2026-11-08 from the second independent review (Rule BD) of
+#1174 (FOLLOW-1507) source_ticket: FOLLOW-1507 recommended_sprint: post-K7 recommended_agent:
+ml-engineer (Opus — a guard change, Rule BD review again) priority: P2 estimated_hours: 3 tag:
+product depends_on: [FOLLOW-1507 — DONE, #1174] blocks: [] promoted_to_queue: false
+
+**What.** ESC-093 (1), as clarified by the CEO: any street address with a camp name passes; a camp
+or memorial word next to the address refuses it. `CAMP_CONTEXT_RE` in
+`packages/shared/src/playbooks/traits.ts` is a closed list, and the review found phrases outside it
+that should refuse: "ku pamięci" and "dark history" next to a camp-name address. The same review
+reported that "sąsiedzi muzułmanie" (a religion word in prose about the neighbours) is served, and
+that a camp name composed into "Calle de Alcalá"-style street names is read inconsistently. These
+are reports from the review; none is reproduced yet.
+
+AC:
+
+- [ ] Red-first: one test per report above, each failing on `main` before the fix (a report that
+      does not reproduce is recorded as such in the PR, not fixed).
+- [ ] The memorial phrases refuse next to a camp-name address in PL, EN and ES; the prose case is
+      refused; the street-name composition is decided by one written rule in the test file.
+- [ ] `protected-ground-street-address.follow1507.test.ts`, the FOLLOW-1431 suite and parity stay
+      green; claims stamp bumped; independent review (Rule BD).
+
+cross_ref: [ESC-093, FOLLOW-1507, FOLLOW-1431, ESC-089, Rule BD]
+
+## FOLLOW-1511 — [product] false refusals from the widened address forms and camp words
+
+source_retro: none — filed by the PM 2026-11-08 from the second independent review (Rule BD) of
+#1174 (FOLLOW-1507) source_ticket: FOLLOW-1507 recommended_sprint: post-K7 recommended_agent:
+ml-engineer (Sonnet, with an Opus review) priority: P3 estimated_hours: 3 tag: product depends_on:
+[FOLLOW-1507 — DONE, #1174] blocks: [] promoted_to_queue: false
+
+**What.** #1174 widened the address forms (`os.`, Plaza, Calle de/del, Lane, St/Ave) and added camp
+words (`camps?`, `campos?`, `memorial(s)`, `obóz…`). The review reported over-matching that refuses
+ordinary copy: "St"/"Ave"/"Lane" read inside saint names and idioms; "antiguo campo de golf", "en
+pleno campo", "Memorial Hospital" and "obozów sportowych" read as camp context; "dla dwóch os." read
+as an estate marker; and older spellings not read as addresses at all ("UL." in capitals,
+`ul.Treblinki` without a space, lowercase forms). A false refusal withholds the adapted description;
+it does not serve anything wrong.
+
+AC:
+
+- [ ] Red-first: one test per report, failing on `main` first (non-reproducing reports recorded).
+- [ ] Each fixed case passes without loosening a refusal pinned by the FOLLOW-1507 and FOLLOW-1431
+      suites.
+- [ ] Parity corpus and replay green; claims stamp bumped.
+
+cross_ref: [ESC-093, FOLLOW-1507, FOLLOW-1510]
+
+## FOLLOW-1512 — [product] the SDK may run without the consent banner when no shadow host can be made
+
+source_retro: none — filed by the PM 2026-11-08 from the review of #1173 (FOLLOW-1508)
+source_ticket: FOLLOW-1508 recommended_sprint: post-K7 recommended_agent: sdk-engineer (Opus —
+consent path) priority: P2 estimated_hours: 2 tag: product depends_on: [FOLLOW-1508 — DONE, #1173]
+blocks: [] promoted_to_queue: false
+
+**What.** The review reported a path where the SDK cannot create its shadow host, continues booting,
+and never shows the consent banner. Since ESC-093 (2) ingest drops profiling events without
+`consented`, so nothing profiling is stored on that path, but the buyer also gets no way to consent
+or refuse, and the SDK still sends events that ingest discards. Not reproduced yet.
+
+AC:
+
+- [ ] Red-first: a test that removes shadow-DOM support (or makes `attachShadow` throw) and asserts
+      today's behaviour.
+- [ ] On that path the SDK either shows the banner by another means or stays inert (no events, no
+      adaptation); the choice is written in the PR.
+- [ ] `build:check` within the 43,136 B budget (31 B of headroom at K7: a cut may be needed first).
+
+cross_ref: [ESC-093, ESC-091, FOLLOW-1508, FOLLOW-815]
+
+## FOLLOW-1513 — [docs] code comment and MASTER_DESIGN still describe a legitimate-interest basis for profiling events
+
+source_retro: none — filed by the PM 2026-11-08 after #1172/#1173 source_ticket: FOLLOW-1508,
+FOLLOW-1509 recommended_sprint: post-K7 recommended_agent: architect (Fable for the MASTER_DESIGN
+rows, per the model-fit rule) priority: P3 estimated_hours: 1.5 tag: docs depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What.** Since ESC-093 (2) profiling events at ingest rest on consent only.
+`packages/sdk/src/core/events.ts` (the `mapConsentState` comment) still says `'pending'` maps to
+`'legitimate-interest'` because the SDK "operates under LI basis"; the mapping is unchanged and
+correct, the reason is not. `docs/MASTER_DESIGN.md` still states an LI basis for behavioural
+fingerprinting and telemetry (the decision list item 3, the event-class table, the consent-aware
+aggregation row and the lawful-basis row of the compliance section).
+
+AC:
+
+- [ ] The SDK comment says what the value does now: ingest drops profiling events with it (no byte
+      change; `build:check` unchanged).
+- [ ] Each MASTER_DESIGN row gets an "Amended (ESC-093 (2), 2026-11-08)" note pointing to DPIA v2.31
+      and ROPA v2.26; the history text stays.
+- [ ] `check-compliance-docs.sh` passes.
+
+cross_ref: [ESC-093, ESC-091, FOLLOW-1508, FOLLOW-1509]

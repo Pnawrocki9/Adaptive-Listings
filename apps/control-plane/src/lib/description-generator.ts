@@ -145,12 +145,13 @@ import {
  *   the protected-ground guard's street exemption only when `listing_location` names the same camp,
  *   and composition is also read past an address's abbreviation. No `claims-v10` row was checked
  *   against those; it is regenerated once instead of served.
- * - `claims-v12` — 2026-11-08, FOLLOW-1507 (CEO ESC-093 (1), "adres to adres"): a camp's name in
- *   the listing's own address, with its house number, passes wherever the listing is; the own
- *   address is `listing_location` when it states a street, else the one the original description
- *   or title states as its own. A camp's name keeps no street exemption in copy with a word that
- *   recalls the camp ("miejsce pamięci", "the former camp"), on either exemption. No `claims-v11`
- *   row was checked against that; it is regenerated once instead of served.
+ * - `claims-v12` — 2026-11-08, FOLLOW-1507 (CEO ESC-093 (1), "adres to adres", clarified by the
+ *   CEO on 2026-11-08: any street address passes): a camp's name in a street address passes the
+ *   protected-ground guard on every listing, with or without a house number, and the guard reads
+ *   more address forms ("os.", "Plaza", "Calle de X", "Lane", "St", "Ave"). A camp's name in prose
+ *   stays refused, and a camp's street keeps no exemption in copy with a word that names the camp
+ *   or its memorial ("dawny obóz", "miejsce pamięci", "victims"). No `claims-v11` row was checked
+ *   against that; it is regenerated once instead of served.
  */
 export const CLAIMS_VALIDATION_VERSION = 'claims-v12';
 
@@ -873,16 +874,6 @@ function parseVerifiedFacts(output: string): { description: string; facts: strin
 }
 
 /** The interpretation half of `_generate_with_sonnet`: raw model output → outcome. */
-/**
- * Does `copy` make a protected-ground statement, read against the listing's own location and its
- * own text (the original description and title hold its address when the location states no
- * street, ESC-093 (1)) [FOLLOW-1411, FOLLOW-1507]?
- */
-function failsProtectedGround(copy: string, e: DescriptionRequestedEvent): boolean {
-  const own = `${e.original_description || ''}\n${e.listing_context.listing_title ?? ''}`;
-  return describesResidentsByProtectedGround(copy, e.listing_context.listing_location, own);
-}
-
 function interpretDescription(
   raw: { text: string; stopReason: string | null },
   e: DescriptionRequestedEvent,
@@ -908,7 +899,7 @@ function interpretDescription(
 
   // FOLLOW-1411: a statement about residents' race, ethnic origin or religion is refused before
   // the claim check, as `/api/adapt` orders it; refused, never stripped.
-  if (failsProtectedGround(description, e)) {
+  if (describesResidentsByProtectedGround(description)) {
     return { verdict: 'REFUSED', violation: 'protected_ground' };
   }
 
@@ -950,7 +941,7 @@ function interpretHeadline(
   const languageViolation = checkOutputLanguage(headline, e.locale);
   if (languageViolation) return { headline: null, violation: languageViolation };
   // FOLLOW-1411: residents' race, ethnic origin or religion, as on the body and on `/api/adapt`.
-  if (failsProtectedGround(headline, e)) {
+  if (describesResidentsByProtectedGround(headline)) {
     return { headline: null, violation: 'protected_ground' };
   }
   const violation = checkHeadlineFacts(

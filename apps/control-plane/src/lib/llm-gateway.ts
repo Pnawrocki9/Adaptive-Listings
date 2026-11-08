@@ -787,10 +787,6 @@ export async function callLlmGateway(input: LlmGatewayInput): Promise<LlmGateway
           isAuthoredSectionLabel(input.basePlaybook, directive.slot, directive.value));
       const protectedGround: ProtectedGroundViolation | null = describesResidentsByProtectedGround(
         directive.value,
-        input.listingContext?.listing_location,
-        // The listing's own text holds its address when the location states no street, ESC-093
-        // (1) [FOLLOW-1507].
-        `${input.listingContext?.listing_description ?? ''}\n${input.listingContext?.listing_title ?? ''}`,
       )
         ? 'protected_ground'
         : null;

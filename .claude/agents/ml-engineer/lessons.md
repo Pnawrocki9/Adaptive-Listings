@@ -752,3 +752,12 @@ the invoking command.
   read as own. Rule BD probes found the camp-word hole that the location route already had. ·
   Guardrail: a sparing rule's probes include the copy that states the spared fact AND something
   about it; the hole is usually the second half.
+
+- **2026-11-08 / FOLLOW-1507 rework (CEO clarification: any street address passes)** · Dropped the
+  own-address machinery and the location argument; a camp name in any street form keeps the street
+  exemption on every listing; address forms widened (os., Plaza, "Calle de", Lane, St, Ave) for
+  every sensitive term; the camp-context list now names only the camp or its memorial. · Judgment
+  call: I inferred "own address" from free text when the ruling was ambiguous, instead of escalating
+  the ambiguity; a reviewer found five defect classes in it and the CEO meant the simple reading. ·
+  Guardrail: when a ruling's wording admits a simple and a clever reading, ask before building the
+  clever one.

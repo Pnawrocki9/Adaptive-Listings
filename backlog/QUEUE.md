@@ -613,9 +613,12 @@
   `packages/sdk/src`, plus an ESLint guard: −1,212 B measured, behaviour unchanged (ESC-092 A1).
   Typecheck and tests of shared, sdk, control-plane and ingest. Plan
   `docs/PLAN-WAVE2-SDK-2026-11-06.md` PR 0. FOLLOW-1474 = the wave 2 close-out PR; 1472 is used by
-  #1151; 1475 to 1477 by #1161 to #1163; 1478 below (H3); 1479 and 1480 below (K7). Next free:
-  FOLLOW-1481, RETRO-381, ESC-093.
-- **FOLLOW-1478** — status: BACKLOG # P3 docs, filed at H3 2026-11-07. `JWT_SECRET` is listed in
+  #1151; 1475 to 1477 by #1161 to #1163; 1478 below (H3); 1479 and 1480 below (K7); 1481 below
+  (FOLLOW-1478). Next free: FOLLOW-1482, RETRO-381, ESC-093.
+- **FOLLOW-1478** — status: DONE # this PR, 2026-11-08: rows nothing reads removed from the matrix
+  (`REDPANDA_*`, `JWT_SECRET`, the `decision-api` section, Stripe, `API_KEY_HMAC_SECRET`, KV ids),
+  Phase 2 labels dropped, `JWT_SECRET` out of `.env.example`, Redpanda out of the Worker runbook.
+  Gaps found: FOLLOW-1481. Was BACKLOG # P3 docs, filed at H3 2026-11-07. `JWT_SECRET` is listed in
   `apps/control-plane/.env.example` (line 61) and `docs/ops/DOPPLER_SECRETS_MATRIX.md`, but nothing
   reads it: the code reads `SUPABASE_JWT_SECRET`. The matrix still has `REDPANDA_*` rows and "Phase
   2" rows. `docs/runbooks/INGEST_WORKER_DEPLOY.md` §1 names `REDPANDA_*` as optional Worker secrets.
@@ -626,6 +629,13 @@
 - **FOLLOW-1480** — status: DONE # #1167, 2026-11-07, CEO ruling of the same day. The consent
   withdrawal control collapses to a 24 px icon after 3 s and reopens on click. Series README §5.75
   and N3 3/3 GREEN 29/29 at `59ea780c` (K7 ledger). SDK bundle 43,105 of 43,136 B gzip.
+- **FOLLOW-1481** — status: DEFERRED # post-K7, P3 docs, filed by FOLLOW-1478 2026-11-08. The
+  secrets matrix lacks names the code reads, among them `SUPABASE_JWT_SECRET`, `CRON_SECRET`,
+  `HOLDOUT_ASSIGNMENT_SECRET`, `CONSENT_IP_ENCRYPTION_KEY`, `PLATFORM_REGISTRATION_CONSENT_SECRET`,
+  `MODAL_CHAT_NLP_URL`, and the intent-engine names (`INTERNAL_API_SECRET`,
+  `UPSTASH_REDIS_REST_URL`/`TOKEN`, `ANTHROPIC_API_KEY`); `apps/control-plane/.env.example` keeps
+  `API_KEY_HMAC_SECRET` and `apps/ingest/.env.example` the KV ids, which nothing reads. Add a full
+  per-app reader list (the handover §3 is the production list of record). Next free: FOLLOW-1482.
 - **FOLLOW-1279** — status: CLOSED # absorbed by FOLLOW-1308.
 - **FOLLOW-1251, 1302, 1303, 1291, 1294, 1297** — amended (see FOLLOW_UPS); statuses unchanged.
 

@@ -57457,3 +57457,383 @@ the query string and an xid must never do so (R3). A browser holding the xid has
 access and portability routes, by header or POST, never the query string (R32); and an `initiate`
 that works. K4b drives DSR revocation through a seeded `dsr_verifications` row and its evidence says
 so. There is deliberately no xid-to-session mapping (R35): do not build one to close this.
+
+## FOLLOW-1482 — [product] the Spanish `diaspora_buyer` template keeps "doble libro mayor", the calque #1129 removed from the Polish line
+
+source_retro: RETRO-381 source_ticket: FOLLOW-1429 recommended_sprint: post-K7 recommended_agent:
+ml-engineer (Sonnet) priority: P3 estimated_hours: 1 tag: product depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What.** The English template says "dual-ledger register" (`diaspora-buyer.ts:48`). #1129 rewrote
+the Polish line ("podwójnej księgi" → "dwóch rachunków, finansowego i osobistego") and pinned the
+old phrase. The Spanish line still opens `Escribe en registro de "doble libro mayor"` (`:58`), and
+the FOLLOW-1429 template test has no Spanish entry for it, so nothing fails.
+
+AC:
+
+- [ ] The Spanish line says the idea in natural Spanish, same rule meaning; red-first pin added to
+      the FOLLOW-1429 calque list (`['es', 'doble libro']`).
+- [ ] For each English stock phrase the audit named, check the pl and es lines both; record the list
+      in the PR.
+- [ ] Parity corpus re-freeze of the changed digest; FOLLOW-1483 decides whether cached copy is
+      regenerated (until then, say in the PR that it is not).
+
+cross_ref: [RETRO-381, FOLLOW-1429, FOLLOW-1434, Rule S]
+
+## FOLLOW-1483 — [product] the description cache keys on no prompt identity: a template or prompt change reaches no cached copy until an unrelated stamp bump
+
+source_retro: RETRO-381 source_ticket: FOLLOW-1429 recommended_sprint: post-K7 recommended_agent:
+backend-engineer (Opus: cache identity on a permanent cache) priority: P3 estimated_hours: 3 tag:
+product depends_on: [] blocks: [] promoted_to_queue: false
+
+**What.** The Redis key is `desc:` + tenant, listing, archetype, locale, model and listing revision
+(`revisionedCacheKey`, description route); a hit is trusted on `CLAIMS_VALIDATION_VERSION`. The
+Postgres layer is permanent and keyed alike. #1129 changed the pl / es prompt and bumped nothing;
+old copy stayed served until #1130's `claims-v11` six hours later. RETRO-379 note 3 saw the same
+with #1123 / #1125. Twice harmless by merge order.
+
+AC:
+
+- [ ] Decide and record one mechanism: a prompt-version constant in the key or the trusted-hit test,
+      or a gate that fails a PR changing a `copy_template` or a description prompt builder without a
+      version bump. State which and why.
+- [ ] Red-first: a test that changes a template and shows a cached hit is no longer trusted (or the
+      gate goes red).
+- [ ] The cost: one regeneration per cached listing × archetype × locale; say how many rows that is
+      on localhost.
+- [ ] No change to what the claim stamp means.
+
+cross_ref: [RETRO-379, RETRO-381, FOLLOW-1305, FOLLOW-1427]
+
+## FOLLOW-1484 — [measurement] MP-019 and MP-022 were registered on 2026-11-07 with 2026-10-22 numbers after their own `revalidate_on` had fired
+
+source_retro: RETRO-381 source_ticket: FOLLOW-1430 recommended_sprint: post-K7 recommended_agent:
+ml-engineer (Sonnet) priority: P3 estimated_hours: 2 tag: measurement depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What.** `docs/ops/MEASURED_PREMISES.md` MP-019 (tokenizer factor) and MP-022 (cost and time per
+description) name "the description prompt builders" in `revalidate_on`. #1165 (FOLLOW-1430) wrote
+both on 2026-11-07 with `measured_on: 2026-10-22`. #1129 (2026-11-01) and later PRs had already
+changed those builders. `check-measured-premises.mjs` reads dates only, so it passed at K7.
+
+AC:
+
+- [ ] MP-022 re-measured with the call its `measure_with` names, or stamped STALE with the PRs that
+      tripped it; same for MP-019, or a sentence why a prompt change does not move a tokenizer ratio
+      (and narrow its trigger).
+- [ ] `measure_with` runs are dev-key only, sinks unconfigured, as the entry says.
+- [ ] One line in the register's header: a premise is registered against the code at its
+      registration commit, not at its measurement date (Rule BB).
+
+cross_ref: [RETRO-381, RETRO-376, FOLLOW-1430, FOLLOW-1433, Rule BB]
+
+## FOLLOW-1485 — [product] `unsupported_street` still reads a counted noun as a street name when it is not in `COUNTED_WORDS`: "A 3 Floor Terrace", "A 2 Bath Terrace", "A 1 Car Garage Court"
+
+source_retro: RETRO-382 source_ticket: FOLLOW-1436 recommended_sprint: post-K7 recommended_agent:
+ml-engineer (Opus: Rule BD, an independent reader attacks the fix) priority: P2 estimated_hours: 2
+tag: product depends_on: [] blocks: [] promoted_to_queue: false
+
+**What.** Refused at HEAD as `unsupported_street`, each on a listing that states the number:
+`A 3 Floor Terrace.`, `A 2 Bath Terrace.`, `A 2 Bay Terrace.`, `A 3 Unit Court.`,
+`A 2 Family Terrace.`, `A 3 Generation Way of living.`, `A 2 Garage Close.`,
+`A 1 Car Garage Court.`. `afterNumber` spares a number only for the first word in a closed list of
+34 (`street-address.ts`, `COUNTED_WORDS`); `car` is in `GENERIC_STREET_WORDS` but not there.
+
+AC:
+
+- [ ] Each sentence passes, red-first; `12 Downing Place`, `12 Baker Close`, `12 Elm St` stay read.
+- [ ] Choose: widen the list with the listing-feature nouns (floor, bath, bed, room, bay, unit, car,
+      garage, family, generation, …) or require that the number is not one the listing states as a
+      count of the word after it. State which; pin the limit either way.
+- [ ] Rule BD: a reader who did not write the pins attacks it before merge; the PR says what fired
+      on a recording.
+- [ ] Loosening only, no stamp bump; the replay is unmoved and the PR does not cite that as
+      evidence.
+
+cross_ref: [RETRO-380, RETRO-382, FOLLOW-1436, Rule AS, Rule BD]
+
+## AMENDMENT to FOLLOW-1440 — 2026-11-08 by RETRO-382: a composition statement after `Avda.`, `os.` or `pl.` is served
+
+**AMENDMENT (RETRO-382 §4a LG-2).** #1130 reads composition past `ul.`, `al.` and `C.`
+(`ADDRESS_ABBREVIATION_RE`, `traits.ts`). Probed at HEAD with `describesResidentsByProtectedGround`:
+`Most residents at C. Mayor 5 are Muslim.` → refused; `… at Avda. Mayor 5 …`,
+`… at os. Słoneczne 5 …`, `… at pl. Wolności 5 …` → served. Add `Avda.`, `os.`, `pl.` (and check
+`St.`, `Pl.`, `Av.`) with a red-first pin each. Tightening of the race / religion guard ESC-089
+kept; nothing here touches familial wording.
+
+## FOLLOW-1486 — [measurement] the arm-unit fields are written and read by nothing: `features_snapshot.assignment_unit`, `profile_restored`, `sessions_in_both_arms`; and FOLLOW-1204, their named owner, was never queued
+
+source_retro: RETRO-383 source_ticket: FOLLOW-1316 recommended_sprint: post-K7 (before any
+production lift read with `BUYER_PROFILE_ENABLED` on) recommended_agent: data-engineer (Sonnet)
+priority: P2 estimated_hours: 3 tag: measurement depends_on: [] blocks: [] promoted_to_queue: false
+
+**What.** #1133 writes `assignment_unit` (`xid` or `session`) and `profile_restored` into
+`features_snapshot` on every decision (`api/adapt/route.ts:389`); #1138 returns
+`sessions_in_both_arms` from the lift route. Grep finds no reader, harness or script for any of
+them. `docs/MASTER_DESIGN.md` (`:3224`) says the fields exist "so a reader can split or cluster"
+correlated xid rows, and (`:3230`) names FOLLOW-1204 "(P2, open)" as owner of the dilution
+measurement. FOLLOW-1204 is a stub with `promoted_to_queue: false` whose context ("nothing transmits
+it") #1133 made false.
+
+AC:
+
+- [ ] FOLLOW-1204 closed or re-homed by name: its ROPA / DPIA AC met by #1133 (cite the lines), its
+      dilution query carried here (Rule AW).
+- [ ] One reader: the lift report (or a staff query on record) shows per-arm counts split by
+      `assignment_unit`, or states that xid rows are excluded; and the dilution query runs once on
+      localhost with its number recorded.
+- [ ] `sessions_in_both_arms` is shown where a person reads the lift, or removed.
+- [ ] MASTER_DESIGN `:3224-3232` points at this ticket.
+
+cross_ref: [RETRO-383, RETRO-384, RETRO-328, FOLLOW-1204, FOLLOW-1443, FOLLOW-1458, Rule AJ, Rule
+AW]
+
+## FOLLOW-1487 — [gate] the lift and rollup queries fail only on a real ClickHouse, and the CI job that boots one does not run them
+
+source_retro: RETRO-384 source_ticket: FOLLOW-1457 recommended_sprint: post-K7 recommended_agent:
+qa-engineer (Sonnet) priority: P2 estimated_hours: 2 tag: gate depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What.** FOLLOW-1457 was ClickHouse code 184 (an alias shadowing a column in `WHERE`), invisible to
+the string pins CI runs. #1138 added `lift-queries.integration.test.ts`, which skips without
+`CLICKHOUSE_URL`. The `ci.yml` job that boots `clickhouse-server` and sets `REQUIRE_CLICKHOUSE=1`
+runs the tracer spec and the consent-log retention spec only. The rollup query (`data.ts`, same
+`sessionArmJoin`) has no execution test.
+
+AC:
+
+- [ ] The lift spec runs in that job with `REQUIRE_CLICKHOUSE=1` (hard fail, Rule Q), including its
+      both-arm case; paste one run.
+- [ ] An execution test for the rollup query in the same file or job.
+- [ ] Red-first: reintroduce the FOLLOW-1457 alias on a scratch branch; the job goes red.
+- [ ] If the job's name changes, `.github/required-checks.txt` changes in the same PR.
+
+cross_ref: [RETRO-384, RETRO-079, FOLLOW-316, FOLLOW-1118, FOLLOW-1457, FOLLOW-1458, Rule Q]
+
+## FOLLOW-1488 — [gate] the HMAC vector shared with `core-master` is held identical by a sentence, and nothing shows the handover patch reproduces the tree K5 to H1 ran
+
+source_retro: RETRO-385 source_ticket: FOLLOW-1339 recommended_sprint: before the CTO handover
+package is final recommended_agent: qa-engineer (Sonnet) priority: P3 estimated_hours: 2 tag: gate
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**What.** `CTO_HANDOVER.md` §6: the vector "is held byte-identical in `SignedEventVectors.kt` … and
+`signed-conversions.test.ts`: change one, change both." Rule AQ says a prose sync note is not a
+control. Both copies are in this repo (the Kotlin object is inside the `core-master` patch). The
+real app is a local tree without git that "already carries" the patches; the CTO gets the `.patch`
+files.
+
+AC:
+
+- [ ] A test in ingest reads `SignedEventVectors` out of the patch file and asserts the secret,
+      timestamp, nonce, session id and both bodies equal the test's constants; red-first by editing
+      one byte in a scratch copy.
+- [ ] Once, inside each patched directory of the local app: `patch -p1 -R --dry-run < <patch>`
+      succeeds; paste the output into the patch README with the date.
+- [ ] The handover sentence points at the test instead of asking a person to keep them equal.
+
+cross_ref: [RETRO-385, FOLLOW-1339, FOLLOW-1454, Rule AQ]
+
+## FOLLOW-1489 — [docs] `/api/dsr/access` and `/api/dsr/portability` return `intent_state` raw; the envelope module says every reader parses it
+
+source_retro: RETRO-386 source_ticket: FOLLOW-1310 recommended_sprint: post-K7 recommended_agent:
+backend-engineer (Sonnet) priority: P3 estimated_hours: 1 tag: docs depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What.** `intent-state-envelope.ts:6`: "Readers: every control-plane route that selects
+`intentState` parses it with `readIntentStateEnvelope`." The three tracer routes do.
+`dsr/access/route.ts:371` and `dsr/portability/route.ts:366` return the column as stored: a JSON
+string for a legacy row until the repair SQL runs, an object with `weights`, `topArchetype`,
+`confidence` for a new one.
+
+AC:
+
+- [ ] Either both DSR routes return one shape (through the shared reader, or documented as "as
+      stored") or the docblock names them as raw readers; state which.
+- [ ] One test per route with a legacy string row and a v2 envelope row.
+- [ ] `DATA_DICTIONARY.md` says what the DSR export returns for `intent_state`.
+- [ ] No legal analysis; a sentence of fact only.
+
+cross_ref: [RETRO-386, FOLLOW-1310, FOLLOW-1308, Rule AI]
+
+## AMENDMENT to FOLLOW-1433 — 2026-11-08 by RETRO-384: #1138 tripped MP-017 and MP-012 again
+
+**AMENDMENT (RETRO-384 §4d).** #1138 (FOLLOW-1459) appends `SLOT_FIT_RULE` to both adapt prompts
+(`llm-gateway.ts`), which is "a change to the prompt builders" for MP-017, and adds `checkSlotFit`
+as a refusal class ahead of the name scan, which changes the split MP-012 describes.
+`MEASURED_PREMISES.md` was not in the diff. When this ticket discharges MP-012 / 013 / 017, measure
+on code at or after `0c46e483`.
+
+## FOLLOW-1500 — [docs] the `localhost-up.sh` staff-token recipe names claims the plane has refused since #1146
+
+source_retro: RETRO-387 source_ticket: FOLLOW-1307 recommended_sprint: next recommended_agent:
+qa-engineer (Sonnet) priority: P3 estimated_hours: 0.5 tag: docs depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What.** `scripts/dev/localhost-up.sh` prints (lines 686-687, added by #1138 for FOLLOW-1460):
+"sign an HS256 JWT with .localhost-up/local-staff-jwt-secret, claims sub, email,
+estalara_staff=true, estalara_role=estalara:readonly". Since #1146 `hasValidRegisteredClaims` in
+`@estalara/auth` refuses a token with no `exp`, no `iss` equal to
+`<NEXT_PUBLIC_SUPABASE_URL>/auth/v1` and no `aud` `authenticated`. An operator following the banner
+gets 401 on every staff route. The two in-repo minters (N3, admin-smoke) were updated; the banner
+was not.
+
+AC:
+
+- [ ] The banner names every claim the verifier requires (`exp`, `iss`, `aud`, optional `nbf`) and
+      where the issuer URL comes from, or points at the N3 minter as the reference.
+- [ ] A token signed exactly as the banner says is accepted by a running plane (paste the status).
+- [ ] `grep -rn "HS256" scripts tests docs/runbooks` has no other recipe on the old claim set.
+
+cross_ref: [RETRO-387, FOLLOW-1307, FOLLOW-1460, Rule AI]
+
+## FOLLOW-1501 — [gate] the mutation permission matrix covers the cron `GET` handlers that write
+
+source_retro: RETRO-387 source_ticket: FOLLOW-1307 recommended_sprint: next recommended_agent:
+qa-engineer (Sonnet) priority: P3 estimated_hours: 2 tag: gate depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What.** `mutation-permission-matrix.test.ts` takes only POST/PUT/PATCH/DELETE (line 283).
+`apps/control-plane/vercel.json` schedules seven `GET` handlers, each of which writes or deletes:
+`dsr/mutation-poll`, `internal/retention/conversion-labels`, `internal/retention/consent-log`,
+`canary/adaptation-writes`, `cron/lift-snapshot`, `cron/quiz-accuracy-watch`, `cron/quiz-retention`.
+Each checks `CRON_SECRET` and has its own route test, so nothing is open today, but a new cron is
+not forced into any matrix, and the matrix's `CRON_SECRET` column has no route that should accept
+it.
+
+AC:
+
+- [ ] The matrix reads `vercel.json` `crons` and adds a `GET` row per path: anonymous, every staff
+      column, `ADMIN_API_SECRET` and `INTERNAL_API_SECRET` denied with no write and no fetch;
+      `CRON_SECRET` not refused by auth.
+- [ ] A `crons` entry with no handler, or a handler with no row, fails the inventory test.
+- [ ] Red-first: drop the `CRON_SECRET` check from one cron in a scratch copy and show the cell
+      fail.
+
+cross_ref: [RETRO-387, FOLLOW-1307]
+
+## FOLLOW-1502 — [product] DSR erasure in ClickHouse and the ingest retry ledger depend on three tenant ids being equal, and nothing checks it
+
+source_retro: RETRO-389 source_ticket: FOLLOW-1308 recommended_sprint: before production (handover)
+recommended_agent: backend-engineer (Opus: DSR, cross-runtime) priority: P2 estimated_hours: 3 tag:
+product depends_on: [] blocks: [] promoted_to_queue: false
+
+**What.** Since #1149 the ClickHouse erase is
+`DELETE WHERE tenant_id = {dsr_tenant_id:String} AND session_id IN (…)` (`clickhouse-dsr.ts`, line
+207; before: `session_id` only), with the tenant of the `dsr_verifications` row, which
+`dsr/initiate` sets to `ESTALARA_TENANT_ID`. The poller's residue check `countSessionRows`
+(line 737) uses the same predicate, and the ingest erasure ledger filters
+`tenant_id=eq.<message tenant>` (`erasure-ledger.ts`, line 76). The rows carry other configured
+values: `events` and `intent_events` the `KV_API_KEYS` record's tenant (ingest `events.ts` 205,
+471); `adaptation_decisions` and `llm_calls` the `/api/adapt` request tenant (`route.ts` 705), which
+on the SDK path is the host's `PUBLIC_ESTALARA_TENANT_ID`. If any of the three differs from
+`NEXT_PUBLIC_ESTALARA_TENANT_ID` (production fallback: the baked id), the erase removes nothing, the
+residue check reads 0 and accepts "done", and a queued retry re-inserts the erased rows. Localhost
+is consistent (`…00e2` everywhere), so no local run can fail. The same PR's ownership proof
+(`sessionHasClickHouseRows`) keys on `session_id` alone, and its integration test seeds rows under
+the tenant it erases.
+
+AC:
+
+- [ ] Choose and state one: (a) `countSessionRows` and the ledger read key on `session_id` only (one
+      tenant, ESC-085), so a mismatch shows as residue and the poller never accepts it; or (b) keep
+      the tenant binding and add a check that fails loudly when a session's rows carry another
+      tenant (and a handover row naming the three values).
+- [ ] Red-first: rows seeded under tenant X, erase run for tenant Y, same session: the poller does
+      not report done, or the check fires. Today it reports done.
+- [ ] The retry consumer: a message under tenant X for a session erased under Y is not re-inserted.
+- [ ] Harness comments "`/api/dsr/initiate` refuses every caller today" in `differentiator-e2e.mjs`
+      (around lines 3697 and 4999) corrected; `AC9_DSR_NOTE` already is.
+- [ ] Handover §2 or row 30 says what the CTO verifies, if (b).
+
+cross_ref: [RETRO-389, RETRO-367, FOLLOW-1308, FOLLOW-1124, Rule AV]
+
+## FOLLOW-1503 — [docs] `estalara:consent:reopen` has a listener in the SDK and no producer: hand it to the host, or ask the CEO to drop it for 13 B
+
+source_retro: RETRO-391 source_ticket: FOLLOW-1446 recommended_sprint: next recommended_agent:
+sdk-engineer (Sonnet) priority: P2 estimated_hours: 1 tag: docs depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What.** #1157 wired the host event approved by ESC-092 item 1 ("not required by B-d"):
+`consent-flow.ts` line 100, a `document` listener for `estalara:consent:reopen`, measured at +13 B.
+Nothing dispatches it: not this repo, not the host checkout (read-only grep). The host's dispatch
+duties live as `[HOST]` rows in `SDK_PRODUCTION_INTEGRATION.md` (row 1 is
+`estalara:chat:message-sent`); this event has no row and no handover line. HALF_WIRE_C by class,
+ranked P2 because the chip's click reaches the same function. The SDK has 31 B of headroom after
+#1167.
+
+AC:
+
+- [ ] Either a `[HOST]` row (what the host dispatches, where, what the buyer then sees) plus a
+      handover line, or a PM question to the CEO recording the choice to remove it (−13 B).
+- [ ] If kept: one test dispatching the event on a denied page already exists
+      (`follow-1446.test.ts`); cite it in the row.
+- [ ] No change to the chip or its copy (the collapse question is open with the CEO).
+
+cross_ref: [RETRO-391, RETRO-394, ESC-092, FOLLOW-1446]
+
+## FOLLOW-1504 — [gate] the SDK Playwright specs run in Chromium only, and two PRs said CI covers Firefox and WebKit
+
+source_retro: RETRO-393 source_ticket: FOLLOW-1445 recommended_sprint: next recommended_agent:
+qa-engineer (Sonnet) priority: P2 estimated_hours: 2 tag: gate depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What.** #1158 and #1159 each wrote "Firefox and WebKit … CI covers them". `ci.yml` job `sdk-e2e`
+installs `chromium` only (line 1261), and `packages/sdk/playwright.config.ts` defines no `projects`.
+The withdrawal control, its `role="status"` result, the "Download my data" save through a detached
+`<a download>` on a blob URL, and the Shadow DOM toggle have never run outside Chromium. iOS buyers
+reach app.estalara.com through WebKit only.
+
+AC:
+
+- [ ] `playwright.config.ts` gains `firefox` and `webkit` projects for `returning-buyer.spec.ts` and
+      `consent.spec.ts` at least; CI installs both engines.
+- [ ] One CI run green in all three, or each engine-specific failure filed with its reproduction.
+- [ ] If the cost is refused, the PR body template says "Chromium only" instead.
+
+cross_ref: [RETRO-392, RETRO-393, FOLLOW-1444, FOLLOW-1445, Rule AU]
+
+## FOLLOW-1505 — [docs] notice §3 still describes a one-click, always-visible withdrawal control; since #1167 it is behind an icon after 3 s
+
+source_retro: RETRO-394 source_ticket: FOLLOW-1480 recommended_sprint: after the K7 CEO walk
+recommended_agent: compliance-engineer (Sonnet) priority: P2 estimated_hours: 1 tag: docs
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**What.** `PRIVACY_NOTICE_TEMPLATE.md` (v1.20) §3, lines 213-219: "You can withdraw it at any time
+with one click on 'Withdraw consent', next to the Personalization control on the page" and "A short
+message then replaces the control". Since #1167 (CEO ruling 2026-11-07) the panel collapses to a 24
+px icon 3 s after it appears, so a later withdrawal is two activations, and the result message is
+hidden 3 s after it shows. The FOLLOW-1316 signed review records P-2 against "visible, native
+button, one click" and leaves Art. 7(3) to counsel. Not a proposal to change the ruling: the notice
+should describe what is built; the legal reading is for the one review (CEO 2026-11-03).
+
+AC:
+
+- [ ] After the K7 walk (the CEO may change 3 s or the icon size), §3 describes the icon, how it
+      opens, and the result message as built; a revision row; README version row.
+- [ ] The signed review gets a dated note under P-2: "as built after FOLLOW-1480", with the question
+      for counsel, without a legal conclusion.
+- [ ] `check-privacy-notice-keys.sh` and `check-compliance-docs.sh` pass.
+
+cross_ref: [RETRO-394, FOLLOW-1480, FOLLOW-1444, FOLLOW-1316, Rule AI]
+
+## FOLLOW-1506 — [gate] the SDK Playwright spec races the 3 s collapse and no e2e pins the collapse
+
+source_retro: RETRO-394 source_ticket: FOLLOW-1480 recommended_sprint: next recommended_agent:
+qa-engineer (Sonnet) priority: P3 estimated_hours: 1.5 tag: gate depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What.** `returning-buyer.spec.ts` was not in #1167. It clicks `[data-estalara-withdraw]` and
+focuses `[data-estalara-data]` after `page.goto` and a headline wait, with no step through
+`[data-estalara-toggle-icon]`. It passes because it acts within 3 s of the mount; on a slower runner
+`click()` meets a hidden control, and `retries: 1` re-runs it without a record. The collapse itself
+is pinned only with fake timers in `follow-1480.test.ts`.
+
+AC:
+
+- [ ] The spec opens the toggle through the icon before each control action (as the two harnesses'
+      `openToggleControl` do).
+- [ ] One case uses `page.clock` to pass `COLLAPSE_MS`: panel hidden, icon visible with its
+      `aria-label`, Enter reopens and focus lands inside.
+- [ ] Red-first: the old spec with the clock advanced past 3 s fails.
+
+cross_ref: [RETRO-394, RETRO-393, FOLLOW-1480]

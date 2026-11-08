@@ -614,7 +614,8 @@
   Typecheck and tests of shared, sdk, control-plane and ingest. Plan
   `docs/PLAN-WAVE2-SDK-2026-11-06.md` PR 0. FOLLOW-1474 = the wave 2 close-out PR; 1472 is used by
   #1151; 1475 to 1477 by #1161 to #1163; 1478 below (H3); 1479 and 1480 below (K7); 1481 below
-  (FOLLOW-1478). Next free: FOLLOW-1482, RETRO-381, ESC-093.
+  (FOLLOW-1478); 1482 to 1489 and 1500 to 1506 by the retro batch RETRO-381 to 394 (stubs in
+  FOLLOW_UPS.md, not queued). Next free: FOLLOW-1507, RETRO-395, ESC-093.
 - **FOLLOW-1478** — status: DONE # this PR, 2026-11-08: rows nothing reads removed from the matrix
   (`REDPANDA_*`, `JWT_SECRET`, the `decision-api` section, Stripe, `API_KEY_HMAC_SECRET`, KV ids),
   Phase 2 labels dropped, `JWT_SECRET` out of `.env.example`, Redpanda out of the Worker runbook.

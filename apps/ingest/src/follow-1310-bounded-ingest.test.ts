@@ -156,7 +156,8 @@ function pageView(overrides: Record<string, unknown> = {}): Record<string, unkno
     session_id: 'a'.repeat(40),
     ts: 1714180000000,
     region: 'eu',
-    consent_state: 'legitimate-interest',
+    // Profiling-class: only `consented` passes the gate (FOLLOW-1508).
+    consent_state: 'consented',
     schema_version: 1,
     type: 'page.view',
     payload: {

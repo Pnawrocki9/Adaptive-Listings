@@ -107,10 +107,10 @@ const chatEvent = {
   session_id: 'a'.repeat(40),
   ts: 1714180000000,
   region: 'eu' as const,
-  // `chat.message.sent` is profiling-class (consent-gate.ts); without a lawful
-  // basis the gate would drop it before ClickHouse and this test would assert
-  // nothing.
-  consent_state: 'legitimate-interest' as const,
+  // `chat.message.sent` is profiling-class (consent-gate.ts); without consent
+  // the gate would drop it before ClickHouse and this test would assert
+  // nothing (consent only since FOLLOW-1508, ESC-093 (2)).
+  consent_state: 'consented' as const,
   schema_version: 1 as const,
   type: 'chat.message.sent',
   payload: { message: BUYER_SENTINEL, char_count: BUYER_SENTINEL.length },

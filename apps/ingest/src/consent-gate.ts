@@ -8,7 +8,17 @@
  * events carrying `consent_state: 'none'` and `apps/ingest` will happily persist them. This
  * module moves consent enforcement to the STORAGE BOUNDARY: after an event passes
  * `EventSchema.safeParse`, `evaluateConsent()` decides whether a profiling-class event has a
- * lawful basis (`consented` or `legitimate-interest`) to be persisted.
+ * lawful basis to be persisted. The only basis is consent: `consent_state = 'consented'`.
+ *
+ * ## Consent only, never legitimate interest (ESC-091 C-1, ESC-093 (2), FOLLOW-1508)
+ *
+ * CEO ruling ESC-091 C-1 ("consent only, never legitimate interest") covers profiling events
+ * at ingest too (ESC-093 (2), 2026-11-08). A profiling-class event carrying
+ * `legitimate-interest` is dropped exactly like one carrying `none`: the same per-event
+ * `consent_not_granted` rejection, the same `consent_rejected` counter, logger line and Sentry
+ * signal. The SDK still sends `legitimate-interest` for a buyer who has not decided
+ * (`packages/sdk/src/core/events.ts`); the ruling is enforced here, at the storage boundary.
+ * Audit and operational classes are unchanged: they ingest under every `consent_state`.
  *
  * ## Load-bearing constraint — keys on `consent_state`, NEVER on opt-out (§H.9)
  *
@@ -21,7 +31,7 @@
  * ## Consent classes
  *
  * - `profiling` — §H.8(a) behavioral tracking + §H.8(d) derived intent (the archetype-building
- *   signals). GATED: requires `consent_state ∈ {consented, legitimate-interest}`.
+ *   signals). GATED: requires `consent_state = 'consented'`.
  * - `audit` — `consent.granted` / `consent.denied`. ALWAYS ingest: you cannot record a consent
  *   denial through a gate that rejects on consent denial (AC2).
  * - `operational` — server-outcome events (`adapt.*`, `ab.assignment`), the data-quality
@@ -57,12 +67,12 @@ import type { ConsentState, EventType } from '@estalara/shared';
 type ConsentClass = 'profiling' | 'audit' | 'operational';
 
 /**
- * Consent states under which a profiling-class event has a lawful basis to be persisted.
- * Mirrors Master Design §H.8: consent (Art. 6.1(a)) or legitimate interest (LIA).
+ * Consent states under which a profiling-class event has a lawful basis to be persisted:
+ * consent (Art. 6.1(a)) only. Legitimate interest is not a basis for profiling (ESC-091 C-1,
+ * extended to ingest by ESC-093 (2)) [FOLLOW-1508].
  */
 const PROFILING_ALLOWED_CONSENT_STATES: ReadonlySet<ConsentState> = new Set<ConsentState>([
   'consented',
-  'legitimate-interest',
 ]);
 
 /**
@@ -168,7 +178,8 @@ type ConsentEvaluation = { allowed: true } | ConsentRejection;
  * Decide whether an already-shape-valid event may be persisted given its `consent_state`.
  *
  * - `audit` / `operational` events: always allowed (§H.8 / AC2).
- * - `profiling` events: allowed only if `consent_state ∈ {consented, legitimate-interest}`.
+ * - `profiling` events: allowed only if `consent_state = 'consented'` (`legitimate-interest`,
+ *   `none` and every other value are rejected, ESC-093 (2)).
  * - unclassified type: fail-closed (rejected). This is a defense-in-depth backstop — the
  *   compile-time `Record<EventType, ...>` and the contract test already prevent this in a
  *   correctly-built worker, but a runtime type that somehow slipped the union must not persist.

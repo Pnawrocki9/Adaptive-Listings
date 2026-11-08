@@ -158,7 +158,10 @@ describe('consent-gate — GOLDEN per-type class fixture (correctness, not just 
         }
         expect(evaluateConsent(type, 'session-only').allowed).toBe(false);
         expect(evaluateConsent(type, 'consented').allowed).toBe(true);
-        expect(evaluateConsent(type, 'legitimate-interest').allowed).toBe(true);
+        // ESC-093 (2) [FOLLOW-1508]: legitimate interest is not a basis for profiling.
+        const li = evaluateConsent(type, 'legitimate-interest');
+        expect(li.allowed, `${type} should be REJECTED under legitimate-interest`).toBe(false);
+        if (!li.allowed) expect(li.code).toBe('consent_not_granted');
       } else {
         // audit / operational: ALWAYS ingest, under every consent_state (incl. none).
         for (const cs of ALL_CONSENT_STATES) {
@@ -186,8 +189,16 @@ describe('consent-gate — profiling events are gated on consent_state', () => {
     expect(evaluateConsent(profilingType, 'consented').allowed).toBe(true);
   });
 
-  it('ALLOWS profiling with consent_state=legitimate-interest', () => {
-    expect(evaluateConsent(profilingType, 'legitimate-interest').allowed).toBe(true);
+  it('REJECTS profiling with consent_state=legitimate-interest, exactly as none (ESC-093 (2))', () => {
+    const li = evaluateConsent(profilingType, 'legitimate-interest');
+    const none = evaluateConsent(profilingType, 'none');
+    expect(li.allowed).toBe(false);
+    if (!li.allowed && !none.allowed) {
+      expect(li.code).toBe('consent_not_granted');
+      expect(li.code).toBe(none.code);
+      expect(li.consent_class).toBe('profiling');
+      expect(li.consent_state).toBe('legitimate-interest');
+    }
   });
 
   it('REJECTS profiling with consent_state=none', () => {
@@ -205,12 +216,12 @@ describe('consent-gate — profiling events are gated on consent_state', () => {
     if (!result.allowed) expect(result.code).toBe('consent_not_granted');
   });
 
-  it('the allowed set for profiling is EXACTLY {consented, legitimate-interest}', () => {
+  it('the allowed set for profiling is EXACTLY {consented} (FOLLOW-1508)', () => {
     // Fully characterizes the allowed-consent-state set through the public surface.
     const allowedStates = ALL_CONSENT_STATES.filter(
       (cs) => evaluateConsent(profilingType, cs).allowed,
     );
-    expect([...allowedStates].sort()).toEqual(['consented', 'legitimate-interest'].sort());
+    expect(allowedStates).toEqual(['consented']);
   });
 });
 
@@ -239,6 +250,12 @@ describe('consent-gate — §H.9 non-regression: audit/operational always ingest
 
   it('boot_timing (FOLLOW-1037 SDK boot-latency telemetry) ingests under consent_state=none — operational, not profiling', () => {
     expect(evaluateConsent('boot_timing', 'none').allowed).toBe(true);
+  });
+
+  it('audit and operational events still ingest under legitimate-interest (FOLLOW-1508 is profiling-only)', () => {
+    for (const t of ['consent.granted', 'consent.denied', 'inquiry.completed', 'adapt.applied']) {
+      expect(evaluateConsent(t, 'legitimate-interest').allowed).toBe(true);
+    }
   });
 
   it('conversion events (inquiry.*, tour.requested) ingest under consent_state=none', () => {

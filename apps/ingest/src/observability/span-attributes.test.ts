@@ -119,7 +119,8 @@ const validEvent = {
   session_id: 'a'.repeat(40),
   ts: 1714180000000,
   region: 'eu' as const,
-  consent_state: 'legitimate-interest' as const,
+  // Profiling-class: only `consented` passes the gate (FOLLOW-1508).
+  consent_state: 'consented' as const,
   schema_version: 1 as const,
   type: 'page.view',
   payload: {

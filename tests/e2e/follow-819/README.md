@@ -4022,6 +4022,14 @@ Runs are counted per series, in order. UNMEASURED is neutral under the CEO's 202
 The RED of #1149 was AC(10)(b), `locator.click` timeout 3000 ms on `.estalara-quiz-reject`. The
 AC(9) REDs were not analysed; FOLLOW-1471. N2 and N3 are in `docs/checkpoints/K6.md`.
 
+### 5.75 — 2026-11-07 (#1167, FOLLOW-1480, final SHA `59ea780c`) — **three consecutive `run=GREEN` with `total=9`**
+
+Series `pr1167` on `main` `59ea780c` after the merge of #1167 (the withdrawal control collapses to
+an icon after 3 s). Runs, in order: GREEN, UNMEASURED ×3, GREEN, GREEN; 0 RED. Runs 2 and 4 drew
+holdout on the adapted arm (AC(1), AC(5), AC(7) reclassified UNMEASURED), run 3 drew holdout on
+AC(10) only (8 green). The three GREEN runs (1, 5, 6) are `green=9 total=9 run=GREEN [FRESH]`;
+UNMEASURED is neutral. N3 on the same SHA is in `docs/checkpoints/K7.md`.
+
 ## 6. Defects in §3 itself, found by executing it
 
 §3 said _"treat a deviation as a finding"_. There were four, and **three of them fail silently** —

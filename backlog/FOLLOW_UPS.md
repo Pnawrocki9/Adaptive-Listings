@@ -57457,3 +57457,208 @@ the query string and an xid must never do so (R3). A browser holding the xid has
 access and portability routes, by header or POST, never the query string (R32); and an `initiate`
 that works. K4b drives DSR revocation through a seeded `dsr_verifications` row and its evidence says
 so. There is deliberately no xid-to-session mapping (R35): do not build one to close this.
+
+## FOLLOW-1482 — [product] the Spanish `diaspora_buyer` template keeps "doble libro mayor", the calque #1129 removed from the Polish line
+
+source_retro: RETRO-381 source_ticket: FOLLOW-1429 recommended_sprint: post-K7 recommended_agent:
+ml-engineer (Sonnet) priority: P3 estimated_hours: 1 tag: product depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What.** The English template says "dual-ledger register" (`diaspora-buyer.ts:48`). #1129 rewrote
+the Polish line ("podwójnej księgi" → "dwóch rachunków, finansowego i osobistego") and pinned the
+old phrase. The Spanish line still opens `Escribe en registro de "doble libro mayor"` (`:58`), and
+the FOLLOW-1429 template test has no Spanish entry for it, so nothing fails.
+
+AC:
+
+- [ ] The Spanish line says the idea in natural Spanish, same rule meaning; red-first pin added to
+      the FOLLOW-1429 calque list (`['es', 'doble libro']`).
+- [ ] For each English stock phrase the audit named, check the pl and es lines both; record the list
+      in the PR.
+- [ ] Parity corpus re-freeze of the changed digest; FOLLOW-1483 decides whether cached copy is
+      regenerated (until then, say in the PR that it is not).
+
+cross_ref: [RETRO-381, FOLLOW-1429, FOLLOW-1434, Rule S]
+
+## FOLLOW-1483 — [product] the description cache keys on no prompt identity: a template or prompt change reaches no cached copy until an unrelated stamp bump
+
+source_retro: RETRO-381 source_ticket: FOLLOW-1429 recommended_sprint: post-K7 recommended_agent:
+backend-engineer (Opus: cache identity on a permanent cache) priority: P3 estimated_hours: 3 tag:
+product depends_on: [] blocks: [] promoted_to_queue: false
+
+**What.** The Redis key is `desc:` + tenant, listing, archetype, locale, model and listing revision
+(`revisionedCacheKey`, description route); a hit is trusted on `CLAIMS_VALIDATION_VERSION`. The
+Postgres layer is permanent and keyed alike. #1129 changed the pl / es prompt and bumped nothing;
+old copy stayed served until #1130's `claims-v11` six hours later. RETRO-379 note 3 saw the same
+with #1123 / #1125. Twice harmless by merge order.
+
+AC:
+
+- [ ] Decide and record one mechanism: a prompt-version constant in the key or the trusted-hit test,
+      or a gate that fails a PR changing a `copy_template` or a description prompt builder without a
+      version bump. State which and why.
+- [ ] Red-first: a test that changes a template and shows a cached hit is no longer trusted (or the
+      gate goes red).
+- [ ] The cost: one regeneration per cached listing × archetype × locale; say how many rows that is
+      on localhost.
+- [ ] No change to what the claim stamp means.
+
+cross_ref: [RETRO-379, RETRO-381, FOLLOW-1305, FOLLOW-1427]
+
+## FOLLOW-1484 — [measurement] MP-019 and MP-022 were registered on 2026-11-07 with 2026-10-22 numbers after their own `revalidate_on` had fired
+
+source_retro: RETRO-381 source_ticket: FOLLOW-1430 recommended_sprint: post-K7 recommended_agent:
+ml-engineer (Sonnet) priority: P3 estimated_hours: 2 tag: measurement depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What.** `docs/ops/MEASURED_PREMISES.md` MP-019 (tokenizer factor) and MP-022 (cost and time per
+description) name "the description prompt builders" in `revalidate_on`. #1165 (FOLLOW-1430) wrote
+both on 2026-11-07 with `measured_on: 2026-10-22`. #1129 (2026-11-01) and later PRs had already
+changed those builders. `check-measured-premises.mjs` reads dates only, so it passed at K7.
+
+AC:
+
+- [ ] MP-022 re-measured with the call its `measure_with` names, or stamped STALE with the PRs that
+      tripped it; same for MP-019, or a sentence why a prompt change does not move a tokenizer ratio
+      (and narrow its trigger).
+- [ ] `measure_with` runs are dev-key only, sinks unconfigured, as the entry says.
+- [ ] One line in the register's header: a premise is registered against the code at its
+      registration commit, not at its measurement date (Rule BB).
+
+cross_ref: [RETRO-381, RETRO-376, FOLLOW-1430, FOLLOW-1433, Rule BB]
+
+## FOLLOW-1485 — [product] `unsupported_street` still reads a counted noun as a street name when it is not in `COUNTED_WORDS`: "A 3 Floor Terrace", "A 2 Bath Terrace", "A 1 Car Garage Court"
+
+source_retro: RETRO-382 source_ticket: FOLLOW-1436 recommended_sprint: post-K7 recommended_agent:
+ml-engineer (Opus: Rule BD, an independent reader attacks the fix) priority: P2 estimated_hours: 2
+tag: product depends_on: [] blocks: [] promoted_to_queue: false
+
+**What.** Refused at HEAD as `unsupported_street`, each on a listing that states the number:
+`A 3 Floor Terrace.`, `A 2 Bath Terrace.`, `A 2 Bay Terrace.`, `A 3 Unit Court.`,
+`A 2 Family Terrace.`, `A 3 Generation Way of living.`, `A 2 Garage Close.`,
+`A 1 Car Garage Court.`. `afterNumber` spares a number only for the first word in a closed list of
+34 (`street-address.ts`, `COUNTED_WORDS`); `car` is in `GENERIC_STREET_WORDS` but not there.
+
+AC:
+
+- [ ] Each sentence passes, red-first; `12 Downing Place`, `12 Baker Close`, `12 Elm St` stay read.
+- [ ] Choose: widen the list with the listing-feature nouns (floor, bath, bed, room, bay, unit, car,
+      garage, family, generation, …) or require that the number is not one the listing states as a
+      count of the word after it. State which; pin the limit either way.
+- [ ] Rule BD: a reader who did not write the pins attacks it before merge; the PR says what fired
+      on a recording.
+- [ ] Loosening only, no stamp bump; the replay is unmoved and the PR does not cite that as
+      evidence.
+
+cross_ref: [RETRO-380, RETRO-382, FOLLOW-1436, Rule AS, Rule BD]
+
+## AMENDMENT to FOLLOW-1440 — 2026-11-08 by RETRO-382: a composition statement after `Avda.`, `os.` or `pl.` is served
+
+**AMENDMENT (RETRO-382 §4a LG-2).** #1130 reads composition past `ul.`, `al.` and `C.`
+(`ADDRESS_ABBREVIATION_RE`, `traits.ts`). Probed at HEAD with `describesResidentsByProtectedGround`:
+`Most residents at C. Mayor 5 are Muslim.` → refused; `… at Avda. Mayor 5 …`,
+`… at os. Słoneczne 5 …`, `… at pl. Wolności 5 …` → served. Add `Avda.`, `os.`, `pl.` (and check
+`St.`, `Pl.`, `Av.`) with a red-first pin each. Tightening of the race / religion guard ESC-089
+kept; nothing here touches familial wording.
+
+## FOLLOW-1486 — [measurement] the arm-unit fields are written and read by nothing: `features_snapshot.assignment_unit`, `profile_restored`, `sessions_in_both_arms`; and FOLLOW-1204, their named owner, was never queued
+
+source_retro: RETRO-383 source_ticket: FOLLOW-1316 recommended_sprint: post-K7 (before any
+production lift read with `BUYER_PROFILE_ENABLED` on) recommended_agent: data-engineer (Sonnet)
+priority: P2 estimated_hours: 3 tag: measurement depends_on: [] blocks: [] promoted_to_queue: false
+
+**What.** #1133 writes `assignment_unit` (`xid` or `session`) and `profile_restored` into
+`features_snapshot` on every decision (`api/adapt/route.ts:389`); #1138 returns
+`sessions_in_both_arms` from the lift route. Grep finds no reader, harness or script for any of
+them. `docs/MASTER_DESIGN.md` (`:3224`) says the fields exist "so a reader can split or cluster"
+correlated xid rows, and (`:3230`) names FOLLOW-1204 "(P2, open)" as owner of the dilution
+measurement. FOLLOW-1204 is a stub with `promoted_to_queue: false` whose context ("nothing transmits
+it") #1133 made false.
+
+AC:
+
+- [ ] FOLLOW-1204 closed or re-homed by name: its ROPA / DPIA AC met by #1133 (cite the lines), its
+      dilution query carried here (Rule AW).
+- [ ] One reader: the lift report (or a staff query on record) shows per-arm counts split by
+      `assignment_unit`, or states that xid rows are excluded; and the dilution query runs once on
+      localhost with its number recorded.
+- [ ] `sessions_in_both_arms` is shown where a person reads the lift, or removed.
+- [ ] MASTER_DESIGN `:3224-3232` points at this ticket.
+
+cross_ref: [RETRO-383, RETRO-384, RETRO-328, FOLLOW-1204, FOLLOW-1443, FOLLOW-1458, Rule AJ, Rule
+AW]
+
+## FOLLOW-1487 — [gate] the lift and rollup queries fail only on a real ClickHouse, and the CI job that boots one does not run them
+
+source_retro: RETRO-384 source_ticket: FOLLOW-1457 recommended_sprint: post-K7 recommended_agent:
+qa-engineer (Sonnet) priority: P2 estimated_hours: 2 tag: gate depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What.** FOLLOW-1457 was ClickHouse code 184 (an alias shadowing a column in `WHERE`), invisible to
+the string pins CI runs. #1138 added `lift-queries.integration.test.ts`, which skips without
+`CLICKHOUSE_URL`. The `ci.yml` job that boots `clickhouse-server` and sets `REQUIRE_CLICKHOUSE=1`
+runs the tracer spec and the consent-log retention spec only. The rollup query (`data.ts`, same
+`sessionArmJoin`) has no execution test.
+
+AC:
+
+- [ ] The lift spec runs in that job with `REQUIRE_CLICKHOUSE=1` (hard fail, Rule Q), including its
+      both-arm case; paste one run.
+- [ ] An execution test for the rollup query in the same file or job.
+- [ ] Red-first: reintroduce the FOLLOW-1457 alias on a scratch branch; the job goes red.
+- [ ] If the job's name changes, `.github/required-checks.txt` changes in the same PR.
+
+cross_ref: [RETRO-384, RETRO-079, FOLLOW-316, FOLLOW-1118, FOLLOW-1457, FOLLOW-1458, Rule Q]
+
+## FOLLOW-1488 — [gate] the HMAC vector shared with `core-master` is held identical by a sentence, and nothing shows the handover patch reproduces the tree K5 to H1 ran
+
+source_retro: RETRO-385 source_ticket: FOLLOW-1339 recommended_sprint: before the CTO handover
+package is final recommended_agent: qa-engineer (Sonnet) priority: P3 estimated_hours: 2 tag: gate
+depends_on: [] blocks: [] promoted_to_queue: false
+
+**What.** `CTO_HANDOVER.md` §6: the vector "is held byte-identical in `SignedEventVectors.kt` … and
+`signed-conversions.test.ts`: change one, change both." Rule AQ says a prose sync note is not a
+control. Both copies are in this repo (the Kotlin object is inside the `core-master` patch). The
+real app is a local tree without git that "already carries" the patches; the CTO gets the `.patch`
+files.
+
+AC:
+
+- [ ] A test in ingest reads `SignedEventVectors` out of the patch file and asserts the secret,
+      timestamp, nonce, session id and both bodies equal the test's constants; red-first by editing
+      one byte in a scratch copy.
+- [ ] Once, inside each patched directory of the local app: `patch -p1 -R --dry-run < <patch>`
+      succeeds; paste the output into the patch README with the date.
+- [ ] The handover sentence points at the test instead of asking a person to keep them equal.
+
+cross_ref: [RETRO-385, FOLLOW-1339, FOLLOW-1454, Rule AQ]
+
+## FOLLOW-1489 — [docs] `/api/dsr/access` and `/api/dsr/portability` return `intent_state` raw; the envelope module says every reader parses it
+
+source_retro: RETRO-386 source_ticket: FOLLOW-1310 recommended_sprint: post-K7 recommended_agent:
+backend-engineer (Sonnet) priority: P3 estimated_hours: 1 tag: docs depends_on: [] blocks: []
+promoted_to_queue: false
+
+**What.** `intent-state-envelope.ts:6`: "Readers: every control-plane route that selects
+`intentState` parses it with `readIntentStateEnvelope`." The three tracer routes do.
+`dsr/access/route.ts:371` and `dsr/portability/route.ts:366` return the column as stored: a JSON
+string for a legacy row until the repair SQL runs, an object with `weights`, `topArchetype`,
+`confidence` for a new one.
+
+AC:
+
+- [ ] Either both DSR routes return one shape (through the shared reader, or documented as "as
+      stored") or the docblock names them as raw readers; state which.
+- [ ] One test per route with a legacy string row and a v2 envelope row.
+- [ ] `DATA_DICTIONARY.md` says what the DSR export returns for `intent_state`.
+- [ ] No legal analysis; a sentence of fact only.
+
+cross_ref: [RETRO-386, FOLLOW-1310, FOLLOW-1308, Rule AI]
+
+## AMENDMENT to FOLLOW-1433 — 2026-11-08 by RETRO-384: #1138 tripped MP-017 and MP-012 again
+
+**AMENDMENT (RETRO-384 §4d).** #1138 (FOLLOW-1459) appends `SLOT_FIT_RULE` to both adapt prompts
+(`llm-gateway.ts`), which is "a change to the prompt builders" for MP-017, and adds `checkSlotFit`
+as a refusal class ahead of the name scan, which changes the split MP-012 describes.
+`MEASURED_PREMISES.md` was not in the diff. When this ticket discharges MP-012 / 013 / 017, measure
+on code at or after `0c46e483`.

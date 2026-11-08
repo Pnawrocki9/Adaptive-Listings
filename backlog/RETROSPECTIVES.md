@@ -89381,3 +89381,722 @@ CLAUDE.md says so. I followed the ruling. The file wants the edit; I may not mak
 
 - RETRO-369, RETRO-371 (Rule BD's evidence), RETRO-321, RETRO-322 (live clause), RETRO-375, RETRO-377,
   RETRO-378 (the guard a cut-off reply would have set), RETRO-268, Rule BA, Rule BC, Rule H, Rule I.
+
+## RETRO-381 — #1129 (FOLLOW-1429: natural Polish and Spanish in templates and description prompts) — a small, honest change: the calques are rewritten at the source and the PR says what its recording cannot show (one run per case, three of six moved cases on unchanged English pages). Probed at HEAD, the body check grounds the localised forms the new paragraph asks for (`4 200 zł` for 4,200 PLN, `Lizbonie`, `Lisboa`, `64 m²` for 64 sqm). Three findings, all P3. (1) The locale axis is half done: `dual-ledger` was replaced in Polish and kept in Spanish (`doble libro mayor`, `diaspora-buyer.ts:58`), and the pinned list has no Spanish entry for it. (2) Second sighting of RETRO-379 note 3: a template-only change reaches no cached copy, because the description cache key carries no prompt identity; `claims-v11` (#1130) cleared it six hours later, by luck again. (3) MP-019 and MP-022 were registered on 2026-11-07 (#1165) with 2026-10-22 numbers, although this PR had already changed the description prompt builders their `revalidate_on` names — 2026-11-08
+
+### 1. Summary of change
+
+- **PR:** #1129 (merged 2026-11-01 17:28 UTC, commit 55679f4)
+- **Files changed:** 12 (+379 / -19); 43 added lines under `src` outside tests and fixtures
+- **Modules touched:** control-plane (`description-generator.ts`), shared (five playbooks), corpus
+  v28
+- **Key contracts changed:** `NATIVE_COPY_BY_LOCALE` (internal, `description-generator.ts:604`), one
+  paragraph appended to the pl / es description user prompt (`:772`). No claim check, stamp, cache
+  or guard change. Breaking: no.
+
+### 2. Verification done in PR
+
+- Test files changed: the FOLLOW-1429 template test (16 calque pins, 4 presence pins),
+  `description-parity.test.ts` (v28 re-freeze, 5 digests). Coverage delta: unknown.
+- A fresh recording before and after on 88 cases: calques 17 → 2, served 56 → 54 of 60, refused 3
+  → 5. The PR states it is not shown that the extra refusals are unrelated. CI: Rule I the only red.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. CHECK A: no new export. CHECK B: the paragraph is produced and consumed in
+one function (`renderDescriptionPrompt`), English pages untouched (`e.locale === 'en' ? []`).
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P3) — one source phrase, two locales, one fixed.** The English `diaspora_buyer` template
+  says "dual-ledger register" (`diaspora-buyer.ts:48`). The PR replaced the Polish calque
+  ("podwójnej księgi") and pinned it. The Spanish line still reads
+  `Escribe en registro de "doble libro mayor"` (`:58`, unchanged at HEAD), and the pinned list has
+  no Spanish entry for it, so the test cannot see it. Grep:
+  `grep -n "doble libro\|podwójnej" archetypes/*.ts` in `packages/shared/src/playbooks`. Whether the
+  audit saw it served is not recorded; the shape is the one the audit names → FOLLOW-1482.
+- **Probed and holding (multi-axis, money and place):** `checkBodyClaims` at HEAD passes each form
+  the new paragraph requests, against an English original: `Czynsz 4 200 zł` for `4,200 PLN`,
+  `w Lizbonie` / `en Lisboa` for `Lisbon`, `450.000 €` for `€450,000`, `1.250.000 €`, `64 m²` for
+  `64 sqm`, `Londynie`, `Monachium`, `Múnich`, `Florencia`, `Nueva York`. The body path is the only
+  path the paragraph reaches.
+- **Not reached, on purpose:** the headline check would refuse most of these exonyms as
+  `hallucinated_proper_name` (`Londres`, `Monachium`, `Florencia`, `Nueva York` all refused by
+  `checkHeadlineFacts` on the same probe). Headline prompts are unchanged and the PR says headlines
+  are not covered, so this is a limit, not a defect. If headlines are ever localised the same way,
+  the closed `PLACE_EXONYMS` table is the wall.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A. The two findings below are P3.
+
+#### 4c. Test coverage gaps
+
+- The template test pins a closed list per locale, so a calque fixed in one locale and missed in the
+  other passes (LG-1). A pin derived from the English source phrase in every locale would catch it.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P3) — a measured premise born stale (Rule BB, reverse direction).** `MP-022` (cost and
+  time of one description per model) and `MP-019` (tokenizer factor) both list "the description
+  prompt builders" in `revalidate_on`. Both were written into `docs/ops/MEASURED_PREMISES.md` on
+  2026-11-07 by #1165 (FOLLOW-1430) with `measured_on: 2026-10-22`. This PR changed those builders
+  on 2026-11-01 (`git log --format="%h %ad" -- <path>` on `description-generator.ts` shows #1129,
+  #1130 and others after 10-22). So the entries were registered after their own trigger had fired.
+  `check-measured-premises.mjs` (a K7 control, exit 0 at `59ea780c`) reads dates, not triggers, so
+  it cannot see this. The effect is small (one paragraph on pl / es prompts; MP-022's own
+  `falsified_means` says billing is unaffected) → FOLLOW-1484.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1346 (K7, H4 CEO walk): the walk will read Polish and Spanish copy written under this
+  paragraph. No native speaker has reviewed the wording (PR known limits). Severity low.
+
+#### 5b. Future sprint tickets affected
+
+- Any later edit of a `copy_template` or a description prompt (none open today) inherits LG-2 below.
+
+#### 5c. Contracts changed others rely on
+
+- **LG-2 (P3) — the description cache does not know the prompt.** The Redis key is `desc:` + tenant,
+  listing, archetype, locale, model and `r{revision}` (`api/adapt/description/route.ts` around
+  `:406`, `revisionedCacheKey`), and a hit is trusted on `CLAIMS_VALIDATION_VERSION` alone. The
+  Postgres layer is permanent and keyed the same way. This PR changed what pl / es prompts say and
+  bumped no stamp, so every cached pl / es body written from the old templates (the calques the
+  audit counted) stayed served until #1130 moved the stamp to `claims-v11` at 23:33 UTC, six hours
+  later. That is the second time: RETRO-379 note 3 recorded the same with #1123 and #1125, 80
+  minutes apart. Both were harmless by luck of the merge order → FOLLOW-1483.
+
+#### 5d. Architectural assumptions affected
+
+- "A claim-stamp bump regenerates stale copy" is true, but the stamp encodes the claim check, not
+  the prompt. Using it for a prompt change overloads it, and forgetting it leaves old copy trusted.
+
+### 6. New lesson candidates
+
+- Pattern: "a prompt or template change with no cache identity change: cached copy from the old
+  prompt stays trusted until an unrelated stamp bump" — seen in: RETRO-379 (note 3), RETRO-381 —
+  promote-threshold 2 prior, current prior count 1. Not promoted.
+- Pattern: "a closed-list pin per locale lets a fix in one locale pass while its twin stays" — seen
+  in: RETRO-377 (T8 written in one spelling, FOLLOW-1434), RETRO-381 — prior count 1. Rule S
+  (siblings at the same completeness) already covers the shape; no new rule.
+- Rule BB, applied in the reverse direction (a premise registered after its trigger fired): first
+  sighting. Rule BB stands; the gap is in the K7 control, not in the rule.
+
+### 7. Follow-ups
+
+- FOLLOW-1482: the Spanish `diaspora_buyer` template keeps "doble libro mayor" (ml-engineer, Sonnet,
+  1h, priority P3, product).
+- FOLLOW-1483: the description cache keys on no prompt identity (backend-engineer, Opus, 3h,
+  priority P3, product).
+- FOLLOW-1484: MP-019 and MP-022 registered after their trigger fired (ml-engineer, Sonnet, 2h,
+  priority P3, measurement).
+
+### 8. Cross-references
+
+- RETRO-379 (note 3, same cache gap), RETRO-376 (Rule BB, MP-012/013/017, FOLLOW-1433), RETRO-377
+  (one-spelling pins, FOLLOW-1434), Rule BB, Rule S.
+
+## RETRO-382 — #1130 (FOLLOW-1436 + FOLLOW-1431 tightenings: camp names need the listing's location, counted words are no street; `claims-v11`) — a careful PR whose own words predict the finding: "This final version has had no independent review". Rule BD (promoted at RETRO-380, in force when this merged) asks for exactly that review. I probed the result. **FOLLOW-1436 is closed for the six sentences RETRO-380 listed, and the same shape survives on every counted noun outside the new closed list:** `A 3 Floor Terrace.`, `A 2 Bath Terrace.`, `A 2 Bay Terrace.`, `A 3 Unit Court.`, `A 2 Family Terrace.`, `A 2 Garage Close.`, `A 1 Car Garage Court.` are each refused as `unsupported_street` on a listing that states the number (FOLLOW-1485, P2). The composition tightening reads past `ul.`, `al.` and `C.`, but not `Avda.`, `os.` or `pl.`: `Most residents at Avda. Mayor 5 are Muslim.` is served (amendment to FOLLOW-1440). One CEO question, not a proposal: on a Targówek listing, `ul. Treblinki 3` is refused everywhere unless the location string names the camp — 2026-11-08
+
+### 1. Summary of change
+
+- **PR:** #1130 (merged 2026-11-01 23:33 UTC, commit 2c0a351)
+- **Files changed:** 19 (+1961 / -34); 114 added lines of `src` outside tests and fixtures
+- **Modules touched:** control-plane (`street-address.ts`, `typed-claims.ts`,
+  `description-generator.ts`, `llm-gateway.ts`), shared (`traits.ts`), corpus v29, replay v5
+- **Key contracts changed:** `describesResidentsByProtectedGround` gains `listingLocation = ''` —
+  parameter added, default fails closed; `maskListingAddresses` — new export; `COUNTED_WORDS`,
+  `ALEJA_FORM`, `ALLEY_CLAIM_RE`, `CAMP_NAME`, `ADDRESS_ABBREVIATION_RE` (internal);
+  `CLAIMS_VALIDATION_VERSION` `claims-v10` → `claims-v11`. Breaking: no (tightening, plus the
+  FOLLOW-1436 loosening).
+
+### 2. Verification done in PR
+
+- Test files: `protected-ground.follow1431.test.ts` (+1139), `street-claims.follow1436.test.ts`
+  (+221), the shared FOLLOW-1431 address test (+119), parity v29, replay v5. A 67-sentence table
+  with main's verdict as a literal: 33 refused on both, 21 passed on both, 13 tightened, 0 loosened.
+- Replays moved no verdict; the PR says this "shows no harm and says nothing about precision".
+- Independent review: three readers broke earlier versions (the blanking approach was withdrawn).
+  The final version had none.
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. CHECK A: `maskListingAddresses` → `typed-claims.ts:553`. CHECK B: the new
+`listingLocation` argument has a producer (`listing-facts-context.ts:100`, `facts.location`) and all
+three consumers pass it (`description-generator.ts:895`, `:937`, `llm-gateway.ts:790`). Grep:
+`grep -rn "describesResidentsByProtectedGround" --include=*.ts apps packages | grep -v test`.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **LG-1 (P2) — FOLLOW-1436 closed on its examples, not on its class.** `afterNumber`
+  (`street-address.ts`, after `COUNTED_WORDS` at `:184`) spares a number only when the next word is
+  in a closed list of 34 words (story, level, degree, foot, acre, season, separate, wheel, minute,
+  mile, metre…). Probed at HEAD with `checkBodyClaims`, each on a listing that states the number, so
+  the digit rule passes:
+
+  | Copy                     | Listing                        | Verdict              |
+  | ------------------------ | ------------------------------ | -------------------- |
+  | `A 3 Floor Terrace.`     | `3 floor house with terrace.`  | `unsupported_street` |
+  | `A 2 Bath Terrace.`      | `2 bathrooms, terrace.`        | `unsupported_street` |
+  | `A 2 Bay Terrace.`       | `2 bay windows and a terrace.` | `unsupported_street` |
+  | `A 3 Unit Court.`        | `3 units around a court.`      | `unsupported_street` |
+  | `A 2 Family Terrace.`    | `A 2 family house with ...`    | `unsupported_street` |
+  | `A 3 Generation Way ...` | `3 generation home.`           | `unsupported_street` |
+  | `A 2 Garage Close.`      | `2 garages.`                   | `unsupported_street` |
+  | `A 1 Car Garage Court.`  | `1 car garage.`                | `unsupported_street` |
+
+  `Car` is in `GENERIC_STREET_WORDS`, so `A 2 Car Court.` passes, but `afterNumber` reads only the
+  first word against `COUNTED_WORDS`, which lacks `car`, so `Car Garage` is read as a street name.
+  The RETRO-380 six, `Alejandra`, `Alejandría`, `Alejo` and `Alejka` (without a number) all pass
+  now; `12 Downing Place` is still read. This is Rule AS's silent direction: the scope came from the
+  reported examples. Constructed sentences; nothing here says how often a model writes them →
+  FOLLOW-1485.
+
+- **LG-2 (P2, tightening) — three abbreviations missing.** `ADDRESS_ABBREVIATION_RE`
+  (`traits.ts:561`) removes `ul.`, `al.`, `C.` before the composition read. Probed with
+  `describesResidentsByProtectedGround`: `at C. Mayor 5 are Muslim` → refused; `at Avda. Mayor 5`,
+  `at os. Słoneczne 5`, `at pl. Wolności 5` → served. Same statement, one abbreviation apart.
+  Closing it only tightens the race / religion guard ESC-089 kept, so it does not touch the familial
+  ruling → amendment to FOLLOW-1440 (DEFERRED, the guard's gaps), not a new number.
+- **CEO question, not a proposal.** `Mieszkanie przy ul. Treblinki 3.` with `listing_location`
+  `Warszawa, Targówek` → refused (`ul. Treblinki` is a street there); the same with
+  `ul. Treblinki 3, Warszawa` as the location → served. Two CEO rulings meet here: "Treblinka and
+  the like refused outright" and "an address is an address, it passes" (RETRO-372). The PR chose the
+  first and says so; FOLLOW-1431 (DEFERRED) holds the second. I do not propose a change; the CEO may
+  want to see it on the H4 walk.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- P2: LG-1 → FOLLOW-1485. Fails closed: the buyer keeps the seller's copy, and the FOLLOW-1427 guard
+  holds the refusal for an hour.
+
+#### 4c. Test coverage gaps
+
+- `grep -n "Floor\|Bath\|Bay \|Unit\|Garage" street-claims.follow1436.test.ts` → none. The pins are
+  the RETRO-380 table plus the three readers' sentences, which is what Rule BD says is not enough.
+
+#### 4d. Documentation gaps
+
+- ADR-0023 has no `claims-v11`; FOLLOW-1422 covers the ADR, as RETRO-377 and RETRO-380.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-1436 closure, traced end to end:** `readStreetClaims` → `checkStreets` →
+  `checkTypedClaims` → `checkClaimClasses` on both paths → the refused body or slot → the served
+  copy. The wire is closed and the six sentences pass; the class is open (LG-1). QUEUE says
+  `DONE # PR #1130`. I record it as closed for its examples only.
+- FOLLOW-1346 (H4): real English listings use "3 floor", "2 bath", "2 car garage" in headlines. If
+  the CEO walk shows the seller's copy on such a listing, LG-1 is the first suspect. Severity low.
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1431 and FOLLOW-1440 (DEFERRED, post-K7): LG-2 joins FOLLOW-1440.
+
+#### 5c. Contracts changed others rely on
+
+- `describesResidentsByProtectedGround`'s default `listingLocation = ''` means a future caller that
+  forgets the argument refuses every camp-named street. Fails closed, so acceptable; noted.
+
+#### 5d. Architectural assumptions affected
+
+- N/A.
+
+### 6. New lesson candidates
+
+- Pattern: "a closed-list fix closes the reported examples and leaves the class" — seen in:
+  RETRO-380 (the first version of this list), RETRO-382. Rule AS and Rule BD already say this; this
+  is the first application failure of Rule BD after its promotion, acknowledged in the PR's own
+  known limits. No new rule.
+
+### 7. Follow-ups
+
+- FOLLOW-1485: counted nouns outside `COUNTED_WORDS` still read as streets (ml-engineer, Opus, 2h,
+  priority P2, product).
+- Amendment to FOLLOW-1440 (no new number): `Avda.`, `os.`, `pl.` before a composition statement.
+
+### 8. Cross-references
+
+- RETRO-380 (FOLLOW-1436, Rule BD), RETRO-372 (the address ruling, FOLLOW-1431), RETRO-377
+  (FOLLOW-1422), Rule AS, Rule BD.
+
+## RETRO-383 — #1133 (FOLLOW-1316: returning buyer profile, consent, withdrawal, AC(9)) — the deepest change of the batch and one of the best-verified: a design review (R1–R46), a signed compliance review, an independent server review that found two erasure defects (both fixed), AC(9) green in five of five runs, and the follow-ups the PR names (FOLLOW-1442 to 1449) plus those filed at K4b and K5. I traced every contract both ways. The consent gate, the restore, the write, the delete and the stable arm hold on the variant and the holdout axes, and nothing I found is a defect in what a buyer sees. One half-wire on the measurement axis: **`features_snapshot.assignment_unit` and `profile_restored` are written on every decision and read by no code**, while MASTER_DESIGN says they exist "so a reader can split or cluster" correlated xid rows, and names as owner FOLLOW-1204, a never-queued stub whose premise ("nothing transmits the xid") this PR made false (FOLLOW-1486, P2) — 2026-11-08
+
+### 1. Summary of change
+
+- **PR:** #1133 (merged 2026-11-02 03:51 UTC, commit 93cfa9b)
+- **Files changed:** 78 (+9962 / -633)
+- **Modules touched:** SDK (`xid.ts` new, `session.ts`, `consent-flow.ts`, `adapt.ts`, `intent.ts`,
+  `index.ts`, `profiling-toggle.ts`), control-plane (`buyer-profile-store.ts`,
+  `buyer-profile-route.ts`, `api/adapt/route.ts`, `/api/profile/*`, `/api/dsr/erase`, middleware
+  CORS, public-config), shared (`ab-holdout.ts`, `directives.ts`, consent schema, presentation
+  config, `XID_RETENTION_DAYS`), compliance docs, harness AC(9)
+- **Key contracts changed:** `POST /api/adapt` body `xid`, `xid_created_at`, `archetype_source` —
+  added; `AdaptationDirectives.profile_restore` — added; `assignHoldout` `assignment_unit_id` —
+  added (the arm keyed per xid, ESC-090 item 2); `consent.granted.payload.text_version` — added;
+  public-config `buyer_profile_enabled` — added; `/api/profile/` erase, access and portability — new
+  routes; `/api/dsr/erase` optional `xid`. Breaking: no (all additive, flag default off).
+
+### 2. Verification done in PR
+
+- Test files: 14 new or changed suites, the largest `route.buyer-profile.test.ts` (+1111),
+  `follow-1316.test.ts` (+1019), `profile-routes.test.ts` (+719), `ac9-verdict.test.ts` (+1288), the
+  PGlite erase test (+296), `returning-buyer.spec.ts` (+304), a Redis test double (+326).
+- FOLLOW-819 runs 277, 279, 281 `TALLY green=9 red=0 total=9 run=GREEN`, `[FRESH]` at `a28ffa36`.
+  The Lua scripts run only in a JavaScript mirror in CI (PR known limit, FOLLOW-1451).
+
+### 3. Wiring Audit
+
+- CHECK A — clean. Every new export of `buyer-profile-store.ts` and `xid.ts` has a non-test importer
+  (grep per symbol, `grep -rlw <symbol> --include=*.ts apps packages | grep -v test`).
+  `offerWithdrawal` had one at merge and was removed by #1158 (FOLLOW-1444) with its caller.
+- CHECK B:
+  - `profile_restore`: producer `api/adapt/route.ts` (`:1034`); consumers SDK
+    (`adapt-schema.ts:148`, logged at `adapt-loop.ts:361`), the harness (`differentiator-e2e.mjs`,
+    AC(9)), N3 (`real-app-acceptance.mjs:351`). Wired.
+  - `buyer_profile_enabled`: producer public-config; consumer `boot.ts` → `adapt.ts:937`. Wired.
+  - `xid`, `xid_created_at`, `archetype_source`: producer `adapt.ts:932-942`; consumer
+    `honourConsentedXid`, `writeBuyerProfile`. Wired.
+  - `text_version`: producer `consent-flow.ts:169`; stored in `events.payload` by ingest
+    (`clickhouse-producer.ts:255`); read by no code. It is a consent record, so storage is its
+    purpose. Not a finding.
+  - **HALF_WIRE_P — `features_snapshot.assignment_unit` and `.profile_restored`**
+    (`api/adapt/route.ts:389`). Grep
+    `grep -rn "assignment_unit\|profile_restored" apps packages tests scripts` → the writer, two
+    route tests, `ab-holdout`, and docs. No reader, no harness, no lift query.
+    `docs/MASTER_DESIGN.md:3224` says they exist "so a reader can split or cluster them" →
+    FOLLOW-1486. Priority P2, not P1, because they sit inside an existing JSON column, nobody waits
+    on them, and `BUYER_PROFILE_ENABLED` stays off in production (handover row 20). I state the
+    departure from the default P1.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **Traced and holding, each axis:**
+  - Variant / holdout: the holdout early return comes before the store read and the write, so a
+    holdout xid neither restores nor writes (`route.ts`, the block after `assignHoldout`). The
+    stable arm keeps such a buyer in holdout for the xid's life, by design (ESC-090 item 2).
+  - Consent: `honourConsentedXid` needs the flag, canonical `consented`, a strict v4 and a live
+    `xid_created_at`; the SDK's `readSendableXid` adds GPC, the opt-out key, a current text version
+    and SubtleCrypto. Both sides fail closed.
+  - Write ordering: a write happens only when the session's own signal qualified (no read), so a
+    restored call never writes; `behavior` never overwrites `quiz` (Lua `outranked`); `KEEPTTL` on
+    overwrite, so the 90 days never extend.
+  - Erase: a tombstone refuses later writes, 24 h for the browser, 90 days for a DSR; a self-service
+    erase cannot shorten a DSR tombstone (`DELETE_SCRIPT`).
+  - Lead: `xid.lead` withholds the xid for another lead (R43).
+- **One-visit both-arms** was real (config late, first decision keyed per session, later per xid).
+  It was found at K5 and fixed in #1138 (FOLLOW-1458). RETRO-384 traces it.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- None found beyond those the PR and its reviews filed (FOLLOW-1442 to 1456; see 5a).
+
+#### 4c. Test coverage gaps
+
+- The Lua runs in a mirror only (FOLLOW-1451, DEFERRED). AC(9) went RED six times across Phase 6 on
+  unchanged code (FOLLOW-1471, DEFERRED). Both known; neither re-filed.
+
+#### 4d. Documentation gaps
+
+- **DG-1 (P2) — an owner that cannot own.** MASTER_DESIGN (`:3230`) names FOLLOW-1204 "(P2, open)"
+  as the owner of the xid's purpose record and of "the dilution measured once". FOLLOW-1204 exists
+  only as a stub in `backlog/FOLLOW_UPS.md` (`promoted_to_queue: false`, no QUEUE row:
+  `grep -n "FOLLOW-1204\*\*" backlog/QUEUE.md` → none). Its context says "nothing transmits it";
+  this PR transmits it. Its first AC (ROPA / DPIA name the xid) is met by this PR's compliance
+  edits; its second (the dilution query, once) is not met by anything. In FOLLOW-1486.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-1316 closure, traced end to end:** SDK `readSendableXid` → `markXidSent` →
+  `POST /api/adapt` body → `honourConsentedXid` → `readBuyerProfile` → `profile_restore: 'restored'`
+  with the stored archetype at similarity 0.85 → `llm_tweaked` directives → rendered, graded by
+  AC(9) (restore, then no restore without consent, after withdrawal, after a DSR erase, for a
+  non-persistable result). Then K4b on the real app (FOLLOW-1344). Closed end to end on localhost.
+  Production: gated by ESC-090 and handover row 20.
+- Every "Known limit" of the PR has a ticket at HEAD: Lua (1451), `/api/dsr/initiate` (1308 DONE),
+  no access / portability control (1445 DONE), no withdrawal confirmation (1444 DONE), quota and
+  address hash (1447), audit-log retention (1448), "None of these" (1449), `by_archetype` cohorts
+  (1443). I checked each against QUEUE; none is re-filed.
+
+#### 5b. Future sprint tickets affected
+
+- The SDK bundle had 10 B left after this PR. FOLLOW-1354 (fetch timeout) and FOLLOW-1466 (text
+  version on old grants) are DEFERRED partly because they "need SDK bytes". Any post-K7 SDK work
+  starts with a size decision (ESC-028 / ESC-080 precedent).
+
+#### 5c. Contracts changed others rely on
+
+- `assignHoldout`'s unit changes the meaning of a per-session lift for consented returning buyers:
+  rows are correlated. MASTER_DESIGN states it; no reader acts on it (§3, FOLLOW-1486).
+
+#### 5d. Architectural assumptions affected
+
+- MASTER_DESIGN "Decision #5" (the tab session is the unit) is amended by ESC-090 item 2, recorded
+  in §D (`:3219`). Consistent.
+
+### 6. New lesson candidates
+
+- Pattern: "a diagnostic field written for a future reader that is never built" — seen in: RETRO-328
+  LG-4 (the dilution query reads a column no producer has written, amendment to FOLLOW-1204),
+  RETRO-383 (now the producer exists and the reader does not). The same ticket, both directions.
+  Prior count 1. Rule H and Rule AJ cover the producer-only shape. No new rule.
+
+### 7. Follow-ups
+
+- FOLLOW-1486: the arm-unit fields have no reader; re-home FOLLOW-1204 (data-engineer, Sonnet, 3h,
+  priority P2, measurement).
+
+### 8. Cross-references
+
+- RETRO-328 (FOLLOW-1204 amendment), RETRO-384 (FOLLOW-1458, the both-arm visit), ESC-090, Rule H,
+  Rule AJ, Rule AW (an owner named in the SoT that cannot discharge).
+
+## RETRO-384 — #1138 (FOLLOW-1457 / 1458 / 1459 / 1460: K5 fixes — lift reader alias, stable arm per session, slot copy rules, local staff token) — four fixes from the N3 live run, each stated with its limits in the PR body (the wait cap, the toggle delay, the window edge, `ts` at log time, the CTA word list). Two findings. (1) **The bug FOLLOW-1457 fixed could only be seen by a real ClickHouse, the PR added a test that runs on one, and CI has a real-ClickHouse job that does not run it.** `lift-queries.integration.test.ts` skips without `CLICKHOUSE_URL`; the `ci.yml` job that boots ClickHouse runs the tracer and retention specs only (FOLLOW-1487, P2). (2) FOLLOW-1459 "resolves FOLLOW-1453" for the `cta` half. The `feature` half FOLLOW-1453 named, `Your First Step` over the amenities grid, is unchanged at HEAD; that is wording for the CEO's walk, so I raise it rather than file it. Rule BB tripped again (the adapt prompt builders, MP-017), covered by FOLLOW-1433 — 2026-11-08
+
+### 1. Summary of change
+
+- **PR:** #1138 (merged 2026-11-02 21:26 UTC, commit 0c46e48)
+- **Files changed:** 50 (+1282 / -178)
+- **Modules touched:** control-plane (lift `route-helpers.ts`, rollup `data.ts`, `llm-gateway.ts`,
+  `ungrounded-directives.ts`), SDK (`index.ts`, `boot.ts`, `quiz-config.ts`, `intent-weights.ts`),
+  shared (14 playbooks, `traits.ts`), `localhost-up.sh`, replay v6
+- **Key contracts changed:** `checkSlotFit` / `SlotFitViolation` (`feature_not_a_label`,
+  `cta_promises_deliverable`) — added to the adapt violation chain; `SLOT_FIT_RULE` — added to both
+  adapt prompts; `sessionArmJoin` — the arm of a session is its first decision's; lift response
+  `sessions_in_both_arms` — added; SDK first decision waits up to 2 s for a late config. Breaking:
+  no.
+
+### 2. Verification done in PR
+
+- Test files: `llm-gateway.follow1459.test.ts` (+266), `route-helpers.test.ts` (+115),
+  `lift-queries.integration.test.ts` (+86, not in CI), `follow-1316.test.ts` (+132),
+  `localhost-up-jwt-secret.test.ts` (+36), replay v6 (231-line delta, expected: a prompt change).
+- An independent read found three defects in the wait (unbounded on a stalled body, a wait on a flag
+  production keeps off, events lost on leaving); fixed in `c6c1e033`. CI was the first full run.
+
+### 3. Wiring Audit
+
+- CHECK A — clean: `checkSlotFit` → `llm-gateway.ts:803`; `sessionArmJoin` → lift and rollup
+  (`data.ts:263`).
+- CHECK B — one producer-only diagnostic: `sessions_in_both_arms` is returned by the lift route
+  (`route-helpers.ts:551`) and read by no page, harness or script (grep
+  `grep -rn "sessions_in_both_arms" apps packages scripts tests | grep -v test` → the producer
+  only). The PR says it "reports" the both-arm visit; nothing receives the report. Same family as
+  RETRO-383's half-wire; added to FOLLOW-1486 as one AC rather than a new number.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **Multi-axis on the arm fix (FOLLOW-1458):** the first decision's arm is now the session's arm in
+  the lift and rollup readers. `pilot/inquiry-starts` and `analytics/summary` still take the row's
+  arm (PR known limit; FOLLOW-1464 DEFERRED holds it). The conversion side: signed conversions join
+  by session and `ingest_received_at`, so they inherit the first arm. Consistent.
+- **Locale axis on the slot rules (FOLLOW-1459):** `DELIVERABLE_PROMISE`, `ASKS_THE_AGENT` and
+  `OBTAIN_VERB` cover en / pl / es. No authored `feature` string in any locale exceeds 40
+  characters, and no authored pl / es `cta` contains a listed deliverable word (grep over the
+  archetype playbooks), so the rule refuses no authored copy.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- The FOLLOW-1457 defect itself: ClickHouse code 184 (an aggregate alias shadowing a column in
+  `WHERE`) passed every CI check, because CI asserts the SQL string. Fixed here; the class stays
+  open in CI (4c).
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P2) — a real-engine test outside the real-engine job.** `ci.yml:462-474` (the job that
+  boots `clickhouse-server`, applies migrations and sets `REQUIRE_CLICKHOUSE=1`) runs
+  `clickhouse-tracer.integration.test.ts` and, from `:476`, the consent-log retention spec
+  (FOLLOW-1118). `lift-queries.integration.test.ts` skips on a missing `CLICKHOUSE_URL`
+  (`describe.skipIf`) and is in no workflow (`grep -n "lift-queries" .github/workflows/*.yml` →
+  none). Its own docblock: "the string pin in `route-helpers.test.ts` is what runs in CI, which does
+  not run this spec". The rollup query in `data.ts` uses the same `sessionArmJoin` and has no
+  execution test at all → FOLLOW-1487.
+
+#### 4d. Documentation gaps
+
+- **Rule BB, tripped again, already owned.** `SLOT_FIT_RULE` is appended to both adapt prompts
+  (`llm-gateway.ts:281`, `:312`), which trips MP-017 ("any change to the prompt builders"), and
+  `checkSlotFit` is a new refusal class in the chain MP-012 describes. `MEASURED_PREMISES.md` is not
+  in the diff. FOLLOW-1433 (DEFERRED) owns MP-012 / 013 / 017 from #1118 → an amendment line, no new
+  number.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-1453 closure, traced:** FOLLOW-1453 named two halves: a `cta` promising a guide on a
+  button that opens a message, and `"Your First Step" over the amenities grid`. The first is closed
+  end to end (prompt rule → `checkSlotFit` → refused slot keeps the seller's copy; the authored
+  strings were re-authored). The second is unchanged: `first-time-buyer.ts:19` is still
+  `{ slot: 'feature', en: 'Your First Step' }`, and `checkSlotFit` checks a feature's length and
+  sentence shape, not whether it heads what the slot fills. QUEUE marks FOLLOW-1453 SUPERSEDED with
+  "the button wording is for the CEO walk". **For the PM:** add the feature heading to the H4 walk
+  list (FOLLOW-1346), so the CEO sees it with the buttons. Severity low; wording, not a defect.
+- FOLLOW-1346 (H4): K5 noted the buttons now read near-identically across archetypes ("Ask the Agent
+  About …"). For the CEO.
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1354 (DEFERRED, the `/api/adapt` fetch timeout) now also bounds the opt-out toggle, which
+  mounts after the first decision (PR known limit). Already in FOLLOW-1464's text.
+
+#### 5c. Contracts changed others rely on
+
+- The lift response gained `sessions_in_both_arms`; the per-arm denominators now count each session
+  once. Any saved number from before #1138 is not comparable for both-arm sessions.
+
+#### 5d. Architectural assumptions affected
+
+- N/A.
+
+### 6. New lesson candidates
+
+- Pattern: "the defect lives in a real engine, CI holds a mirror or a string pin of it" — seen in:
+  RETRO-078 / RETRO-079 (tracer queries; FOLLOW-316 built the live job), RETRO-383 (the Lua mirror,
+  FOLLOW-1451), RETRO-384 (lift SQL). Rule Q covers soft skips and Rule K parity; FOLLOW-316 is the
+  precedent fix. Not promoted: the remedy is to use the job that exists, not a new rule.
+- Pattern: "a closure claimed for a two-part ticket closes the part a rule can check" — seen in:
+  RETRO-384 only (FOLLOW-1453). Count 0 prior.
+
+### 7. Follow-ups
+
+- FOLLOW-1487: run the lift and rollup queries in the live-ClickHouse CI job (qa-engineer, Sonnet,
+  2h, priority P2, gate).
+- Amendment to FOLLOW-1433 (no new number): MP-017 and MP-012 tripped again by #1138.
+- Observations, not filed: `Your First Step` (5a, for the H4 walk); CTA refusals listed in the PR's
+  known limits.
+
+### 8. Cross-references
+
+- RETRO-383 (the both-arm visit, FOLLOW-1486), RETRO-376 (FOLLOW-1433), RETRO-078 / RETRO-079
+  (FOLLOW-316, the live-ClickHouse job), Rule BB, Rule Q.
+
+## RETRO-385 — #1139 (FOLLOW-1339 / 1340: signed conversions from the Estalara backend, listing webhook, ESC-091) — mostly a handover artefact: a 2183-line `core-master` patch, a compliance review, and two additive schema fields. The code that runs in this repo is two lines of schema and a fixture change. The closure is end to end on localhost: K5's walk read `live.signup` and `inquiry.completed` with `caller_signed = 1` on one session and the rollup moved 173 → 174, holdout unchanged. One finding, a gate: **the HMAC test vector is "held byte-identical" in the patch's `SignedEventVectors.kt` and in `signed-conversions.test.ts` by a prose instruction ("change one, change both", `CTO_HANDOVER.md` §6)**. That is Rule AQ's forbidden control, and both copies are in this repo, so it can be machine-checked. Nothing checks the patch against the tree K5 to H1 ran on either (FOLLOW-1488, P3). One question: the new gitleaks `paths` exemption sits close to Rule V, and the CEO decided it — 2026-11-08
+
+### 1. Summary of change
+
+- **PR:** #1139 (merged 2026-11-02 23:12 UTC, commit 2614cb4)
+- **Files changed:** 18 (+3731 / -153); 11 lines of `src` outside tests
+- **Modules touched:** shared (`inquiry.ts`, `live.ts`), ingest (test only), fixture server,
+  compliance docs, handover patch and README, `.gitleaks.toml`
+- **Key contracts changed:** `inquiry.completed.payload.channel` gains `conversation`;
+  `live.signup.payload.event_kind` (optional string ≤ 32) — added. Breaking: no; ingest deploys
+  first.
+
+### 2. Verification done in PR
+
+- `signed-conversions.test.ts` in ingest (+305): the shared vector through the real auth and schema,
+  14 passed. Gradle in `core-master`: 128 tests, 0 failed, 1 skipped.
+- "Nothing has run through a booted backend" at PR time; K5 then did (`docs/checkpoints/K5.md`, the
+  walk table).
+
+### 3. Wiring Audit
+
+Wiring Audit — clean ✅. CHECK A: no new export. CHECK B: `channel: 'conversation'` — producer the
+patch (`ConversationCreatedEvent`) and the fixture server (`:301`); consumer the lift's
+`signed_agent_contacts` (`type = 'inquiry.completed' AND caller_signed = 1`, which reads no
+channel). `event_kind` — producer the same two; stored in `events.payload`, read by no query, by
+design ("keeps a future split readable"). Both are records, not signals.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **Multi-axis, traced:** holdout — the session header is set from the SDK session on both arms
+  while consent is granted (patch README `:52`, `:68`); conversions undercount in both arms alike
+  (README `:106`). Clock — attribution reads `ingest_received_at`, not the backend's `ts`
+  (DATA_DICTIONARY `:129`). Both hold.
+- The SDK keeps its own copy of the channel list (`adapt-loop.ts:634`: email, phone, whatsapp, sms,
+  in_person), without `conversation`. Correct today: the browser is not a source of that channel. A
+  hand-copied enum, noted.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A.
+
+#### 4c. Test coverage gaps
+
+- **TG-1 (P3) — two copies of one vector, held by prose.** `object SignedEventVectors` in the
+  `core-master` patch (`SECRET_HEX`, `TIMESTAMP`, `NONCE`, `SESSION_ID`, `LIVE_BODY`,
+  `INQUIRY_BODY`) and the constants at the top of `signed-conversions.test.ts` are the same values
+  today (read side by side). `CTO_HANDOVER.md` §6: "held byte-identical … change one, change both."
+  Rule AQ: "a prose 'keep in sync' note is not a control". The patch is a file in this repo, so a
+  test can parse it.
+- **TG-2 (P3) — the patch and the tree.** The real app is "a local checkout without git" whose tree
+  "already carries" the patches (patch README `:1-6`). K5, K6 and H1 ran that tree; the CTO receives
+  the `.patch`. Nothing records that the patch reproduces the tree (for example `patch -R --dry-run`
+  inside `core-master` succeeding). I did not run it: it is outside this worktree → both in
+  FOLLOW-1488.
+
+#### 4d. Documentation gaps
+
+- N/A beyond TG-1's handover sentence.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- **FOLLOW-1339 / 1340 closure, traced end to end:** backend `ConversionEventClient` → signed POST →
+  ingest `authenticateRequest` (`caller_signed = 1`) → ClickHouse `events` → lift / rollup
+  `signed_*` counts → `/admin` rollup. K5 walk, 2026-11-04: both events, one session, rollup 173 →
+  174, holdout 203 unchanged. Closed on localhost; production is handover row 21 (FOLLOW-1454).
+- #1147 (FOLLOW-1310), merged three days later, made ingest enforce `scopes`. The signed fixture key
+  in `localhost-up.sh:410` carries `["write:events"]`, and K6 N3 ran after it; the cascade holds.
+  The CTO's key needs `write:events` (handover row 28).
+
+#### 5b. Future sprint tickets affected
+
+- FOLLOW-1463 (DEFERRED, `core-master`): a refused `PATCH` still saved, slow ingest can duplicate
+  signed events. Not re-filed.
+
+#### 5c. Contracts changed others rely on
+
+- **A question for the PM, not a proposal.** `.gitleaks.toml` exempts `docs/handover/` patch files
+  from the generic 40-character rule by path, "CEO decision 2026-11-02"; provider rules stay active.
+  Rule V forbids a `paths` exemption for a generic rule on a file that handles real secrets, and
+  allows it for docs. These patch files are docs that carry Kotlin source which reads
+  `AL_SERVER_HMAC_SECRET`. The CEO ruled; I record the tension so a later reader does not take the
+  exemption as a Rule V precedent. If the PM wants it narrower, a token-scoped entry is the shape
+  Rule V names; that is the CEO's call.
+
+#### 5d. Architectural assumptions affected
+
+- N/A.
+
+### 6. New lesson candidates
+
+- Pattern: "a value declared identical in two places, held by a sentence" — Rule AQ exists (promoted
+  earlier); this is an application failure across a repo boundary. No new rule.
+
+### 7. Follow-ups
+
+- FOLLOW-1488: machine-check the shared HMAC vector, and record that the patch reproduces the tree
+  (qa-engineer, Sonnet, 2h, priority P3, gate).
+
+### 8. Cross-references
+
+- RETRO-386 (#1147 scopes, the cascade in 5a), Rule AQ, Rule V, ESC-091, FOLLOW-1454, FOLLOW-1463.
+
+## RETRO-386 — #1147 (FOLLOW-1310: bounded, recoverable ingest; one snapshot envelope) — a model PR for a defect batch: six Codex findings re-scoped against current code first (all six still existed), each fixed with a red-first test, legacy shapes kept parseable, a repair script run for real on PGlite, and the five new signals added to the register in the same PR. The retry-versus-erasure hook it left was closed by #1149 (both replay branches read the erasure ledger). One finding, documentation, P3: **the envelope module says "every control-plane route that selects `intentState` parses it with `readIntentStateEnvelope`"; two do not.** `/api/dsr/access` and `/api/dsr/portability` pass the raw column, so a data subject's export holds a JSON string for a legacy row and an object for a new one (FOLLOW-1489). Rule AJ, recorded and not re-filed: the five new signals have consumer "none", like every earlier ingest signal in the register; production alerting is the CTO's — 2026-11-08
+
+### 1. Summary of change
+
+- **PR:** #1147 (merged 2026-11-05 22:11 UTC, commit 80bd1fc)
+- **Files changed:** 31 (+2173 / -194)
+- **Modules touched:** ingest (`auth.ts`, `clickhouse-producer.ts`, `events-retry-queue.ts`,
+  `events-retry-consumer.ts`, `events.ts`, `intent-snapshot.ts`, idempotency middleware), shared
+  (`intent-state-envelope.ts` new, `schemas/tracer.ts`), control-plane (three tracer routes and the
+  page), db (repair SQL), docs
+- **Key contracts changed:** `/v1/events` per-event errors `ts_out_of_range`, `event_too_large` —
+  added; `decideIngestScope` — `scopes` now enforced (403 `insufficient_scope`, 401
+  `invalid_key_record`); idempotent replay after auth, bound to a body hash (422
+  `idempotency_key_reused`); retry message `schema_version: 2`, `kind: 'intent_snapshot'` — added;
+  `intent_sessions.intent_state` — a JSONB object `{weights, topArchetype, confidence}` instead of a
+  JSON string; tracer responses gain `weights`. Breaking: for a key without `write:events` (handover
+  row 28), otherwise no.
+
+### 2. Verification done in PR
+
+- Seven new or extended suites, each seen failing at `0c170c61` first (table in the PR body); ingest
+  347 tests, shared 1223. Series README §5.74.
+
+### 3. Wiring Audit
+
+- CHECK A — clean: `buildIntentStateEnvelope` → `intent-snapshot.ts:324`; `readIntentStateEnvelope`
+  → three tracer routes; `decideIngestScope`, `replayIdempotentResponse` → `events.ts`.
+- CHECK B:
+  - Retry v2 messages: producer `events.ts` → consumer `events-retry-consumer.ts`
+    (`replaySideWrite`). Wired.
+  - Per-event error codes: consumer the SDK, which treats any 2xx or 4xx as done (`events.ts:149` in
+    the SDK), so a refused event is not re-sent. Wired by design.
+  - **HALF_WIRE_P under Rule AJ, recorded, not filed:** `insufficient_scope_rejected`,
+    `event_bounds_rejected`, `events_retry_record_oversize`, `events_retry_rows_unencodable`,
+    `intent_snapshot_retry_failed` — each listed in `INGEST_WORKER_DEPLOY.md` with consumer
+    **none**, as every earlier ingest signal in the register is. `SENTRY_DSN_INGEST` is a handover
+    row; the alert rules per signal are not (`grep -n "alert" docs/handover/CTO_HANDOVER.md` →
+    nothing for ingest). Production observability queues behind the localhost path (CLAUDE.md), so I
+    name it for the handover rather than spend a slot.
+
+### 4. Discovered gaps
+
+#### 4a. Logic gaps
+
+- **Multi-axis on the envelope, both directions.** Writer: one (`intent-snapshot.ts:324`). Readers
+  of `intentSessions.intentState`: five
+  (`grep -rn "intentState" apps/control-plane/src | grep -v test`). Three tracer routes parse it
+  through the shared reader. `dsr/access/route.ts:371` and `dsr/portability/route.ts:366` return it
+  raw. So, for the data subject:
+  - a legacy row (before the repair SQL runs) exports `intent_state` as a string holding the bare
+    map;
+  - a new row exports an object that now also holds `topArchetype` and `confidence`. Nothing breaks,
+    and the repair script converges legacy rows. The module docblock (`intent-state-envelope.ts:6`)
+    is false at merge (Rule AI) → FOLLOW-1489.
+- **Retry versus erasure:** the hook this PR left was closed by #1149 (FOLLOW-1308): both replay
+  branches read `readErasedSessions` before writing (`events-retry-consumer.ts:81`, `:225`). Traced;
+  closed.
+
+#### 4b. Code bugs not caught (P0/P1/P2)
+
+- N/A.
+
+#### 4c. Test coverage gaps
+
+- The DSR routes have no test that feeds a v2 envelope or a legacy string (`grep -n "intent_state"`
+  in their tests → none). In FOLLOW-1489.
+
+#### 4d. Documentation gaps
+
+- DG-1 (P3): the docblock above. `DATA_DICTIONARY.md` (+39) documents the envelope; it does not say
+  what the DSR export returns. In FOLLOW-1489.
+
+### 5. Cascading impact
+
+#### 5a. Current sprint tickets affected
+
+- FOLLOW-1339 (signed conversions): scopes now enforced; the signed fixture key carries
+  `write:events`; K6 N3 ran after this merge. Holds (RETRO-385 §5a).
+
+#### 5b. Future sprint tickets affected
+
+- The repair SQL is an operator step after the Worker deploy (handover). Until it runs, DSR exports
+  carry both shapes (4a).
+
+#### 5c. Contracts changed others rely on
+
+- `read:events`-only browser keys stay admitted as `estalara.legacy_scope`. The tag has no reader;
+  it is for a person reading Sentry.
+
+#### 5d. Architectural assumptions affected
+
+- N/A.
+
+### 6. New lesson candidates
+
+- Pattern: "a module docblock claims every reader; the claim was checked against the readers the PR
+  touched" — Rule AI (and its amendments) already requires the grep; application failure. No new
+  rule.
+
+### 7. Follow-ups
+
+- FOLLOW-1489: the DSR routes return `intent_state` raw; the docblock says every reader parses it
+  (backend-engineer, Sonnet, 1h, priority P3, docs).
+- Observation, not filed: alert rules for the ingest signals with consumer "none" belong on the
+  production handover list.
+
+### 8. Cross-references
+
+- RETRO-385 (scopes cascade), Rule AI, Rule AJ, FOLLOW-1308 (#1149, retry versus erasure).

@@ -21,6 +21,32 @@ When resolved, change `## OPEN` to `## RESOLVED` and add the resolution.
 
 ---
 
+## RESOLVED — ESC-093: a camp name inside the listing's own address; legitimate interest at the ingest consent gate [FOLLOW-1507 / FOLLOW-1508]
+
+**Filed by:** pm-orchestrator (questions from RETRO-382 §4 and RETRO-390 §5b) **Date:** 2026-11-08
+**Affects:** `packages/shared/src/playbooks/traits.ts` (protected-ground guard, camp names),
+`apps/ingest/src/consent-gate.ts`, DPIA / ROPA / LIA / Notice **Type:** compliance
+
+**Description:** (1) `Mieszkanie przy ul. Treblinki 3.` on a Targówek listing is refused, because
+the camp-name rule of FOLLOW-1431 keeps the street exemption only when `listing_location` names the
+same camp. Two CEO rulings meet there: "Treblinka and the like refused outright" and "an address is
+an address, it passes". (2) `apps/ingest/src/consent-gate.ts` still persists profiling-class events
+(`page.view`, `scroll.depth`, …) under `consent_state = 'legitimate-interest'`, which the SDK sends
+while the buyer has not decided. ESC-091 C-1 ruled conversion measurement and the holdout "consent
+only, never legitimate interest"; whether that reaches profiling events at ingest was open.
+
+**Resolution (CEO, 2026-11-08):**
+
+- **(1) "Adres to adres."** A camp name that is part of the listing's own address passes, wherever
+  the listing is. The refusal of camp names outside an address stays → FOLLOW-1507.
+- **(2) "Tak, obejmuje i zdarzenia."** ESC-091 C-1 covers profiling events too: ingest persists a
+  profiling-class event only with `consent_state = 'consented'`; legitimate interest is no basis →
+  FOLLOW-1508 (code), FOLLOW-1509 (records: DPIA, ROPA, LIA, Notice; no legal analysis, per the
+  ruling of 2026-11-03).
+
+Both change `main` after the K7 final SHA `59ea780c`; K7's controls are re-run at the new SHA before
+the CEO walk, as for FOLLOW-1480.
+
 ## RESOLVED — ESC-092: wave 2 SDK consent controls (P-2, P-3, P-4) — public surface changes, and the byte budget they need [FOLLOW-1444 / FOLLOW-1445 / FOLLOW-1446 / FOLLOW-1455]
 
 **Filed by:** sdk-engineer **Date:** 2026-11-06 **Affects:** FOLLOW-1444, FOLLOW-1445, FOLLOW-1446,

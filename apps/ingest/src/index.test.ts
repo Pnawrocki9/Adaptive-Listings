@@ -190,7 +190,9 @@ const validEvent = {
   session_id: 'a'.repeat(40),
   ts: 1714180000000,
   region: 'eu' as const,
-  consent_state: 'legitimate-interest' as const,
+  // FOLLOW-1508 (ESC-093 (2)): the shape the SDK sends after the banner's grant. A profiling
+  // event under `legitimate-interest` is dropped by the consent gate, like `none`.
+  consent_state: 'consented' as const,
   schema_version: 1 as const,
   type: 'page.view',
   payload: {
@@ -680,13 +682,13 @@ describe('POST /v1/events — consent gate (FOLLOW-559)', () => {
     }
   });
 
-  it('§H.9: profiling event WITH consent (legitimate-interest) still ingests for opted-out users', async () => {
+  it('§H.9: profiling event WITH consent (consented) still ingests for opted-out users', async () => {
     const stub = stubFetch('ok');
     try {
       const app = createApp();
       const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD }, clickhouseUrl: CH_URL });
-      // An opted-out user still carries a valid consent_state (§H.8 registration consent) — the
-      // stream must keep flowing. `validEvent` already uses consent_state='legitimate-interest'.
+      // An opted-out user still carries a valid consent_state (the banner grant) — the stream
+      // must keep flowing. `validEvent` uses consent_state='consented'.
       const res = await app.fetch(
         new Request('http://test/v1/events', {
           method: 'POST',
@@ -699,6 +701,111 @@ describe('POST /v1/events — consent gate (FOLLOW-559)', () => {
       const body = await readJson<{ accepted: number; rejected: number }>(res);
       expect(body.accepted).toBe(1);
       expect(body.rejected).toBe(0);
+      expect(stub.callCount()).toBe(1);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  // FOLLOW-1508 (ESC-093 (2), ESC-091 C-1): consent only, never legitimate interest — at ingest
+  // too. A profiling event under `legitimate-interest` takes the same path as one under `none`.
+  it('FOLLOW-1508: drops a profiling event under legitimate-interest exactly as under none', async () => {
+    const stub = stubFetch('ok');
+    try {
+      const app = createApp();
+      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD }, clickhouseUrl: CH_URL });
+      const post = async (consentState: 'legitimate-interest' | 'none') => {
+        const res = await app.fetch(
+          new Request('http://test/v1/events', {
+            method: 'POST',
+            headers: authHeaders,
+            body: JSON.stringify({ events: [{ ...validEvent, consent_state: consentState }] }),
+          }),
+          env,
+        );
+        expect(res.status).toBe(200);
+        return readJson<{
+          accepted: number;
+          rejected: number;
+          errors: {
+            index: number;
+            errors: { code: string; consent_class: string; consent_state: string };
+          }[];
+        }>(res);
+      };
+
+      const li = await post('legitimate-interest');
+      expect(li.accepted).toBe(0);
+      expect(li.rejected).toBe(1);
+      expect(li.errors[0]?.errors.code).toBe('consent_not_granted');
+      expect(li.errors[0]?.errors.consent_class).toBe('profiling');
+      expect(li.errors[0]?.errors.consent_state).toBe('legitimate-interest');
+      expect(stub.callCount()).toBe(0);
+      expect(vi.mocked(Sentry.captureMessage)).toHaveBeenCalledWith(
+        'consent_gate_rejected',
+        expect.objectContaining({
+          level: 'warning',
+          tags: expect.objectContaining({ gate: 'consent', code: 'consent_not_granted' }),
+        }),
+      );
+
+      // Same response as `none`, apart from the echoed consent_state.
+      const none = await post('none');
+      expect({ accepted: none.accepted, rejected: none.rejected }).toEqual({
+        accepted: li.accepted,
+        rejected: li.rejected,
+      });
+      expect(none.errors[0]?.errors.code).toBe(li.errors[0]?.errors.code);
+      expect(stub.callCount()).toBe(0);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it('FOLLOW-1508: audit and operational events under legitimate-interest are still stored', async () => {
+    const stub = stubFetch('ok');
+    try {
+      const app = createApp();
+      const env = makeEnv({ kvStore: { 'api_key:k1': VALID_KEY_RECORD }, clickhouseUrl: CH_URL });
+      const li = 'legitimate-interest' as const;
+      const consentGranted = {
+        ...validEvent,
+        event_id: '01928f00-7000-7000-8000-000000000001',
+        consent_state: li,
+        type: 'consent.granted',
+        payload: { language: 'en', method: 'banner' },
+      };
+      const inquiryStarted = {
+        ...validEvent,
+        event_id: '01928f00-7000-7000-8000-000000000002',
+        consent_state: li,
+        type: 'inquiry.started',
+        payload: { form_variant: 'contact_v2' },
+      };
+      const profilingLi = {
+        ...validEvent,
+        event_id: '01928f00-7000-7000-8000-000000000003',
+        consent_state: li,
+      };
+      const res = await app.fetch(
+        new Request('http://test/v1/events', {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({ events: [consentGranted, inquiryStarted, profilingLi] }),
+        }),
+        env,
+      );
+      expect(res.status).toBe(200);
+      const body = await readJson<{
+        accepted: number;
+        rejected: number;
+        errors: { index: number; errors: { code: string } }[];
+      }>(res);
+      expect(body.accepted).toBe(2);
+      expect(body.rejected).toBe(1);
+      expect(body.errors).toHaveLength(1);
+      expect(body.errors[0]?.index).toBe(2);
+      expect(body.errors[0]?.errors.code).toBe('consent_not_granted');
       expect(stub.callCount()).toBe(1);
     } finally {
       stub.restore();

@@ -270,11 +270,17 @@ proven,** in the order a reader should weigh it:
   flag-independent in #1157 to #1159 (withdrawal control always shown, explained, confirmed; every
   directive restored on withdrawal; download of the stored profile); counsel, the DPO sign-off and
   the Upstash region stay open in row 20.
-- **Consent storage basis in ingest.** `apps/ingest/src/consent-gate.ts` still persists
-  profiling-class events under `consent_state` `consented` OR `legitimate-interest` (§H.8), while
-  ESC-091 C-1 made `/api/adapt` consent-only (#1152) and the SDK sends `legitimate-interest` for a
-  pending decision (`packages/sdk/src/core/events.ts`). Whether the ingest gate should narrow to
-  `consented` too is an open compliance look, not ruled; nothing in H1 measures it.
+- **Consent storage basis in ingest.** Ruled by the CEO (ESC-093 (2), 2026-11-08; FOLLOW-1508):
+  ESC-091 C-1 ("consent only, never legitimate interest") covers profiling events too.
+  `apps/ingest/src/consent-gate.ts` persists a profiling-class event only under `consent_state`
+  `consented`; one under `legitimate-interest` is dropped exactly as one under `none` (per-event
+  `consent_not_granted`, the same `consent_rejected` counter, log line and Sentry signal). Audit and
+  operational events (consent decisions, `adapt.*`, conversions) still ingest under every state. The
+  SDK still sends `legitimate-interest` for a pending decision (`packages/sdk/src/core/events.ts`)
+  and was not changed; it emits no profiling event before the banner's grant unless its shadow host
+  cannot be created (`createShadowHost()` returns `null`, `consent-flow.ts` then proceeds without a
+  banner), and ingest now drops what that path sends. The compliance records (DPIA, ROPA, LIA,
+  notice) follow in FOLLOW-1509.
 - **Harness flake and CI residue.** AC(9) went RED six times across the Phase 6 series and once more
   in H1 before each series reached three consecutive GREEN on unchanged code; the cause is not found
   (FOLLOW-1471). The nightly `E2E Smoke Test` (`e2e-smoke.yml`, 03:00 UTC) is red until #1161

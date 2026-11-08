@@ -615,7 +615,8 @@
   `docs/PLAN-WAVE2-SDK-2026-11-06.md` PR 0. FOLLOW-1474 = the wave 2 close-out PR; 1472 is used by
   #1151; 1475 to 1477 by #1161 to #1163; 1478 below (H3); 1479 and 1480 below (K7); 1481 below
   (FOLLOW-1478); 1482 to 1489 and 1500 to 1506 by the retro batch RETRO-381 to 394 (stubs in
-  FOLLOW_UPS.md, not queued). Next free: FOLLOW-1507, RETRO-395, ESC-093.
+  FOLLOW_UPS.md, not queued); 1507 to 1509 below (ESC-093). Next free: FOLLOW-1510, RETRO-395,
+  ESC-094.
 - **FOLLOW-1478** — status: DONE # this PR, 2026-11-08: rows nothing reads removed from the matrix
   (`REDPANDA_*`, `JWT_SECRET`, the `decision-api` section, Stripe, `API_KEY_HMAC_SECRET`, KV ids),
   Phase 2 labels dropped, `JWT_SECRET` out of `.env.example`, Redpanda out of the Worker runbook.
@@ -637,6 +638,19 @@
   `UPSTASH_REDIS_REST_URL`/`TOKEN`, `ANTHROPIC_API_KEY`); `apps/control-plane/.env.example` keeps
   `API_KEY_HMAC_SECRET` and `apps/ingest/.env.example` the KV ids, which nothing reads. Add a full
   per-app reader list (the handover §3 is the production list of record). Next free: FOLLOW-1482.
+- **FOLLOW-1507** — status: IN_PROGRESS # ml-engineer (Opus), 2026-11-08. ESC-093 (1), CEO
+  2026-11-08 "adres to adres": a camp name that is part of the listing's own address passes the
+  protected-ground guard wherever the listing is (`ul. Treblinki 3` on a Targówek listing is
+  served); camp names outside an address stay refused outright.
+  `packages/shared/src/playbooks/traits.ts`, claims stamp bump. Closes the open half of FOLLOW-1431
+  for camp names. Series 3× GREEN `[FRESH]`.
+- **FOLLOW-1508** — status: IN_PROGRESS # backend-engineer (Opus), 2026-11-08. ESC-093 (2), CEO
+  2026-11-08: ESC-091 C-1 covers profiling events. `apps/ingest/src/consent-gate.ts` persists a
+  profiling-class event only with `consent_state = 'consented'`; `legitimate-interest` is dropped
+  like `none`. SDK unchanged (no bytes). Series 3× GREEN `[FRESH]` and N3.
+- **FOLLOW-1509** — status: IN_PROGRESS # compliance-engineer (Sonnet), 2026-11-08. ESC-093 (2) in
+  the records: DPIA, ROPA, LIA and Notice say profiling events at ingest rest on consent only.
+  Records only, no legal analysis (CEO 2026-11-03).
 - **FOLLOW-1279** — status: CLOSED # absorbed by FOLLOW-1308.
 - **FOLLOW-1251, 1302, 1303, 1291, 1294, 1297** — amended (see FOLLOW_UPS); statuses unchanged.
 

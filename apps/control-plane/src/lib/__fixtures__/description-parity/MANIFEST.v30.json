@@ -1,0 +1,52 @@
+{
+  "case_count": 98,
+  "change": "FOLLOW-1507 (CEO ESC-093 (1), adres to adres): CLAIMS_VALIDATION_VERSION is bumped from claims-v11 to claims-v12. Any street address passes (CEO clarification of 2026-11-08): a camp name in a street address passes on every listing, with or without a house number, and a camp name keeps no street exemption in copy with a word that names the camp or its memorial; no claims-v11 row was checked against that, so it is regenerated once instead of served. v30 is a stamp-only re-freeze of v29: no frozen text names a camp, and no verdict of the corpus moved.",
+  "claims_validation_version": "claims-v12",
+  "corpus": "corpus.v30.jsonl",
+  "corpus_sha256": "8a11271f:faeba408:13c2fd82:9d5bf278:c6243fce:75565d6d:a4ea6136:a4697fb6",
+  "delta": [],
+  "derived_from": {
+    "corpus": "corpus.v29.jsonl",
+    "manifest": "MANIFEST.v29.json",
+    "corpus_sha256": "43b004b4:0657ce93:0c7fc671:fefe5df2:fb6ba766:adac721d:1a857ff7:ef9cf811"
+  },
+  "digest_format": "sha256 hex in colon-separated 8-char groups",
+  "frozen_at": "2026-11-08",
+  "headline_called": 62,
+  "headline_suppressed": 29,
+  "kind": "stamp_refreeze",
+  "never_regenerate": true,
+  "non_empty_listing_context": 72,
+  "per_kind": {
+    "hand1305": 9,
+    "live": 33,
+    "synthetic": 56
+  },
+  "per_reason": {
+    "FAILED/empty": 2,
+    "FAILED/formatted_body": 2,
+    "FAILED/leak_marker": 2,
+    "FAILED/meta_commentary": 1,
+    "FAILED/residual_tag": 3,
+    "FAILED/truncated": 1,
+    "NEUTRAL/with_reason": 8,
+    "NEUTRAL/without_reason": 1,
+    "REFUSED/count_mismatch": 1,
+    "REFUSED/hallucinated_number": 5,
+    "REFUSED/unit_mismatch": 2,
+    "REFUSED/unsupported_amenity": 6,
+    "REFUSED/unsupported_guarantee": 2
+  },
+  "per_verdict": {
+    "FAILED": 11,
+    "FIT": 62,
+    "NEUTRAL": 9,
+    "REFUSED": 16
+  },
+  "recorded_outputs_predate_prompt": "Every raw output in this corpus was produced by an older prompt. They are replayed through the unchanged checks, so they pin the checks and the new prompt bytes, NOT what the new prompt makes the model write.",
+  "stamp_refreeze": {
+    "from": "claims-v11",
+    "to": "claims-v12",
+    "cases": 62
+  }
+}

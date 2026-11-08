@@ -145,8 +145,15 @@ import {
  *   the protected-ground guard's street exemption only when `listing_location` names the same camp,
  *   and composition is also read past an address's abbreviation. No `claims-v10` row was checked
  *   against those; it is regenerated once instead of served.
+ * - `claims-v12` — 2026-11-08, FOLLOW-1507 (CEO ESC-093 (1), "adres to adres", clarified by the
+ *   CEO on 2026-11-08: any street address passes): a camp's name in a street address passes the
+ *   protected-ground guard on every listing, with or without a house number, and the guard reads
+ *   more address forms ("os.", "Plaza", "Calle de X", "Lane", "St", "Ave"). A camp's name in prose
+ *   stays refused, and a camp's street keeps no exemption in copy with a word that names the camp
+ *   or its memorial ("dawny obóz", "miejsce pamięci", "victims"). No `claims-v11` row was checked
+ *   against that; it is regenerated once instead of served.
  */
-export const CLAIMS_VALIDATION_VERSION = 'claims-v11';
+export const CLAIMS_VALIDATION_VERSION = 'claims-v12';
 
 /** G-03: total budget per call (deadline on the whole, retries included). */
 const DESCRIPTION_DEADLINE_MS = 75_000;
@@ -892,7 +899,7 @@ function interpretDescription(
 
   // FOLLOW-1411: a statement about residents' race, ethnic origin or religion is refused before
   // the claim check, as `/api/adapt` orders it; refused, never stripped.
-  if (describesResidentsByProtectedGround(description, e.listing_context.listing_location)) {
+  if (describesResidentsByProtectedGround(description)) {
     return { verdict: 'REFUSED', violation: 'protected_ground' };
   }
 
@@ -934,7 +941,7 @@ function interpretHeadline(
   const languageViolation = checkOutputLanguage(headline, e.locale);
   if (languageViolation) return { headline: null, violation: languageViolation };
   // FOLLOW-1411: residents' race, ethnic origin or religion, as on the body and on `/api/adapt`.
-  if (describesResidentsByProtectedGround(headline, e.listing_context.listing_location)) {
+  if (describesResidentsByProtectedGround(headline)) {
     return { headline: null, violation: 'protected_ground' };
   }
   const violation = checkHeadlineFacts(

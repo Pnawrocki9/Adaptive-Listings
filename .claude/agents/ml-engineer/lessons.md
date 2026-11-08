@@ -742,3 +742,22 @@ the invoking command.
   rule each opened holes; the fix was to drop it. A shared import also broke the AC(1b) helper, a
   CJS path no unit test runs. · Guardrail: a change to a module the e2e helper loads runs that
   helper before hand-off; a guard's exception starts from "can this only ever be stricter?".
+
+- **2026-11-08 / FOLLOW-1507 (ESC-093 (1))** · A camp's name in the listing's own address passes:
+  copy needs the address with a house number, and the listing's own text (description, title) must
+  state that camp's street, same number, after a line start, a comma or a locating word; read only
+  when `listing_location` states no street. A camp word beside the street ("miejsce pamięci", "the
+  former camp") now refuses on both exemptions. `claims-v12`, parity v30. · Judgment call: "own
+  address" from free text is a heuristic; "na ul. X 12 jest sklep" and "Okolica: ul. X 12" still
+  read as own. Rule BD probes found the camp-word hole that the location route already had. ·
+  Guardrail: a sparing rule's probes include the copy that states the spared fact AND something
+  about it; the hole is usually the second half.
+
+- **2026-11-08 / FOLLOW-1507 rework (CEO clarification: any street address passes)** · Dropped the
+  own-address machinery and the location argument; a camp name in any street form keeps the street
+  exemption on every listing; address forms widened (os., Plaza, "Calle de", Lane, St, Ave) for
+  every sensitive term; the camp-context list now names only the camp or its memorial. · Judgment
+  call: I inferred "own address" from free text when the ruling was ambiguous, instead of escalating
+  the ambiguity; a reviewer found five defect classes in it and the CEO meant the simple reading. ·
+  Guardrail: when a ruling's wording admits a simple and a clever reading, ask before building the
+  clever one.

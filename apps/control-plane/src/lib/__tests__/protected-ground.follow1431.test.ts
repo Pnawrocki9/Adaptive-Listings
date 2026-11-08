@@ -1,8 +1,8 @@
 // @vitest-environment node
 /**
  * FOLLOW-1431 — the whole paths, `generateDescription` and `callLlmGateway`, with only the model
- * mocked. A camp in a street needs `listing_location` to name that camp, composition is read past an
- * address's abbreviation, and nothing is spared that origin/main refused.
+ * mocked. Composition is read past an address's abbreviation. FOLLOW-1507 (ESC-093 (1), clarified
+ * 2026-11-08): a camp in any street address passes the guard, on every listing.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -103,8 +103,10 @@ type Row = [string, Context, string, Locale, string, string, string];
 
 /**
  * `[text, listing_context, description, locale, body, headline, adapt]`. Each hole of the three
- * readers stays refused. Each own-listing sentence origin/main refused stays refused: FOLLOW-1431 is
- * open. What passes here passed at origin/main too.
+ * readers stays refused, except where FOLLOW-1507 moved it: by the CEO's clarification of ESC-093
+ * (1), 2026-11-08, any street address passes the protected-ground guard (a camp's name, "os.",
+ * "Plaza", "Calle del …" included), the listing's own or not. Such a row now shows what the other
+ * checks say: grounding still refuses a street or a number the listing does not state.
  */
 const TABLE: Row[] = [
   [
@@ -292,54 +294,54 @@ const TABLE: Row[] = [
     { listing_location: 'ul. Sobieskiego 5, Warszawa' },
     '',
     'pl',
-    'protected_ground',
-    'protected_ground',
-    'protected_ground',
+    'FIT',
+    'hallucinated_proper_name',
+    'served',
   ],
   [
     'ul. Treblinka 5.',
     { listing_location: 'ul. Trebnicka 5, Warszawa' },
     '',
     'pl',
-    'protected_ground',
-    'protected_ground',
-    'protected_ground',
+    'FIT',
+    'hallucinated_proper_name',
+    'served',
   ],
   [
     'ul. Majdanek 5.',
     { listing_location: 'Warszawa' },
     '',
     'pl',
-    'protected_ground',
-    'protected_ground',
-    'protected_ground',
+    'hallucinated_number',
+    'hallucinated_number',
+    'hallucinated_number',
   ],
   [
     'Treblinka Road.',
     { listing_location: 'Warszawa' },
     '',
     'en',
-    'protected_ground',
-    'protected_ground',
-    'protected_ground',
+    'FIT',
+    'hallucinated_proper_name',
+    'hallucinated_proper_name',
   ],
   [
     'Auschwitz Street.',
     { listing_location: 'Warszawa' },
     '',
     'en',
-    'protected_ground',
-    'protected_ground',
-    'protected_ground',
+    'FIT',
+    'hallucinated_proper_name',
+    'hallucinated_proper_name',
   ],
   [
     'Sobibór Avenue',
     { listing_location: 'Warszawa' },
     '',
     'en',
-    'protected_ground',
-    'protected_ground',
-    'protected_ground',
+    'FIT',
+    'hallucinated_proper_name',
+    'hallucinated_proper_name',
   ],
   [
     'Plac Treblinka to miejsce pamięci',
@@ -355,9 +357,9 @@ const TABLE: Row[] = [
     { listing_location: 'Warszawa' },
     '',
     'en',
-    'protected_ground',
-    'protected_ground',
-    'protected_ground',
+    'FIT',
+    'hallucinated_proper_name',
+    'hallucinated_proper_name',
   ],
   [
     'Most residents at ul. Długa 5 are Muslim.',
@@ -454,18 +456,18 @@ const TABLE: Row[] = [
     { listing_location: 'os. Bohaterów Getta 3, Warszawa' },
     '',
     'pl',
-    'protected_ground',
-    'protected_ground',
-    'protected_ground',
+    'FIT',
+    'served',
+    'served',
   ],
   [
     'Calle del Gueto 5.',
     { listing_location: 'Calle del Gueto 5, Madrid' },
     '',
     'es',
-    'protected_ground',
-    'protected_ground',
-    'protected_ground',
+    'FIT',
+    'served',
+    'served',
   ],
   [
     'Holocaust Memorial Drive 7.',
@@ -490,9 +492,9 @@ const TABLE: Row[] = [
     { listing_location: 'Plaza del Gueto 3, Madrid' },
     '',
     'es',
-    'protected_ground',
-    'protected_ground',
-    'protected_ground',
+    'FIT',
+    'served',
+    'served',
   ],
   [
     'Jewish Quarter Road 7.',
@@ -661,9 +663,9 @@ const TABLE: Row[] = [
     { listing_location: 'os. Bohaterów Getta 3, Warszawa' },
     '',
     'pl',
-    'protected_ground',
-    'protected_ground',
-    'protected_ground',
+    'FIT',
+    'served',
+    'served',
   ],
   [
     'ul. bohaterów getta 5.',
@@ -697,9 +699,9 @@ const TABLE: Row[] = [
     { listing_location: 'Calle del Gueto 5, Madrid' },
     '',
     'es',
-    'protected_ground',
-    'protected_ground',
-    'protected_ground',
+    'FIT',
+    'served',
+    'served',
   ],
   [
     'Mieszkanie przy Katyńskiej 5 w Warszawie.',
@@ -715,9 +717,9 @@ const TABLE: Row[] = [
     { listing_location: 'Calle del Gueto, 5, Madrid' },
     '',
     'es',
-    'protected_ground',
-    'protected_ground',
-    'protected_ground',
+    'FIT',
+    'served',
+    'served',
   ],
   [
     'Mieszkanie przy Katyńskiej 5.',
@@ -1075,21 +1077,62 @@ const TABLE: Row[] = [
     { listing_location: 'ul. Treblinki 3, Warszawa' },
     '',
     'pl',
-    'protected_ground',
-    'protected_ground',
-    'protected_ground',
+    'unsupported_street',
+    'unsupported_street',
+    'unsupported_street',
+  ],
+  ['Treblinka Road.', { location: 'Treblinka Road 5' }, '', 'en', 'FIT', 'served', 'served'],
+  // FOLLOW-1507 (CEO ESC-093 (1), "adres to adres", any street address): a camp's street passes.
+  ['ul. Treblinki 3.', {}, 'Dom przy ul. Treblinki 3.', 'pl', 'FIT', 'served', 'served'],
+  [
+    'Mieszkanie przy ul. Treblinki 3.',
+    { listing_location: 'Warszawa, Targówek' },
+    'Mieszkanie przy ul. Treblinki 3.',
+    'pl',
+    'FIT',
+    'served',
+    'served',
   ],
   [
-    'Treblinka Road.',
-    { location: 'Treblinka Road 5' },
-    '',
+    'Piso en Calle Sobibor 3.',
+    { listing_location: 'Madrid' },
+    'Piso en Calle Sobibor 3.',
+    'es',
+    'FIT',
+    'served',
+    'served',
+  ],
+  [
+    'A flat at 5 Treblinka Road.',
+    { listing_location: 'Leeds' },
+    'A flat at 5 Treblinka Road.',
+    'en',
+    'FIT',
+    'served',
+    'served',
+  ],
+  [
+    'Near Treblinka.',
+    {},
+    'Dom przy ul. Treblinki 3.',
     'en',
     'protected_ground',
     'protected_ground',
     'protected_ground',
   ],
+  // Not the listing's own street, and still a street address: it passes the guard.
+  ['ul. Treblinki 3.', {}, '5 min od ul. Treblinki 3.', 'pl', 'FIT', 'served', 'served'],
   [
     'ul. Treblinki 3.',
+    { listing_location: 'ul. Długa 5, Warszawa' },
+    'Dom przy ul. Treblinki 3.',
+    'pl',
+    'FIT',
+    'served',
+    'served',
+  ],
+  [
+    'ul. Treblinki 3, miejsce pamięci.',
     {},
     'Dom przy ul. Treblinki 3.',
     'pl',
@@ -1102,7 +1145,7 @@ const TABLE: Row[] = [
 const adaptContext = (context: Context, original: string): Context =>
   original ? { listing_description: original, ...context } : context;
 
-describe('FOLLOW-1431: no own-address spare, on the whole paths', () => {
+describe('FOLLOW-1431 / FOLLOW-1507: the guard on the whole paths', () => {
   beforeEach(() => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'test-key-'.repeat(3));
     process.env.ANTHROPIC_API_KEY = 'test-key-follow-1431';

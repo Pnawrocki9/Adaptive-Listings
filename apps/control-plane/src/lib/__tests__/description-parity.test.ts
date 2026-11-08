@@ -126,7 +126,9 @@
  *     and parity pin BYTES only: the recorded outputs predate the prompt, so a fresh recording is
  *     needed to show what the model now writes.
  *   - `corpus.v29.jsonl` + `MANIFEST.v29.json` — FOLLOW-1431, `claims-v11`, a stamp-only re-freeze
- *     of v28, the current contract: the camp names and the composition read move no verdict of it.
+ *     of v28: the camp names and the composition read move no verdict of it.
+ *   - `corpus.v30.jsonl` + `MANIFEST.v30.json` — FOLLOW-1507 (ESC-093 (1)), `claims-v12`, a
+ *     stamp-only re-freeze of v29, the current contract: no frozen text names a camp.
  *
  * No other I/O happens: the test env configures no Redis, ClickHouse, Postgres or Sentry, so the
  * spend gate reads 0, every write reports `not_configured` and no row is written.
@@ -327,7 +329,13 @@ const CASES_V29: Case[] = readCorpus('corpus.v29.jsonl');
 const MANIFEST_V29 = JSON.parse(
   readFileSync(join(FIXTURE_DIR, 'MANIFEST.v29.json'), 'utf8'),
 ) as ManifestV3 & { stamp_refreeze: { from: string; to: string; cases: number } };
-const STAMP = new Map(CASES_V29.map((c) => [c.id, c.expected.claims_validation] as const));
+/** The stamp v29 introduced (FOLLOW-1431); v30 moved the constant on (FOLLOW-1507). */
+const V29_STAMP = 'claims-v11';
+const CASES_V30: Case[] = readCorpus('corpus.v30.jsonl');
+const MANIFEST_V30 = JSON.parse(
+  readFileSync(join(FIXTURE_DIR, 'MANIFEST.v30.json'), 'utf8'),
+) as ManifestV3 & { stamp_refreeze: { from: string; to: string; cases: number } };
+const STAMP = new Map(CASES_V30.map((c) => [c.id, c.expected.claims_validation] as const));
 const CASES_V28: Case[] = readCorpus('corpus.v28.jsonl');
 const MANIFEST_V28 = JSON.parse(
   readFileSync(join(FIXTURE_DIR, 'MANIFEST.v28.json'), 'utf8'),
@@ -2288,11 +2296,11 @@ describe('description parity corpus v28 (FOLLOW-1429 — pl/es idiomatic copy, p
   });
 });
 
-describe('description parity corpus v29 (FOLLOW-1431 — claims-v11, stamp-only re-freeze, the current contract)', () => {
+describe('description parity corpus v29 (FOLLOW-1431 — claims-v11, stamp-only re-freeze)', () => {
   const V28_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v28.jsonl'), 'utf8');
   const V29_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v29.jsonl'), 'utf8');
   const OLD = `"claims_validation": "${V27_STAMP}"`;
-  const NEW = `"claims_validation": "${CLAIMS_VALIDATION_VERSION}"`;
+  const NEW = `"claims_validation": "${V29_STAMP}"`;
 
   beforeEach(() => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'parity-'.repeat(4));
@@ -2300,17 +2308,16 @@ describe('description parity corpus v29 (FOLLOW-1431 — claims-v11, stamp-only 
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it('the manifest describes v29 as a stamp re-freeze of v28 under the current constant', () => {
-    expect(CLAIMS_VALIDATION_VERSION).toBe('claims-v11');
+  it('the manifest describes v29 as a stamp re-freeze of v28 under claims-v11', () => {
     expect(MANIFEST_V29.kind).toBe('stamp_refreeze');
     expect(MANIFEST_V29.derived_from.corpus).toBe('corpus.v28.jsonl');
     expect(MANIFEST_V29.derived_from.corpus_sha256).toBe(MANIFEST_V28.corpus_sha256);
     expect(sha(V28_TEXT)).toBe(MANIFEST_V29.derived_from.corpus_sha256);
     expect(sha(V29_TEXT)).toBe(MANIFEST_V29.corpus_sha256);
-    expect(MANIFEST_V29.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(MANIFEST_V29.claims_validation_version).toBe(V29_STAMP);
     expect(MANIFEST_V29.stamp_refreeze).toEqual({
       from: V27_STAMP,
-      to: CLAIMS_VALIDATION_VERSION,
+      to: V29_STAMP,
       cases: MANIFEST_V28.per_verdict.FIT,
     });
     expect(MANIFEST_V29.delta).toEqual([]);
@@ -2325,6 +2332,48 @@ describe('description parity corpus v29 (FOLLOW-1431 — claims-v11, stamp-only 
 
   describe.each(CASES_V29.map((c) => [c.id, c] as const))('%s', (_id, c) => {
     it('generates identically to the v29 record', async () => {
+      await expectIdentical(c);
+    });
+  });
+});
+
+describe('description parity corpus v30 (FOLLOW-1507 — claims-v12, stamp-only re-freeze, the current contract)', () => {
+  const V29_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v29.jsonl'), 'utf8');
+  const V30_TEXT = readFileSync(join(FIXTURE_DIR, 'corpus.v30.jsonl'), 'utf8');
+  const OLD = `"claims_validation": "${V29_STAMP}"`;
+  const NEW = `"claims_validation": "${CLAIMS_VALIDATION_VERSION}"`;
+
+  beforeEach(() => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'parity-'.repeat(4));
+    mockCreate.mockReset();
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('the manifest describes v30 as a stamp re-freeze of v29 under the current constant', () => {
+    expect(CLAIMS_VALIDATION_VERSION).toBe('claims-v12');
+    expect(MANIFEST_V30.kind).toBe('stamp_refreeze');
+    expect(MANIFEST_V30.derived_from.corpus).toBe('corpus.v29.jsonl');
+    expect(MANIFEST_V30.derived_from.corpus_sha256).toBe(MANIFEST_V29.corpus_sha256);
+    expect(sha(V29_TEXT)).toBe(MANIFEST_V30.derived_from.corpus_sha256);
+    expect(sha(V30_TEXT)).toBe(MANIFEST_V30.corpus_sha256);
+    expect(MANIFEST_V30.claims_validation_version).toBe(CLAIMS_VALIDATION_VERSION);
+    expect(MANIFEST_V30.stamp_refreeze).toEqual({
+      from: V29_STAMP,
+      to: CLAIMS_VALIDATION_VERSION,
+      cases: MANIFEST_V29.per_verdict.FIT,
+    });
+    expect(MANIFEST_V30.delta).toEqual([]);
+    expect(MANIFEST_V30.case_count).toBe(CASES_V30.length);
+  });
+
+  it('v30 is v29 byte for byte except the stamp value, in every FIT case and nowhere else', () => {
+    expect(V29_TEXT.split(OLD).length - 1).toBe(MANIFEST_V29.per_verdict.FIT);
+    expect(V30_TEXT.split(NEW).length - 1).toBe(MANIFEST_V29.per_verdict.FIT);
+    expect(V30_TEXT).toBe(V29_TEXT.split(OLD).join(NEW));
+  });
+
+  describe.each(CASES_V30.map((c) => [c.id, c] as const))('%s', (_id, c) => {
+    it('generates identically to the v30 record', async () => {
       await expectIdentical(c);
     });
   });

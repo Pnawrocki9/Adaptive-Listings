@@ -482,8 +482,9 @@
 - **FOLLOW-1345** — status: DONE # H3 2026-11-07: see the session 180 row: every ledger merged. Was
   IN_PROGRESS # Ledgers K0 #1018, K1 #1022, K2a #1031, K2b #1034, K2c (this PR, `k2c-green`).
   Harness AC(1b), AC(9) at K4a/K4b.
-- **FOLLOW-1346** — status: IN_PROGRESS # K7 2026-11-08: `docs/checkpoints/K7.md`, technical
-  controls GREEN at the final SHA `59ea780c`; open only for the CEO walk (H4), then tag `k7-green`.
+- **FOLLOW-1346** — status: DONE # K7 GREEN 2026-11-09: the CEO walk (H4) passed on `460147e0`,
+  `docs/checkpoints/K7.md`; tag `k7-green` on `460147e0`. Next: the CTO handover. Was IN_PROGRESS #
+  K7 2026-11-08: technical controls GREEN at the final SHA `59ea780c`; open only for the CEO walk.
   H3 2026-11-07: OPEN before K7. H1 GREEN #1162 (`docs/checkpoints/H1.md`), H2 #1163
   (`CTO_HANDOVER.md` v1), H3 `docs/checkpoints/H3.md`; open only for H4 (CEO walk) and K7. Was
   BACKLOG # Phase 7 H1/H2 final proof and handover v1. K7.

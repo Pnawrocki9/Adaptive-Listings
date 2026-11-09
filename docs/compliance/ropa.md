@@ -150,8 +150,8 @@ request cascades.
 > withdrawn for storing profiling-class events (`page.view`, `scroll.depth`, mouse, tab and chat
 > events; `apps/ingest/src/consent-gate.ts`). The UAE row's legitimate-interest limb follows the
 > same ruling for these events; the CCPA row is unchanged. Ingest persists such an event only with
-> `consent_state = 'consented'` (FOLLOW-1508; not shipped when this version is written). Audit
-> events and discrete conversions are a different class and are not covered here.
+> `consent_state = 'consented'` (FOLLOW-1508; shipped in #1173 on 2026-11-08). Audit events and
+> discrete conversions are a different class and are not covered here.
 
 > **Amended v2.23 (FOLLOW-1339; localhost only, production not enabled).** Signed `live.signup` and
 > `inquiry.completed` rows from the host backend are not behavioural signals collected from a

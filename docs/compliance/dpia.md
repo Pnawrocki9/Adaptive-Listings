@@ -1293,8 +1293,8 @@ _Amended v2.31 (ESC-093 (2), CEO 2026-11-08)._ Article 6(1)(f) above no longer a
 profiling-class behavioural event at ingest (`page.view`, `scroll.depth`, mouse, tab and chat
 events, as classified in `apps/ingest/src/consent-gate.ts`). ESC-091 C-1 covers those events: they
 rest on Article 6(1)(a) consent only, in every mode, and legitimate interest is no basis for them.
-Ingest persists such an event only with `consent_state = 'consented'` (FOLLOW-1508). This is a
-record change only; the code change is FOLLOW-1508 and has not shipped when this version is written.
+Ingest persists such an event only with `consent_state = 'consented'` (FOLLOW-1508, shipped in #1173
+on 2026-11-08, after this version was first written).
 
 **The host's read (added v2.28, FOLLOW-1339; localhost only).** The host's own code reading
 `__estalara_session__` for conversion measurement is a further read for a further purpose. This

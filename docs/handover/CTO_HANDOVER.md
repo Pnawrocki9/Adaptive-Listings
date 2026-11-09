@@ -1,27 +1,33 @@
 # Adaptive Listings — CTO handover package
 
 **Version:** v1 (2026-11-07, plan Phase 7 step H2). **Final product SHA: `959dcf3b`** (#1159, the
-last product PR of the plan at H2). **Moved at K7 to `59ea780c`** (#1167, FOLLOW-1480, CEO ruling of
-2026-11-07: the consent-withdrawal control collapses to an icon after 3 s); its localhost proof is
-`docs/checkpoints/K7.md` (series README §5.75, N3 3/3 GREEN 29/29). Sections 1 to 9 still cite
-`959dcf3b`; the one product change since then adds no production step. v0 was opened 2026-10-18 by
-FOLLOW-1319 (plan package 0.4, CEO ruling D-F of 2026-10-16: production deployment is a handover
-package for the CTO, not steps the PM executes).
+last product PR of the plan at H2). **Moved at K7 to `460147e0`** (tag `k7-green`): #1167
+(FOLLOW-1480, CEO ruling of 2026-11-07: the consent-withdrawal control collapses to an icon after 3
+s), then #1173 (FOLLOW-1508, ingest persists profiling events only with consent) and #1174
+(FOLLOW-1507, a camp name in the listing's own street address passes the protected-ground guard),
+both from the CEO rulings ESC-093 of 2026-11-08. Their localhost proof is `docs/checkpoints/K7.md`
+(series README §5.76, N3 3/3 GREEN 29/29). Sections 1 to 9 still cite `959dcf3b` where they record
+H1; the changes since then add no new production step: the ingest change ships with the Worker
+deploy of §4 row 8, the guard change with the control-plane deploy, and §7 records the consent
+basis. v0 was opened 2026-10-18 by FOLLOW-1319 (plan package 0.4, CEO ruling D-F of 2026-10-16:
+production deployment is a handover package for the CTO, not steps the PM executes).
 
 **What "frozen" means.** Sections 1 to 9 describe the tree at `959dcf3b`; the localhost proof of
 that SHA is `docs/checkpoints/H1.md` (PR #1162, GREEN). Frozen is not closed: by this file's own
 rule, every later PR that adds, removes or changes a production-side obligation still appends a row
 to section 4 in the same PR (this file is the ONLY list of production steps owed; `backlog/QUEUE.md`
 carries none). Checkpoint K7 (CEO acceptance) follows H3 (the PM closes or parks the tickets the
-plan superseded) and H4 (CEO acceptance walk); nothing in this file is executed before K7.
+plan superseded) and H4 (CEO acceptance walk); nothing in this file is executed before K7. **K7 is
+GREEN (2026-11-09, tag `k7-green` on `460147e0`): the CEO walked the real app and passed it, so
+section 4 is now the CTO's to execute, from that SHA.**
 
 **Audience:** Rafał Palak (CTO). **Author of record:** architect (Fable) for v0 and v1; the PM keeps
 it current between checkpoints. **Scope:** what the CTO needs to put the localhost-proven Adaptive
 Listings on production app.estalara.com and admin.estalara.com, verify it, and roll it back.
 
 **How to read the markers.** v1 carries no `TODO` marker. What is not a fact yet is written as "Owed
-by the CTO at deploy time" (a value only a production deployment produces) or "Owed at K7" (a
-reading the CEO or the PM takes at the checkpoint).
+by the CTO at deploy time" (a value only a production deployment produces). The "Owed at K7"
+readings were all taken at K7 (2026-11-09) and are recorded in `docs/checkpoints/K7.md`.
 
 Sources this document cites, in order of authority: `docs/MASTER_DESIGN.md` (§P.0 for the gate and
 the post-GO list; §Snapshot.0 for status), `backlog/ESCALATIONS.md` (ESC-020, ESC-084, ESC-085),
@@ -302,8 +308,8 @@ proven,** in the order a reader should weigh it:
   `node_modules` (plan Phase 3 M4); Vercel and the H1 clean install build correctly (the K7 STOP
   condition "clean-install build at the final SHA, exit 0" is met by H1).
 
-Owed at K7: the CEO reads this section against `docs/checkpoints/H1.md` and rules; the PM records
-the ruling in `docs/checkpoints/K7.md`.
+Ruled at K7 (2026-11-09): the CEO accepted the product with these limits as written ("Spacer
+przeszedł. Idziemy dalej."); the ruling is recorded in `docs/checkpoints/K7.md`.
 
 ## 8. Localhost proof recipe
 
@@ -327,7 +333,7 @@ the ruling in `docs/checkpoints/K7.md`.
   §7).
 
 The final evidence is `docs/checkpoints/H1.md` at `959dcf3b` and `docs/checkpoints/K7.md` at
-`59ea780c` (series, N3 and the K7 controls); K7 also holds the CEO's ruling.
+`460147e0` (series, N3 and the K7 controls, tag `k7-green`); K7 also holds the CEO's ruling.
 
 ## 9. Post-deploy checks for the CTO — the four production canaries
 
